@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Command, CommandGroup, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, TranscriptItem, Workspace } from '../shared/protocol.ts';
 import { bucketToggled, loadFolds, saveFolds, toggled, unfolded, type FoldKey, type Folds } from './folds.ts';
+import type { QaState } from './questions.ts';
 import { bucketOf, groupSessions, sessionsIn, type Bucket, type Flags, type Scope } from './home-model.ts';
 import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
 
@@ -94,6 +95,8 @@ interface State {
   dragging: string | null;
   /** Collapsible sections the viewer folded away (remembered per browser). */
   folds: Folds;
+  /** Answers in progress on a question card from Claude. */
+  qa: QaState | null;
 }
 
 const theme = loadTheme();
@@ -139,6 +142,7 @@ export const useStore = create<State>(() => ({
   mobileBoard: false,
   dragging: null,
   folds: loadFolds(),
+  qa: null,
 }));
 
 export const set = useStore.setState;

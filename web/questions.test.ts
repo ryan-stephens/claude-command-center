@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import type { Question } from '../shared/protocol.ts';
+import { answered, answersFor, firstOpen, freshQa, nextMode, pick, typeOther } from './questions.ts';
+
+const lib: Question = { question: 'Which date library?', header: 'Library', multiSelect: false, options: [{ label: 'date-fns', description: '' }, { label: 'dayjs', description: '' }] };
+const feats: Question = { question: 'Which features?', header: 'Features', multiSelect: true, options: [{ label: 'Dark mode', description: '' }, { label: 'Search', description: '' }] };
+
+test('a single choice replaces the pick; a multi-select toggles', () => {
+  let s = freshQa('r', 2);
+  s = pick(s, lib, 0, 'date-fns');
+  s = pick(s, lib, 0, 'dayjs');
+  assert.deepEqual(s.picks[0], ['dayjs']);
+  s = pick(s, feats, 1, 'Dark mode');
+  s = pick(s, feats, 1, 'Search');
+  s = pick(s, feats, 1, 'Dark mode');
+  assert.deepEqual(s.picks[1], ['Search']);
+});
+
+test('"Other" replaces a single choice, and adds to a multi-select', () => {
+  let s = freshQa('r', 2);
+  s = pick(s, lib, 0, 'dayjs');
+  s = typeOther(s, lib, 0, 'luxon');
+  assert.deepEqual(answersFor(s, [lib, feats]), { 'Which date library?': 'luxon' });
+  s = pick(s, feats, 1, 'Search');
+  s = typeOther(s, feats, 1, 'Export');
+  assert.equal(answersFor(s, [lib, feats])['Which features?'], 'Search, Export');
+});
+
+test('firstOpen finds what still needs an answer', () => {
+  let s = freshQa('r', 2);
+  assert.equal(firstOpen(s, [lib, feats]), 0);
+  s = pick(s, lib, 0, 'dayjs');
+  assert.equal(firstOpen(s, [lib, feats]), 1);
+  assert.equal(answered(s, 1), false);
+  s = typeOther(s, feats, 1, '  ');
+  assert.equal(firstOpen(s, [lib, feats]), 1, 'blank "Other" is not an answer');
+  s = pick(s, feats, 1, 'Search');
+  assert.equal(firstOpen(s, [lib, feats]), -1);
+});
+
+test('nextMode cycles like Shift+Tab in Claude Code', () => {
+  assert.equal(nextMode(undefined), 'acceptEdits');
+  assert.equal(nextMode('default'), 'acceptEdits');
+  assert.equal(nextMode('acceptEdits'), 'plan');
+  assert.equal(nextMode('plan'), 'default');
+  assert.equal(nextMode('bypassPermissions'), 'default');
+});

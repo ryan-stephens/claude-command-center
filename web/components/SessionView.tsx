@@ -7,7 +7,8 @@ import { turnClock } from '../activity-label.ts';
 import { exactCommand, matchSlash, runsAlone, slashQuery } from '../slash.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { statusLabel } from '../home-model.ts';
-import { askStop, backToList, hop } from '../keys.ts';
+import { askStop, backToList, cycleMode, hop } from '../keys.ts';
+import { MODE_LABEL } from '../questions.ts';
 import { startVoice, stopVoice, voiceSupported } from '../voice.ts';
 import { NO_BINDINGS, set, setDraft, toggleFold, useFlags, useStore } from '../store.ts';
 import { send } from '../ws.ts';
@@ -261,11 +262,31 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
         />
         <ComposerButtons id={id} canSend={Boolean(draft.trim()) && !voice} onSend={submit} />
       </div>
+      <ModeLine id={id} />
     </div>
   );
 }
 
 /** Touch and mouse controls: hold-to-talk, the phone number pad toggle, send. */
+const MODE_TONE: Record<string, string> = { default: 'bg-raise text-sub', acceptEdits: 'bg-busy-bg text-busy', plan: 'bg-calm-bg text-calm' };
+
+/** Under the message box: the mode (Shift+Tab switches it, as in Claude Code) and the model. */
+function ModeLine({ id }: { id: string }) {
+  const mode = useStore((s) => s.sessions.find((x) => x.id === id)?.mode ?? 'default');
+  const model = useStore((s) => s.sessions.find((x) => x.id === id)?.model);
+  const label = MODE_LABEL[mode];
+  return (
+    <div className="mx-auto mt-1.5 flex max-w-3xl items-center gap-2 px-1 text-xs text-faint">
+      <button onClick={() => cycleMode(id)} title={`${label.name}: ${label.hint}. Shift+Tab switches.`} className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-semibold ${MODE_TONE[mode] ?? 'bg-raise text-sub'}`}>
+        <Icon name={mode === 'plan' ? 'plan' : mode === 'acceptEdits' ? 'edit' : 'shield'} size={12} />{label.name}
+      </button>
+      <span className="hidden truncate sm:inline">{label.hint}</span>
+      <Key k="⇧Tab" size="sm" />
+      {model && <span className="ml-auto truncate font-mono" title="Change it with /model">{model}</span>}
+    </div>
+  );
+}
+
 function ComposerButtons({ id, canSend, onSend }: { id: string; canSend: boolean; onSend: () => void }) {
   const listening = useStore((s) => s.voice?.sessionId === id && s.voice.state === 'listening');
   const padOpen = useStore((s) => s.mobileBoard);

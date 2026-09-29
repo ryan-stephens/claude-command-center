@@ -42,3 +42,13 @@ test('session: Esc means stop while busy, and typing hides the numpad and talk k
 test('rebound keys show their current binding', () => {
   assert.ok(labels({ screen: 'session', bindings: { pushToTalk: ['F9'] } }).includes('Hold F9 Talk'));
 });
+
+test('a question or a plan changes the answer keys', () => {
+  const q = labels({ screen: 'session', zone: 'board', pending: true, pendingKind: 'question' });
+  assert.ok(q.includes('1–4 Pick') && q.includes('Enter Send answers') && q.includes('N Skip'));
+  assert.ok(!q.includes('Y Allow'), 'a question is answered, not allowed');
+  const p = labels({ screen: 'session', zone: 'board', pending: true, pendingKind: 'plan' });
+  assert.ok(p.includes('Y Start the plan') && p.includes('N Keep planning'));
+  assert.ok(labels({ homeCol: 'preview', pending: true, pendingKind: 'question' }).includes('Enter Open to answer'));
+  assert.ok(labels({ screen: 'session', zone: 'composer' }).includes('⇧Tab Mode'));
+});

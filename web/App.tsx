@@ -19,6 +19,10 @@ function Legend() {
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
   const focusId = useStore((s) => (s.screen === 'session' ? s.openId : s.selectedId));
   const pending = useStore((s) => Object.values(s.permissions).some((p) => p.sessionId === focusId));
+  const pendingKind = useStore((s) => {
+    const p = Object.values(s.permissions).find((x) => x.sessionId === focusId);
+    return p?.questions?.length ? 'question' : p?.plan !== undefined ? 'plan' : 'tool';
+  });
   const busy = useStore((s) => {
     const status = s.sessions.find((x) => x.id === s.openId)?.status;
     return s.screen === 'session' && (status === 'running' || status === 'requires_action');
@@ -28,7 +32,7 @@ function Legend() {
   const modal = useStore((s) => s.modal);
   if (modal) return null;
   const col = shownCols().includes(homeCol) || homeCol === 'library' ? homeCol : 'sessions';
-  const items = legendFor({ screen, homeCol: col, zone, pending, busy, drafting, hasSelection: Boolean(focusId), inWorkspace, bindings, previewShown: shownCols().includes('preview') });
+  const items = legendFor({ screen, homeCol: col, zone, pending, pendingKind, busy, drafting, hasSelection: Boolean(focusId), inWorkspace, bindings, previewShown: shownCols().includes('preview') });
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
     <footer className="hidden items-center gap-x-6 gap-y-2 border-t border-line bg-col px-4 py-2.5 text-[13.5px] text-sub md:flex md:flex-wrap" aria-label="Keys you can press now">

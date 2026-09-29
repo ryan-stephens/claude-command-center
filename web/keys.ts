@@ -16,6 +16,7 @@ import {
   toggleBucket, toggleFold, toggleSound, unfoldAllBuckets, visibleSessions, type HomeCol,
 } from './store.ts';
 import { lastPermissionAt, send } from './ws.ts';
+import { answersFor, firstOpen, freshQa, MODE_LABEL, nextMode, pick } from './questions.ts';
 
 /** Keys pressed this soon after an approval card appears were aimed at something else. */
 const APPROVAL_GRACE_MS = 400;
@@ -59,6 +60,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
     title: 'Session',
     keys: [
       ['Enter / Shift+Enter', 'Send / new line (message box)'],
+      ['Shift+Tab', 'Switch mode, like Claude Code: asks first → accepts edits → plan first'],
       ['/ (start of a message)', 'Suggests commands and skills as you type, like Claude Code: ↑ ↓ choose, Tab completes, Enter runs, Esc hides'],
       ['Esc', 'While Claude is working: stop it. Otherwise step out: message box → number pad → home'],
       ['Numpad 0 / Alt+0', 'Back to home, even while Claude is working'],
@@ -78,6 +80,17 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['A', 'Always allow (the card says exactly what)'],
       ['N', 'Don’t allow; Claude tries another way'],
       ['D', 'Show or hide the raw details'],
+    ],
+  },
+  {
+    title: 'Questions from Claude',
+    keys: [
+      ['1–4', 'Pick an answer (on a multi-select, turn it on or off)'],
+      ['↑ ↓', 'Previous / next question'],
+      ['O', 'Type your own answer'],
+      ['Enter', 'Send the answers'],
+      ['N', 'Skip: Claude decides'],
+      ['Y / A / N (plan)', 'Start the plan asking first / accepting edits / keep planning'],
     ],
   },
   {
@@ -153,8 +166,65 @@ export function respondPermission(decision: PermissionDecision, sessionId = get(
   const req = pendingFor(sessionId);
   if (!req) return false;
   if (performance.now() - lastPermissionAt < APPROVAL_GRACE_MS) return true; // swallow, don't answer
+  // A question wants answers, not a yes: only "skip" goes through from here.
+  if (req.questions && decision !== 'deny') { flash('Pick an answer (1–4), then Enter'); return true; }
+  // A plan: Y starts it asking before changes, A starts it accepting edits.
+  if (req.plan !== undefined && decision !== 'deny') {
+    send({ type: 'permission.respond', reqId: req.reqId, decision: 'allow', mode: decision === 'always' ? 'acceptEdits' : 'default' });
+    return true;
+  }
   send({ type: 'permission.respond', reqId: req.reqId, decision });
   return true;
+}
+
+/** Send the answers on the open session's question card, or jump to the one still unanswered. */
+export function submitAnswers(): void {
+  const s = get();
+  const req = pendingFor(s.openId);
+  if (!req?.questions) return;
+  const qa = s.qa?.reqId === req.reqId ? s.qa : freshQa(req.reqId, req.questions.length);
+  const open = firstOpen(qa, req.questions);
+  if (open >= 0) { set({ qa: { ...qa, at: open } }); flash('This one still needs an answer'); return; }
+  send({ type: 'permission.respond', reqId: req.reqId, decision: 'allow', answers: answersFor(qa, req.questions) });
+  set({ qa: null });
+}
+
+/** Keys on a question card (the number pad side of the session): 1–9 pick, ↑ ↓ move, O your own, Enter send, N skip. */
+function questionKeys(e: KeyboardEvent, typing: boolean): boolean {
+  const s = get();
+  if (s.screen !== 'session' || s.zone !== 'board' || typing || e.ctrlKey || e.altKey || e.metaKey) return false;
+  const req = pendingFor(s.openId);
+  if (!req?.questions?.length) return false;
+  const qs = req.questions;
+  let qa = s.qa?.reqId === req.reqId ? s.qa : freshQa(req.reqId, qs.length);
+  const q = qs[qa.at];
+  const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
+  if (digit) {
+    const opt = q.options[Number(digit[1]) - 1];
+    if (opt) {
+      qa = pick(qa, q, qa.at, opt.label);
+      const next = firstOpen(qa, qs);
+      if (!q.multiSelect && next >= 0) qa = { ...qa, at: next };
+      set({ qa });
+    }
+    return true;
+  }
+  switch (e.key) {
+    case 'ArrowDown': set({ qa: { ...qa, at: Math.min(qs.length - 1, qa.at + 1) } }); return true;
+    case 'ArrowUp': set({ qa: { ...qa, at: Math.max(0, qa.at - 1) } }); return true;
+    case 'Enter': set({ qa }); submitAnswers(); return true;
+    case 'o': case 'O': set({ qa }); setTimeout(() => document.getElementById(`qa-other-${qa.at}`)?.focus(), 0); return true;
+    case 'n': case 'N': if (respondPermission('deny')) set({ qa: null }); return true;
+  }
+  return false;
+}
+
+/** Shift+Tab: asks first → accepts edits → plan first, as in Claude Code. */
+export function cycleMode(id: string | null): void {
+  if (!id) return;
+  const mode = nextMode(sessionById(id)?.mode);
+  send({ type: 'session.mode', id, mode });
+  flash(`${MODE_LABEL[mode].name}: ${MODE_LABEL[mode].hint}`);
 }
 
 /** Claude is mid-turn (including waiting on an approval): Esc stops it, like in Claude Code. */
@@ -438,6 +508,7 @@ function toggleDetails(): void {
 
 function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
   const s = get();
+  if (e.key === 'Tab' && e.shiftKey && !e.ctrlKey && !e.altKey) { cycleMode(s.openId); return true; }
   if (s.zone === 'composer') {
     if (e.key === 'Escape') {
       if (isBusy(s.openId)) interrupt(s.openId);
@@ -601,6 +672,7 @@ export function onKeyDown(e: KeyboardEvent): void {
   let handled = false;
   if (voiceKeys(e)) handled = true;
   else if (globalAction(e, typing)) handled = true;
+  else if (questionKeys(e, typing)) handled = true;
   else if (commandKeys(e)) handled = true;
   else if (s.screen === 'session') handled = sessionKeys(e, typing);
   else handled = homeKeys(e, typing);

@@ -177,8 +177,15 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'session.rename':
       await manager.rename(msg.id, msg.title);
       return;
-    case 'permission.respond':
-      broker.respond(msg.reqId, msg.decision);
+    case 'permission.respond': {
+      const sessionId = broker.sessionOf(msg.reqId);
+      broker.respond(msg.reqId, msg.decision, msg.answers);
+      // Approving a plan also says how to carry on: asking before changes, or accepting edits.
+      if (sessionId && msg.mode && msg.decision !== 'deny') await manager.setMode(sessionId, msg.mode);
+      return;
+    }
+    case 'session.mode':
+      await manager.setMode(msg.id, msg.mode);
       return;
     case 'board.get': {
       const slash = manager.slashFor(msg.sessionId);

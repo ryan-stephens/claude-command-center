@@ -50,6 +50,8 @@ export function activityLine(a: SessionActivity | undefined, now: number, cwd?: 
       return { text: `Claude's servers are busy (${r?.status ?? 'error'}) · trying again in ${wait}s (attempt ${r?.attempt ?? '?'} of ${r?.max ?? '?'})`, turn, tone: 'warn' };
     }
     case 'approval': {
+      if (a.tool?.name === 'AskUserQuestion') return { text: 'Claude has a question for you', elapsed, turn, tone: 'attention' };
+      if (a.tool?.name === 'ExitPlanMode') return { text: 'Claude has a plan: waiting for you to approve it', elapsed, turn, tone: 'attention' };
       const want = a.tool ? explainPermission({ tool: a.tool.name, input: a.tool.detail ?? '', fields: a.tool.fields }, cwd).want : '';
       return { text: `Waiting for your OK${want ? ` to ${clip(want, 70)}` : ''}`, elapsed, turn, tone: 'attention' };
     }

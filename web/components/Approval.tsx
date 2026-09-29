@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { PermissionRequest } from '../../shared/protocol.ts';
-import { approvalDetails, respondPermission } from '../keys.ts';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { PermissionRequest, Question } from '../../shared/protocol.ts';
+import { approvalDetails, openSession, respondPermission, submitAnswers } from '../keys.ts';
+import { answered, freshQa, pick, typeOther, type QaState } from '../questions.ts';
+import { set } from '../store.ts';
 import { lineDiff } from '../diff.ts';
 import { explainPermission, RISK_LABEL, type Risk } from '../plain.ts';
 import { useStore } from '../store.ts';
@@ -28,6 +32,127 @@ function useDetailsOpen(): boolean {
  * (the home preview), otherwise for the open one.
  */
 export function ApprovalCard({ p, cwd, compact = false, sessionId }: { p: PermissionRequest; cwd?: string; compact?: boolean; sessionId?: string }) {
+  if (p.questions?.length) return <QuestionCard p={p} compact={compact} />;
+  if (p.plan !== undefined) return <PlanCard p={p} compact={compact} sessionId={sessionId} />;
+  return <ToolApproval p={p} cwd={cwd} compact={compact} sessionId={sessionId} />;
+}
+
+function TabHint() {
+  const typing = useStore((s) => s.screen === 'session' && s.zone === 'composer');
+  if (!typing) return null;
+  return (
+    <p className="mt-3 flex items-center gap-1.5 text-sm text-attn">
+      You’re in the message box: press <Key k="Tab" size="sm" tone="attn" /> to answer with keys, or type a different instruction.
+    </p>
+  );
+}
+
+const CARD = 'rounded-2xl border-2 border-line bg-surface shadow-[0_0_0_6px_color-mix(in_srgb,var(--c-attn)_16%,transparent)]';
+
+/** Claude asks you something with choices (AskUserQuestion): pick with 1–4, your own with O, Enter sends. */
+function QuestionCard({ p, compact }: { p: PermissionRequest; compact: boolean }) {
+  const questions = p.questions!;
+  const stored = useStore((s) => (s.qa?.reqId === p.reqId ? s.qa : null));
+  const qa: QaState = stored ?? freshQa(p.reqId, questions.length);
+  const update = (next: QaState) => set({ qa: next });
+  const done = questions.every((_, i) => answered(qa, i));
+  return (
+    <div className={`${CARD} ${compact ? 'p-4' : 'p-5'}`} role="alertdialog" aria-label="Claude has a question">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-attn-bg px-2.5 py-0.5 text-[12.5px] font-semibold text-attn">
+          <Icon name="plan" size={14} />Claude has {questions.length === 1 ? 'a question' : `${questions.length} questions`}
+        </span>
+        {compact && <button className="btn ml-auto min-h-0 py-1 text-sm" onClick={() => openSession(p.sessionId)}>Open to answer<Key k="Enter" size="sm" /></button>}
+      </div>
+      <div className="mt-3 space-y-4">
+        {questions.map((q, qi) => (
+          <QuestionBlock key={q.question} q={q} qi={qi} qa={qa} current={qi === qa.at && !compact} readOnly={compact} onChange={update} />
+        ))}
+      </div>
+      {!compact && (
+        <div className="mt-4 flex flex-wrap gap-2.5">
+          <Choice k="Enter" title="Send answers" sub={done ? 'Claude carries on with them' : 'answer each question first'} onClick={submitAnswers} primary={done} />
+          <Choice k="N" title="Skip" sub="Claude decides for itself" onClick={() => { if (respondPermission('deny', p.sessionId)) set({ qa: null }); }} />
+        </div>
+      )}
+      {!compact && <TabHint />}
+    </div>
+  );
+}
+
+function QuestionBlock({ q, qi, qa, current, readOnly, onChange }: { q: Question; qi: number; qa: QaState; current: boolean; readOnly: boolean; onChange: (s: QaState) => void }) {
+  const picked = qa.picks[qi] ?? [];
+  return (
+    <section className={`rounded-xl ${current ? 'bg-raise/50 p-3 outline-2 outline-acc/50' : readOnly ? '' : 'p-3 opacity-80'}`} onClick={() => !readOnly && onChange({ ...qa, at: qi })}>
+      <div className="mb-1.5 flex items-center gap-2">
+        {q.header && <span className="rounded bg-raise px-1.5 text-xs font-semibold text-sub">{q.header}</span>}
+        {q.multiSelect && <span className="text-xs text-faint">pick any</span>}
+        {answered(qa, qi) && <Icon name="check" size={14} className="text-ok" />}
+      </div>
+      <div className="mb-2 font-semibold leading-snug">{q.question}</div>
+      <ul className="space-y-1">
+        {q.options.map((o, oi) => {
+          const on = picked.includes(o.label);
+          return (
+            <li key={o.label}>
+              <button
+                disabled={readOnly}
+                onClick={(e) => { e.stopPropagation(); onChange({ ...pick(qa, q, qi, o.label), at: qi }); }}
+                className={`flex w-full items-start gap-2.5 rounded-xl border px-2.5 py-1.5 text-left ${on ? 'border-acc bg-acc-soft' : 'border-line hover:bg-raise'}`}
+              >
+                {!readOnly && <Key k={String(oi + 1)} size="sm" tone={on ? 'acc' : undefined} />}
+                <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center border ${q.multiSelect ? 'rounded' : 'rounded-full'} ${on ? 'border-acc bg-acc text-acc-ink' : 'border-line'}`}>{on && <Icon name="check" size={11} />}</span>
+                <span className="min-w-0">
+                  <span className="block font-medium">{o.label}</span>
+                  {o.description && <span className="block text-sm text-sub">{o.description}</span>}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {!readOnly && (
+        <label className="mt-1.5 flex items-center gap-2.5 px-1" onClick={(e) => e.stopPropagation()}>
+          <Key k="O" size="sm" />
+          <input
+            id={`qa-other-${qi}`}
+            value={qa.other[qi] ?? ''}
+            onChange={(e) => onChange({ ...typeOther(qa, q, qi, e.target.value), at: qi })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); submitAnswers(); }
+              else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.currentTarget.blur(); }
+            }}
+            placeholder="Something else: type your own answer"
+            className="field py-1 text-sm"
+          />
+        </label>
+      )}
+    </section>
+  );
+}
+
+/** Claude proposes a plan (plan mode's ExitPlanMode): read it, then start it or keep planning. */
+function PlanCard({ p, compact, sessionId }: { p: PermissionRequest; compact: boolean; sessionId?: string }) {
+  const answer = (d: 'allow' | 'always' | 'deny') => respondPermission(d, sessionId ?? p.sessionId);
+  return (
+    <div className={`${CARD} ${compact ? 'p-4' : 'p-5'}`} role="alertdialog" aria-label="Claude has a plan">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-calm-bg px-2.5 py-0.5 text-[12.5px] font-semibold text-calm">
+        <Icon name="plan" size={14} />Plan ready · nothing has changed yet
+      </span>
+      <div className={`md mt-3 overflow-y-auto rounded-xl border border-line bg-bg px-4 py-3 text-[14.5px] ${compact ? 'max-h-60' : 'max-h-[45vh]'}`}>
+        <Markdown remarkPlugins={[remarkGfm]}>{p.plan || '(The plan is empty.)'}</Markdown>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2.5">
+        <Choice k="Y" title="Yes, start" sub="asks before each change" onClick={() => answer('allow')} primary />
+        <Choice k="A" title="Yes, and accept edits" sub="edits files without asking" onClick={() => answer('always')} />
+        <Choice k="N" title="Keep planning" sub="then tell Claude what to change" onClick={() => answer('deny')} />
+      </div>
+      {!compact && <TabHint />}
+    </div>
+  );
+}
+
+function ToolApproval({ p, cwd, compact, sessionId }: { p: PermissionRequest; cwd?: string; compact: boolean; sessionId?: string }) {
   const typing = useStore((s) => s.screen === 'session' && s.zone === 'composer');
   const details = useDetailsOpen();
   const x = explainPermission(p, cwd);

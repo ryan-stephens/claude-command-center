@@ -9,6 +9,20 @@ export const PROTOCOL = 2;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
+/** How much Claude may do without asking (Claude Code's Shift+Tab modes). */
+export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'dontAsk' | 'auto';
+/** The modes Shift+Tab cycles through, in order (bypassing permissions is never offered). */
+export const MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan'];
+
+/** One multiple-choice question Claude asks (the AskUserQuestion tool). */
+export interface Question {
+  question: string;
+  /** A short chip, e.g. "Auth method". */
+  header: string;
+  multiSelect: boolean;
+  options: { label: string; description: string }[];
+}
+
 export interface SessionSummary {
   id: string;
   title: string;
@@ -28,6 +42,9 @@ export interface SessionSummary {
   extraDirs?: string[];
   /** Repos it can use because a workspace holding its cwd lists them (also `additionalDirectories`). */
   workspaceDirs?: string[];
+  /** Live sessions: the permission mode and model its CLI reports. */
+  mode?: PermissionMode;
+  model?: string;
 }
 
 /** The parts of a tool call worth showing in plain language (a Bash call's own description, the file, an edit). */
@@ -158,6 +175,10 @@ export interface PermissionRequest {
   fields?: ToolFields;
   /** Whether an "Always allow" rule is on offer. */
   canAlways: boolean;
+  /** Claude is asking you something (AskUserQuestion): answer, don't allow. */
+  questions?: Question[];
+  /** Claude proposes this plan (ExitPlanMode, markdown) and wants to start on it. */
+  plan?: string;
   /** Epoch ms; the inbox and Alt+N serve the oldest first. */
   createdAt: number;
 }
@@ -231,7 +252,10 @@ export type ClientMsg =
   /** Send the running tool or subagent to the background, like Ctrl+B in the terminal. */
   | { type: 'session.background'; id: string }
   | { type: 'session.rename'; id: string; title: string }
-  | { type: 'permission.respond'; reqId: string; decision: PermissionDecision }
+  /** `answers` (question → chosen labels) answer a question card; `mode` switches mode as a plan is approved. */
+  | { type: 'permission.respond'; reqId: string; decision: PermissionDecision; answers?: Record<string, string>; mode?: PermissionMode }
+  /** Change how much Claude may do without asking (Shift+Tab). */
+  | { type: 'session.mode'; id: string; mode: PermissionMode }
   /** Ask for the board of a session (its cwd's repo pack, global groups, its slash commands). */
   | { type: 'board.get'; sessionId: string }
   /** `from`: the tile this edit moves away from; it is removed only after the save succeeds. */

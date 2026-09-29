@@ -16,6 +16,8 @@ export interface LegendInput {
   zone: SessionZone;
   /** The selected (home) or open (session) session is waiting on an approval. */
   pending: boolean;
+  /** What is waiting: a tool to allow (default), a question to answer, or a plan to approve. */
+  pendingKind?: 'tool' | 'question' | 'plan';
   /** Claude is working in the open session (Esc stops it). */
   busy: boolean;
   /** The message box has text in it (numpad and talk keys type instead). */
@@ -30,6 +32,31 @@ export interface LegendInput {
 }
 
 const k = (b: Bindings, id: ActionId) => displayCombo(bindingsFor(id, b)[0] ?? '');
+
+/** The keys that answer what is waiting, by kind. */
+function answerKeys(kind: LegendInput['pendingKind']): LegendItem[] {
+  if (kind === 'question') {
+    return [
+      { keys: ['1–4'], label: 'Pick', tone: 'attn' },
+      { keys: ['Enter'], label: 'Send answers', tone: 'attn' },
+      { keys: ['O'], label: 'Your own answer' },
+      { keys: ['N'], label: 'Skip' },
+    ];
+  }
+  if (kind === 'plan') {
+    return [
+      { keys: ['Y'], label: 'Start the plan', tone: 'attn' },
+      { keys: ['A'], label: 'Start, accepting edits', tone: 'attn' },
+      { keys: ['N'], label: 'Keep planning', tone: 'attn' },
+    ];
+  }
+  return [
+    { keys: ['Y'], label: 'Allow', tone: 'attn' },
+    { keys: ['A'], label: 'Always', tone: 'attn' },
+    { keys: ['N'], label: 'Don’t allow', tone: 'attn' },
+    { keys: ['D'], label: 'Details' },
+  ];
+}
 
 export function legendFor(x: LegendInput): LegendItem[] {
   const b = x.bindings;
@@ -57,10 +84,8 @@ export function legendFor(x: LegendInput): LegendItem[] {
       case 'preview':
         return x.pending
           ? [
-            { keys: ['Y'], label: 'Allow', tone: 'attn' },
-            { keys: ['A'], label: 'Always', tone: 'attn' },
-            { keys: ['N'], label: 'Don’t allow', tone: 'attn' },
-            { keys: ['Enter'], label: 'Open' },
+            ...(x.pendingKind === 'question' ? [{ keys: ['Enter'], label: 'Open to answer', tone: 'attn' as const }] : answerKeys(x.pendingKind).filter((i) => i.keys[0] !== 'D')),
+            ...(x.pendingKind === 'question' ? [] : [{ keys: ['Enter'], label: 'Open' }]),
             { keys: ['←'], label: 'Back' },
           ]
           : [{ keys: ['Enter'], label: 'Open' }, { keys: ['←'], label: 'Back' }, { keys: ['R'], label: 'Rename' }, { keys: ['X'], label: 'End session' }];
@@ -83,18 +108,14 @@ export function legendFor(x: LegendInput): LegendItem[] {
       { keys: ['Enter'], label: 'Send' },
       ...(x.busy ? [stop] : []),
       ...(x.pending ? [{ keys: ['Tab'], label: 'Answer Claude', tone: 'attn' as const }] : [{ keys: ['Tab'], label: 'Number pad' }]),
+      { keys: ['⇧Tab'], label: 'Mode' },
       ...(!x.drafting ? [{ keys: ['1–9'], label: 'Workflow (number pad)' }, { keys: [`Hold ${k(b, 'pushToTalk')}`], label: 'Talk' }] : []),
       { keys: [k(b, 'prevSession'), k(b, 'nextSession')], label: 'Other sessions' },
     ];
   }
   return [
     ...(x.pending
-      ? [
-        { keys: ['Y'], label: 'Allow', tone: 'attn' as const },
-        { keys: ['A'], label: 'Always', tone: 'attn' as const },
-        { keys: ['N'], label: 'Don’t allow', tone: 'attn' as const },
-        { keys: ['D'], label: 'Details' },
-      ]
+      ? answerKeys(x.pendingKind)
       : [{ keys: ['1–9'], label: 'Run a workflow' }, { keys: ['Enter'], label: 'Run focused key' }]),
     x.busy ? stop : { keys: ['Esc'], label: 'Home' },
     { keys: ['i'], label: 'Type a message' },

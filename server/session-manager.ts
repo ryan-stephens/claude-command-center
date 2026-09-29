@@ -1,6 +1,6 @@
 import { getSessionMessages, query, renameSession, type Query, type SDKMessage, type SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { statSync } from 'node:fs';
-import type { SessionActivity, SessionStatus, SessionSummary, TranscriptItem, Workspace } from '../shared/protocol.ts';
+import { MODES, type PermissionMode, type SessionActivity, type SessionStatus, type SessionSummary, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { applyEvent, backgroundRunning, idleActivity, setApproval, startTurn } from './activity.ts';
 import { ACTIVE_ELSEWHERE_MS, HistoryIndex } from './history-index.ts';
 import { InputQueue } from './input-queue.ts';
@@ -34,6 +34,9 @@ interface LiveSession {
   dirsStale?: boolean;
   /** Fresh after /clear: the next message names it. */
   untitled?: boolean;
+  /** As its CLI reports them (init, and status on a mode change). */
+  mode?: PermissionMode;
+  model?: string;
 }
 
 /** Where each session's extra repos persist (SQLite), so resumes get them back. */
@@ -77,6 +80,8 @@ export class SessionManager {
   private forkedTo = new Map<string, string>();
   private events: SessionEvents;
   private dirs: DirStore;
+  /** Modes chosen for sessions, applied when they (re)start; live ones also change at once. */
+  private modes = new Map<string, PermissionMode>();
   /** Every workspace; a session can use all repos of the workspaces holding its cwd. */
   private workspaces: Workspace[] = [];
 
@@ -102,6 +107,7 @@ export class SessionManager {
         activeElsewhere: !owned && h.lastModified > now - ACTIVE_ELSEWHERE_MS,
         extraDirs: this.extraDirsOf(h.sessionId),
         workspaceDirs: this.workspaceDirsOf(h.cwd ?? ''),
+        mode: this.modes.get(h.sessionId),
       });
     }
     for (const l of this.live.values()) out.set(l.id, this.liveSummary(l));
@@ -262,6 +268,18 @@ export class SessionManager {
     this.emitUpsert(l.id);
   }
 
+  /** Change how much Claude may do without asking. Only the Shift+Tab modes; never bypassing permissions. */
+  async setMode(id: string, mode: PermissionMode): Promise<void> {
+    if (!MODES.includes(mode)) throw new Error('That mode is not available here.');
+    const target = this.forkedTo.get(id) ?? id;
+    this.modes.set(target, mode);
+    const l = this.live.get(target);
+    if (!l) { this.events.sessionsChanged(); return; }
+    await l.q.setPermissionMode(mode);
+    l.mode = mode;
+    this.emitUpsert(target);
+  }
+
   async stopTask(id: string, taskId: string): Promise<void> {
     await this.live.get(id)?.q.stopTask(taskId);
   }
@@ -368,7 +386,7 @@ export class SessionManager {
         model: MODEL,
         env: SDK_ENV,
         includePartialMessages: true,
-        permissionMode: 'default',
+        permissionMode: this.modes.get(id) ?? 'default',
         additionalDirectories: dirs,
         canUseTool: (tool, toolInput, { signal, suggestions }) => this.broker.ask(self?.id ?? id, tool, toolInput, suggestions, signal),
         ...opts.options,
@@ -403,6 +421,16 @@ export class SessionManager {
   private handle(l: LiveSession, msg: SDKMessage): void {
     l.lastModified = Date.now();
     if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id && msg.session_id !== l.id) this.follow(l, msg.session_id);
+    if (msg.type === 'system' && msg.subtype === 'init') {
+      l.mode = msg.permissionMode;
+      l.model = msg.model;
+      this.emitUpsert(l.id);
+    }
+    if (msg.type === 'system' && msg.subtype === 'status' && msg.permissionMode && msg.permissionMode !== l.mode) {
+      l.mode = msg.permissionMode; // e.g. the CLI left plan mode itself
+      this.modes.set(l.id, msg.permissionMode);
+      this.emitUpsert(l.id);
+    }
     this.trackActivity(l, msg);
     if (msg.type === 'system' && msg.subtype === 'commands_changed') {
       this.setSlash(l, msg.commands);
@@ -451,6 +479,8 @@ export class SessionManager {
     l.id = newId;
     this.live.set(newId, l);
     this.dirs.setSessionDirs(newId, this.dirs.sessionDirs(old));
+    const mode = this.modes.get(old);
+    if (mode) this.modes.set(newId, mode);
     this.forkedTo.set(old, newId);
     this.recentlyOwned.set(old, Date.now()); // its fresh mtime is ours, not a terminal's
     this.broker.cancelSession(old);
@@ -511,6 +541,8 @@ export class SessionManager {
       background: backgroundRunning(l.activity) || undefined,
       extraDirs: this.extraDirsOf(l.id),
       workspaceDirs: this.workspaceDirsOf(l.cwd),
+      mode: l.mode,
+      model: l.model,
     };
   }
 
