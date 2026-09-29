@@ -39,6 +39,20 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
     ],
   },
   {
+    title: 'Folder picker',
+    keys: [
+      ['F (repo library)', 'Choose the folders the repo library lists'],
+      ['↑ ↓  PgUp PgDn', 'Choose a folder'],
+      ['→ / Enter', 'Open the highlighted folder'],
+      ['← / Backspace', 'Up one folder'],
+      ['Space / Ctrl+Enter', 'Use the folder you are in (Ctrl+Enter also works while typing)'],
+      ['Type a name / a path', 'Filter this folder / jump to that path (pasted "quotes" are fine)'],
+      ['Esc', 'Clear what you typed, then go back'],
+      ['Tab, then Delete (folders dialog)', 'Go to your folders and remove one'],
+      ['Ctrl+O (new session, add a repo)', 'Browse to any folder'],
+    ],
+  },
+  {
     title: 'Session',
     keys: [
       ['Enter / Shift+Enter', 'Send / new line (message box)'],
@@ -526,12 +540,21 @@ function globalAction(e: KeyboardEvent, typing: boolean): boolean {
   return true;
 }
 
+/** Dialogs that read keys from a focused field, not the window (those handle Esc themselves). */
+const INPUT_DIALOGS = new Set(['sources', 'repoPicker', 'workspace', 'new', 'rename', 'palette']);
+
 export function onKeyDown(e: KeyboardEvent): void {
   if (e.isComposing) return;
   // A dialog that handles a key may close itself before the event bubbles here; never let that
   // same keypress act on the screen underneath (Enter would fire a key, Esc would leave the session).
   if (e.target instanceof Element && e.target.closest('[role=dialog]')) return;
   const s = get();
+  if (s.modal && INPUT_DIALOGS.has(s.modal.kind) && e.key === 'Escape') {
+    // Focus fell out of a dialog whose keys live on its inputs (a focused row was removed, say): Esc must still close it.
+    set({ modal: null });
+    e.preventDefault();
+    return;
+  }
   if (s.modal) {
     // Dialogs own their keys; help closes on Esc or ?.
     if (s.modal.kind === 'help') {

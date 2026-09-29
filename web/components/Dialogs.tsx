@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { addPath, homeRepo, removePath, repoName, samePath, WORKSPACE_COLORS } from '../../shared/workspaces.ts';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { addPath, homeRepo, isInside, removePath, repoName, samePath, WORKSPACE_COLORS } from '../../shared/workspaces.ts';
 import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
 import { exportWorkspace } from '../commands.ts';
+import { looksLikePath } from '../folder-model.ts';
 import { keymap, openSession } from '../keys.ts';
 import { get, NO_BINDINGS, sessionById, set, setScope, useStore, type RepoTarget } from '../store.ts';
-import { createSession, send } from '../ws.ts';
+import { createSession, send, setSources } from '../ws.ts';
 import { BindingsDialog } from './BindingsDialog.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
+import { FolderPicker } from './FolderPicker.tsx';
 import { Palette } from './Palette.tsx';
 import { Welcome } from './Welcome.tsx';
 import { close, DialogKeys, DialogTitle, Overlay, useDialogKeys } from './Overlay.tsx';
@@ -86,7 +88,8 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
   const ws = useStore((s) => s.workspaces.find((w) => w.id === workspaceId) ?? null);
   const choices = useMemo(() => repoChoices(workspaceId), [workspaceId]);
   const start = repo ?? (ws ? homeRepo(ws) : undefined);
-  const [step, setStep] = useState<'where' | 'what'>(repo || (ws && ws.repos.length === 1) ? 'what' : 'where');
+  const [step, setStep] = useState<'where' | 'browse' | 'what'>(repo || (ws && ws.repos.length === 1) ? 'what' : 'where');
+  const [browseFrom, setBrowseFrom] = useState<string | undefined>();
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(() => Math.max(0, choices.findIndex((c) => start && samePath(c.path, start))));
   const [cwd, setCwd] = useState(start ?? choices[0]?.path ?? '');
@@ -98,12 +101,20 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
   const needle = query.trim().toLowerCase();
-  const matches = choices.filter((c) => !needle || c.path.toLowerCase().includes(needle)).slice(0, 9);
-  const typedPath = /^([a-zA-Z]:[\\/]|\/)/.test(query.trim()) ? query.trim() : '';
+  const typedPath = looksLikePath(query) ? query.trim() : '';
+  const matches = typedPath ? [] : choices.filter((c) => !needle || c.path.toLowerCase().includes(needle)).slice(0, 9);
+  /** The last row, after the matches: browse the disk. */
+  const anotherRow = matches.length;
 
   useEffect(() => {
-    (step === 'where' ? inputRef.current : promptRef.current)?.focus();
+    if (step === 'where') inputRef.current?.focus();
+    else if (step === 'what') promptRef.current?.focus();
   }, [step]);
+
+  function browse(from?: string) {
+    setBrowseFrom(from);
+    setStep('browse');
+  }
 
   function pick(path: string) {
     setCwd(path);
@@ -138,8 +149,9 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
             onChange={(e) => { setQuery(e.target.value); setIndex(0); }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') close();
-              else if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(matches.length - 1, index + 1)); }
+              else if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(anotherRow, index + 1)); }
               else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - 1)); }
+              else if (e.key.toLowerCase() === 'o' && e.ctrlKey) { e.preventDefault(); browse(typedPath || undefined); }
               else if (e.key === ' ' && !query.trim() && matches[index]) {
                 // Space (with an empty filter) adds the highlighted repo as extra context.
                 e.preventDefault();
@@ -150,11 +162,12 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
                 pick(matches[Number(e.key) - 1].path);
               } else if (e.key === 'Enter') {
                 e.preventDefault();
-                const p = typedPath || matches[index]?.path;
-                if (p) pick(p);
+                // A typed path opens the folder picker there, so you see it exists (and what's in it) first.
+                if (typedPath || index >= anotherRow) browse(typedPath || undefined);
+                else if (matches[index]) pick(matches[index].path);
               }
             }}
-            placeholder={choices.length ? 'Type to filter, or paste a full folder path' : 'Paste the full path of a folder'}
+            placeholder={choices.length ? 'Type to filter, or paste a full folder path' : 'Paste the full path of a folder, or press Enter to browse'}
             className="field"
           />
           <ul className="mt-2 space-y-0.5" role="listbox" aria-label="Repos">
@@ -178,10 +191,20 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
                 </li>
               );
             })}
-            {matches.length === 0 && !typedPath && <li className="px-2.5 py-2 text-sm text-sub">Nothing matches. Paste a full path, like C:\repos\my-app.</li>}
-            {typedPath && <li className="px-2.5 py-2 text-sm text-sub">Enter starts in <span className="font-mono">{typedPath}</span></li>}
+            {matches.length === 0 && !typedPath && choices.length > 0 && <li className="px-2.5 py-2 text-sm text-sub">No repo matches.</li>}
+            <AnotherFolderRow
+              active={index >= anotherRow}
+              label={typedPath ? <>Open <span className="font-mono">{typedPath}</span> in the folder picker</> : 'Another folder…'}
+              onHover={() => setIndex(anotherRow)}
+              onClick={() => browse(typedPath || undefined)}
+            />
           </ul>
-          <DialogKeys items={[['↑ ↓', 'choose'], ['1–9', 'pick'], ['Enter', 'next'], ['Space', 'also let Claude use it'], ['Esc', 'cancel']]} />
+          <DialogKeys items={[['↑ ↓', 'choose'], ['1–9', 'pick'], ['Enter', 'next'], ['Space', 'also let Claude use it'], ['Ctrl+O', 'another folder'], ['Esc', 'cancel']]} />
+        </>
+      ) : step === 'browse' ? (
+        <>
+          <div className="eyebrow mb-2">Pick the folder Claude should work in</div>
+          <FolderPicker start={browseFrom} useLabel="Start here" onUse={pick} onEscape={() => setStep('where')} />
         </>
       ) : (
         <>
@@ -280,6 +303,9 @@ function WorkspaceDialog({ id }: { id: string | null }) {
   const [index, setIndex] = useState(0);
   const [error, setError] = useState('');
   const [editSources, setEditSources] = useState(false);
+  const sourcesToggle = useRef<HTMLButtonElement>(null);
+  /** Close the embedded picker and keep the keyboard in the dialog (Esc again then closes it). */
+  const doneWithSources = () => { setEditSources(false); setTimeout(() => sourcesToggle.current?.focus(), 0); };
 
   // Every repo you could pick: the library, plus any already in the workspace that it doesn't list.
   const all = useMemo(() => {
@@ -344,11 +370,21 @@ function WorkspaceDialog({ id }: { id: string | null }) {
         <div className="mt-5">
           <div className="mb-1.5 flex items-center gap-2">
             <span className="eyebrow grow">Repos · {repos.length} picked</span>
-            <button className="text-sm text-faint underline hover:text-ink" onClick={() => setEditSources(!editSources)}>
+            <button ref={sourcesToggle} className="text-sm text-faint underline hover:text-ink" onClick={() => setEditSources(!editSources)}>
               {library.sources.length ? `From ${library.sources.map(repoName).join(', ')} · add a folder` : 'Pick the folder your repos are in'}
             </button>
           </div>
-          {(editSources || (library.sources.length === 0 && !repos.length)) && <div className="mb-3"><SourcePrompt autoFocus={editSources} onEscape={() => setEditSources(false)} /></div>}
+          {(editSources || (library.sources.length === 0 && !repos.length)) && (
+            <div className="mb-3 rounded-xl border border-line p-3">
+              <p className="mb-2 text-sm text-sub">Walk to the folder that holds your repos (for example D:\repos) and press <Key k="Space" size="sm" />. Every git repo inside it appears below.</p>
+              <FolderPicker
+                autoFocus={editSources}
+                listClass="max-h-[26vh]"
+                onEscape={() => (editSources ? doneWithSources() : close())}
+                onUse={async (p) => { await setSources(addPath(library.sources, p)); doneWithSources(); }}
+              />
+            </div>
+          )}
           {(library.sources.length > 0 || repos.length > 0) && (
             <>
               <input value={filter} onChange={(e) => { setFilter(e.target.value); setIndex(0); }} placeholder="Filter repos" className="field mb-2 py-1.5 text-sm" aria-label="Filter repos" />
@@ -436,6 +472,7 @@ function RepoPicker({ target }: { target: RepoTarget }) {
   const session = useStore((s) => (target.kind === 'session' ? s.sessions.find((x) => x.id === target.id) : undefined));
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
+  const [browseFrom, setBrowseFrom] = useState<string | null>(null);
   const has = (p: string) => (ws ? ws.repos.some((r) => samePath(r, p)) : session ? samePath(session.cwd, p) || Boolean(session.extraDirs?.some((d) => samePath(d, p))) : false);
   const all = useMemo(() => {
     let paths = library.repos.map((r) => r.path);
@@ -443,8 +480,9 @@ function RepoPicker({ target }: { target: RepoTarget }) {
     return paths;
   }, [library.repos, knownDirs]);
   const needle = query.trim().toLowerCase();
-  const matches = all.filter((p) => !needle || p.toLowerCase().includes(needle)).slice(0, 9);
-  const typedPath = /^([a-zA-Z]:[\\/]|\/)/.test(query.trim()) ? query.trim() : '';
+  const typedPath = looksLikePath(query) ? query.trim() : '';
+  const matches = typedPath ? [] : all.filter((p) => !needle || p.toLowerCase().includes(needle)).slice(0, 9);
+  const anotherRow = matches.length;
 
   function add(path: string) {
     if (has(path)) { close(); return; }
@@ -454,6 +492,14 @@ function RepoPicker({ target }: { target: RepoTarget }) {
   }
 
   const title = target.kind === 'workspace' ? `Add a repo to ${ws?.name ?? 'the workspace'}` : 'Let this session work in another repo';
+  if (browseFrom !== null) {
+    return (
+      <Overlay label={title}>
+        <DialogTitle>{title}</DialogTitle>
+        <FolderPicker start={browseFrom || undefined} useLabel="Add this folder" onUse={add} onEscape={() => setBrowseFrom(null)} />
+      </Overlay>
+    );
+  }
   return (
     <Overlay label={title}>
       <DialogTitle>{title}</DialogTitle>
@@ -466,10 +512,15 @@ function RepoPicker({ target }: { target: RepoTarget }) {
         onChange={(e) => { setQuery(e.target.value); setIndex(0); }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') close();
-          else if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(matches.length - 1, index + 1)); }
+          else if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(anotherRow, index + 1)); }
           else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - 1)); }
+          else if (e.key.toLowerCase() === 'o' && e.ctrlKey) { e.preventDefault(); setBrowseFrom(typedPath); }
           else if (/^[1-9]$/.test(e.key) && !query.trim() && matches[Number(e.key) - 1]) { e.preventDefault(); add(matches[Number(e.key) - 1]); }
-          else if (e.key === 'Enter') { e.preventDefault(); const p = typedPath || matches[index]; if (p) add(p); }
+          else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (typedPath || index >= anotherRow) setBrowseFrom(typedPath);
+            else if (matches[index]) add(matches[index]);
+          }
         }}
         placeholder="Type to filter, or paste a full folder path"
         className="field"
@@ -484,70 +535,94 @@ function RepoPicker({ target }: { target: RepoTarget }) {
             {has(p) && <span className="ml-auto shrink-0 text-xs text-faint">already in</span>}
           </li>
         ))}
-        {!matches.length && !typedPath && <li className="px-2.5 py-2 text-sm text-sub">{library.sources.length ? 'Nothing matches.' : 'Your repo library is empty. Paste a full path, or press Esc and choose your repo folder (F in the library).'}</li>}
-        {typedPath && <li className="px-2.5 py-2 text-sm text-sub">Enter adds <span className="font-mono">{typedPath}</span></li>}
+        {!matches.length && !typedPath && <li className="px-2.5 py-2 text-sm text-sub">{library.sources.length ? 'No repo matches.' : 'Your repo library is empty. Browse to the repo below, or press Esc and choose your repo folder (F in the library).'}</li>}
+        <AnotherFolderRow
+          active={index >= anotherRow}
+          label={typedPath ? <>Open <span className="font-mono">{typedPath}</span> in the folder picker</> : 'Another folder…'}
+          onHover={() => setIndex(anotherRow)}
+          onClick={() => setBrowseFrom(typedPath)}
+        />
       </ul>
-      <DialogKeys items={[['↑ ↓', 'choose'], ['1–9', 'pick'], ['Enter', 'add'], ['Esc', 'cancel']]} />
+      <DialogKeys items={[['↑ ↓', 'choose'], ['1–9', 'pick'], ['Enter', 'add'], ['Ctrl+O', 'another folder'], ['Esc', 'cancel']]} />
     </Overlay>
   );
 }
 
-/** The folders the repo library scans. */
+/** The last row of a repo list: walk the disk for any folder (Ctrl+O). */
+function AnotherFolderRow({ active, label, onHover, onClick }: { active: boolean; label: ReactNode; onHover: () => void; onClick: () => void }) {
+  return (
+    <li role="option" aria-selected={active} onMouseEnter={onHover} onClick={onClick} className={`flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-sub ${active ? 'is-focus bg-raise' : ''}`}>
+      <Key k="Ctrl+O" size="sm" />
+      <Icon name="folder" size={16} className="text-faint" />
+      <span className="min-w-0 truncate">{label}</span>
+    </li>
+  );
+}
+
+/** The folders the repo library scans: pick one with the folder picker, Tab to yours and Delete to drop one. */
 function SourcesDialog() {
   const library = useStore((s) => s.library);
+  const [added, setAdded] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState('');
+  const pickerInput = useRef<HTMLInputElement>(null);
+  const rows = useRef<(HTMLLIElement | null)[]>([]);
+  const count = (src: string) => library.repos.filter((r) => isInside(r.path, src)).length;
+
+  async function add(path: string) {
+    if (!library.sources.some((s) => samePath(s, path))) await setSources([...library.sources, path]);
+    setAdded(path);
+  }
+
+  function remove(i: number) {
+    const src = library.sources[i];
+    setRemoveError('');
+    setAdded(null);
+    // Move the keyboard to a neighbour now, before the focused row disappears and focus falls to the page.
+    (rows.current[i + 1] ?? rows.current[i - 1] ?? pickerInput.current)?.focus();
+    setSources(library.sources.filter((x) => !samePath(x, src))).catch((e: Error) => setRemoveError(e.message));
+  }
+
+  const rowKey = (e: ReactKeyboardEvent, i: number) => {
+    const go = (el: HTMLElement | null | undefined) => { e.preventDefault(); e.stopPropagation(); el?.focus(); };
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); remove(i); }
+    else if (e.key === 'ArrowDown') go(rows.current[Math.min(library.sources.length - 1, i + 1)]);
+    else if (e.key === 'ArrowUp') go(rows.current[Math.max(0, i - 1)]);
+    else if (e.key === 'Tab' || e.key === 'Escape') go(pickerInput.current);
+  };
+
   return (
-    <Overlay label="Repo folders">
+    <Overlay label="Repo folders" wide>
       <DialogTitle>Where are your repos?</DialogTitle>
       <p className="mb-4 text-sub">Pick the folder (or folders) that hold your projects. Every git repo directly inside shows up in the repo library, ready to drag into a workspace.</p>
       {library.sources.length > 0 && (
-        <ul className="mb-4 space-y-1.5">
-          {library.sources.map((src) => (
-            <li key={src} className="flex items-center gap-2 rounded-xl border border-line px-3 py-2">
-              <Icon name="folder" size={16} className="text-faint" />
-              <span className="grow truncate font-mono text-sm">{src}</span>
-              <button className="text-sm text-faint hover:text-bad" onClick={() => send({ type: 'library.setSources', sources: library.sources.filter((x) => x !== src) })}>Remove</button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <SourcePrompt autoFocus />
-      <DialogKeys items={[['Enter', 'add the folder'], ['1–3', 'use a suggestion'], ['Esc', 'done']]} />
-    </Overlay>
-  );
-}
-
-/** Type or pick a source folder; used by the sources dialog and inline in the workspace editor. */
-function SourcePrompt({ autoFocus = false, onEscape = close }: { autoFocus?: boolean; onEscape?: () => void }) {
-  const library = useStore((s) => s.library);
-  const [path, setPath] = useState('');
-  const addSource = (p: string) => {
-    if (!p.trim()) return;
-    send({ type: 'library.setSources', sources: [...library.sources, p.trim()] });
-    setPath('');
-  };
-  return (
-    <div className="space-y-2">
-      <input
-        autoFocus={autoFocus}
-        value={path}
-        onChange={(e) => setPath(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onEscape(); }
-          else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); addSource(path); }
-          else if (/^[1-3]$/.test(e.key) && !path && library.suggested[Number(e.key) - 1]) { e.preventDefault(); addSource(library.suggested[Number(e.key) - 1]); }
-        }}
-        placeholder="Full path of a folder, e.g. C:\repos"
-        aria-label="Repo folder"
-        className="field font-mono text-sm"
-      />
-      {library.suggested.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-faint">Suggested from your past sessions:</span>
-          {library.suggested.map((sug, i) => (
-            <button key={sug} className="btn min-h-8 py-0 pl-1.5 font-mono text-[13px]" onClick={() => addSource(sug)}><Key k={String(i + 1)} size="sm" />{sug}</button>
-          ))}
+        <div className="mb-4">
+          <div className="eyebrow mb-1.5 flex items-center gap-2">Your folders<span className="font-normal normal-case tracking-normal text-faint">· <Key k="Tab" size="sm" /> then <Key k="Delete" size="sm" /> removes one</span></div>
+          <ul className="space-y-1.5" aria-label="Your repo folders">
+            {library.sources.map((src, i) => (
+              <li
+                key={src}
+                ref={(el) => { rows.current[i] = el; }}
+                tabIndex={0}
+                onKeyDown={(e) => rowKey(e, i)}
+                className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 outline-none focus:border-transparent focus:ring-2 focus:ring-ring"
+              >
+                <Icon name="folder" size={16} className="text-faint" />
+                <span className="grow truncate font-mono text-sm">{src}</span>
+                <span className="shrink-0 text-xs text-faint">{count(src)} repo{count(src) === 1 ? '' : 's'}</span>
+                <button className="flex shrink-0 items-center gap-1.5 text-sm text-faint hover:text-bad" onClick={() => remove(i)}>Remove<Key k="Del" size="sm" /></button>
+              </li>
+            ))}
+          </ul>
+          {removeError && <p className="mt-2 text-sm text-bad" role="alert">{removeError}</p>}
         </div>
       )}
-    </div>
+      {added && (
+        <p className="mb-3 flex items-center gap-2 rounded-xl bg-ok-bg px-3 py-2 text-sm text-ok" role="status">
+          <Icon name="check" size={15} />
+          <span><span className="font-mono">{added}</span> is in your library: {count(added)} repo{count(added) === 1 ? '' : 's'}. Add another, or press <Key k="Esc" size="sm" /> when you’re done.</span>
+        </p>
+      )}
+      <FolderPicker onUse={add} onEscape={close} inputRef={pickerInput} onTab={library.sources.length ? () => rows.current[0]?.focus() : undefined} />
+    </Overlay>
   );
 }

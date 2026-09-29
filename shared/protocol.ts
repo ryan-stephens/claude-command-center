@@ -1,5 +1,12 @@
 // WebSocket protocol shared by server and web. Plain types only (erasable TS, runs under Node type stripping).
 
+/**
+ * Bump when the client starts relying on a message an older server doesn't handle. The server
+ * says `hello` first; a page that hears anything else first is talking to a server from before
+ * this existed, which drops newer messages without a word, so the page says to restart it.
+ */
+export const PROTOCOL = 2;
+
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
 export interface SessionSummary {
@@ -63,6 +70,32 @@ export interface RepoInfo {
   name: string;
   branch?: string;
   lastModified?: number;
+}
+
+/** One folder in the folder picker. */
+export interface FolderEntry {
+  name: string;
+  path: string;
+  /** It is a git repo itself. */
+  repo: boolean;
+  /** Git repos directly inside it: a good folder to give the repo library. */
+  repos: number;
+  /** Starting points only: "drive", "your home folder", "suggested"… */
+  note?: string;
+}
+
+/** A folder's subfolders, or (path null) the starting points: drives, home, likely repo folders. */
+export interface FolderListing {
+  path: string | null;
+  parent: string | null;
+  /** The breadcrumb, root first. */
+  crumbs: { name: string; path: string }[];
+  repo: boolean;
+  /** Repos directly inside this folder. */
+  repos: number;
+  entries: FolderEntry[];
+  /** More subfolders than were listed. */
+  truncated: boolean;
 }
 
 export type TranscriptItem =
@@ -207,13 +240,17 @@ export type ClientMsg =
   | { type: 'session.addDir'; id: string; path: string }
   | { type: 'session.removeDir'; id: string; path: string }
   /** The folders the repo library scans for git repos. */
-  | { type: 'library.setSources'; sources: string[] }
+  | { type: 'library.setSources'; sources: string[]; /** Answered with `ok` or an `error` carrying it. */ reqId?: string }
   | { type: 'library.scan' }
+  /** Subfolders of `path`, for the folder picker; no path lists the starting points. Read-only. */
+  | { type: 'fs.list'; reqId: string; path?: string }
   | { type: 'workspace.export'; reqId: string; id: string }
   /** An untrusted WorkspaceFile; its repos are matched by name against the library. */
   | { type: 'workspace.import'; file: unknown };
 
 export type ServerMsg =
+  /** Always the first message on a connection. */
+  | { type: 'hello'; protocol: number }
   | { type: 'sessions'; sessions: SessionSummary[]; repos: string[] }
   | { type: 'session.upsert'; session: SessionSummary }
   | { type: 'session.created'; reqId: string; id: string }
@@ -235,6 +272,9 @@ export type ServerMsg =
   /** `suggested`: likely source folders, from where past sessions ran, for the first-run setup. */
   | { type: 'library'; sources: string[]; repos: RepoInfo[]; suggested: string[] }
   | { type: 'workspace.file'; reqId: string; file: WorkspaceFile }
+  | { type: 'fs.list'; reqId: string; listing: FolderListing }
+  /** A request with a `reqId` and nothing else to return worked. */
+  | { type: 'ok'; reqId: string }
   /** Something worth a line in the status area, e.g. what an import could not match. */
   | { type: 'info'; message: string }
   | { type: 'error'; message: string; reqId?: string };

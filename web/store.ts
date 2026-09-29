@@ -51,6 +51,8 @@ interface State {
   /** Sessions that finished a turn while you weren't looking, with the time it happened. */
   unread: Record<string, number>;
   lastError: string | null;
+  /** The server predates this page ('server': restart it) or the page predates the server ('page': reload). */
+  outdated: 'server' | 'page' | null;
   /** Short-lived status line message, e.g. "Nothing needs you". */
   flash: string | null;
   sound: boolean;
@@ -103,6 +105,7 @@ export const useStore = create<State>(() => ({
   permissions: {},
   unread: {},
   lastError: null,
+  outdated: null,
   flash: null,
   sound: loadSound(),
   theme,

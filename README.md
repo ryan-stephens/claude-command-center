@@ -46,6 +46,8 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `N` / `W` | New session here / new workspace |
 | | `+` | Add a repo to this workspace |
 | | `Tab` | The repo library |
+| | `F` (in the library) | Pick the folders it lists: walk the disk with `↑ ↓ → ←`, `Space` uses the folder you're in |
+| Pickers | `Ctrl+O` | Browse to any folder (new session, add a repo) |
 | Session | `Numpad 1–9` / `Alt+1–9` | Run a workflow |
 | | `Y` / `A` / `N` | Allow once / always / don't allow (`Tab` first if you're in the message box) |
 | | Hold `` ` `` | Push-to-talk |

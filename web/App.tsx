@@ -96,6 +96,20 @@ function Header() {
   );
 }
 
+/** The page and the server are from different versions: say how to fix it, because nothing else will. */
+function OutdatedBanner() {
+  const outdated = useStore((s) => s.outdated);
+  if (!outdated) return null;
+  return (
+    <div className="flex items-center gap-2.5 border-b border-line bg-bad-bg px-4 py-2 text-sm text-bad" role="alert">
+      <Icon name="warn" size={16} />
+      {outdated === 'server'
+        ? <span><strong>The cc-control server is out of date.</strong> It started before the last update, so workspaces and the repo library can’t save. Restart it: stop it and run <code className="font-mono">pnpm start</code>.</span>
+        : <span><strong>This page is older than the cc-control server.</strong> Reload it (<Key k="F5" size="sm" />).</span>}
+    </div>
+  );
+}
+
 export function App() {
   const screen = useStore((s) => s.screen);
   const needYou = useStore((s) => attention(s).length);
@@ -122,6 +136,7 @@ export function App() {
   return (
     <div className="flex h-dvh flex-col bg-bg text-ink">
       <Header />
+      <OutdatedBanner />
       <main className="flex min-h-0 flex-1 flex-col">{screen === 'list' ? <Home /> : <SessionView />}</main>
       <Legend />
       <Dialogs />

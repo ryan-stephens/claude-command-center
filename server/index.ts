@@ -3,14 +3,14 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { IncomingMessage } from 'node:http';
 import { existsSync, statSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { ClientMsg, RepoInfo, ServerMsg, Settings, Workspace } from '../shared/protocol.ts';
+import { PROTOCOL, type ClientMsg, type RepoInfo, type ServerMsg, type Settings, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { CommandService } from './commands.ts';
 import { PermissionBroker } from './permission-broker.ts';
 import { COOKIE, cookieToken, findRemoteIp, remoteHostAllowed, remoteToken, remoteUpgradeAllowed, tokenMatches } from './remote.ts';
+import { listFolder, listRoots, normalizeFolder, notAFullPath } from './fs-browse.ts';
 import { cleanSources, scanSources } from './repo-library.ts';
 import { workspaceFromFile, workspaceToFile } from './workspace-file.ts';
 import { SessionManager } from './session-manager.ts';
@@ -20,7 +20,8 @@ import { Store } from './store.ts';
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.CC_CONTROL_PORT) || 7777;
 const DEV_PORT = 5173; // Vite dev server, proxies /ws here
-const WEB_DIST = fileURLToPath(new URL('../dist/web', import.meta.url));
+// CC_CONTROL_WEB_DIST: serve another build, so a test server never touches the one a running app serves.
+const WEB_DIST = process.env.CC_CONTROL_WEB_DIST || fileURLToPath(new URL('../dist/web', import.meta.url));
 
 const clients = new Set<WebSocket>();
 function broadcast(msg: ServerMsg): void {
@@ -79,11 +80,19 @@ function cleanWorkspace(raw: unknown): Workspace {
   const color = (WORKSPACE_COLORS as readonly string[]).includes(w.color ?? '') ? w.color! : 'blue';
   let repos: string[] = [];
   for (const r of Array.isArray(w.repos) ? w.repos : []) {
-    if (typeof r === 'string' && isAbsolute(r.trim())) repos = addPath(repos, r.trim());
+    const p = normalizeFolder(r);
+    if (p) repos = addPath(repos, p);
   }
   repos = repos.slice(0, 50);
   const home = typeof w.home === 'string' && repos.some((r) => samePath(r, w.home!)) ? w.home : undefined;
   return { id, name, color, repos, home };
+}
+
+/** A folder path from the client, made canonical (quotes, `~`, slashes, `D:`), or an error saying what is wrong. */
+function folderArg(raw: unknown): string {
+  const p = normalizeFolder(raw);
+  if (!p) throw new Error(notAFullPath(typeof raw === 'string' ? raw : ''));
+  return p;
 }
 
 function isDir(p: string): boolean {
@@ -138,7 +147,8 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
   }
   switch (msg.type) {
     case 'session.create': {
-      const id = await manager.create(msg.cwd, msg.prompt, Array.isArray(msg.extraDirs) ? msg.extraDirs.filter((d) => typeof d === 'string') : []);
+      const extra = Array.isArray(msg.extraDirs) ? msg.extraDirs.filter((d) => typeof d === 'string').map(folderArg) : [];
+      const id = await manager.create(folderArg(msg.cwd), msg.prompt, extra);
       send(ws, { type: 'session.created', reqId: msg.reqId, id });
       return;
     }
@@ -207,25 +217,39 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       store.deleteWorkspace(msg.id);
       workspacesChanged();
       return;
-    case 'workspace.addRepo':
-      if (typeof msg.path !== 'string' || !isAbsolute(msg.path)) throw new Error('Pick a folder by its full path.');
-      updateWorkspace(msg.id, (w) => ({ ...w, repos: addPath(w.repos, msg.path) }));
+    case 'workspace.addRepo': {
+      const path = folderArg(msg.path);
+      updateWorkspace(msg.id, (w) => ({ ...w, repos: addPath(w.repos, path) }));
       return;
+    }
     case 'workspace.removeRepo':
       updateWorkspace(msg.id, (w) => ({ ...w, repos: removePath(w.repos, msg.path) }));
       return;
     case 'session.addDir':
-      await manager.addDir(msg.id, msg.path);
+      await manager.addDir(msg.id, folderArg(msg.path));
       return;
     case 'session.removeDir':
       await manager.removeDir(msg.id, msg.path);
       return;
     case 'library.setSources': {
-      const sources = cleanSources(msg.sources);
-      const asked = Array.isArray(msg.sources) ? msg.sources.filter((x) => typeof x === 'string' && x.trim()).length : 0;
-      if (sources.length < asked) throw new Error('That folder does not exist (or is not a full path, like C:\\repos).');
+      const { sources, problem } = cleanSources(msg.sources, store.librarySources());
+      if (problem) throw new Error(problem);
       store.setLibrarySources(sources);
       broadcast(library(true));
+      if (msg.reqId) send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    }
+    case 'fs.list': {
+      if (msg.path) {
+        send(ws, { type: 'fs.list', reqId: msg.reqId, listing: await listFolder(String(msg.path)) });
+        return;
+      }
+      const lib = library() as Extract<ServerMsg, { type: 'library' }>;
+      const places = [
+        ...lib.sources.map((p) => ({ path: p, note: 'in your repo library' })),
+        ...lib.suggested.map((p) => ({ path: p, note: 'suggested: past sessions ran here' })),
+      ];
+      send(ws, { type: 'fs.list', reqId: msg.reqId, listing: await listRoots(places) });
       return;
     }
     case 'library.scan':
@@ -293,6 +317,7 @@ wss.on('connection', (ws) => {
       send(ws, { type: 'error', message: e.message, reqId: 'reqId' in msg ? msg.reqId : undefined });
     });
   });
+  send(ws, { type: 'hello', protocol: PROTOCOL });
   send(ws, snapshot());
   send(ws, { type: 'settings', settings: store.loadSettings() });
   send(ws, { type: 'workspaces', workspaces: store.loadWorkspaces() });

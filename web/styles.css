@@ -106,6 +106,7 @@ kbd:not(.kc) { font: 600 12px var(--font-mono); padding: 0 5px; border: 1px soli
 .btn-primary:hover { background: color-mix(in srgb, var(--c-acc) 88%, black); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--c-sub); }
 .btn-ghost:hover { background: var(--c-raise); color: var(--c-ink); }
+.btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
 
 .field { width: 100%; border: 1px solid var(--c-line); border-radius: 10px; background: var(--c-surface); color: var(--c-ink); padding: 0.55rem 0.75rem; outline: none; }
 .field:focus { border-color: var(--c-ring); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-ring) 20%, transparent); }

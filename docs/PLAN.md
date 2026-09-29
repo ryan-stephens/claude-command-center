@@ -54,6 +54,19 @@ Target: going from "a session needs me" to "handled" should take **3 keystrokes 
 | `R` | Rename session |
 | `X` | End session (with confirmation) |
 
+### Folder picker
+The folders dialog (`F` in the library), the workspace editor's "add a folder", and "Another folder…" (`Ctrl+O`) in the new-session and add-a-repo pickers all use it.
+
+| Key | Action |
+|---|---|
+| `↑ ↓` `PgUp PgDn` | Choose a folder |
+| `→` / `Enter` | Open the highlighted folder |
+| `←` / `Backspace` | Up one folder (from a drive root: the starting points) |
+| `Space` / `Ctrl+Enter` | Use the folder you are in (`Ctrl+Enter` also while typing) |
+| typing | A name filters this folder; a path (`D:\repos`, `"C:\x"`, `~/code`) jumps there |
+| `Esc` | Clear what you typed, then go back |
+| `Tab`, then `Delete` | Folders dialog: go to your folders and remove one |
+
 ### Session view
 Focus zones: **Composer** ↔ **Command board**. `Esc` steps outward: composer → board → list.
 
@@ -383,3 +396,26 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 - Home loads the preview's transcript on selection (after 200 ms); very long histories make that first read slow, as before.
 - Drag and drop needs a mouse; the keyboard path (`+`, `Enter` in the library) covers the same moves.
 
+
+## 18. Folder picker, and a server that says it is out of date
+
+2026-09-28. The owner opened the folders dialog, typed a path, pressed Enter, and the folder didn't persist.
+
+**Cause (confirmed):** the app on `:7777` was the pre-redesign server (process started 21:04, before the redesign commits) serving the new web build. On connect it sent only `sessions`, `settings` and `session.activity`, with no `workspaces` or `library`, so it dropped `library.setSources` without a word. A restart fixes it. The changes below make that case impossible to miss, then remove the need to type paths at all.
+
+**What changed**
+- **Protocol handshake** (`PROTOCOL` in `shared/protocol.ts`): the server's first message is `hello { protocol }`. A page that hears anything else first, or an older number, shows a red banner: *"The cc-control server is out of date… stop it and run `pnpm start`."* A newer number asks you to reload the page. Requests that need an answer (`fs.list`, `library.setSources`) fail at once against an outdated server, and after 10 s against a silent one, with that message inside the dialog.
+- **Requests with answers** (`web/ws.ts` `request()`): `fs.list` and `library.setSources` carry a `reqId`; the server replies `fs.list`, `ok`, or an `error` with the same `reqId`, and the dialog that asked shows it. Errors no longer only flash in the header.
+- **Paths people actually paste** (`normalizeFolder` in `server/fs-browse.ts`, tested): "Copy as path" quotes (straight or curly) dropped, `~` expanded, either slash, `..` resolved, trailing separators stripped except on a root, and `D:` means the root of D (Windows reads a bare `D:` as "the current folder on D"). `\foo` and `C:foo` are refused, since both are relative. Used for library sources, workspace repos, `session.create`/`addDir`, and the picker.
+- **Sources** (`cleanSources`, tested) name the bad path in the error ("There is no folder at D:\x."). Saved sources that are offline (an unplugged drive) are kept, so removing one source never fails because of another.
+- **`fs.list { reqId, path? }`** (`listFolder` / `listRoots`): the subfolders of `path`, each marked as a git repo or with the number of repos directly inside (up to 150 checked). No path returns the starting points: the drives, your home folder, the library's folders and the suggested ones. Read-only and names only. Hidden (`.x`), system (`$Recycle.Bin`, `System Volume Information`, `AppData`…) and `node_modules` folders are skipped, with up to 300 entries per folder. Measured: `D:\` 16 ms, `C:\Users\ryans` 5 ms. The server still binds to loopback only.
+- **Folder picker** (`web/components/FolderPicker.tsx`, pure parts in `web/folder-model.ts`, tested): a breadcrumb (`Start › D: › repos`, clickable) with "5 repos inside", a field, and the folder list. Keys are in the table in §3. A half-typed path shows its parent filtered to the rest (`D:\repos\we` shows `D:\repos` filtered to "we"). Rows highlight on mouse *move*, not enter, so a list redrawn under a resting pointer doesn't steal the keyboard's place.
+- **Used in all three places:** the folders dialog (with your folders listed, their repo counts, `Tab` then `Delete` to remove, and a confirmation like "D:\repos is in your library: 5 repos"); the workspace editor's embedded prompt; and "Another folder…" (`Ctrl+O`, or the last row) in the new-session and add-a-repo pickers. A path typed there now opens the picker at it instead of being used unchecked.
+- **Focus fixes found while testing:** deleting a focused folder row moves focus to its neighbour first (it used to fall to the page, and then `Esc` did nothing). Closing the embedded picker returns focus to its toggle. `Esc` with focus lost closes any input-driven dialog (`INPUT_DIALOGS` in `web/keys.ts`). Disabled buttons now look disabled.
+- `CC_CONTROL_WEB_DIST` makes the server serve another build, so a test server never rewrites the `dist/web` that a running app serves.
+
+**Verified** (headless Chromium, isolated server on `:7788` with its own database and a build in `dist/web-test`; screenshots only inside a demo workspace): pasted a quoted `"…\cc-demo"` into the workspace editor, which jumped there ("5 repos inside"); `Ctrl+Enter` added it and the library row showed the 5 repos. Then `F` → arrows to `D:` → `Enter` → arrows to `repos` ("5 repos inside") → `→` → `Space` → "D:\repos is in your library: 5 repos", and the library row updated. A missing path showed its error inside the dialog, and `D:` opened the drive root. **After a server restart both folders were still there.** `Tab` `↓` `Delete` removed `D:\repos` and the row went back to 5 demo repos. `Ctrl+O` worked in add-a-repo and in new session (picked `cdn-worker`), and `?` shows the new section. A stand-in for an old server (its `hello` dropped) showed the banner, and the folders dialog said why inside. No console errors. `pnpm typecheck`, `pnpm test` (75 tests) and `pnpm build` pass.
+
+**Known gaps**
+- The picker lists only folders, one level at a time, with no search across the disk; paste a path to jump.
+- Repo counts look one level down, the same depth the library scans, so a folder of folders of repos shows 0.

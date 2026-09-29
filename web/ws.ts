@@ -1,4 +1,4 @@
-import type { ClientMsg, CommandPack, ServerMsg, WorkspaceFile } from '../shared/protocol.ts';
+import { PROTOCOL, type ClientMsg, type CommandPack, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import { onStatusChange } from './attention.ts';
 import { flash, get, groupKeyOf, set, setScope } from './store.ts';
 
@@ -9,6 +9,12 @@ export let lastPermissionAt = 0;
 const pendingCreates = new Map<string, { resolve: (id: string) => void; reject: (e: Error) => void }>();
 const pendingExports = new Map<string, (pack: CommandPack) => void>();
 const pendingWorkspaceFiles = new Map<string, (file: WorkspaceFile) => void>();
+/** Requests a dialog waits on: the reply with the same reqId resolves it, an error with it rejects it. */
+const pendingRequests = new Map<string, { resolve: (msg: ServerMsg) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+/** The server said hello on this connection (servers from before the handshake never do). */
+let greeted = false;
+
+const OUTDATED = 'The cc-control server is older than this page, so it ignores this. Restart it: stop it and run pnpm start.';
 
 export function connect(): void {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -16,7 +22,8 @@ export function connect(): void {
   socket.onopen = () => {
     retryMs = 1000;
     // The server re-sends every pending approval on connect; anything we still hold is stale.
-    set({ connected: true, lastError: null, permissions: {}, partials: {}, activity: {} });
+    greeted = false;
+    set({ connected: true, lastError: null, permissions: {}, partials: {}, activity: {}, outdated: null });
     const { openId } = get();
     if (openId) {
       send({ type: 'session.open', id: openId });
@@ -30,6 +37,8 @@ export function connect(): void {
     pendingCreates.clear();
     pendingExports.clear();
     pendingWorkspaceFiles.clear();
+    for (const p of pendingRequests.values()) { clearTimeout(p.timer); p.reject(new Error('Lost the connection to the cc-control server. Try again.')); }
+    pendingRequests.clear();
     setTimeout(connect, retryMs);
     retryMs = Math.min(retryMs * 2, 10_000); // back off while the server is down
 
@@ -57,6 +66,38 @@ export function createSession(cwd: string, prompt?: string, extraDirs?: string[]
   });
 }
 
+/**
+ * Send a message and wait for its answer. A server that never answers (one from before the message
+ * existed drops it silently) fails the request after a while instead of leaving the dialog hanging.
+ */
+function request(build: (reqId: string) => ClientMsg, timeoutMs = 10_000): Promise<ServerMsg> {
+  if (get().outdated === 'server') return Promise.reject(new Error(OUTDATED));
+  const reqId = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingRequests.delete(reqId);
+      reject(new Error('The cc-control server did not answer. If it has been running since before an update, restart it with pnpm start.'));
+    }, timeoutMs);
+    pendingRequests.set(reqId, { resolve, reject, timer });
+    if (!send(build(reqId))) {
+      clearTimeout(timer);
+      pendingRequests.delete(reqId);
+      reject(new Error('Not connected to the cc-control server. Try again in a moment.'));
+    }
+  });
+}
+
+/** Subfolders of a folder for the folder picker; no path lists the starting points. */
+export async function listFolder(path?: string): Promise<FolderListing> {
+  const reply = await request((reqId) => ({ type: 'fs.list', reqId, path }));
+  return (reply as Extract<ServerMsg, { type: 'fs.list' }>).listing;
+}
+
+/** Replace the repo library's folders; rejects with the server's reason (a missing folder, say). */
+export async function setSources(sources: string[]): Promise<void> {
+  await request((reqId) => ({ type: 'library.setSources', reqId, sources }));
+}
+
 export function requestExport(): Promise<CommandPack> {
   const reqId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
@@ -80,6 +121,22 @@ export function requestWorkspaceFile(id: string): Promise<WorkspaceFile> {
 }
 
 function receive(msg: ServerMsg): void {
+  if (msg.type === 'hello') {
+    greeted = true;
+    set({ outdated: msg.protocol < PROTOCOL ? 'server' : msg.protocol > PROTOCOL ? 'page' : null });
+    return;
+  }
+  // A server from before the handshake starts with its session list and drops newer messages.
+  if (!greeted && !get().outdated) set({ outdated: 'server' });
+  const reqId = 'reqId' in msg ? msg.reqId : undefined;
+  const waiting = reqId ? pendingRequests.get(reqId) : undefined;
+  if (waiting) {
+    clearTimeout(waiting.timer);
+    pendingRequests.delete(reqId!);
+    if (msg.type === 'error') waiting.reject(new Error(msg.message));
+    else waiting.resolve(msg);
+    return; // the dialog that asked shows the answer (and any error) itself
+  }
   switch (msg.type) {
     case 'sessions': {
       const { selectedId } = get();
@@ -175,6 +232,9 @@ function receive(msg: ServerMsg): void {
     case 'info':
       flash(msg.message);
       return;
+    case 'ok':
+    case 'fs.list':
+      return; // answers to requests nobody is waiting for any more
     case 'pack':
       pendingExports.get(msg.reqId)?.(msg.pack);
       pendingExports.delete(msg.reqId);

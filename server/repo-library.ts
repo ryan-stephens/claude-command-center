@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
+import { normalizeFolder, notAFullPath } from './fs-browse.ts';
 import type { RepoInfo } from '../shared/protocol.ts';
 import { normPath } from '../shared/workspaces.ts';
 
@@ -7,6 +8,7 @@ import { normPath } from '../shared/workspaces.ts';
 // (e.g. D:\repos). One level deep, no watching and no reading of the code itself.
 
 const MAX_REPOS = 400;
+const MAX_SOURCES = 10;
 const SKIP = new Set(['node_modules', '$RECYCLE.BIN', 'System Volume Information']);
 
 /** Where a repo's git metadata lives: `.git` is a folder, or a file pointing elsewhere (worktrees, submodules). */
@@ -63,15 +65,25 @@ export function scanSources(sources: string[]): RepoInfo[] {
   return [...found.values()].sort((a, b) => (b.lastModified ?? 0) - (a.lastModified ?? 0));
 }
 
-/** Source folders must be real, absolute directories. */
-export function cleanSources(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
+/**
+ * Source folders as typed or picked, made canonical (see normalizeFolder) and deduplicated.
+ * New ones must be real folders; ones already saved may be offline (an unplugged drive) and stay,
+ * so removing one source never fails because of another. `problem` says what was wrong, and with which path.
+ */
+export function cleanSources(raw: unknown, saved: string[] = [], platform: string = process.platform): { sources: string[]; problem?: string } {
   const out: string[] = [];
-  for (const s of raw) {
-    if (typeof s !== 'string' || !isAbsolute(s.trim())) continue;
-    const p = s.trim().replace(/[\\/]+$/, '') || s.trim();
-    try { if (!statSync(p).isDirectory()) continue; } catch { continue; }
+  let problem: string | undefined;
+  for (const s of Array.isArray(raw) ? raw : []) {
+    if (typeof s !== 'string' || !s.trim()) continue;
+    const p = normalizeFolder(s, platform);
+    if (!p) { problem ??= notAFullPath(s, platform); continue; }
+    if (!saved.some((x) => normPath(x) === normPath(p))) {
+      let dir = false;
+      try { dir = statSync(p).isDirectory(); } catch { /* missing */ }
+      if (!dir) { problem ??= `There is no folder at ${p}.`; continue; }
+    }
     if (!out.some((o) => normPath(o) === normPath(p))) out.push(p);
   }
-  return out.slice(0, 10);
+  if (out.length > MAX_SOURCES) problem ??= `The library can scan up to ${MAX_SOURCES} folders.`;
+  return { sources: out.slice(0, MAX_SOURCES), ...(problem ? { problem } : {}) };
 }

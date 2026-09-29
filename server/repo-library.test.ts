@@ -36,11 +36,16 @@ test('scanSources finds git repos one level down, including worktrees, and skips
   }
 });
 
-test('cleanSources keeps real absolute folders once', () => {
+test('cleanSources makes paths canonical, keeps real folders once and says what was wrong', () => {
   const root = mkdtempSync(join(tmpdir(), 'cc-src-'));
   try {
-    assert.deepEqual(cleanSources([root, `${root}/`, 'relative/path', join(root, 'missing'), 42]), [root]);
-    assert.deepEqual(cleanSources('nope'), []);
+    assert.deepEqual(cleanSources([root, `${root}/`, `"${root}"`]), { sources: [root] });
+    assert.match(cleanSources([root, 'relative/path']).problem ?? '', /not a full folder path/);
+    assert.match(cleanSources([join(root, 'missing')]).problem ?? '', /There is no folder at/);
+    assert.deepEqual(cleanSources('nope'), { sources: [] });
+    // A saved source that is offline (an unplugged drive) stays, so removing another still works.
+    const offline = join(root, 'unplugged');
+    assert.deepEqual(cleanSources([offline, root], [offline]), { sources: [offline, root] });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
