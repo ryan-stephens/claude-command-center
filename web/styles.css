@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+:root { color-scheme: dark; }
+body { margin: 0; background: #0c0e11; color: #d4d4d8; font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; }
+
+kbd {
+  display: inline-block; min-width: 1.25em; padding: 0 0.35em; border: 1px solid #3f3f46; border-bottom-width: 2px;
+  border-radius: 4px; background: #18181b; color: #d4d4d8; font: 11px/1.5 ui-monospace, monospace; text-align: center;
+}
+.badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 12px; white-space: nowrap; }
+.spinner { width: 10px; height: 10px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.6rem; border: 1px solid #52525b; border-radius: 4px; background: #18181b; }
+.btn:hover { background: #27272a; }
+
+/* Minimal markdown styling for assistant output. */
+.md p, .md ul, .md ol, .md pre, .md table, .md blockquote { margin: 0 0 0.6rem; }
+.md ul { list-style: disc; padding-left: 1.4rem; }
+.md ol { list-style: decimal; padding-left: 1.4rem; }
+.md h1, .md h2, .md h3 { margin: 0.8rem 0 0.4rem; font-weight: 600; color: #f4f4f5; }
+.md h1 { font-size: 1.2rem; } .md h2 { font-size: 1.1rem; } .md h3 { font-size: 1rem; }
+.md code { font: 12.5px ui-monospace, monospace; background: #18181b; padding: 0.1rem 0.3rem; border-radius: 3px; }
+.md pre { background: #18181b; padding: 0.6rem; border-radius: 4px; overflow-x: auto; }
+.md pre code { padding: 0; background: none; }
+.md a { color: #7dd3fc; text-decoration: underline; }
+.md table { border-collapse: collapse; }
+.md th, .md td { border: 1px solid #3f3f46; padding: 0.2rem 0.5rem; }
+.md blockquote { border-left: 2px solid #52525b; padding-left: 0.8rem; color: #a1a1aa; }

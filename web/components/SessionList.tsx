@@ -1,0 +1,84 @@
+import { useEffect, useRef } from 'react';
+import { openSession } from '../keys.ts';
+import { set, useStore, visibleSessions } from '../store.ts';
+import { relativeTime, shortPath, StatusBadge } from './StatusBadge.tsx';
+
+export function SessionList() {
+  const sessions = useStore((s) => s.sessions);
+  const tab = useStore((s) => s.tab);
+  const filter = useStore((s) => s.filter);
+  const filterFocused = useStore((s) => s.filterFocused);
+  const selectedId = useStore((s) => s.selectedId);
+  const list = visibleSessions({ sessions, tab, filter });
+  const liveCount = sessions.filter((s) => s.live).length;
+  const filterRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (filterFocused) filterRef.current?.focus();
+    else filterRef.current?.blur();
+  }, [filterFocused]);
+
+  // Keep a valid selection when the tab or filter hides the selected row.
+  useEffect(() => {
+    if (list.length && !list.some((s) => s.id === selectedId)) set({ selectedId: list[0].id });
+  }, [list, selectedId]);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
+        <div className="flex gap-1" role="tablist">
+          {(['live', 'history'] as const).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => set({ tab: t })}
+              className={`rounded px-3 py-1 text-sm ${tab === t ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
+            >
+              {t === 'live' ? `Live ${liveCount}` : `History ${sessions.length}`}
+            </button>
+          ))}
+          <span className="self-center pl-1 text-xs text-zinc-600"><kbd>Tab</kbd></span>
+        </div>
+        <input
+          ref={filterRef}
+          value={filter}
+          onChange={(e) => set({ filter: e.target.value })}
+          onFocus={() => set({ filterFocused: true })}
+          onBlur={() => set({ filterFocused: false })}
+          placeholder="Filter  ( / )"
+          className="ml-auto w-72 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm outline-none focus:border-sky-600"
+        />
+      </div>
+
+      <ul className="min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label="Sessions">
+        {list.length === 0 && (
+          <li className="p-8 text-center text-zinc-500">
+            {tab === 'live' ? <>No live sessions. Press <kbd>N</kbd> to start one, or <kbd>Tab</kbd> for history.</> : 'No sessions match.'}
+          </li>
+        )}
+        {list.map((s) => (
+          <li
+            key={s.id}
+            id={`row-${s.id}`}
+            role="option"
+            aria-selected={s.id === selectedId}
+            onClick={() => set({ selectedId: s.id })}
+            onDoubleClick={() => openSession(s.id)}
+            className={`grid cursor-default grid-cols-[7.5rem_1fr_14rem_3rem] items-center gap-3 border-l-2 px-4 py-2 text-sm ${
+              s.id === selectedId ? 'border-sky-500 bg-zinc-800/70' : 'border-transparent hover:bg-zinc-900'
+            } ${s.status === 'requires_action' ? 'bg-amber-950/40' : ''}`}
+          >
+            <StatusBadge s={s} />
+            <span className="truncate text-zinc-100" title={s.title}>{s.title}</span>
+            <span className="truncate text-zinc-500" title={s.cwd}>
+              {shortPath(s.cwd)}{s.branch && <span className="text-zinc-600"> · {s.branch}</span>}
+              {s.ctxPct !== undefined && <span className="text-zinc-600"> · {Math.round(s.ctxPct)}%</span>}
+            </span>
+            <span className="text-right text-zinc-600">{relativeTime(s.lastModified)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
