@@ -1,6 +1,7 @@
 import { getSessionMessages, query, renameSession, type Query, type SDKMessage, type SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { statSync } from 'node:fs';
-import type { SessionStatus, SessionSummary, TranscriptItem } from '../shared/protocol.ts';
+import type { SessionActivity, SessionStatus, SessionSummary, TranscriptItem } from '../shared/protocol.ts';
+import { applyEvent, backgroundRunning, idleActivity, setApproval, startTurn } from './activity.ts';
 import { ACTIVE_ELSEWHERE_MS, HistoryIndex } from './history-index.ts';
 import { InputQueue } from './input-queue.ts';
 import { PermissionBroker } from './permission-broker.ts';
@@ -22,7 +23,12 @@ interface LiveSession {
   ctxPct?: number;
   lastModified: number;
   slash?: SlashCommand[];
+  activity: SessionActivity;
+  activityTimer?: NodeJS.Timeout;
 }
+
+/** Activity changes on every stream event; clients get at most one update per this many ms. */
+const ACTIVITY_THROTTLE_MS = 150;
 
 export interface SessionEvents {
   sessionsChanged(): void;
@@ -32,6 +38,8 @@ export interface SessionEvents {
   forked(oldId: string, newId: string): void;
   /** A session's slash commands arrived or changed (feeds the auto command groups). */
   commandsChanged(): void;
+  /** What a live session is doing right now (throttled). */
+  activity(id: string, activity: SessionActivity): void;
 }
 
 export class SessionManager {
@@ -111,6 +119,7 @@ export class SessionManager {
     this.events.items(l.id, [userItem]);
     l.input.push(text);
     this.setStatus(l, 'running');
+    this.setActivity(l, startTurn(l.activity, Date.now()));
     return l.id;
   }
 
@@ -136,6 +145,16 @@ export class SessionManager {
       this.events.items(newId, [notice]);
     }
     return l;
+  }
+
+  async stopTask(id: string, taskId: string): Promise<void> {
+    await this.live.get(id)?.q.stopTask(taskId);
+  }
+
+  /** Returns false when there was nothing in the foreground to move. */
+  async backgroundTasks(id: string): Promise<boolean> {
+    const l = this.live.get(id);
+    return l ? l.q.backgroundTasks() : false;
   }
 
   async interrupt(id: string): Promise<void> {
@@ -184,8 +203,10 @@ export class SessionManager {
   onPermissionChange(sessionId: string): void {
     const l = this.live.get(sessionId);
     if (!l) return;
-    if (this.broker.hasPending(sessionId)) this.setStatus(l, 'requires_action');
+    const waiting = this.broker.hasPending(sessionId);
+    if (waiting) this.setStatus(l, 'requires_action');
     else if (l.status === 'requires_action') this.setStatus(l, 'running');
+    this.setActivity(l, setApproval(l.activity, waiting, Date.now()));
   }
 
   stopAll(): void {
@@ -209,7 +230,7 @@ export class SessionManager {
     });
     const l: LiveSession = {
       id, cwd: opts.cwd, title: opts.title, input, q,
-      status: 'idle', items: opts.items ?? [], partial: '', lastModified: Date.now(),
+      status: 'idle', items: opts.items ?? [], partial: '', lastModified: Date.now(), activity: idleActivity(Date.now()),
     };
     this.live.set(id, l);
     this.pump(l);
@@ -230,6 +251,7 @@ export class SessionManager {
 
   private handle(l: LiveSession, msg: SDKMessage): void {
     l.lastModified = Date.now();
+    this.trackActivity(l, msg);
     if (msg.type === 'system' && msg.subtype === 'commands_changed') {
       this.setSlash(l, msg.commands);
       return;
@@ -281,6 +303,8 @@ export class SessionManager {
 
   private retire(l: LiveSession): void {
     this.live.delete(l.id);
+    clearTimeout(l.activityTimer);
+    this.events.activity(l.id, idleActivity(Date.now()));
     // A CLI that died mid-approval leaves cards nobody can answer; clear them.
     this.broker.cancelSession(l.id);
     this.recentlyOwned.set(l.id, Date.now());
@@ -303,7 +327,49 @@ export class SessionManager {
       live: true,
       status: l.status,
       ctxPct: l.ctxPct,
+      background: backgroundRunning(l.activity) || undefined,
     };
+  }
+
+  /** Current activity of every live session, for clients that just connected. */
+  activities(): [string, SessionActivity][] {
+    return [...this.live.values()].map((l) => [l.id, l.activity]);
+  }
+
+  private trackActivity(l: LiveSession, msg: SDKMessage): void {
+    const before = l.activity;
+    const after = applyEvent(before, msg as never, Date.now());
+    if (after === before) return;
+    // Background work starting and finishing is worth a line in the transcript too.
+    const notices: TranscriptItem[] = [];
+    for (const t of after.tasks) {
+      const prev = before.tasks.find((x) => x.id === t.id);
+      if (t.background && (!prev || !prev.background)) {
+        notices.push({ kind: 'notice', uuid: crypto.randomUUID(), text: `⧉ Started in the background: ${t.description}` });
+      }
+    }
+    // The final word on how a task ended is its task_notification (a background-list update can
+    // arrive first and would read "completed" for a task that was actually stopped).
+    if (msg.type === 'system' && msg.subtype === 'task_notification') {
+      const t = after.tasks.find((x) => x.id === msg.task_id);
+      if (t?.background) notices.push({ kind: 'notice', uuid: crypto.randomUUID(), text: `⧉ Background ${msg.status}: ${msg.summary || t.description}` });
+    }
+    if (notices.length) {
+      l.items.push(...notices);
+      this.events.items(l.id, notices);
+    }
+    this.setActivity(l, after);
+  }
+
+  private setActivity(l: LiveSession, activity: SessionActivity): void {
+    const bgBefore = backgroundRunning(l.activity);
+    l.activity = activity;
+    if (backgroundRunning(activity) !== bgBefore) this.emitUpsert(l.id); // list badge
+    if (l.activityTimer) return;
+    l.activityTimer = setTimeout(() => {
+      l.activityTimer = undefined;
+      this.events.activity(l.id, l.activity);
+    }, ACTIVITY_THROTTLE_MS);
   }
 }
 

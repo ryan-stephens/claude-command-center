@@ -45,6 +45,7 @@ const manager: SessionManager = new SessionManager({
   partial: (id, text) => broadcast({ type: 'session.partial', id, text }),
   forked: (oldId, newId) => broadcast({ type: 'session.forked', oldId, newId }),
   commandsChanged: () => broadcast({ type: 'commands.changed' }),
+  activity: (id, activity) => broadcast({ type: 'session.activity', id, activity }),
 }, broker);
 const store = new Store();
 const commands = new CommandService(store);
@@ -91,6 +92,12 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     case 'session.stop':
       manager.stop(msg.id);
+      return;
+    case 'task.stop':
+      await manager.stopTask(msg.id, msg.taskId);
+      return;
+    case 'session.background':
+      if (!(await manager.backgroundTasks(msg.id))) send(ws, { type: 'error', message: 'Nothing is running in the foreground to background.' });
       return;
     case 'session.rename':
       await manager.rename(msg.id, msg.title);
@@ -170,6 +177,7 @@ wss.on('connection', (ws) => {
   send(ws, snapshot());
   send(ws, { type: 'settings', settings: store.loadSettings() });
   for (const request of broker.list()) send(ws, { type: 'permission.request', request });
+  for (const [id, activity] of manager.activities()) send(ws, { type: 'session.activity', id, activity });
 });
 
 await manager.history.start();

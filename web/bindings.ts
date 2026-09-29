@@ -3,7 +3,7 @@
 
 export type ActionId =
   | 'palette' | 'help' | 'nextAttention' | 'prevSession' | 'nextSession'
-  | 'newSession' | 'interrupt' | 'sound' | 'pushToTalk';
+  | 'newSession' | 'interrupt' | 'background' | 'sound' | 'pushToTalk';
 
 export interface ActionDef {
   id: ActionId;
@@ -20,7 +20,8 @@ export const ACTIONS: ActionDef[] = [
   { id: 'prevSession', label: 'Previous session', defaults: ['Alt+ArrowUp'], inText: true },
   { id: 'nextSession', label: 'Next session', defaults: ['Alt+ArrowDown'], inText: true },
   { id: 'newSession', label: 'New session', defaults: ['Alt+Shift+N'], inText: true },
-  { id: 'interrupt', label: 'Interrupt the open session', defaults: ['Ctrl+.'], inText: true },
+  { id: 'interrupt', label: 'Interrupt the open session (Esc also works while it is busy)', defaults: ['Ctrl+.'], inText: true },
+  { id: 'background', label: 'Send the running tool or subagent to the background', defaults: ['Ctrl+B'], inText: true },
   { id: 'sound', label: 'Sound on / off', defaults: ['M'], inText: false },
   // Voice follows the numpad rule instead (only while not mid-message), so a plain key is fine.
   { id: 'pushToTalk', label: 'Push-to-talk (hold)', defaults: ['`', 'NumpadDecimal'], inText: false },

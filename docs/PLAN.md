@@ -64,7 +64,10 @@ Focus zones: **Composer** ↔ **Command board**. `Esc` steps outward: composer �
 | `Shift+E` / `Shift+I` (on the board) | Export / import global commands as JSON |
 | `PgUp` `PgDn` `Home` `End` | Scroll the transcript |
 | `Enter` / `Shift+Enter` (in the composer) | Send / newline |
-| `Ctrl+.` | Interrupt the running turn |
+| `Esc` (while Claude is working) | **Stop the turn**, like Esc in Claude Code (also dismisses a pending approval). When idle, `Esc` steps out as before. `Numpad 0` always steps out. |
+| `Ctrl+.` | Interrupt the running turn (same as Esc while busy, works anywhere) |
+| `Ctrl+B` | Send the running tool or subagent to the background (like Ctrl+B in the terminal) |
+| `Tab` (in the composer) | Go to the board / approval card without interrupting |
 | **Hold `` ` `` (backtick)** or **Hold `Numpad .`** | **Push-to-talk** voice input. Release to send. Like the numpad, this works only while you aren't mid-message, so backticks still type. `Esc` while holding cancels. |
 | `Y` / `A` / `N` | Pending approval: **Y**es once / **A**lways / **N**o. Works when the approval card is focused, which happens automatically. |
 
@@ -300,3 +303,29 @@ The review found no issue in the security boundary (loopback Host/Origin guard, 
 - **Server safety net**: unhandled promise rejections are logged instead of killing every live session.
 - **CI** (`.github/workflows/ci.yml`): typecheck, tests and build on every push and PR (`packageManager` pinned to pnpm 11.1.1).
 - **README** rewritten for a first-time reader, with screenshots in `docs/screenshots/`. They were taken with throwaway demo repos (`%TEMP%\cc-demo`) and a separate demo database, so no real session titles appear. Tailscale access is kept, but moved to a collapsed "Advanced" note.
+
+## 16. Live activity and stopping
+
+Added 2026-09-28 at the owner's request: *"sessions need to be able to see the same thing Claude Code is showing them"* and *"we need a way to stop a session, like Esc in Claude Code"*.
+
+**Event shapes, confirmed with a probe turn** (thinking, a background shell and a subagent; Sonnet 5.5):
+- **Model calls:** `system/status {status:'requesting'|'compacting'|null}` marks each one.
+- **Phase changes:** `stream_event` `content_block_start` with `thinking` / `text` / `tool_use` (with its name).
+- **Tool input:** arrives with the `assistant` message.
+- **Subagents and shells:** `system/task_started {task_id, task_type: local_agent|local_bash|local_workflow, is_backgrounded, description}`, then `task_updated {patch:{status,end_time}}` and finally `task_notification {status:'completed'|'failed'|'stopped', summary}`.
+- **Background list:** `system/background_tasks_changed {tasks:[…]}` is the authoritative list of background work, and it outlives the turn.
+- **Not seen in that turn:** `thinking_tokens` and `tool_progress`. They are handled when present, but nothing depends on them.
+- **The CLI refuses long foreground `sleep` commands** (it suggests `run_in_background`). Tests use `node -e setTimeout(...)` instead.
+
+**Design**
+- `server/activity.ts` is a pure reducer (event → state, unit-tested). It tracks the phase (working / thinking / writing / tool / compacting / retrying / approval), the current tool and its input, thinking tokens, API retries, and tasks. Finished tasks stay listed for 2 minutes, at most 5. Updates reach clients at most every 150 ms (`session.activity`). `SessionSummary.background` counts running background tasks.
+- **Session view:** an activity bar above the composer. It shows the spinner line with ticking phase and turn timers (e.g. `Bash · npm test 12s · turn 40s`), **■ Stop (Esc)**, **⇲ Background (Ctrl+B)** during a tool, and a list of subagents and shells, each with **✕** to stop it (`Query.stopTask`).
+- **The transcript** gets a notice when background work starts, and one when its `task_notification` says how it ended.
+- **List:** the row shows a short live label ("Bash 12s", "thinking 4s"). An idle session with background work shows a violet **background** badge instead of "idle".
+- **Stopping:**
+  - **`Esc` while Claude is working interrupts** (`Query.interrupt`), from the composer or the board. `Tab` gets from the composer to an approval card without interrupting.
+  - **`Ctrl+B`** backgrounds the running tool (`Query.backgroundTasks`).
+  - **The palette** lists "Stop <task>", "Stop all running tasks", "Stop the current turn" and "End this session".
+  - **The header** has an **End session** button (same as `X`).
+
+**Verified headless** (`node -e` timers, Haiku): the live tool line with timers; `Esc` interrupted and the session went idle, staying in view; `Tab` then `Y` answered an approval; a background shell outlived its turn with the list badge on "background"; ✕ stopped it and the notice read "Background stopped"; `Ctrl+B` moved a running foreground command to the background.

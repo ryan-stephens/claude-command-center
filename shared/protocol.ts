@@ -15,6 +15,8 @@ export interface SessionSummary {
   /** Transcript written recently by someone else, probably an open terminal. */
   activeElsewhere?: boolean;
   ctxPct?: number;
+  /** Live sessions: subagents / shells still running in the background. */
+  background?: number;
 }
 
 export type TranscriptItem =
@@ -24,6 +26,47 @@ export type TranscriptItem =
   | { kind: 'tool_result'; uuid: string; toolUseId: string; text: string; isError: boolean }
   | { kind: 'result'; uuid: string; subtype: string; durationMs?: number; costUsd?: number }
   | { kind: 'notice'; uuid: string; text: string };
+
+// ---- Live activity: what the session is doing right now (Claude Code's spinner line) ----
+
+export type ActivityPhase =
+  | 'idle'
+  | 'requesting' // waiting on the model
+  | 'thinking'
+  | 'writing'
+  | 'tool' // running a tool
+  | 'compacting'
+  | 'retrying' // API error, backing off
+  | 'approval'; // blocked on you
+
+export interface ActivityTask {
+  id: string;
+  /** e.g. local_agent (subagent), local_bash (shell), local_workflow */
+  kind: string;
+  description: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'stopped' | 'killed' | 'paused';
+  /** Runs independently of the turn (keeps going after the session is idle). */
+  background: boolean;
+  startedAt: number;
+  endedAt?: number;
+  lastTool?: string;
+  toolUses?: number;
+  summary?: string;
+}
+
+export interface SessionActivity {
+  phase: ActivityPhase;
+  /** Epoch ms the current phase began; the UI ticks elapsed time from it. */
+  phaseSince: number;
+  /** Epoch ms the current turn began; absent between turns. */
+  turnStartedAt?: number;
+  /** The tool being run (phase 'tool' or 'approval'). */
+  tool?: { name: string; detail?: string };
+  thinkingTokens?: number;
+  retry?: { attempt: number; max: number; resumeAt: number; status: number | null };
+  /** Subagents, shells and workflows: running ones, plus recently finished ones for context. */
+  tasks: ActivityTask[];
+}
 
 export interface PermissionRequest {
   reqId: string;
@@ -87,6 +130,10 @@ export type ClientMsg =
   | { type: 'session.send'; id: string; text: string }
   | { type: 'session.interrupt'; id: string }
   | { type: 'session.stop'; id: string }
+  /** Stop one subagent / background shell (a task id from the session's activity). */
+  | { type: 'task.stop'; id: string; taskId: string }
+  /** Send the running tool or subagent to the background, like Ctrl+B in the terminal. */
+  | { type: 'session.background'; id: string }
   | { type: 'session.rename'; id: string; title: string }
   | { type: 'permission.respond'; reqId: string; decision: PermissionDecision }
   /** Ask for the board of a session (its cwd's repo pack, global groups, its slash commands). */
@@ -110,6 +157,7 @@ export type ServerMsg =
   | { type: 'session.items'; id: string; items: TranscriptItem[] }
   /** Streaming text of the assistant message in progress; '' clears it. */
   | { type: 'session.partial'; id: string; text: string }
+  | { type: 'session.activity'; id: string; activity: SessionActivity }
   | { type: 'permission.request'; request: PermissionRequest }
   | { type: 'permission.resolved'; reqId: string }
   | { type: 'board'; sessionId: string; groups: CommandGroup[] }

@@ -11,6 +11,7 @@ Running several Claude Code sessions at once means a lot of terminal-tab hunting
 - **Know who needs you.** Sessions waiting for an approval or that just finished land in an Inbox. `Alt+N` jumps to the next one from anywhere; `Y` / `A` / `N` answers. Clearing a blocked session takes two keys.
 - **A hotbar for prompts.** Every session has a 3×3 command board laid out like a numpad. `Numpad 1–9` fires a command; tiles can send immediately, drop text into the composer, or ask for a blank first (`Explain {{what}}`).
 - **Share workflows through git.** Commit `.cc-control/commands.json` to a repo and everyone who opens a session there gets the same commands. The session's own slash commands and skills appear automatically too.
+- **See what it's doing.** A live line shows what each session is doing right now (thinking, running `npm test` for 12s, retrying the API), plus any subagents and background shells, each with a stop button. `Esc` stops Claude, just like in the terminal.
 - **Talk to it.** Hold `` ` `` (or `Numpad .`), speak, release: it's sent. Say a command's name ("code review") to run it.
 - **Everything discoverable.** `Ctrl+K` searches every action, command and session; `?` lists every key (and lets you rebind them); the bottom bar always shows the keys that work right now.
 
@@ -46,7 +47,8 @@ Open **http://localhost:7777** in Chrome or Edge. A short welcome card shows the
 | | `Numpad ±` | Switch command group |
 | | `Y` / `A` / `N` | Approve once / always / deny |
 | | Hold `` ` `` | Push-to-talk |
-| | `Ctrl+.` | Interrupt |
+| | `Esc` (while working) | Stop Claude, like in Claude Code |
+| | `Ctrl+B` | Send the running tool to the background |
 | | `Esc` | Step out: composer → board → list |
 
 ## Sharing commands with your team

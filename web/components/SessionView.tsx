@@ -6,6 +6,7 @@ import { backToList, respondPermission } from '../keys.ts';
 import { startVoice, stopVoice, voiceSupported } from '../voice.ts';
 import { set, setDraft, useStore } from '../store.ts';
 import { send } from '../ws.ts';
+import { ActivityBar } from './ActivityBar.tsx';
 import { CommandBoard } from './CommandBoard.tsx';
 import { CtxMeter, shortPath, StatusBadge } from './StatusBadge.tsx';
 
@@ -41,6 +42,13 @@ export function SessionView() {
           {session && shortPath(session.cwd)}{session?.branch && ` · ${session.branch}`}
         </span>
         <CtxMeter pct={session?.ctxPct} />
+        {session?.live && (
+          <button
+            className="ml-auto shrink-0 rounded px-2 py-0.5 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-red-300"
+            onClick={() => set({ modal: { kind: 'stop', id } })}
+            title="End this session: stops Claude and its background tasks. It stays in History. (X on the board)"
+          >End session</button>
+        )}
         {session?.activeElsewhere && !session.live && (
           <span className="ml-auto rounded bg-orange-950 px-2 py-0.5 text-xs text-orange-300">
             Active in another window: sending will fork a new session
@@ -66,6 +74,7 @@ export function SessionView() {
             {partial && <div className="md mb-3 text-zinc-200"><Markdown remarkPlugins={[remarkGfm]}>{partial}</Markdown></div>}
             {permission && <ApprovalCard p={permission} />}
           </div>
+          <ActivityBar id={id} />
           <Composer id={id} focused={zone === 'composer'} />
           {/* Phones: the board opens as a panel under the composer. */}
           <MobileBoard />
@@ -129,7 +138,7 @@ function ApprovalCard({ p }: { p: PermissionRequest }) {
         <button className="btn" onClick={() => respondPermission('allow')}><kbd>Y</kbd> Yes</button>
         {p.canAlways && <button className="btn" onClick={() => respondPermission('always')}><kbd>A</kbd> Always</button>}
         <button className="btn" onClick={() => respondPermission('deny')}><kbd>N</kbd> No</button>
-        {typing && <span className="self-center text-xs text-amber-300/80">You're in the composer: <kbd>Esc</kbd> first</span>}
+        {typing && <span className="self-center text-xs text-amber-300/80">You're in the composer: <kbd>Tab</kbd> to answer · <kbd>Esc</kbd> stops the turn</span>}
       </div>
     </div>
   );

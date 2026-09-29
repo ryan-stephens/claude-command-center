@@ -10,7 +10,9 @@ export function StatusBadge({ s }: { s: SessionSummary }) {
       case 'stopped':
         return <span className="badge text-zinc-500">■ stopped</span>;
       default:
-        return <span className="badge text-emerald-400" title="Idle, ready for input">✓ idle</span>;
+        return s.background
+          ? <span className="badge text-violet-300" title={`Idle, with ${s.background} task(s) still running in the background`}><span className="spinner" /> background</span>
+          : <span className="badge text-emerald-400" title="Idle, ready for input">✓ idle</span>;
     }
   }
   if (s.activeElsewhere) return <span className="badge text-orange-300" title="Written recently by another process, probably a terminal">◐ elsewhere</span>;

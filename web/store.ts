@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Command, CommandGroup, PermissionRequest, SessionSummary, Settings, TranscriptItem } from '../shared/protocol.ts';
+import type { Command, CommandGroup, PermissionRequest, SessionActivity, SessionSummary, Settings, TranscriptItem } from '../shared/protocol.ts';
 
 export type Tab = 'inbox' | 'live' | 'history';
 export const TABS: Tab[] = ['inbox', 'live', 'history'];
@@ -25,6 +25,8 @@ interface State {
   repos: string[];
   transcripts: Record<string, TranscriptItem[]>;
   partials: Record<string, string>;
+  /** Live sessions: what each is doing right now (phase, tool, background tasks). */
+  activity: Record<string, SessionActivity>;
   permissions: Record<string, PermissionRequest>;
   /** Sessions that finished a turn while you weren't looking, with the time it happened. */
   unread: Record<string, number>;
@@ -64,6 +66,7 @@ export const useStore = create<State>(() => ({
   repos: [],
   transcripts: {},
   partials: {},
+  activity: {},
   permissions: {},
   unread: {},
   lastError: null,

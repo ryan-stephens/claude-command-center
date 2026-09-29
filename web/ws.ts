@@ -15,7 +15,7 @@ export function connect(): void {
   socket.onopen = () => {
     retryMs = 1000;
     // The server re-sends every pending approval on connect; anything we still hold is stale.
-    set({ connected: true, lastError: null, permissions: {}, partials: {} });
+    set({ connected: true, lastError: null, permissions: {}, partials: {}, activity: {} });
     const { openId } = get();
     if (openId) {
       send({ type: 'session.open', id: openId });
@@ -108,6 +108,9 @@ function receive(msg: ServerMsg): void {
       set({ transcripts: { ...t, [msg.id]: [...(t[msg.id] ?? []), ...msg.items] } });
       return;
     }
+    case 'session.activity':
+      set({ activity: { ...get().activity, [msg.id]: msg.activity } });
+      return;
     case 'session.partial':
       set({ partials: { ...get().partials, [msg.id]: msg.text } });
       return;

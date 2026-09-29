@@ -2,6 +2,8 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { SessionSummary, TranscriptItem } from '../../shared/protocol.ts';
 import { openSession, respondPermission } from '../keys.ts';
 import { attention, set, TABS, useStore, visibleSessions } from '../store.ts';
+import { activityShort } from '../activity-label.ts';
+import { useNow } from './ActivityBar.tsx';
 import { CtxMeter, relativeTime, shortPath, StatusBadge } from './StatusBadge.tsx';
 
 export function SessionList() {
@@ -13,6 +15,8 @@ export function SessionList() {
   const filterFocused = useStore((s) => s.filterFocused);
   const selectedId = useStore((s) => s.selectedId);
   const list = visibleSessions({ sessions, tab, filter, permissions, unread });
+  const activity = useStore((s) => s.activity);
+  const now = useNow(Object.values(activity).some((a) => a.phase !== 'idle'));
   const counts = {
     inbox: attention({ sessions, permissions, unread }).length,
     live: sessions.filter((s) => s.live).length,
@@ -80,6 +84,9 @@ export function SessionList() {
               <span className="flex min-w-0 items-center gap-2">
                 {unread[s.id] && <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" title="Finished while you were away" />}
                 <span className={`truncate ${unread[s.id] ? 'font-medium text-white' : 'text-zinc-100'}`} title={s.title}>{s.title}</span>
+                {s.live && activityShort(activity[s.id], now) && (
+                  <span className="shrink-0 text-xs text-sky-400/80">{activityShort(activity[s.id], now)}</span>
+                )}
               </span>
               <span className="hidden min-w-0 items-center gap-2 text-zinc-500 md:flex" title={s.cwd}>
                 <span className="truncate">{shortPath(s.cwd)}{s.branch && <span className="text-zinc-600"> · {s.branch}</span>}</span>

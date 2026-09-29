@@ -31,7 +31,9 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
     title: 'Session view',
     keys: [
       ['Enter / Shift+Enter', 'Send / newline (composer)'],
-      ['Esc or Numpad 0', 'Step out: composer → board → list'],
+      ['Esc', 'While Claude is working: stop it (like Claude Code). Otherwise step out: composer → board → list'],
+      ['Numpad 0', 'Step out, even while Claude is working'],
+      ['Tab (composer)', 'Go to the board / approval card without interrupting'],
       ['i', 'Focus the composer'],
       ['PgUp PgDn  Home End', 'Scroll the transcript'],
       ['T', 'Expand / collapse tool calls'],
@@ -234,17 +236,38 @@ function boardKeys(e: KeyboardEvent): boolean {
   return false;
 }
 
+/** Claude is mid-turn (including waiting on an approval): Esc stops it, like in Claude Code. */
+function isBusy(id: string | null): boolean {
+  const status = sessionById(id)?.status;
+  return status === 'running' || status === 'requires_action';
+}
+
+export function interrupt(id: string | null): void {
+  if (!id || !isBusy(id)) return;
+  send({ type: 'session.interrupt', id });
+  flash('Interrupted');
+}
+
 function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
   const s = get();
   if (s.zone === 'composer') {
-    if (e.key === 'Escape') { set({ zone: 'board' }); return true; }
+    if (e.key === 'Escape') {
+      if (isBusy(s.openId)) interrupt(s.openId);
+      else set({ zone: 'board' });
+      return true;
+    }
+    // Tab reaches the board and any approval card without interrupting.
+    if (e.key === 'Tab' && !e.shiftKey) { set({ zone: 'board' }); return true; }
     return false; // Enter/Shift+Enter live on the composer itself
   }
   if (typing) return false;
   if (boardKeys(e)) return true;
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
   switch (e.key) {
-    case 'Escape': backToList(); return true;
+    case 'Escape':
+      if (isBusy(s.openId)) interrupt(s.openId);
+      else backToList();
+      return true;
     case 'PageUp': scrollTranscript(-window.innerHeight * 0.8); return true;
     case 'PageDown': scrollTranscript(window.innerHeight * 0.8); return true;
     case 'Home': scrollTranscript('top'); return true;
@@ -337,7 +360,8 @@ function globalAction(e: KeyboardEvent, typing: boolean): boolean {
     case 'prevSession': hop(-1); break;
     case 'nextSession': hop(1); break;
     case 'newSession': set({ modal: { kind: 'new' } }); break;
-    case 'interrupt': if (openId) send({ type: 'session.interrupt', id: openId }); break;
+    case 'interrupt': interrupt(openId); break;
+    case 'background': if (openId) send({ type: 'session.background', id: openId }); break;
     case 'sound': toggleSound(); break;
   }
   return true;

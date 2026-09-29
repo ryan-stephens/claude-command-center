@@ -15,6 +15,10 @@ function HintBar() {
   const zone = useStore((s) => s.zone);
   const tab = useStore((s) => s.tab);
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
+  const busy = useStore((s) => {
+    const status = s.sessions.find((x) => x.id === s.openId)?.status;
+    return status === 'running' || status === 'requires_action';
+  });
   // Rebindable keys show their current binding (first one if several).
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   const talk = `Hold ${k('pushToTalk')}`;
@@ -24,8 +28,8 @@ function HintBar() {
         ? [['↑↓', 'move'], ['Y/A/N', 'approve'], ['Enter', 'open'], [k('nextAttention'), 'next'], ['Tab', 'tabs'], [k('newSession'), 'new']]
         : [['↑↓', 'move'], ['Enter', 'open'], ['/', 'filter'], ['Tab', 'tabs'], [k('nextAttention'), 'needs you'], ['N', 'new'], ['R', 'rename'], ['X', 'stop']]
       : zone === 'composer'
-        ? [['Enter', 'send'], [talk, 'talk (while empty)'], ['Numpad 1–9', 'fire (while empty)'], ['Alt+1–9', 'fire'], ['Esc', 'board'], [k('interrupt'), 'interrupt']]
-        : [[talk, 'talk'], ['Numpad 1–9', 'fire'], ['Numpad ±', 'group'], ['←↑↓→ Enter', 'pick'], ['E', 'edit'], ['i', 'compose'], ['Y/A/N', 'approve'], ['PgUp/Dn', 'scroll'], ['Esc', 'list']];
+        ? [['Enter', 'send'], busy ? ['Esc', 'stop Claude'] : ['Esc', 'board'], ['Tab', 'board'], [talk, 'talk (while empty)'], ['Numpad 1–9', 'fire (while empty)'], ['Alt+1–9', 'fire']]
+        : [busy ? ['Esc', 'stop Claude'] : ['Esc', 'list'], [talk, 'talk'], ['Numpad 1–9', 'fire'], ['Numpad ±', 'group'], ['←↑↓→ Enter', 'pick'], ['E', 'edit'], ['i', 'compose'], ['Y/A/N', 'approve'], ['PgUp/Dn', 'scroll']];
   return (
     <footer className="hidden flex-wrap gap-x-4 gap-y-1 border-t border-zinc-800 px-4 py-1.5 text-xs text-zinc-500 md:flex">
       {hints.map(([key, d]) => <span key={key}><kbd>{key}</kbd> {d}</span>)}

@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
 import { exportPack, fireCommand, importPack } from '../commands.ts';
 import { fuzzyScore } from '../fuzzy.ts';
-import { askStop, hop, jumpToAttention, openSession } from '../keys.ts';
+import { askStop, hop, interrupt, jumpToAttention, openSession } from '../keys.ts';
+import { taskKind, taskRunning } from '../activity-label.ts';
 import { get, set, toggleSound, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { close, Overlay } from './Overlay.tsx';
@@ -22,6 +23,7 @@ export function Palette() {
   const sessions = useStore((s) => s.sessions);
   const board = useStore((s) => s.board);
   const openId = useStore((s) => s.openId);
+  const activity = useStore((s) => (s.openId ? s.activity[s.openId] : undefined));
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
@@ -50,9 +52,17 @@ export function Palette() {
       );
       if (open.live) {
         actions.push(
-          action('interrupt', 'Interrupt this session', () => send({ type: 'session.interrupt', id: open.id }), open.title),
-          action('stop', 'Stop this session', () => askStop(open.id), open.title),
+          action('interrupt', 'Stop the current turn (Esc)', () => interrupt(open.id), open.title),
+          action('background', 'Send the running tool to the background (Ctrl+B)', () => send({ type: 'session.background', id: open.id }), open.title),
+          action('stop', 'End this session', () => askStop(open.id), open.title),
         );
+        const running = (activity?.tasks ?? []).filter(taskRunning);
+        for (const t of running) {
+          actions.push(action(`task:${t.id}`, `Stop ${taskKind(t)}: ${t.description}`, () => send({ type: 'task.stop', id: open.id, taskId: t.id })));
+        }
+        if (running.length > 1) {
+          actions.push(action('tasks:all', `Stop all ${running.length} running tasks`, () => running.forEach((t) => send({ type: 'task.stop', id: open.id, taskId: t.id }))));
+        }
       }
     }
     const commands: Item[] = open && board?.sessionId === open.id
@@ -72,7 +82,7 @@ export function Palette() {
       run: () => openSession(s.id),
     }));
     return [...actions, ...commands, ...sessionItems];
-  }, [sessions, board, openId]);
+  }, [sessions, board, openId, activity]);
 
   const results = useMemo(() => {
     if (!query.trim()) return items.slice(0, MAX_RESULTS);
