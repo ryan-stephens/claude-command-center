@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { TranscriptItem } from '../../shared/protocol.ts';
+import type { SlashInfo, TranscriptItem } from '../../shared/protocol.ts';
 import { workspacesFor } from '../../shared/workspaces.ts';
 import { turnClock } from '../activity-label.ts';
+import { exactCommand, matchSlash, runsAlone, slashQuery } from '../slash.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { statusLabel } from '../home-model.ts';
 import { askStop, backToList, hop } from '../keys.ts';
@@ -18,6 +19,7 @@ import { Transcript } from './Transcript.tsx';
 import { Icon, Key, Pill, WsBadge } from './ui.tsx';
 
 const EMPTY: TranscriptItem[] = [];
+const NO_SLASH: SlashInfo[] = [];
 
 /** The number pad, folded away: the conversation gets the width; Tab (or a click) still opens it. */
 function PadRail() {
@@ -153,7 +155,25 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
   const dialogOpen = useStore((s) => s.modal !== null);
   const status = useStore((s) => s.sessions.find((x) => x.id === id)?.status);
   const pending = useStore((s) => Object.values(s.permissions).some((p) => p.sessionId === id));
+  const commands = useStore((s) => (s.slash?.sessionId === id ? s.slash.commands : NO_SLASH));
   const ref = useRef<HTMLTextAreaElement>(null);
+  // Suggestions while a command is typed at the start: /cl → /clear. Esc hides them until the text changes.
+  const [pick, setPick] = useState(0);
+  const [hiddenFor, setHiddenFor] = useState<string | null>(null);
+  const query = voice ? null : slashQuery(draft);
+  const suggestions = query !== null && hiddenFor !== draft ? matchSlash(commands, query) : [];
+  const chosen = suggestions[Math.min(pick, suggestions.length - 1)];
+  const typedCommand = !suggestions.length && !voice ? exactCommand(draft, commands) : undefined;
+  useEffect(() => { setPick(0); }, [query]);
+
+  /** Take a suggestion: run it when it needs nothing more, else complete it and wait for its arguments. */
+  function accept(c: SlashInfo, run: boolean) {
+    if (run && runsAlone(c)) {
+      send({ type: 'session.send', id, text: `/${c.name}` });
+      setDraft(id, '');
+    } else setDraft(id, `/${c.name} `);
+    ref.current?.focus();
+  }
 
   useEffect(() => {
     const el = ref.current;
@@ -181,6 +201,38 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
           {voice.state === 'listening' ? <>Listening… release to send · <Key k="Esc" size="sm" /> cancels</> : 'Finishing…'}
         </div>
       )}
+      {suggestions.length > 0 && focused && (
+        <div className="relative mx-auto max-w-3xl">
+          <ul className="absolute inset-x-0 bottom-1.5 z-10 max-h-80 overflow-y-auto rounded-2xl border border-line bg-surface p-1.5 shadow-xl" role="listbox" aria-label="Commands">
+            {suggestions.map((c) => (
+              <li
+                key={c.name}
+                role="option"
+                aria-selected={c === chosen}
+                onMouseMove={() => { if (c !== chosen) setPick(suggestions.indexOf(c)); }}
+                onMouseDown={(e) => { e.preventDefault(); accept(c, true); }}
+                className={`flex cursor-pointer items-baseline gap-3 rounded-xl px-3 py-1.5 ${c === chosen ? 'is-focus bg-raise' : ''}`}
+              >
+                <span className="shrink-0 font-mono text-[14px] font-semibold">/{c.name}</span>
+                {c.aliases?.length ? <span className="shrink-0 text-xs text-faint">{c.aliases.map((a) => `/${a}`).join(' ')}</span> : null}
+                <span className="min-w-0 grow truncate text-sm text-sub">{c.description}</span>
+                {c.argumentHint && <span className="max-w-[35%] shrink-0 truncate font-mono text-xs text-faint">{c.argumentHint}</span>}
+              </li>
+            ))}
+            <li className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 pb-0.5 pt-1.5 text-xs text-faint" role="presentation">
+              <span className="flex items-center gap-1"><Key k="↑ ↓" size="sm" />choose</span>
+              <span className="flex items-center gap-1"><Key k="Tab" size="sm" />complete</span>
+              <span className="flex items-center gap-1"><Key k="Enter" size="sm" />{chosen && !runsAlone(chosen) ? 'complete' : 'run'}</span>
+              <span className="flex items-center gap-1"><Key k="Esc" size="sm" />hide</span>
+            </li>
+          </ul>
+        </div>
+      )}
+      {typedCommand && (
+        <p className="mx-auto mb-1.5 max-w-3xl truncate px-1 text-xs text-faint">
+          <span className="font-mono font-semibold text-sub">/{typedCommand.name}</span>{typedCommand.argumentHint && <span className="font-mono"> {typedCommand.argumentHint}</span>} · {typedCommand.description}
+        </p>
+      )}
       <div className={`mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border-2 bg-surface p-1.5 pl-3 ${voice ? 'border-bad' : focused ? 'border-acc' : 'border-line'}`}>
         <textarea
           readOnly={Boolean(voice)}
@@ -190,6 +242,14 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
           onChange={(e) => setDraft(id, e.target.value)}
           onFocus={() => set({ zone: 'composer' })}
           onKeyDown={(e) => {
+            if (chosen && !e.nativeEvent.isComposing) {
+              const take = () => { e.preventDefault(); e.stopPropagation(); };
+              if (e.key === 'ArrowDown') { take(); setPick((pick + 1) % suggestions.length); return; }
+              if (e.key === 'ArrowUp') { take(); setPick((pick - 1 + suggestions.length) % suggestions.length); return; }
+              if (e.key === 'Tab' && !e.shiftKey) { take(); accept(chosen, false); return; }
+              if (e.key === 'Enter' && !e.shiftKey) { take(); accept(chosen, true); return; }
+              if (e.key === 'Escape') { take(); setHiddenFor(draft); return; }
+            }
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               submit();

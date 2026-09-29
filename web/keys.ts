@@ -59,6 +59,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
     title: 'Session',
     keys: [
       ['Enter / Shift+Enter', 'Send / new line (message box)'],
+      ['/ (start of a message)', 'Suggests commands and skills as you type, like Claude Code: ↑ ↓ choose, Tab completes, Enter runs, Esc hides'],
       ['Esc', 'While Claude is working: stop it. Otherwise step out: message box → number pad → home'],
       ['Numpad 0 / Alt+0', 'Back to home, even while Claude is working'],
       ['Tab (message box)', 'Go to the number pad or the approval card without stopping Claude'],

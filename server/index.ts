@@ -54,6 +54,7 @@ const manager: SessionManager = new SessionManager({
   forked: (oldId, newId) => broadcast({ type: 'session.forked', oldId, newId }),
   commandsChanged: () => broadcast({ type: 'commands.changed' }),
   activity: (id, activity) => broadcast({ type: 'session.activity', id, activity }),
+  transcript: (id, items) => broadcast({ type: 'session.transcript', id, items }),
 }, broker, store);
 
 /** Only known keys with sane shapes reach the database. */
@@ -179,9 +180,19 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'permission.respond':
       broker.respond(msg.reqId, msg.decision);
       return;
-    case 'board.get':
-      send(ws, { type: 'board', sessionId: msg.sessionId, groups: commands.board(manager.cwdOf(msg.sessionId), manager.slashCommands(msg.sessionId)) });
+    case 'board.get': {
+      const slash = manager.slashFor(msg.sessionId);
+      send(ws, {
+        type: 'board',
+        sessionId: msg.sessionId,
+        groups: commands.board(manager.cwdOf(msg.sessionId), slash),
+        // Internal commands (a leading "_") are not for people.
+        slash: slash?.filter((c) => !c.name.startsWith('_')).map((c) => ({
+          name: c.name, description: c.description, ...(c.argumentHint ? { argumentHint: c.argumentHint } : {}), ...(c.aliases?.length ? { aliases: c.aliases } : {}),
+        })),
+      });
       return;
+    }
     case 'command.save':
       commands.save(msg.ref, msg.command);
       if (msg.from) commands.delete(msg.from);

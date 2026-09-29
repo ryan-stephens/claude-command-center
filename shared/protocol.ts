@@ -193,6 +193,16 @@ export interface CommandGroup {
   workspaceId?: string;
 }
 
+/** A slash command or skill the session's CLI understands, for suggestions as you type "/". */
+export interface SlashInfo {
+  name: string;
+  description: string;
+  /** e.g. "<model>"; absent when it takes no arguments. */
+  argumentHint?: string;
+  /** Other names that run it, e.g. reset and new for clear. */
+  aliases?: string[];
+}
+
 /** Shareable JSON: the format of repo packs and of import/export. */
 export interface CommandPack {
   version: 1;
@@ -265,7 +275,7 @@ export type ServerMsg =
   | { type: 'session.activity'; id: string; activity: SessionActivity }
   | { type: 'permission.request'; request: PermissionRequest }
   | { type: 'permission.resolved'; reqId: string }
-  | { type: 'board'; sessionId: string; groups: CommandGroup[] }
+  | { type: 'board'; sessionId: string; groups: CommandGroup[]; /** Its slash commands, for suggestions in the message box. */ slash?: SlashInfo[] }
   /** Some commands changed: clients refetch the board of the open session. */
   | { type: 'commands.changed' }
   | { type: 'pack'; reqId: string; pack: CommandPack }

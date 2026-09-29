@@ -460,3 +460,27 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 **Owner-reported fixes (same day):** the repo library wouldn't fold with the mouse. Clicking its chevron first made the library the focused section, and a folded library opens while focused, so it reopened at once. Folding it (chevron or `C`) now also steps back out to the sessions. The folded workspace rail scrolled sideways because its digit keycaps sat outside the badges; they sit inside now and the rail clips sideways overflow. Both are checked in the walkthrough, including a real click on the chevron and a measured `scrollWidth`.
 
 **Process note:** one failure screenshot in this run caught "Everything else" (the owner's real sessions) because `1` was pressed before workspaces loaded. It was deleted at once, and the scripts now wait for the Demo workspace before any key or screenshot, and never screenshot on failure.
+
+## 21. Slash-command suggestions in the message box, and /clear that sticks
+
+2026-09-29. The owner asked for suggestions while typing, like Claude Code: `/cl` should offer `/clear`.
+
+**Where the list comes from:** the SDK's `supportedCommands()`, which the server already fetched for each live session (it feeds the number pad's Skills groups). A probe in `web-app` returned 67 entries: the built-ins (`/clear` with aliases reset/new, `/compact`, `/model <model>`, `/context`…) and every skill, each with a description, argument hint and aliases. The `board` message now carries `slash: SlashInfo[]`, without internal `_`-prefixed commands. A session that has never run in this app gets its folder's list, else the last one seen anywhere. When none is known at all, `SessionManager.slashFor` starts a CLI once, with no prompt so there is no model call, asks it for the list, closes it, and tells clients to refetch.
+
+**Suggestions** (`web/slash.ts`, tested): typing `/` at the very start of a message opens a list above the message box. It matches names first, then aliases (`/res` → `/clear`), then fuzzily, up to 8, each with its aliases, description and argument hint. `↑ ↓` choose. `Tab` completes to `/name `. `Enter` runs the command when its arguments are all optional (`[name]`, `<optional …>`), and otherwise completes it so you can type them (`/model `). `Esc` hides the list until the text changes, without leaving the box or stopping Claude. A finished command shows a one-line hint with its arguments and description. It is in `?` and the README.
+
+**`/clear` really starts fresh, and the app follows it.** A direct SDK check showed `/clear` clears the context (Claude then answered UNKNOWN to "what word did I ask you to remember?") but **moves the session to a new id**. Left alone, the app would keep the old id, so a restart or resume would bring the cleared context back. Now `handle()` watches `init` for a new `session_id` and `follow()`s it:
+- The live session is re-keyed, its repos are copied, and sends to the old id go to the new one.
+- Approvals follow, because `canUseTool` reads the live session's current id.
+- Clients get `session.forked` plus a fresh transcript with a "Fresh start" note.
+- The session is called "Fresh start" until your next message names it.
+- The cleared conversation stays in the list under Earlier.
+
+**Verified** (headless Chromium, isolated server, Demo workspace, Haiku):
+- `/cl` → `/clear` first; `Tab` → "/clear "; `/res` finds it by alias.
+- `Esc` hides the list and keeps the text; `/mod` + `Enter` → "/model ".
+- `/contex` + `Enter` ran `/context` and printed its table.
+- Told a new session "remember PINEAPPLE", then `/cl` `Enter`: a "Fresh start" note, Claude answered UNKNOWN, the transcript holds only the new conversation, the title became the next message, and the PINEAPPLE conversation is still listed.
+- No console errors. `pnpm typecheck`, `pnpm test` (85) and `pnpm build` pass.
+
+**Not done:** `@` file suggestions (Claude Code's other popup). They would need a server-side file listing like `fs.list`.

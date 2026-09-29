@@ -202,7 +202,11 @@ function receive(msg: ServerMsg): void {
       if (msg.sessionId === get().openId) {
         // A board without the selected group (deleted, or another repo) resets the selection explicitly.
         const keep = msg.groups.some((g) => groupKeyOf(g) === get().groupKey);
-        set({ board: { sessionId: msg.sessionId, groups: msg.groups }, ...(keep ? {} : { groupKey: msg.groups[0] ? groupKeyOf(msg.groups[0]) : null }) });
+        set({
+          board: { sessionId: msg.sessionId, groups: msg.groups },
+          ...(msg.slash ? { slash: { sessionId: msg.sessionId, commands: msg.slash } } : {}),
+          ...(keep ? {} : { groupKey: msg.groups[0] ? groupKeyOf(msg.groups[0]) : null }),
+        });
       }
       return;
     case 'commands.changed': {

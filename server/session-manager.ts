@@ -32,6 +32,8 @@ interface LiveSession {
   dirs: string[];
   /** Its repos changed while it was busy: restart it into them once it is idle. */
   dirsStale?: boolean;
+  /** Fresh after /clear: the next message names it. */
+  untitled?: boolean;
 }
 
 /** Where each session's extra repos persist (SQLite), so resumes get them back. */
@@ -53,6 +55,8 @@ export interface SessionEvents {
   commandsChanged(): void;
   /** What a live session is doing right now (throttled). */
   activity(id: string, activity: SessionActivity): void;
+  /** A session's whole transcript was replaced (a fresh start after /clear). */
+  transcript(id: string, items: TranscriptItem[]): void;
 }
 
 export class SessionManager {
@@ -63,6 +67,10 @@ export class SessionManager {
   private recentlyOwned = new Map<string, number>();
   /** Last slash-command list seen per cwd, so history sessions get auto groups too. */
   private slashByCwd = new Map<string, SlashCommand[]>();
+  /** The newest slash-command list seen from any session: most commands and skills are the same everywhere. */
+  private lastSlash?: SlashCommand[];
+  /** A CLI started only to ask for the command list (at most one at a time). */
+  private probing = false;
   /** Resumes in flight: a second send while the transcript loads must join it, not start another CLI. */
   private starting = new Map<string, Promise<LiveSession>>();
   /** History id → the fork it became, so late sends to the old id follow the fork. */
@@ -140,6 +148,7 @@ export class SessionManager {
       l = await pending;
     }
     const userItem: TranscriptItem = { kind: 'user', uuid: crypto.randomUUID(), text };
+    if (l.untitled && !text.startsWith('/')) { l.title = firstLine(text) || l.title; l.untitled = false; }
     l.items.push(userItem);
     this.events.items(l.id, [userItem]);
     l.input.push(text);
@@ -306,6 +315,33 @@ export class SessionManager {
     return this.live.get(id)?.slash ?? (cwd ? this.slashByCwd.get(cwd) : undefined);
   }
 
+  /**
+   * Slash commands for a session: its own, else its folder's, else the last seen anywhere. When
+   * none are known yet, a CLI is asked once in its folder (no prompt, so no model call), and
+   * clients are told to refetch when the list arrives.
+   */
+  slashFor(id: string): SlashCommand[] | undefined {
+    const known = this.slashCommands(id) ?? this.lastSlash;
+    const cwd = this.cwdOf(id);
+    if (!known && cwd && isDir(cwd)) this.probeSlash(cwd);
+    return known;
+  }
+
+  private probeSlash(cwd: string): void {
+    if (this.probing) return;
+    this.probing = true;
+    async function* idle(): AsyncGenerator<never> { await new Promise(() => {}); }
+    const q = query({ prompt: idle(), options: { cwd, model: MODEL, env: SDK_ENV } });
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timed out')), 20_000));
+    Promise.race([q.supportedCommands(), timeout])
+      .then((cmds) => {
+        this.slashByCwd.set(cwd, cmds);
+        this.lastSlash = cmds;
+        this.events.commandsChanged();
+      }, () => { /* no suggestions until a session runs */ })
+      .finally(() => { q.close(); this.probing = false; });
+  }
+
   onPermissionChange(sessionId: string): void {
     const l = this.live.get(sessionId);
     if (!l) return;
@@ -323,6 +359,8 @@ export class SessionManager {
     const input = new InputQueue();
     const id = opts.id;
     const dirs = this.launchDirs(id, opts.cwd);
+    // Approvals follow the session if the CLI moves it to a new id (/clear does).
+    let self: LiveSession | undefined;
     const q = query({
       prompt: input,
       options: {
@@ -332,7 +370,7 @@ export class SessionManager {
         includePartialMessages: true,
         permissionMode: 'default',
         additionalDirectories: dirs,
-        canUseTool: (tool, toolInput, { signal, suggestions }) => this.broker.ask(id, tool, toolInput, suggestions, signal),
+        canUseTool: (tool, toolInput, { signal, suggestions }) => this.broker.ask(self?.id ?? id, tool, toolInput, suggestions, signal),
         ...opts.options,
       },
     });
@@ -340,6 +378,7 @@ export class SessionManager {
       id, cwd: opts.cwd, title: opts.title, input, q,
       status: 'idle', items: opts.items ?? [], partial: '', lastModified: Date.now(), activity: idleActivity(Date.now()), dirs,
     };
+    self = l;
     this.live.set(id, l);
     this.pump(l);
     q.supportedCommands().then((cmds) => this.setSlash(l, cmds), () => {});
@@ -363,6 +402,7 @@ export class SessionManager {
 
   private handle(l: LiveSession, msg: SDKMessage): void {
     l.lastModified = Date.now();
+    if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id && msg.session_id !== l.id) this.follow(l, msg.session_id);
     this.trackActivity(l, msg);
     if (msg.type === 'system' && msg.subtype === 'commands_changed') {
       this.setSlash(l, msg.commands);
@@ -401,9 +441,32 @@ export class SessionManager {
     }
   }
 
+  /**
+   * The CLI moved the session to a new id: `/clear` starts a fresh conversation that way. Follow it,
+   * so later turns, restarts and resumes use the new one; the cleared conversation stays in the list.
+   */
+  private follow(l: LiveSession, newId: string): void {
+    const old = l.id;
+    this.live.delete(old);
+    l.id = newId;
+    this.live.set(newId, l);
+    this.dirs.setSessionDirs(newId, this.dirs.sessionDirs(old));
+    this.forkedTo.set(old, newId);
+    this.recentlyOwned.set(old, Date.now()); // its fresh mtime is ours, not a terminal's
+    this.broker.cancelSession(old);
+    l.items = [{ kind: 'notice', uuid: crypto.randomUUID(), text: 'Fresh start: Claude no longer sees the earlier conversation. That one stays in the list under Earlier.' }];
+    l.title = 'Fresh start';
+    l.untitled = true;
+    this.events.forked(old, newId);
+    this.events.transcript(newId, l.items);
+    this.emitUpsert(newId);
+    this.history.refresh().finally(() => this.events.sessionsChanged());
+  }
+
   private setSlash(l: LiveSession, cmds: SlashCommand[]): void {
     l.slash = cmds;
     this.slashByCwd.set(l.cwd, cmds);
+    this.lastSlash = cmds;
     this.events.commandsChanged();
   }
 

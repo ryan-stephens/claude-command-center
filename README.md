@@ -56,6 +56,7 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `+` / `−` | Give this session another repo / take one back out |
 | | `Ctrl+B` | Send the running step to the background |
 | | `C` (number pad) | Fold the number pad away; `Tab` still opens it |
+| | `/` (start of a message) | Suggests commands and skills as you type, like Claude Code (`/cl` → `/clear`): `↑ ↓` `Tab` `Enter` `Esc` |
 
 ## Sharing with your team
 
