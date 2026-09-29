@@ -110,7 +110,7 @@ function WorkspaceColumn() {
         className={`hidden w-[4.5rem] shrink-0 flex-col items-center border-r border-line md:flex ${active ? 'bg-surface shadow-[inset_0_3px_0_var(--c-acc)]' : 'bg-col'}`}
       >
         <div className="pb-2 pt-3"><FoldButton folded onClick={() => toggleFold('workspaces')} label="Show the workspace column" /></div>
-        <ul className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto pb-3" role="listbox" aria-label="Workspaces">
+        <ul className="flex min-h-0 w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden pb-3 pt-1" role="listbox" aria-label="Workspaces">
           {rows.map((r) => (
             <li
               key={r.ws?.id ?? 'rest'}
@@ -123,8 +123,8 @@ function WorkspaceColumn() {
               className={`relative cursor-pointer rounded-xl p-1.5 ${r.selected ? (active ? 'is-focus bg-raise' : 'bg-raise') : 'hover:bg-raise/60'} ${dragging && r.ws ? 'outline-2 outline-dashed outline-acc/60' : ''}`}
             >
               <WsBadge ws={r.ws} size={34} />
-              {r.digit && <span className="absolute -bottom-1 -right-1"><Key k={r.digit} size="sm" /></span>}
-              {r.needs ? <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-attn ring-2 ring-col" /> : r.working ? <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-busy ring-2 ring-col" /> : null}
+              {r.digit && <span className="absolute bottom-0 right-0"><Key k={r.digit} size="sm" /></span>}
+              {r.needs ? <span className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-attn ring-2 ring-col" /> : r.working ? <span className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-busy ring-2 ring-col" /> : null}
             </li>
           ))}
         </ul>
@@ -578,7 +578,7 @@ function RepoLibrary() {
       className={`hidden border-t border-line px-4 pb-3 pt-2.5 md:block ${active ? 'bg-surface shadow-[inset_0_3px_0_var(--c-acc)]' : 'bg-col'}`}
     >
       <div className="mb-2 flex items-center gap-2">
-        {library.sources.length > 0 && <FoldButton folded={false} onClick={() => toggleFold('library')} label="Fold the repo library" />}
+        {library.sources.length > 0 && <FoldButton folded={false} onClick={() => { toggleFold('library'); set({ homeCol: 'sessions' }); }} label="Fold the repo library" />}
         <h2 className={`eyebrow ${active ? '!text-ink' : ''}`}>Repo library</h2>
         {library.sources.length > 0 && <span className="truncate text-xs text-faint" title={library.sources.join('\n')}>{library.repos.length} repos from {sources}</span>}
         <span className="ml-auto hidden text-sm text-faint lg:inline">Drag a repo onto a workspace or a session</span>

@@ -292,7 +292,12 @@ function libraryKeys(e: KeyboardEvent): boolean {
   switch (e.key.toLowerCase()) {
     case 'n': if (repo) newSession(repo.path); return true;
     case 'f': set({ modal: { kind: 'sources' } }); return true;
-    case 'c': toggleFold('library'); flash(get().folds.library ? 'Repo library folded: Tab opens it' : 'Repo library stays open'); return true;
+    case 'c':
+      toggleFold('library');
+      // A folded library shows while you are in it, so folding it also steps back out to the sessions.
+      if (get().folds.library) { set({ homeCol: 'sessions' }); flash('Repo library folded: Tab opens it'); }
+      else flash('Repo library stays open');
+      return true;
   }
   return false;
 }
