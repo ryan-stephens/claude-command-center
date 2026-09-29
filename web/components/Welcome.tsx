@@ -1,8 +1,11 @@
+import type { ReactNode } from 'react';
 import { bindingsFor, displayCombo, type ActionId } from '../bindings.ts';
-import { NO_BINDINGS, set, useStore } from '../store.ts';
+import { get, NO_BINDINGS, set, useStore } from '../store.ts';
 import { Overlay, useDialogKeys } from './Overlay.tsx';
+import { Key } from './ui.tsx';
 
-const SEEN_KEY = 'cc-control.welcomed';
+// v2: the cockpit redesign changed the keys, so everyone sees the tour once more.
+const SEEN_KEY = 'cc-control.welcomed.v2';
 
 /** Show the welcome card once per browser. localStorage may be unavailable; then it just shows again. */
 export function maybeShowWelcome(): void {
@@ -12,48 +15,62 @@ export function maybeShowWelcome(): void {
   set({ modal: { kind: 'welcome' } });
 }
 
-function dismiss(): void {
+function dismiss(setup: boolean): void {
   try { localStorage.setItem(SEEN_KEY, '1'); } catch { /* ignore */ }
-  set({ modal: null });
+  // Straight into making the first workspace, so the first real screen isn't empty.
+  set({ modal: setup && !get().workspaces.length ? { kind: 'workspace', id: null } : null });
 }
 
-/** The five things worth knowing, with the user's current bindings. */
+/** The four groups of keys that run the app, drawn as physical key clusters. */
 export function Welcome() {
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
+  const hasWorkspaces = useStore((s) => s.workspaces.length > 0);
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
 
   useDialogKeys((e) => {
-    if (e.key !== 'Enter' && e.key !== 'Escape') return false;
-    dismiss();
+    if (e.key === 'Enter') dismiss(true);
+    else if (e.key === 'Escape') dismiss(false);
+    else return false;
     return true;
   });
 
-  const tips: [string, string, string][] = [
-    ['↑ ↓  Enter', 'Pick a session and open it', 'Every Claude Code session on this machine is listed, and live ones show their status.'],
-    ['N', 'Start a new session', 'Pick a repo, optionally give it a first prompt.'],
-    ['Numpad 1–9', 'Fire a saved command', 'The board beside each session is a hotbar. Press E on a tile to make it yours.'],
-    [`Hold ${k('pushToTalk')}`, 'Talk to the session', 'Release to send. Say a command’s name to run it.'],
-    [k('nextAttention'), 'Jump to whatever needs you', 'Approvals first (answer with Y / A / N), then finished turns.'],
-  ];
-
   return (
-    <Overlay label="Welcome to cc-control">
-      <h2 className="text-lg font-semibold text-zinc-100">Welcome to cc-control</h2>
-      <p className="mb-4 text-sm text-zinc-400">A keyboard-first command center for your Claude Code sessions.</p>
-      <ul className="space-y-3">
-        {tips.map(([key, title, body]) => (
-          <li key={title} className="grid grid-cols-[7.5rem_1fr] items-baseline gap-3">
-            <kbd className="justify-self-start">{key}</kbd>
-            <div>
-              <div className="text-sm text-zinc-100">{title}</div>
-              <div className="text-xs text-zinc-500">{body}</div>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-4 text-xs text-zinc-500">
-        <kbd>{k('palette')}</kbd> searches everything · <kbd>{k('help')}</kbd> lists every key · <kbd>Enter</kbd> to start
-      </p>
+    <Overlay label="Welcome to Command Center" wide>
+      <div className="text-center">
+        <h2 className="text-[26px] font-bold tracking-tight">Your keyboard runs Claude Code</h2>
+        <p className="mx-auto mt-1.5 max-w-xl text-sub">Everything works with the mouse too, but these keys get you through the day. The ones that work right now are always shown along the bottom of the screen.</p>
+      </div>
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Cluster title="Move around" body={<>Left and right between columns, up and down to choose. <Key k="Enter" size="sm" /> opens.</>}>
+          <div className="grid grid-cols-3 gap-1.5"><span /><Key k="↑" size="lg" /><span /><Key k="←" size="lg" /><Key k="↓" size="lg" /><Key k="→" size="lg" /></div>
+        </Cluster>
+        <Cluster title="Run a workflow" body="Each number-pad key is a saved instruction, like “Run the tests”. The pad on screen matches yours.">
+          <div className="grid grid-cols-3 gap-1.5">{[7, 8, 9, 4, 5, 6, 1, 2, 3].map((n) => <Key key={n} k={n} size="lg" tone={n === 5 ? 'acc' : undefined} />)}</div>
+        </Cluster>
+        <Cluster title="Answer Claude" body={<>Yes, always, or no, when Claude asks to do something. <Key k={k('nextAttention')} size="sm" /> finds the next question.</>}>
+          <div className="flex gap-1.5"><Key k="Y" size="lg" tone="attn" /><Key k="A" size="lg" tone="attn" /><Key k="N" size="lg" tone="attn" /></div>
+        </Cluster>
+        <Cluster title="Stop · talk" body={<><Key k="Esc" size="sm" /> stops Claude right away. Hold <Key k={k('pushToTalk')} size="sm" /> and speak instead of typing.</>}>
+          <div className="flex gap-1.5"><Key k="Esc" size="lg" tone="bad" /><Key k={k('pushToTalk')} size="lg" /></div>
+        </Cluster>
+      </div>
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+        <button className="btn btn-primary px-5" onClick={() => dismiss(true)}>{hasWorkspaces ? 'Let’s go' : 'Set up my first workspace'}<Key k="Enter" size="sm" tone="ghost" /></button>
+        <button className="btn btn-ghost" onClick={() => dismiss(false)}>Skip<Key k="Esc" size="sm" /></button>
+      </div>
+      <p className="mt-4 text-center text-sm text-faint"><Key k={k('help')} size="sm" /> lists every key · <Key k={k('palette')} size="sm" /> searches everything</p>
     </Overlay>
+  );
+}
+
+function Cluster({ title, body, children }: { title: string; body: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-2xl border border-line bg-raise/50 p-4 text-center">
+      <div className="flex h-[100px] items-center">{children}</div>
+      <div>
+        <div className="font-semibold">{title}</div>
+        <div className="mt-1 text-sm leading-relaxed text-sub">{body}</div>
+      </div>
+    </div>
   );
 }

@@ -1,28 +1,129 @@
 @import "tailwindcss";
 
-:root { color-scheme: dark; }
-body { margin: 0; background: #0c0e11; color: #d4d4d8; font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; }
-
-kbd {
-  display: inline-block; min-width: 1.25em; padding: 0 0.35em; border: 1px solid #3f3f46; border-bottom-width: 2px;
-  border-radius: 4px; background: #18181b; color: #d4d4d8; font: 11px/1.5 ui-monospace, monospace; text-align: center;
+/*
+ * Theme: tokens swap between light and dark. The OS decides unless the user picked one
+ * (data-theme on <html>, see theme.ts). Components use the Tailwind names from @theme below
+ * (bg-surface, text-sub, border-line, text-attn …), never raw colours.
+ */
+:root {
+  --c-bg: #eceae5; --c-col: #f4f3ef; --c-surface: #ffffff; --c-raise: #f1efea; --c-line: #d9d6ce;
+  --c-ink: #17181b; --c-sub: #4b4f57; --c-faint: #646871;
+  --c-acc: #b85500; --c-acc-ink: #ffffff; --c-acc-soft: #fbe9d6; --c-ring: #d36a00;
+  --c-attn: #945000; --c-attn-bg: #fff0d9; --c-busy: #1c5bc9; --c-busy-bg: #e7effd;
+  --c-ok: #15703d; --c-ok-bg: #e3f4ea; --c-bad: #b42318; --c-bad-bg: #fde9e6; --c-calm: #6d3fc0; --c-calm-bg: #efe8fb;
+  --c-kc-top: #ffffff; --c-kc-edge: #b9b5ab; --c-kc-line: #cfcbc1; --c-kc-ink: #26282d;
+  --c-scrim: rgb(20 18 14 / 0.45);
+  color-scheme: light;
 }
-.badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 12px; white-space: nowrap; }
-.spinner { width: 10px; height: 10px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.6rem; border: 1px solid #52525b; border-radius: 4px; background: #18181b; }
-.btn:hover { background: #27272a; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-bg: #0f1115; --c-col: #14171c; --c-surface: #1b1f26; --c-raise: #232832; --c-line: #2c323c;
+    --c-ink: #e9ecf1; --c-sub: #aab2bf; --c-faint: #8f98a8;
+    --c-acc: #ffb454; --c-acc-ink: #1a1206; --c-acc-soft: #3a2c15; --c-ring: #ffb454;
+    --c-attn: #f4b13e; --c-attn-bg: #3a2a10; --c-busy: #8cb3ff; --c-busy-bg: #17233d;
+    --c-ok: #5bd395; --c-ok-bg: #12301f; --c-bad: #ff8a7a; --c-bad-bg: #3b1714; --c-calm: #c4a5ff; --c-calm-bg: #2a1f45;
+    --c-kc-top: #2a303b; --c-kc-edge: #07090c; --c-kc-line: #3a414e; --c-kc-ink: #e9ecf1;
+    --c-scrim: rgb(4 6 10 / 0.6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --c-bg: #0f1115; --c-col: #14171c; --c-surface: #1b1f26; --c-raise: #232832; --c-line: #2c323c;
+  --c-ink: #e9ecf1; --c-sub: #aab2bf; --c-faint: #8f98a8;
+  --c-acc: #ffb454; --c-acc-ink: #1a1206; --c-acc-soft: #3a2c15; --c-ring: #ffb454;
+  --c-attn: #f4b13e; --c-attn-bg: #3a2a10; --c-busy: #8cb3ff; --c-busy-bg: #17233d;
+  --c-ok: #5bd395; --c-ok-bg: #12301f; --c-bad: #ff8a7a; --c-bad-bg: #3b1714; --c-calm: #c4a5ff; --c-calm-bg: #2a1f45;
+  --c-kc-top: #2a303b; --c-kc-edge: #07090c; --c-kc-line: #3a414e; --c-kc-ink: #e9ecf1;
+  --c-scrim: rgb(4 6 10 / 0.6);
+  color-scheme: dark;
+}
 
-/* Minimal markdown styling for assistant output. */
-.md p, .md ul, .md ol, .md pre, .md table, .md blockquote { margin: 0 0 0.6rem; }
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-col: var(--c-col);
+  --color-surface: var(--c-surface);
+  --color-raise: var(--c-raise);
+  --color-line: var(--c-line);
+  --color-ink: var(--c-ink);
+  --color-sub: var(--c-sub);
+  --color-faint: var(--c-faint);
+  --color-acc: var(--c-acc);
+  --color-acc-ink: var(--c-acc-ink);
+  --color-acc-soft: var(--c-acc-soft);
+  --color-ring: var(--c-ring);
+  --color-attn: var(--c-attn);
+  --color-attn-bg: var(--c-attn-bg);
+  --color-busy: var(--c-busy);
+  --color-busy-bg: var(--c-busy-bg);
+  --color-ok: var(--c-ok);
+  --color-ok-bg: var(--c-ok-bg);
+  --color-bad: var(--c-bad);
+  --color-bad-bg: var(--c-bad-bg);
+  --color-calm: var(--c-calm);
+  --color-calm-bg: var(--c-calm-bg);
+  --color-scrim: var(--c-scrim);
+  --font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", monospace;
+}
+
+@layer base {
+html, body, #root { height: 100%; }
+body { margin: 0; background: var(--c-bg); color: var(--c-ink); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+::selection { background: var(--c-acc-soft); }
+:focus-visible { outline: 2px solid var(--c-ring); outline-offset: 2px; }
+}
+
+@layer components {
+/* Keycaps: the app's visual language. Anything you can press shows its key like this. */
+.kc {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; white-space: nowrap;
+  min-width: 26px; height: 26px; padding: 0 7px; border-radius: 7px;
+  background: var(--c-kc-top); border: 1px solid var(--c-kc-line); box-shadow: 0 2px 0 var(--c-kc-edge);
+  color: var(--c-kc-ink); font: 700 12px/1 var(--font-mono);
+}
+.kc-sm { min-width: 20px; height: 20px; padding: 0 5px; font-size: 11px; border-radius: 5px; box-shadow: 0 1.5px 0 var(--c-kc-edge); }
+.kc-lg { min-width: 40px; height: 40px; padding: 0 10px; font-size: 16px; border-radius: 9px; box-shadow: 0 3px 0 var(--c-kc-edge); }
+.kc-acc { background: var(--c-acc); color: var(--c-acc-ink); border-color: var(--c-acc); }
+.kc-attn { background: var(--c-attn-bg); color: var(--c-attn); border-color: color-mix(in srgb, var(--c-attn) 45%, transparent); }
+.kc-bad { background: var(--c-bad-bg); color: var(--c-bad); border-color: color-mix(in srgb, var(--c-bad) 45%, transparent); }
+.kc-ghost { background: transparent; color: inherit; border-color: currentColor; box-shadow: none; }
+kbd:not(.kc) { font: 600 12px var(--font-mono); padding: 0 5px; border: 1px solid var(--c-kc-line); border-bottom-width: 2px; border-radius: 5px; background: var(--c-kc-top); color: var(--c-kc-ink); }
+
+/* A focused row or tile: lifted with the accent ring, so where the keys go is obvious. */
+.is-focus { outline: 2px solid var(--c-ring); outline-offset: -2px; box-shadow: 0 0 0 5px color-mix(in srgb, var(--c-ring) 16%, transparent); }
+
+.spinner { width: 12px; height: 12px; flex-shrink: 0; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse-soft { 50% { opacity: 0.55; } }
+.pulse { animation: pulse-soft 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .spinner, .pulse { animation: none; } }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; min-height: 36px; padding: 0 0.85rem;
+  border: 1px solid var(--c-line); border-radius: 9px; background: var(--c-surface); color: var(--c-ink); font-weight: 500; white-space: nowrap;
+}
+.btn:hover { background: var(--c-raise); }
+.btn-primary { background: var(--c-acc); border-color: var(--c-acc); color: var(--c-acc-ink); }
+.btn-primary:hover { background: color-mix(in srgb, var(--c-acc) 88%, black); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--c-sub); }
+.btn-ghost:hover { background: var(--c-raise); color: var(--c-ink); }
+
+.field { width: 100%; border: 1px solid var(--c-line); border-radius: 10px; background: var(--c-surface); color: var(--c-ink); padding: 0.55rem 0.75rem; outline: none; }
+.field:focus { border-color: var(--c-ring); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-ring) 20%, transparent); }
+
+.eyebrow { font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-faint); }
+
+/* Markdown from Claude. */
+.md p, .md ul, .md ol, .md pre, .md table, .md blockquote { margin: 0 0 0.65rem; }
+.md > :last-child { margin-bottom: 0; }
 .md ul { list-style: disc; padding-left: 1.4rem; }
 .md ol { list-style: decimal; padding-left: 1.4rem; }
-.md h1, .md h2, .md h3 { margin: 0.8rem 0 0.4rem; font-weight: 600; color: #f4f4f5; }
-.md h1 { font-size: 1.2rem; } .md h2 { font-size: 1.1rem; } .md h3 { font-size: 1rem; }
-.md code { font: 12.5px ui-monospace, monospace; background: #18181b; padding: 0.1rem 0.3rem; border-radius: 3px; }
-.md pre { background: #18181b; padding: 0.6rem; border-radius: 4px; overflow-x: auto; }
+.md h1, .md h2, .md h3 { margin: 0.9rem 0 0.4rem; font-weight: 650; }
+.md h1 { font-size: 1.25rem; } .md h2 { font-size: 1.12rem; } .md h3 { font-size: 1rem; }
+.md code { font: 13px var(--font-mono); background: var(--c-raise); padding: 0.1rem 0.3rem; border-radius: 4px; }
+.md pre { background: var(--c-raise); border: 1px solid var(--c-line); padding: 0.7rem; border-radius: 8px; overflow-x: auto; }
 .md pre code { padding: 0; background: none; }
-.md a { color: #7dd3fc; text-decoration: underline; }
-.md table { border-collapse: collapse; }
-.md th, .md td { border: 1px solid #3f3f46; padding: 0.2rem 0.5rem; }
-.md blockquote { border-left: 2px solid #52525b; padding-left: 0.8rem; color: #a1a1aa; }
+.md a { color: var(--c-busy); text-decoration: underline; }
+.md table { border-collapse: collapse; display: block; overflow-x: auto; }
+.md th, .md td { border: 1px solid var(--c-line); padding: 0.25rem 0.55rem; }
+.md blockquote { border-left: 3px solid var(--c-line); padding-left: 0.8rem; color: var(--c-sub); }
+}

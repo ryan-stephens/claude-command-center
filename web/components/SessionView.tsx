@@ -1,14 +1,21 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { PermissionRequest, TranscriptItem } from '../../shared/protocol.ts';
-import { backToList, respondPermission } from '../keys.ts';
+import type { TranscriptItem } from '../../shared/protocol.ts';
+import { workspacesFor } from '../../shared/workspaces.ts';
+import { turnClock } from '../activity-label.ts';
+import { bindingsFor, displayCombo } from '../bindings.ts';
+import { statusLabel } from '../home-model.ts';
+import { askStop, backToList, hop } from '../keys.ts';
 import { startVoice, stopVoice, voiceSupported } from '../voice.ts';
-import { set, setDraft, useStore } from '../store.ts';
+import { NO_BINDINGS, set, setDraft, useFlags, useStore } from '../store.ts';
 import { send } from '../ws.ts';
-import { ActivityBar } from './ActivityBar.tsx';
-import { CommandBoard } from './CommandBoard.tsx';
-import { CtxMeter, shortPath, StatusBadge } from './StatusBadge.tsx';
+import { ActivityBar, useNow } from './ActivityBar.tsx';
+import { ApprovalCard } from './Approval.tsx';
+import { ContextChips } from './Home.tsx';
+import { NumPad } from './NumPad.tsx';
+import { Transcript } from './Transcript.tsx';
+import { Icon, Key, Pill, WsBadge } from './ui.tsx';
 
 const EMPTY: TranscriptItem[] = [];
 
@@ -20,6 +27,7 @@ export function SessionView() {
   const permission = useStore((s) => Object.values(s.permissions).find((p) => p.sessionId === id));
   const zone = useStore((s) => s.zone);
   const expandTools = useStore((s) => s.expandTools);
+  const ws = useStore((s) => (session ? workspacesFor(session.cwd, s.workspaces)[0] ?? null : null));
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -29,35 +37,22 @@ export function SessionView() {
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [items, partial, permission]);
 
-  const results = new Map<string, Extract<TranscriptItem, { kind: 'tool_result' }>>();
-  for (const it of items) if (it.kind === 'tool_result') results.set(it.toolUseId, it);
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-2 py-2 text-sm md:gap-3 md:px-4">
-        <button onClick={backToList} className="text-zinc-400 hover:text-zinc-100" title="Back to the list (Esc)">←</button>
-        {session && <StatusBadge s={session} />}
-        <span className="truncate font-medium text-zinc-100">{session?.title ?? id}</span>
-        <span className="hidden truncate text-zinc-500 md:inline">
-          {session && shortPath(session.cwd)}{session?.branch && ` · ${session.branch}`}
-        </span>
-        <CtxMeter pct={session?.ctxPct} />
-        {session?.live && (
-          <button
-            className="ml-auto shrink-0 rounded px-2 py-0.5 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-red-300"
-            onClick={() => set({ modal: { kind: 'stop', id } })}
-            title="End this session: stops Claude and its background tasks. It stays in History. (X on the board)"
-          >End session</button>
-        )}
-        {session?.activeElsewhere && !session.live && (
-          <span className="ml-auto rounded bg-orange-950 px-2 py-0.5 text-xs text-orange-300">
-            Active in another window: sending will fork a new session
-          </span>
-        )}
-      </div>
-
+      <SessionHeader id={id} />
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
+          {session && (
+            <div className="flex flex-wrap items-center gap-3 border-b border-line bg-col px-4 py-2 md:px-6">
+              <ContextChips s={session} ws={ws} removable />
+              {session.ctxPct !== undefined && <MemoryMeter pct={session.ctxPct} />}
+            </div>
+          )}
+          {session?.activeElsewhere && !session.live && (
+            <div className="flex items-center gap-2 border-b border-line bg-calm-bg px-4 py-2 text-sm text-calm md:px-6">
+              <Icon name="warn" size={16} />This session looks open in a terminal. Sending here makes a copy, so the two don’t write over each other.
+            </div>
+          )}
           <div
             id="transcript"
             ref={scrollRef}
@@ -66,81 +61,72 @@ export function SessionView() {
               const el = e.currentTarget;
               stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
             }}
-            onClick={() => set({ zone: 'board' })}
-            className="min-h-0 flex-1 overflow-y-auto px-4 py-3 outline-none"
+            className="min-h-0 flex-1 overflow-y-auto outline-none"
           >
-            {items.length === 0 && !partial && <p className="text-zinc-600">No messages yet.</p>}
-            {items.map((it) => <Item key={it.uuid} it={it} results={results} expand={expandTools} />)}
-            {partial && <div className="md mb-3 text-zinc-200"><Markdown remarkPlugins={[remarkGfm]}>{partial}</Markdown></div>}
-            {permission && <ApprovalCard p={permission} />}
+            <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-5 md:px-6">
+              {items.length === 0 && !partial && <p className="text-faint">No messages yet. Tell Claude what you want below.</p>}
+              <Transcript items={items} cwd={session?.cwd} expand={expandTools} />
+              {partial && <div className="md leading-relaxed"><Markdown remarkPlugins={[remarkGfm]}>{partial}</Markdown></div>}
+              {permission && <ApprovalCard p={permission} cwd={session?.cwd} />}
+            </div>
           </div>
           <ActivityBar id={id} />
           <Composer id={id} focused={zone === 'composer'} />
-          {/* Phones: the board opens as a panel under the composer. */}
-          <MobileBoard />
+          {/* Phones: the number pad opens as a panel under the composer. */}
+          <MobilePad />
         </div>
         <div className="hidden md:flex">
-          <CommandBoard focused={zone === 'board'} />
+          <NumPad focused={zone === 'board'} />
         </div>
       </div>
     </div>
   );
 }
 
-function Item({ it, results, expand }: { it: TranscriptItem; results: Map<string, Extract<TranscriptItem, { kind: 'tool_result' }>>; expand: boolean }) {
-  const [open, setOpen] = useState(false);
-  switch (it.kind) {
-    case 'user':
-      return <div className="mb-3 whitespace-pre-wrap rounded border-l-2 border-sky-600 bg-zinc-900 px-3 py-2 text-zinc-100">{it.text}</div>;
-    case 'assistant':
-      return <div className="md mb-3 text-zinc-200"><Markdown remarkPlugins={[remarkGfm]}>{it.text}</Markdown></div>;
-    case 'tool': {
-      const r = results.get(it.toolUseId);
-      const shown = expand !== open;
-      return (
-        <div className="mb-2 font-mono text-xs">
-          <button onClick={() => setOpen(!open)} className="flex w-full gap-2 text-left text-zinc-400 hover:text-zinc-200">
-            <span>{shown ? '▾' : '▸'}</span>
-            <span className="text-violet-300">{it.name}</span>
-            <span className="truncate">{it.input}</span>
-            <span className={`ml-auto ${r ? (r.isError ? 'text-red-400' : 'text-emerald-500') : 'text-zinc-600'}`}>{r ? (r.isError ? '✗' : '✓') : '…'}</span>
-          </button>
-          {shown && (
-            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap rounded bg-zinc-900 p-2 text-zinc-400">
-              {it.input}{r ? `\n\n${r.text}` : ''}
-            </pre>
-          )}
-        </div>
-      );
-    }
-    case 'tool_result':
-      return null; // rendered with its tool call
-    case 'result':
-      return (
-        <div className={`mb-4 text-xs ${it.subtype === 'success' ? 'text-zinc-600' : 'text-amber-500'}`}>
-          — {it.subtype === 'success' ? 'done' : it.subtype.replaceAll('_', ' ')}
-          {it.durationMs !== undefined && ` in ${(it.durationMs / 1000).toFixed(1)}s`}
-          {it.costUsd !== undefined && ` · $${it.costUsd.toFixed(4)}`}
-        </div>
-      );
-    case 'notice':
-      return <div className="mb-3 text-xs text-orange-300">{it.text}</div>;
-  }
+function SessionHeader({ id }: { id: string }) {
+  const session = useStore((s) => s.sessions.find((x) => x.id === id));
+  const ws = useStore((s) => (session ? workspacesFor(session.cwd, s.workspaces)[0] ?? null : null));
+  const flags = useFlags(id);
+  const activity = useStore((s) => s.activity[id]);
+  const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
+  const now = useNow(Boolean(activity && activity.phase !== 'idle'));
+  const status = session ? statusLabel(session, flags) : null;
+  const clock = turnClock(activity, now);
+  const k = (a: 'prevSession' | 'nextSession') => displayCombo(bindingsFor(a, bindings)[0] ?? '');
+  return (
+    <div className="flex items-center gap-3 border-b border-line px-3 py-2.5 md:px-4">
+      <button onClick={backToList} className="btn btn-ghost min-h-0 py-1 pl-1.5 pr-2" title="Back to home (Esc when idle, Numpad 0)">
+        <Icon name="back" size={17} /><span className="hidden md:inline">Home</span><Key k="0" size="sm" className="hidden md:inline-flex" />
+      </button>
+      {ws && <span className="hidden items-center gap-2 text-sub md:flex"><WsBadge ws={ws} size={22} />{ws.name}<span className="text-faint">/</span></span>}
+      <button className="min-w-0 truncate text-left text-[16px] font-semibold" onClick={() => set({ modal: { kind: 'rename', id } })} title="Rename (R)">
+        {session?.title ?? id}
+      </button>
+      {status?.text && <Pill tone={status.tone} spin={status.tone === 'blue'}>{status.text}{clock && status.tone === 'blue' ? ` · ${clock}` : ''}</Pill>}
+      <span className="ml-auto" />
+      <span className="hidden items-center gap-1.5 text-sm text-faint lg:flex">
+        <button onClick={() => hop(-1)} title="Previous session"><Key k={k('prevSession')} size="sm" /></button>
+        <button onClick={() => hop(1)} title="Next session"><Key k={k('nextSession')} size="sm" /></button>
+        other sessions
+      </span>
+      {session?.live && (
+        <button className="btn btn-ghost min-h-0 py-1 text-sm hover:text-bad" onClick={() => askStop(id)} title="End this session: stops Claude and anything it runs in the background. It stays in the list and can be continued.">
+          End session<Key k="X" size="sm" className="hidden md:inline-flex" />
+        </button>
+      )}
+    </div>
+  );
 }
 
-function ApprovalCard({ p }: { p: PermissionRequest }) {
-  const typing = useStore((s) => s.zone === 'composer');
+/** How full Claude's working memory (context window) is; time to tidy up near the top. */
+function MemoryMeter({ pct }: { pct: number }) {
+  const color = pct >= 85 ? 'bg-bad' : pct >= 70 ? 'bg-attn' : 'bg-ok';
   return (
-    <div className="mb-3 rounded border border-amber-600 bg-amber-950/50 p-3" role="alertdialog" aria-label="Tool approval">
-      <div className="mb-1 text-sm text-amber-200">Allow <span className="font-mono text-amber-100">{p.tool}</span>?</div>
-      <pre className="mb-3 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-xs text-zinc-300">{p.input}</pre>
-      <div className="flex gap-2 text-sm">
-        <button className="btn" onClick={() => respondPermission('allow')}><kbd>Y</kbd> Yes</button>
-        {p.canAlways && <button className="btn" onClick={() => respondPermission('always')}><kbd>A</kbd> Always</button>}
-        <button className="btn" onClick={() => respondPermission('deny')}><kbd>N</kbd> No</button>
-        {typing && <span className="self-center text-xs text-amber-300/80">You're in the composer: <kbd>Tab</kbd> to answer · <kbd>Esc</kbd> stops the turn</span>}
-      </div>
-    </div>
+    <span className="ml-auto flex items-center gap-2 text-sm text-faint" title={`Claude's working memory for this session is ${pct.toFixed(0)}% full. Near the top, run /compact (Built-in group) to tidy it.`}>
+      Memory
+      <span className="h-1.5 w-16 overflow-hidden rounded-full bg-raise"><span className={`block h-full ${color}`} style={{ width: `${Math.min(100, pct)}%` }} /></span>
+      {Math.round(pct)}%
+    </span>
   );
 }
 
@@ -149,15 +135,16 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
   const voice = useStore((s) => (s.voice?.sessionId === id ? s.voice : null));
   const text = voice ? voice.text : draft;
   const dialogOpen = useStore((s) => s.modal !== null);
+  const status = useStore((s) => s.sessions.find((x) => x.id === id)?.status);
+  const pending = useStore((s) => Object.values(s.permissions).some((p) => p.sessionId === id));
   const ref = useRef<HTMLTextAreaElement>(null);
-  const running = useStore((s) => s.sessions.find((x) => x.id === id)?.status === 'running');
 
   useEffect(() => {
     const el = ref.current;
     if (!el || dialogOpen) return;
     if (focused) {
       el.focus();
-      el.setSelectionRange(el.value.length, el.value.length); // after an "insert" command, keep typing at the end
+      el.setSelectionRange(el.value.length, el.value.length); // after an "insert" workflow, keep typing at the end
     } else el.blur();
   }, [focused, id, dialogOpen]); // re-run when a dialog closes, so focus comes back here
 
@@ -167,20 +154,23 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
     setDraft(id, '');
   }
 
+  const placeholder = pending ? 'Answer Claude above, or type a different instruction'
+    : status === 'running' ? 'Claude is working. Type your next message; it waits its turn.'
+    : 'Tell Claude what you want · Enter to send';
   return (
-    <div className="border-t border-zinc-800 p-3">
+    <div className="border-t border-line px-3 py-3 md:px-6">
       {voice && (
-        <div className={`mb-1.5 flex items-center gap-2 text-xs ${voice.state === 'listening' ? 'text-red-400' : 'text-zinc-400'}`}>
-          <span className={`h-2 w-2 rounded-full ${voice.state === 'listening' ? 'animate-pulse bg-red-500' : 'bg-zinc-500'}`} />
-          {voice.state === 'listening' ? <>Listening… release to send · <kbd>Esc</kbd> cancel</> : 'Finishing…'}
+        <div className={`mx-auto mb-2 flex max-w-3xl items-center gap-2 text-sm ${voice.state === 'listening' ? 'text-bad' : 'text-sub'}`}>
+          <span className={`h-2.5 w-2.5 rounded-full ${voice.state === 'listening' ? 'pulse bg-bad' : 'bg-faint'}`} />
+          {voice.state === 'listening' ? <>Listening… release to send · <Key k="Esc" size="sm" /> cancels</> : 'Finishing…'}
         </div>
       )}
-      <div className="flex items-end gap-2">
+      <div className={`mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border-2 bg-surface p-1.5 pl-3 ${voice ? 'border-bad' : focused ? 'border-acc' : 'border-line'}`}>
         <textarea
           readOnly={Boolean(voice)}
           ref={ref}
           value={text}
-          rows={Math.min(8, Math.max(2, text.split('\n').length))}
+          rows={Math.min(8, Math.max(1, text.split('\n').length))}
           onChange={(e) => setDraft(id, e.target.value)}
           onFocus={() => set({ zone: 'composer' })}
           onKeyDown={(e) => {
@@ -189,8 +179,9 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
               submit();
             }
           }}
-          placeholder={running ? 'Running… queue the next message' : 'Message · Enter to send'}
-          className={`w-full resize-none rounded border bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-600 ${voice ? 'border-red-800' : 'border-zinc-800'}`}
+          placeholder={placeholder}
+          aria-label="Message to Claude"
+          className="min-h-9 w-full resize-none bg-transparent py-1.5 outline-none placeholder:text-faint"
         />
         <ComposerButtons id={id} canSend={Boolean(draft.trim()) && !voice} onSend={submit} />
       </div>
@@ -198,35 +189,38 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
   );
 }
 
-/** Touch controls: hold-to-talk mic, send, and the board toggle on phones. Keyboard users never need them. */
+/** Touch and mouse controls: hold-to-talk, the phone number pad toggle, send. */
 function ComposerButtons({ id, canSend, onSend }: { id: string; canSend: boolean; onSend: () => void }) {
   const listening = useStore((s) => s.voice?.sessionId === id && s.voice.state === 'listening');
-  const boardOpen = useStore((s) => s.mobileBoard);
-  const btn = 'flex h-10 w-10 shrink-0 items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-base';
+  const padOpen = useStore((s) => s.mobileBoard);
+  const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
+  const talkKey = displayCombo(bindingsFor('pushToTalk', bindings)[0] ?? '');
+  const btn = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl';
   return (
-    <div className="flex gap-1.5">
+    <div className="flex gap-1">
       {voiceSupported() && (
         <button
-          className={`${btn} touch-none select-none ${listening ? 'border-red-600 bg-red-950 text-red-300' : 'text-zinc-300'}`}
-          title="Hold to talk"
+          className={`${btn} touch-none select-none ${listening ? 'bg-bad-bg text-bad' : 'text-sub hover:bg-raise'}`}
+          title={`Hold to talk (or hold ${talkKey})`}
+          aria-label="Hold to talk"
           onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); startVoice(id); }}
           onPointerUp={stopVoice}
           onPointerCancel={stopVoice}
           onContextMenu={(e) => e.preventDefault()}
-        >🎙</button>
+        ><Icon name="mic" /></button>
       )}
-      <button className={`${btn} md:hidden ${boardOpen ? 'border-sky-600 text-sky-300' : 'text-zinc-300'}`} title="Commands" onClick={() => set({ mobileBoard: !boardOpen })}>⌗</button>
-      <button className={`${btn} ${canSend ? 'text-sky-300' : 'text-zinc-600'}`} title="Send (Enter)" disabled={!canSend} onClick={onSend}>➤</button>
+      <button className={`${btn} md:hidden ${padOpen ? 'bg-acc-soft text-acc' : 'text-sub'}`} aria-label="Workflows" title="Workflows" onClick={() => set({ mobileBoard: !padOpen })}><Icon name="grid" /></button>
+      <button className={`${btn} ${canSend ? 'bg-acc text-acc-ink' : 'text-faint'}`} title="Send (Enter)" aria-label="Send" disabled={!canSend} onClick={onSend}><Icon name="send" /></button>
     </div>
   );
 }
 
-function MobileBoard() {
+function MobilePad() {
   const open = useStore((s) => s.mobileBoard);
   if (!open) return null;
   return (
-    <div className="max-h-[45vh] overflow-y-auto border-t border-zinc-800 md:hidden">
-      <CommandBoard focused={false} compact />
+    <div className="max-h-[50vh] overflow-y-auto border-t border-line md:hidden">
+      <NumPad focused={false} compact />
     </div>
   );
 }

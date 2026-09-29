@@ -1,12 +1,19 @@
-// One keydown handler routes every key by modal → screen → focus zone, so behaviour is deterministic.
-// keymap() is the single source for the `?` overlay; add a row whenever you add a key. Global shortcuts
-// come from bindings.ts so they can be rebound.
+// One keydown handler routes every key by modal → screen → focus (home column or session zone),
+// so behaviour is deterministic. keymap() is the single source for the `?` overlay and legend.ts
+// for the bar at the bottom; add a row to both whenever you add a key. Global shortcuts come
+// from bindings.ts so they can be rebound.
 
 import type { PermissionDecision } from '../shared/protocol.ts';
+import { workspacesFor } from '../shared/workspaces.ts';
 import { ACTIONS, actionFor, bindingsFor, comboOf, displayCombo, type ActionId, type Bindings } from './bindings.ts';
 import { cycleGroup, exportPack, fireSlot, importPack } from './commands.ts';
+import { sessionsIn } from './home-model.ts';
+import { nextTheme, applyTheme, THEME_LABEL } from './theme.ts';
 import { cancelVoice, isListening, startVoice, stopVoice } from './voice.ts';
-import { attention, currentGroup, flash, get, markRead, pendingFor, sessionById, set, TABS, toggleSound, visibleSessions } from './store.ts';
+import {
+  attention, currentGroup, currentWorkspace, flash, get, HOME_COLS, markRead, pendingFor, sameScope, scopes, sessionById, set, setScope,
+  toggleSound, visibleSessions, type HomeCol,
+} from './store.ts';
 import { lastPermissionAt, send } from './ws.ts';
 
 /** Keys pressed this soon after an approval card appears were aimed at something else. */
@@ -14,51 +21,65 @@ const APPROVAL_GRACE_MS = 400;
 
 const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
-    title: 'Session list',
+    title: 'Home',
     keys: [
-      ['↑ ↓  Home End', 'Move selection'],
-      ['Enter', 'Open session'],
-      ['/', 'Filter by title, repo, branch or status'],
-      ['Esc', 'Clear the filter'],
-      ['Tab', 'Cycle Inbox / Live / History'],
-      ['Y / A / N', 'Inbox: answer the selected approval without opening it'],
-      ['N', 'New session (outside the Inbox)'],
-      ['R', 'Rename session'],
-      ['X', 'Stop a live session'],
+      ['← →', 'Move between columns: workspaces, sessions, preview'],
+      ['↑ ↓  Home End', 'Choose in the current column'],
+      ['1–9  /  0', 'Jump to workspace 1–9 / everything outside your workspaces'],
+      ['Enter', 'Open the session (in the workspace column: go to its sessions)'],
+      ['N', 'New session in this workspace'],
+      ['W', 'New workspace'],
+      ['E / Delete (workspace column)', 'Edit / delete the workspace'],
+      ['+', 'Add a repo to this workspace'],
+      ['Tab', 'Go to the repo library (Enter adds the repo here, N starts a session in it, F picks the folders it lists)'],
+      ['/', 'Filter sessions'],
+      ['Y / A / N (preview column)', 'Answer the selected session’s approval without opening it'],
+      ['R / X', 'Rename / end the selected session'],
     ],
   },
   {
-    title: 'Session view',
+    title: 'Session',
     keys: [
-      ['Enter / Shift+Enter', 'Send / newline (composer)'],
-      ['Esc', 'While Claude is working: stop it (like Claude Code). Otherwise step out: composer → board → list'],
-      ['Numpad 0', 'Step out, even while Claude is working'],
-      ['Tab (composer)', 'Go to the board / approval card without interrupting'],
-      ['i', 'Focus the composer'],
-      ['PgUp PgDn  Home End', 'Scroll the transcript'],
-      ['T', 'Expand / collapse tool calls'],
-      ['Y / A / N', 'Approval: yes once / always / no'],
-      ['R / X', 'Rename / stop the session'],
+      ['Enter / Shift+Enter', 'Send / new line (message box)'],
+      ['Esc', 'While Claude is working: stop it. Otherwise step out: message box → number pad → home'],
+      ['Numpad 0', 'Back to home, even while Claude is working'],
+      ['Tab (message box)', 'Go to the number pad or the approval card without stopping Claude'],
+      ['i', 'Back to the message box'],
+      ['+', 'Give this session another repo to work in'],
+      ['PgUp PgDn  Home End', 'Scroll the conversation'],
+      ['T', 'Show or hide every step’s details'],
+      ['R / X', 'Rename / end the session'],
     ],
   },
   {
-    title: 'Command board',
+    title: 'Approvals',
     keys: [
-      ['Numpad 1–9', 'Fire command N in the current group (from the composer only while it is empty)'],
-      ['Alt+1–9', 'Fire command N, always'],
+      ['Y', 'Allow once'],
+      ['A', 'Always allow (the card says exactly what)'],
+      ['N', 'Don’t allow; Claude tries another way'],
+      ['D', 'Show or hide the raw details'],
+    ],
+  },
+  {
+    title: 'Number pad (workflows)',
+    keys: [
+      ['Numpad 1–9', 'Run workflow N (from the message box only while it is empty)'],
+      ['Alt+1–9', 'Run workflow N, always'],
       ['Numpad + / −  or  ] / [', 'Next / previous group'],
-      ['↑ ↓ ← →  then Enter', 'Move on the board (laid out like the numpad) and fire'],
-      ['E', 'Edit the focused tile (on a slash command: copy it into your own group)'],
-      ['Delete', 'Remove the focused command'],
-      ['Ctrl+↑ ↓ ← →', 'Move the focused command to the neighbouring slot'],
-      ['Shift+E / Shift+I', 'Export / import your global commands as JSON'],
+      ['Numpad /', 'Type a message'],
+      ['Numpad *', 'Search everything'],
+      ['↑ ↓ ← →  then Enter', 'Move on the pad and run the focused key'],
+      ['E', 'Edit the focused key (on a skill: save your own copy)'],
+      ['Delete', 'Remove the focused workflow'],
+      ['Ctrl+↑ ↓ ← →', 'Move the focused workflow to the neighbouring key'],
+      ['Shift+E / Shift+I', 'Export / import your own workflows as JSON'],
     ],
   },
   {
     title: 'Voice (Chrome / Edge)',
     keys: [
       ['Esc (while holding)', 'Cancel without sending'],
-      ['Say a command label', 'Fires it instead of sending text, e.g. "code review"; "slot 3" fires slot 3'],
+      ['Say a workflow’s name', 'Runs it instead of sending the words, e.g. “run the tests”; “slot 3” runs key 3'],
     ],
   },
 ];
@@ -67,6 +88,7 @@ const ACTION_HELP: Partial<Record<ActionId, string>> = {
   nextAttention: 'Jump to the next session that needs you (approvals first, then finished)',
   sound: 'Sound on / off (outside text fields)',
   pushToTalk: 'Push-to-talk: hold, speak, release to send (not while you are mid-message)',
+  theme: 'Theme: match Windows → light → dark',
 };
 
 /** Help sections with the current bindings filled in. */
@@ -77,7 +99,7 @@ export function keymap(overrides: Bindings): { title: string; keys: [string, str
   ];
   const global = ACTIONS.filter((a) => a.id !== 'pushToTalk').map((a) => row(a.id));
   global.push(['B (in this overlay)', 'Change these shortcuts']);
-  const sections = [{ title: 'Global', keys: global }, ...FIXED_SECTIONS];
+  const sections = [{ title: 'Anywhere', keys: global }, ...FIXED_SECTIONS.map((s) => ({ ...s, keys: [...s.keys] }))];
   const voice = sections.find((x) => x.title.startsWith('Voice'))!;
   voice.keys = [row('pushToTalk'), ...voice.keys];
   return sections;
@@ -87,9 +109,18 @@ function isTextTarget(t: EventTarget | null): boolean {
   return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement;
 }
 
+// ---- Shared actions -------------------------------------------------------------------
+
 export function openSession(id: string): void {
+  const s = get();
   markRead(id);
-  set({ screen: 'session', openId: id, selectedId: id, zone: pendingFor(id) ? 'board' : 'composer', filterFocused: false, board: null });
+  // Keep home in step: coming back should show this session in its workspace.
+  const session = sessionById(id);
+  if (session && !sessionsIn(s.scope, [session], s.workspaces).length) {
+    const ws = workspacesFor(session.cwd, s.workspaces)[0];
+    setScope(ws ? { kind: 'workspace', id: ws.id } : { kind: 'rest' });
+  }
+  set({ screen: 'session', openId: id, selectedId: id, zone: pendingFor(id) ? 'board' : 'composer', filterFocused: false, board: null, homeCol: 'sessions' });
   send({ type: 'session.open', id });
   send({ type: 'board.get', sessionId: id });
 }
@@ -106,32 +137,36 @@ export function respondPermission(decision: PermissionDecision, sessionId = get(
   return true;
 }
 
-function moveSelection(delta: number | 'first' | 'last'): void {
-  const list = visibleSessions(get());
-  if (!list.length) return;
-  const i = list.findIndex((s) => s.id === get().selectedId);
-  const next = delta === 'first' ? 0 : delta === 'last' ? list.length - 1 : Math.min(list.length - 1, Math.max(0, (i < 0 ? 0 : i) + delta));
-  set({ selectedId: list[next].id });
-  document.getElementById(`row-${list[next].id}`)?.scrollIntoView({ block: 'nearest' });
+/** Claude is mid-turn (including waiting on an approval): Esc stops it, like in Claude Code. */
+function isBusy(id: string | null): boolean {
+  const status = sessionById(id)?.status;
+  return status === 'running' || status === 'requires_action';
 }
 
-function hop(delta: number): void {
-  const s = get();
-  const list = visibleSessions(s);
-  if (!list.length) return;
-  const current = s.screen === 'session' ? s.openId : s.selectedId;
-  const i = list.findIndex((x) => x.id === current);
-  // Not in this list (e.g. read and gone from the Inbox): start from the matching end.
-  const from = i < 0 ? (delta > 0 ? -1 : list.length) : i;
-  const next = list[(from + delta + list.length) % list.length];
-  if (s.screen === 'session') openSession(next.id);
-  else moveSelection(delta);
+export function interrupt(id: string | null): void {
+  if (!id || !isBusy(id)) return;
+  send({ type: 'session.interrupt', id });
+  flash('Stopped');
 }
 
-export { jumpToAttention, hop, askStop };
+export function askStop(id: string | null): void {
+  if (sessionById(id)?.live) set({ modal: { kind: 'stop', id: id! } });
+}
+
+export function newSession(repo?: string): void {
+  const ws = currentWorkspace(get());
+  set({ modal: { kind: 'new', workspaceId: ws?.id ?? null, repo } });
+}
+
+export function cycleTheme(): void {
+  const theme = nextTheme(get().theme);
+  applyTheme(theme);
+  set({ theme });
+  flash(THEME_LABEL[theme]);
+}
 
 /** Alt+N: open the next session that needs you, cycling past the one already open. */
-function jumpToAttention(): void {
+export function jumpToAttention(): void {
   const s = get();
   const list = attention(s);
   if (!list.length) { flash('Nothing needs you'); return; }
@@ -139,58 +174,157 @@ function jumpToAttention(): void {
   openSession(list[(i + 1) % list.length].id);
 }
 
-function scrollTranscript(by: number | 'top' | 'bottom'): void {
-  const el = document.getElementById('transcript');
-  if (!el) return;
-  if (by === 'top') el.scrollTop = 0;
-  else if (by === 'bottom') el.scrollTop = el.scrollHeight;
-  else el.scrollBy({ top: by });
+/** Alt+↑ / Alt+↓: previous / next session in the sessions column. */
+export function hop(delta: number): void {
+  const s = get();
+  const list = visibleSessions(s);
+  if (!list.length) return;
+  const current = s.screen === 'session' ? s.openId : s.selectedId;
+  const i = list.findIndex((x) => x.id === current);
+  // Not in this list (e.g. filtered out): start from the matching end.
+  const from = i < 0 ? (delta > 0 ? -1 : list.length) : i;
+  const next = list[(from + delta + list.length) % list.length];
+  if (s.screen === 'session') openSession(next.id);
+  else selectSession(next.id);
 }
 
-function askStop(id: string | null): void {
-  if (sessionById(id)?.live) set({ modal: { kind: 'stop', id: id! } });
+function selectSession(id: string): void {
+  set({ selectedId: id });
+  document.getElementById(`row-${id}`)?.scrollIntoView({ block: 'nearest' });
 }
 
-/** The selected row, but only if the current tab and filter actually show it. Keys must never act on a hidden row. */
+function moveSelection(delta: number | 'first' | 'last'): void {
+  const list = visibleSessions(get());
+  if (!list.length) return;
+  const i = list.findIndex((s) => s.id === get().selectedId);
+  const next = delta === 'first' ? 0 : delta === 'last' ? list.length - 1 : Math.min(list.length - 1, Math.max(0, (i < 0 ? 0 : i) + delta));
+  selectSession(list[next].id);
+}
+
+function moveScope(delta: number): void {
+  const s = get();
+  const list = scopes(s);
+  const i = Math.max(0, list.findIndex((x) => sameScope(x, s.scope)));
+  setScope(list[Math.min(list.length - 1, Math.max(0, i + delta))]);
+}
+
+/** 1–9 pick workspace N, 0 picks "everything else". */
+function scopeByDigit(n: number): void {
+  const s = get();
+  if (n === 0) { setScope({ kind: 'rest' }); return; }
+  const w = s.workspaces[n - 1];
+  if (w) setScope({ kind: 'workspace', id: w.id });
+  else flash(s.workspaces.length ? `There is no workspace ${n}` : 'No workspaces yet. Press W to make one.');
+}
+
+/** The selected session, but only if the column actually shows it. Keys must never act on a hidden row. */
 function visibleSelection(): string | null {
   const s = get();
   return visibleSessions(s).some((x) => x.id === s.selectedId) ? s.selectedId : null;
 }
 
-function listKeys(e: KeyboardEvent, typing: boolean): boolean {
+function addRepoToWorkspace(): void {
+  const ws = currentWorkspace(get());
+  if (ws) set({ modal: { kind: 'repoPicker', target: { kind: 'workspace', id: ws.id } } });
+  else set({ modal: { kind: 'workspace', id: null } });
+}
+
+// ---- Home -------------------------------------------------------------------------------
+
+function moveCol(delta: number): void {
+  const col = get().homeCol;
+  const i = HOME_COLS.indexOf(col === 'library' ? 'sessions' : col);
+  set({ homeCol: HOME_COLS[Math.min(HOME_COLS.length - 1, Math.max(0, i + delta))] });
+}
+
+function libraryKeys(e: KeyboardEvent): boolean {
   const s = get();
-  const selected = visibleSelection();
+  const repos = s.library.repos;
+  const repo = repos[Math.min(s.libIndex, repos.length - 1)];
   switch (e.key) {
-    case 'ArrowUp': moveSelection(-1); return true;
-    case 'ArrowDown': moveSelection(1); return true;
-    case 'Enter': if (selected) openSession(selected); return true;
-    case 'Tab': {
-      const step = e.shiftKey ? TABS.length - 1 : 1;
-      set({ tab: TABS[(TABS.indexOf(s.tab) + step) % TABS.length] });
-      queueMicrotask(() => moveSelection('first'));
+    case 'ArrowLeft': set({ libIndex: Math.max(0, s.libIndex - 1) }); return true;
+    case 'ArrowRight': set({ libIndex: Math.min(repos.length - 1, s.libIndex + 1) }); return true;
+    case 'ArrowUp': case 'Escape': set({ homeCol: 'sessions' }); return true;
+    case 'Home': set({ libIndex: 0 }); return true;
+    case 'End': set({ libIndex: Math.max(0, repos.length - 1) }); return true;
+    case 'Enter': case '+': case '=': {
+      if (!repo) { set({ modal: { kind: 'sources' } }); return true; }
+      const ws = currentWorkspace(s);
+      if (!ws) { flash('Pick a workspace first (1–9), or press W to make one'); return true; }
+      send({ type: 'workspace.addRepo', id: ws.id, path: repo.path });
+      flash(`Added ${repo.name} to ${ws.name}`);
       return true;
     }
-    case 'Escape': set({ filter: '', filterFocused: false }); return true;
   }
-  if (typing) return false;
+  switch (e.key.toLowerCase()) {
+    case 'n': if (repo) newSession(repo.path); return true;
+    case 'f': set({ modal: { kind: 'sources' } }); return true;
+  }
+  return false;
+}
+
+function homeKeys(e: KeyboardEvent, typing: boolean): boolean {
+  const s = get();
+  const selected = visibleSelection();
+  if (typing) {
+    // The filter box: arrows and Enter still drive the list.
+    switch (e.key) {
+      case 'ArrowUp': moveSelection(-1); return true;
+      case 'ArrowDown': moveSelection(1); return true;
+      case 'Enter': if (selected) openSession(selected); return true;
+      case 'Escape': set({ filter: '', filterFocused: false }); return true;
+    }
+    return false;
+  }
+  if (e.ctrlKey || e.altKey || e.metaKey) return false;
+  if (e.key === 'Tab') { set({ homeCol: s.homeCol === 'library' ? 'sessions' : 'library' }); return true; }
+  if (s.homeCol === 'library') return libraryKeys(e);
+
+  const digit = /^(Digit|Numpad)(\d)$/.exec(e.code);
+  if (digit && !e.shiftKey) { scopeByDigit(Number(digit[2])); return true; }
+
+  const col: HomeCol = s.homeCol;
   switch (e.key) {
-    case 'Home': moveSelection('first'); return true;
-    case 'End': moveSelection('last'); return true;
-    case '/': set({ filterFocused: true }); return true;
+    case 'ArrowLeft': moveCol(-1); return true;
+    case 'ArrowRight': moveCol(1); return true;
+    case 'ArrowUp': if (col === 'workspaces') moveScope(-1); else moveSelection(-1); return true;
+    case 'ArrowDown': if (col === 'workspaces') moveScope(1); else moveSelection(1); return true;
+    case 'Home': if (col === 'workspaces') moveScope(-99); else moveSelection('first'); return true;
+    case 'End': if (col === 'workspaces') moveScope(99); else moveSelection('last'); return true;
+    case 'Enter':
+      if (col === 'workspaces') set({ homeCol: 'sessions' });
+      else if (selected) openSession(selected);
+      return true;
+    case 'Escape':
+      if (s.filter) set({ filter: '' });
+      else if (col !== 'sessions') set({ homeCol: 'sessions' });
+      return true;
+    case '/': set({ filterFocused: true, homeCol: 'sessions' }); return true;
+    case '+': case '=': addRepoToWorkspace(); return true;
+    case 'Delete':
+      if (col === 'workspaces' && s.scope.kind === 'workspace') set({ modal: { kind: 'deleteWorkspace', id: s.scope.id } });
+      return true;
   }
-  if (s.tab === 'inbox' && selected && pendingFor(selected)) {
+  // The preview answers the selected session's approval without opening it.
+  if (col === 'preview' && selected && pendingFor(selected)) {
     const decision = ({ y: 'allow', a: 'always', n: 'deny' } as const)[e.key.toLowerCase() as 'y' | 'a' | 'n'];
     if (decision) return respondPermission(decision, selected);
   }
   switch (e.key.toLowerCase()) {
-    case 'n': if (s.tab !== 'inbox') set({ modal: { kind: 'new' } }); return true;
+    case 'n': newSession(); return true;
+    case 'w': set({ modal: { kind: 'workspace', id: null } }); return true;
+    case 'e':
+      if (col === 'workspaces' && s.scope.kind === 'workspace') set({ modal: { kind: 'workspace', id: s.scope.id } });
+      return true;
     case 'r': if (selected) set({ modal: { kind: 'rename', id: selected } }); return true;
     case 'x': askStop(selected); return true;
   }
   return false;
 }
 
-// The board is laid out like a numpad: 7 8 9 / 4 5 6 / 1 2 3.
+// ---- Session: number pad ------------------------------------------------------------------
+
+// The pad is laid out like a numpad: 7 8 9 / 4 5 6 / 1 2 3.
 const GRID = [[7, 8, 9], [4, 5, 6], [1, 2, 3]];
 const ARROWS: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
 
@@ -214,8 +348,8 @@ function boardKeys(e: KeyboardEvent): boolean {
     const target = neighbour(s.boardSlot, e.key);
     if (e.ctrlKey) {
       if (!editable || !command || target === s.boardSlot) return true;
-      const scope = editable.scope as 'global' | 'repo';
-      send({ type: 'command.swap', ref: { scope, cwd: sessionById(s.openId)?.cwd, group: editable.name, slot: s.boardSlot }, otherSlot: target });
+      const scope = editable.scope as 'workspace' | 'global' | 'repo';
+      send({ type: 'command.swap', ref: { scope, cwd: sessionById(s.openId)?.cwd, workspaceId: editable.workspaceId, group: editable.name, slot: s.boardSlot }, otherSlot: target });
     }
     set({ boardSlot: target });
     return true;
@@ -236,16 +370,11 @@ function boardKeys(e: KeyboardEvent): boolean {
   return false;
 }
 
-/** Claude is mid-turn (including waiting on an approval): Esc stops it, like in Claude Code. */
-function isBusy(id: string | null): boolean {
-  const status = sessionById(id)?.status;
-  return status === 'running' || status === 'requires_action';
-}
-
-export function interrupt(id: string | null): void {
-  if (!id || !isBusy(id)) return;
-  send({ type: 'session.interrupt', id });
-  flash('Interrupted');
+/** Approval details (raw command) toggle, read by the card. */
+export const approvalDetails = { open: false, listeners: new Set<() => void>() };
+function toggleDetails(): void {
+  approvalDetails.open = !approvalDetails.open;
+  approvalDetails.listeners.forEach((l) => l());
 }
 
 function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
@@ -256,7 +385,7 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
       else set({ zone: 'board' });
       return true;
     }
-    // Tab reaches the board and any approval card without interrupting.
+    // Tab reaches the number pad and any approval card without stopping Claude.
     if (e.key === 'Tab' && !e.shiftKey) { set({ zone: 'board' }); return true; }
     return false; // Enter/Shift+Enter live on the composer itself
   }
@@ -272,6 +401,7 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
     case 'PageDown': scrollTranscript(window.innerHeight * 0.8); return true;
     case 'Home': scrollTranscript('top'); return true;
     case 'End': scrollTranscript('bottom'); return true;
+    case '+': case '=': if (s.openId) set({ modal: { kind: 'repoPicker', target: { kind: 'session', id: s.openId } } }); return true;
   }
   switch (e.key.toLowerCase()) {
     case 'i': set({ zone: 'composer' }); return true;
@@ -279,11 +409,22 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
     case 'y': return respondPermission('allow');
     case 'a': return respondPermission('always');
     case 'n': return respondPermission('deny');
+    case 'd': if (pendingFor(s.openId)) { toggleDetails(); return true; } return false;
     case 'r': if (s.openId) set({ modal: { kind: 'rename', id: s.openId } }); return true;
     case 'x': askStop(s.openId); return true;
   }
   return false;
 }
+
+function scrollTranscript(by: number | 'top' | 'bottom'): void {
+  const el = document.getElementById('transcript');
+  if (!el) return;
+  if (by === 'top') el.scrollTop = 0;
+  else if (by === 'bottom') el.scrollTop = el.scrollHeight;
+  else el.scrollBy({ top: by });
+}
+
+// ---- Voice, numpad, global ----------------------------------------------------------------
 
 const isPushToTalk = (e: KeyboardEvent) => {
   const combo = comboOf(e);
@@ -315,7 +456,7 @@ export function onKeyUp(e: KeyboardEvent): void {
 }
 
 /**
- * Numpad and Alt+digit command keys in the session view. The numpad acts on the board
+ * Numpad and Alt+digit workflow keys in the session view. The numpad acts on the pad
  * unless you're mid-message in the composer, so digits can still be typed there.
  */
 function commandKeys(e: KeyboardEvent): boolean {
@@ -336,12 +477,11 @@ function commandKeys(e: KeyboardEvent): boolean {
     return true;
   }
   switch (e.code) {
-    case 'Numpad0':
-      if (s.zone === 'composer') set({ zone: 'board' });
-      else backToList();
-      return true;
+    case 'Numpad0': backToList(); return true;
     case 'NumpadAdd': cycleGroup(1); return true;
     case 'NumpadSubtract': cycleGroup(-1); return true;
+    case 'NumpadDivide': set({ zone: 'composer' }); return true;
+    case 'NumpadMultiply': set({ modal: { kind: 'palette' } }); return true;
   }
   return false;
 }
@@ -359,10 +499,11 @@ function globalAction(e: KeyboardEvent, typing: boolean): boolean {
     case 'nextAttention': jumpToAttention(); break;
     case 'prevSession': hop(-1); break;
     case 'nextSession': hop(1); break;
-    case 'newSession': set({ modal: { kind: 'new' } }); break;
+    case 'newSession': newSession(); break;
     case 'interrupt': interrupt(openId); break;
     case 'background': if (openId) send({ type: 'session.background', id: openId }); break;
     case 'sound': toggleSound(); break;
+    case 'theme': cycleTheme(); break;
   }
   return true;
 }
@@ -370,7 +511,7 @@ function globalAction(e: KeyboardEvent, typing: boolean): boolean {
 export function onKeyDown(e: KeyboardEvent): void {
   if (e.isComposing) return;
   // A dialog that handles a key may close itself before the event bubbles here; never let that
-  // same keypress act on the screen underneath (Enter would fire a tile, Esc would leave the session).
+  // same keypress act on the screen underneath (Enter would fire a key, Esc would leave the session).
   if (e.target instanceof Element && e.target.closest('[role=dialog]')) return;
   const s = get();
   if (s.modal) {
@@ -390,7 +531,6 @@ export function onKeyDown(e: KeyboardEvent): void {
   else if (globalAction(e, typing)) handled = true;
   else if (commandKeys(e)) handled = true;
   else if (s.screen === 'session') handled = sessionKeys(e, typing);
-  else if (e.ctrlKey || e.metaKey || e.altKey) return;
-  else handled = listKeys(e, typing);
+  else handled = homeKeys(e, typing);
   if (handled) e.preventDefault();
 }

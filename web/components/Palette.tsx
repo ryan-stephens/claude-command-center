@@ -1,26 +1,28 @@
 import { useMemo, useRef, useState } from 'react';
+import { repoName } from '../../shared/workspaces.ts';
 import { exportPack, fireCommand, importPack } from '../commands.ts';
 import { fuzzyScore } from '../fuzzy.ts';
-import { askStop, hop, interrupt, jumpToAttention, openSession } from '../keys.ts';
+import { askStop, cycleTheme, hop, interrupt, jumpToAttention, newSession, openSession } from '../keys.ts';
 import { taskKind, taskRunning } from '../activity-label.ts';
-import { get, set, toggleSound, useStore } from '../store.ts';
+import { currentWorkspace, get, set, setScope, toggleSound, useStore } from '../store.ts';
 import { send } from '../ws.ts';
-import { close, Overlay } from './Overlay.tsx';
-import { shortPath } from './StatusBadge.tsx';
+import { close, DialogKeys, Overlay } from './Overlay.tsx';
 
 interface Item {
   key: string;
-  kind: 'Action' | 'Command' | 'Session';
+  kind: 'Action' | 'Workflow' | 'Session' | 'Workspace';
   label: string;
   detail?: string;
   run: () => void;
 }
 
 const MAX_RESULTS = 12;
+const home = () => set({ screen: 'list', openId: null });
 
-/** Ctrl+K: fuzzy search over actions, the open session's commands, and every session. */
+/** Ctrl+K: fuzzy search over actions, workspaces, the open session's workflows, and every session. */
 export function Palette() {
   const sessions = useStore((s) => s.sessions);
+  const workspaces = useStore((s) => s.workspaces);
   const board = useStore((s) => s.board);
   const openId = useStore((s) => s.openId);
   const activity = useStore((s) => (s.openId ? s.activity[s.openId] : undefined));
@@ -30,30 +32,44 @@ export function Palette() {
 
   const items = useMemo<Item[]>(() => {
     const open = sessions.find((s) => s.id === openId);
+    const ws = currentWorkspace(get());
     const action = (key: string, label: string, run: () => void, detail?: string): Item => ({ key: `a:${key}`, kind: 'Action', label, detail, run });
     const actions: Item[] = [
-      action('new', 'New session', () => set({ modal: { kind: 'new' } })),
+      action('new', 'New session', () => newSession(), ws ? `in ${ws.name}` : undefined),
       action('attention', 'Jump to the next session that needs you', jumpToAttention),
-      action('inbox', 'Go to Inbox', () => set({ screen: 'list', openId: null, tab: 'inbox' })),
-      action('live', 'Go to Live sessions', () => set({ screen: 'list', openId: null, tab: 'live' })),
-      action('history', 'Go to History', () => set({ screen: 'list', openId: null, tab: 'history' })),
+      action('workspace', 'New workspace', () => set({ modal: { kind: 'workspace', id: null } })),
+    ];
+    if (ws) {
+      actions.push(
+        action('addrepo', `Add a repo to ${ws.name}`, () => set({ modal: { kind: 'repoPicker', target: { kind: 'workspace', id: ws.id } } })),
+        action('editws', `Edit workspace ${ws.name}`, () => set({ modal: { kind: 'workspace', id: ws.id } })),
+      );
+    }
+    actions.push(
+      action('sources', 'Choose the folders the repo library lists', () => set({ modal: { kind: 'sources' } })),
+      action('home', 'Go home', home),
+      action('theme', 'Switch theme (match Windows, light, dark)', cycleTheme),
       action('sound', `Turn sound ${get().sound ? 'off' : 'on'}`, toggleSound),
-      action('help', 'Keyboard help', () => set({ modal: { kind: 'help' } })),
+      action('help', 'Show every key', () => set({ modal: { kind: 'help' } })),
       action('bindings', 'Change keyboard shortcuts', () => set({ modal: { kind: 'bindings' } })),
       action('welcome', 'Show the welcome tour', () => set({ modal: { kind: 'welcome' } })),
-      action('export', 'Export my commands (JSON)', exportPack),
-      action('import', 'Import commands (JSON)', importPack),
-    ];
+      action('export', 'Export my workflows (JSON)', exportPack),
+      action('import', 'Import workflows (JSON)', importPack),
+    );
     if (open) {
       actions.push(
         action('prev', 'Previous session', () => hop(-1)),
         action('next', 'Next session', () => hop(1)),
         action('rename', 'Rename this session', () => set({ modal: { kind: 'rename', id: open.id } }), open.title),
+        action('adddir', 'Let this session work in another repo', () => set({ modal: { kind: 'repoPicker', target: { kind: 'session', id: open.id } } }), open.title),
       );
+      for (const d of open.extraDirs ?? []) {
+        actions.push(action(`rmdir:${d}`, `Stop working in ${repoName(d)}`, () => send({ type: 'session.removeDir', id: open.id, path: d }), open.title));
+      }
       if (open.live) {
         actions.push(
-          action('interrupt', 'Stop the current turn (Esc)', () => interrupt(open.id), open.title),
-          action('background', 'Send the running tool to the background (Ctrl+B)', () => send({ type: 'session.background', id: open.id }), open.title),
+          action('interrupt', 'Stop Claude now (Esc)', () => interrupt(open.id), open.title),
+          action('background', 'Let the running step continue in the background (Ctrl+B)', () => send({ type: 'session.background', id: open.id }), open.title),
           action('stop', 'End this session', () => askStop(open.id), open.title),
         );
         const running = (activity?.tasks ?? []).filter(taskRunning);
@@ -61,16 +77,20 @@ export function Palette() {
           actions.push(action(`task:${t.id}`, `Stop ${taskKind(t)}: ${t.description}`, () => send({ type: 'task.stop', id: open.id, taskId: t.id })));
         }
         if (running.length > 1) {
-          actions.push(action('tasks:all', `Stop all ${running.length} running tasks`, () => running.forEach((t) => send({ type: 'task.stop', id: open.id, taskId: t.id }))));
+          actions.push(action('tasks:all', `Stop all ${running.length} running helpers and commands`, () => running.forEach((t) => send({ type: 'task.stop', id: open.id, taskId: t.id }))));
         }
       }
     }
+    const wsItems: Item[] = [
+      ...workspaces.map((w, i): Item => ({ key: `w:${w.id}`, kind: 'Workspace', label: w.name, detail: `key ${i + 1}`, run: () => { setScope({ kind: 'workspace', id: w.id }); home(); } })),
+      { key: 'w:rest', kind: 'Workspace', label: workspaces.length ? 'Everything else' : 'All sessions', detail: 'key 0', run: () => { setScope({ kind: 'rest' }); home(); } },
+    ];
     const commands: Item[] = open && board?.sessionId === open.id
       ? board.groups.flatMap((g) => g.commands.map((c) => ({
-        key: `c:${g.scope}:${g.name}:${c.slot}`,
-        kind: 'Command' as const,
+        key: `c:${g.scope}:${g.workspaceId ?? ''}:${g.name}:${c.slot}`,
+        kind: 'Workflow' as const,
         label: c.label,
-        detail: `${g.name} · ${c.slot}`,
+        detail: `${g.name} · key ${c.slot}`,
         run: () => fireCommand(open.id, c),
       })))
       : [];
@@ -78,11 +98,11 @@ export function Palette() {
       key: `s:${s.id}`,
       kind: 'Session',
       label: s.title,
-      detail: `${shortPath(s.cwd)}${s.live ? ` · ${s.status}` : ''}`,
+      detail: repoName(s.cwd),
       run: () => openSession(s.id),
     }));
-    return [...actions, ...commands, ...sessionItems];
-  }, [sessions, board, openId, activity]);
+    return [...actions, ...commands, ...wsItems, ...sessionItems];
+  }, [sessions, workspaces, board, openId, activity]);
 
   const results = useMemo(() => {
     if (!query.trim()) return items.slice(0, MAX_RESULTS);
@@ -108,7 +128,7 @@ export function Palette() {
   }
 
   return (
-    <Overlay label="Command palette">
+    <Overlay label="Search">
       <input
         autoFocus
         value={query}
@@ -119,25 +139,28 @@ export function Palette() {
           else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - 1)); }
           else if (e.key === 'Enter') { e.preventDefault(); run(results[index]); }
         }}
-        placeholder="Type an action, a command, or a session…"
-        className="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-sky-600"
+        placeholder="Search actions, workflows, workspaces and sessions…"
+        aria-label="Search"
+        className="field text-[16px]"
       />
-      <ul ref={listRef} className="mt-2 max-h-[50vh] overflow-y-auto">
+      <ul ref={listRef} className="mt-2 max-h-[52vh] space-y-0.5 overflow-y-auto" role="listbox">
         {results.map((r, i) => (
           <li
             key={r.key}
+            role="option"
+            aria-selected={i === index}
             onMouseEnter={() => setIndex(i)}
             onClick={() => run(r)}
-            className={`flex cursor-default items-baseline gap-3 rounded px-2 py-1.5 text-sm ${i === index ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300'}`}
+            className={`flex cursor-pointer items-baseline gap-3 rounded-xl px-3 py-2 ${i === index ? 'is-focus bg-raise' : ''}`}
           >
-            <span className="w-16 shrink-0 text-[10px] uppercase tracking-wide text-zinc-500">{r.kind}</span>
+            <span className="w-20 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-faint">{r.kind}</span>
             <span className="truncate">{r.label}</span>
-            {r.detail && <span className="ml-auto shrink-0 truncate pl-2 text-xs text-zinc-500">{r.detail}</span>}
+            {r.detail && <span className="ml-auto shrink-0 truncate pl-2 text-sm text-faint">{r.detail}</span>}
           </li>
         ))}
-        {results.length === 0 && <li className="px-2 py-2 text-sm text-zinc-500">No matches.</li>}
+        {results.length === 0 && <li className="px-3 py-2 text-sub">Nothing matches.</li>}
       </ul>
-      <p className="mt-2 text-xs text-zinc-500"><kbd>↑ ↓</kbd> pick · <kbd>Enter</kbd> run · <kbd>Esc</kbd> close</p>
+      <DialogKeys items={[['↑ ↓', 'choose'], ['Enter', 'run'], ['Esc', 'close']]} />
     </Overlay>
   );
 }

@@ -2,7 +2,8 @@ import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ACTIONS, bindingsFor, comboOf, displayCombo, validateBinding, type ActionId } from '../bindings.ts';
 import { flash, get, NO_BINDINGS, set, useStore } from '../store.ts';
 import { send } from '../ws.ts';
-import { Overlay } from './Overlay.tsx';
+import { DialogKeys, Overlay } from './Overlay.tsx';
+import { Key } from './ui.tsx';
 
 /** Rebind global shortcuts: ↑↓ pick, Enter then press the new combo, Backspace resets to default. */
 export function BindingsDialog() {
@@ -47,30 +48,24 @@ export function BindingsDialog() {
     <Overlay label="Keyboard shortcuts">
       {/* Focusable wrapper so every key lands here, including ones the app would otherwise act on. */}
       <div tabIndex={0} autoFocus ref={(el) => el?.focus()} onKeyDown={onKeyDown} className="outline-none">
-        <h2 className="mb-3 text-base font-medium text-zinc-100">Keyboard shortcuts</h2>
-        <table className="w-full text-sm">
-          <tbody>
-            {ACTIONS.map((a, i) => {
-              const custom = Boolean(overrides[a.id]);
-              return (
-                <tr key={a.id} onClick={() => setIndex(i)} className={i === index ? 'bg-zinc-800' : ''}>
-                  <td className="py-1 pl-2 text-zinc-300">{a.label}</td>
-                  <td className="py-1 pr-2 text-right">
-                    {capturing && i === index
-                      ? <span className="animate-pulse text-sky-300">press keys…</span>
-                      : bindingsFor(a.id, overrides).map((c) => <kbd key={c} className="ml-1">{displayCombo(c)}</kbd>)}
-                    {custom && !(capturing && i === index) && <span className="ml-2 text-[10px] uppercase text-sky-400">custom</span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
-        <p className="mt-3 text-xs text-zinc-500">
-          <kbd>↑ ↓</kbd> pick · <kbd>Enter</kbd> rebind, then press the new keys · <kbd>Backspace</kbd> reset · <kbd>Esc</kbd> back.
-          Saved on this machine for every browser.
-        </p>
+        <h2 className="mb-1 text-[19px] font-bold tracking-tight">Change shortcuts</h2>
+        <p className="mb-4 text-sm text-sub">Saved on this computer, for every browser you open Command Center in.</p>
+        <ul className="space-y-0.5">
+          {ACTIONS.map((a, i) => {
+            const custom = Boolean(overrides[a.id]);
+            return (
+              <li key={a.id} onClick={() => setIndex(i)} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${i === index ? 'is-focus bg-raise' : ''}`}>
+                <span className="grow text-sub">{a.label}</span>
+                {capturing && i === index
+                  ? <span className="pulse font-semibold text-acc">press the new keys…</span>
+                  : bindingsFor(a.id, overrides).map((c) => <Key key={c} k={displayCombo(c)} size="sm" />)}
+                {custom && !(capturing && i === index) && <span className="rounded bg-acc-soft px-1.5 text-[11px] font-semibold text-acc">yours</span>}
+              </li>
+            );
+          })}
+        </ul>
+        {error && <p className="mt-2 text-sm text-bad">{error}</p>}
+        <DialogKeys items={[['↑ ↓', 'choose'], ['Enter', 'change, then press the new keys'], ['Backspace', 'back to default'], ['Esc', 'back']]} />
       </div>
     </Overlay>
   );

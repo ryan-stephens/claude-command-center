@@ -3,9 +3,12 @@ import type { Command, CommandGroup, CommandMode } from '../../shared/protocol.t
 import { fireCommand, fillTemplate, placeholders } from '../commands.ts';
 import { flash, get, sessionById, set } from '../store.ts';
 import { send } from '../ws.ts';
-import { close, Overlay, useDialogKeys } from './Overlay.tsx';
+import { close, DialogKeys, DialogTitle, Overlay, useDialogKeys } from './Overlay.tsx';
+import { workspacesFor } from '../../shared/workspaces.ts';
+import { Key } from './ui.tsx';
 
-const fieldClass = 'mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100 outline-none focus:border-sky-600';
+const fieldClass = 'field mt-1 py-1.5 text-sm';
+const labelClass = 'eyebrow block';
 
 /** Fill {{placeholders}}, then send. Enter moves to the next blank, and sends from the last one. */
 export function TemplateDialog({ sessionId, command }: { sessionId: string; command: Command }) {
@@ -22,9 +25,9 @@ export function TemplateDialog({ sessionId, command }: { sessionId: string; comm
 
   return (
     <Overlay label={command.label}>
-      <h2 className="mb-3 text-base font-medium text-zinc-100">{command.label}</h2>
+      <DialogTitle>{command.label}</DialogTitle>
       {names.map((name, i) => (
-        <label key={name} className="mb-2 block text-xs text-zinc-400">
+        <label key={name} className="mb-3 block text-sm font-semibold">
           {name}
           <input
             ref={(el) => { refs.current[i] = el; }}
@@ -43,8 +46,8 @@ export function TemplateDialog({ sessionId, command }: { sessionId: string; comm
           />
         </label>
       ))}
-      <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-zinc-950 p-2 text-xs text-zinc-400">{text}</pre>
-      <p className="mt-2 text-xs text-zinc-500"><kbd>Enter</kbd> next / send · <kbd>Esc</kbd> cancel</p>
+      <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-2.5 text-sm text-sub">{text}</pre>
+      <DialogKeys items={[['Enter', 'next blank / send'], ['Esc', 'cancel']]} />
     </Overlay>
   );
 }
@@ -55,10 +58,13 @@ export function TemplateDialog({ sessionId, command }: { sessionId: string; comm
  */
 export function EditDialog({ group, slot }: { group: CommandGroup | null; slot: number }) {
   const cwd = sessionById(get().openId)?.cwd;
+  const workspace = cwd ? workspacesFor(cwd, get().workspaces)[0] : undefined;
   const editable = group && group.scope !== 'auto' ? group : null;
   const existing = group?.commands.find((c) => c.slot === slot);
-  const [scope, setScope] = useState<'global' | 'repo'>(editable?.scope === 'repo' ? 'repo' : 'global');
-  const [groupName, setGroupName] = useState(editable?.name ?? 'Mine');
+  type Scope = 'workspace' | 'global' | 'repo';
+  const [scope, setScope] = useState<Scope>((editable?.scope as Scope | undefined) ?? (workspace ? 'workspace' : 'global'));
+  const workspaceId = editable?.scope === 'workspace' ? editable.workspaceId : workspace?.id;
+  const [groupName, setGroupName] = useState(editable?.name ?? workspace?.name ?? 'Mine');
   const [targetSlot, setTargetSlot] = useState(slot);
   const [label, setLabel] = useState(existing?.label ?? '');
   const [body, setBody] = useState(existing?.body ?? '');
@@ -73,7 +79,7 @@ export function EditDialog({ group, slot }: { group: CommandGroup | null; slot: 
     if (mode === 'template' && !placeholders(body).length) { setError('Template mode needs at least one {{placeholder}} in the body.'); return; }
     const sameTile = editable && editable.scope === scope && editable.name === name && slot === targetSlot;
     const occupant = sameTile ? undefined : get().board?.groups
-      .find((g) => g.scope === scope && g.name === name)?.commands.find((c) => c.slot === targetSlot);
+      .find((g) => g.scope === scope && g.name === name && (scope !== 'workspace' || g.workspaceId === workspaceId))?.commands.find((c) => c.slot === targetSlot);
     const key = `${scope}:${name}:${targetSlot}`;
     if (occupant && replaceOk !== key) {
       setReplaceOk(key);
@@ -84,11 +90,11 @@ export function EditDialog({ group, slot }: { group: CommandGroup | null; slot: 
     // One message: the server removes the old tile only after the new one is saved.
     send({
       type: 'command.save',
-      ref: { scope, cwd, group: name, slot: targetSlot },
+      ref: { scope, cwd, workspaceId, group: name, slot: targetSlot },
       command: { label: label.trim(), body, mode },
-      from: moved ? { scope: editable.scope as 'global' | 'repo', cwd, group: editable.name, slot } : undefined,
+      from: moved ? { scope: editable.scope as Scope, cwd, workspaceId: editable.workspaceId, group: editable.name, slot } : undefined,
     });
-    set({ modal: null, groupKey: `${scope}:${name}`, boardSlot: targetSlot });
+    set({ modal: null, groupKey: `${scope}:${scope === 'workspace' ? workspaceId ?? '' : ''}:${name}`, boardSlot: targetSlot });
     flash(`Saved ${label.trim()}`);
   }
 
@@ -97,47 +103,51 @@ export function EditDialog({ group, slot }: { group: CommandGroup | null; slot: 
     else if (e.key === 'Enter' && (e.ctrlKey || !(e.target instanceof HTMLTextAreaElement))) { e.preventDefault(); save(); }
   };
 
-  const title = existing && editable ? 'Edit command' : existing ? 'Copy slash command' : 'New command';
+  const title = existing && editable ? 'Edit workflow' : existing ? 'Save your own copy' : `New workflow on key ${slot}`;
   return (
     <Overlay label={title}>
       <div onKeyDown={onKey}>
-        <h2 className="mb-1 text-base font-medium text-zinc-100">{title}</h2>
-        {!editable && group && <p className="mb-2 text-xs text-zinc-500">Slash commands are read-only; this saves a copy you can change.</p>}
-        <div className="grid grid-cols-[1fr_7rem] gap-2">
-          <label className="text-xs text-zinc-400">Label<input autoFocus value={label} onChange={(e) => setLabel(e.target.value)} className={fieldClass} /></label>
-          <label className="text-xs text-zinc-400">Mode
+        <DialogTitle>{title}</DialogTitle>
+        {!editable && group && <p className="mb-3 text-sm text-sub">Skills can’t be changed here; this saves a copy you can change.</p>}
+        <div className="grid grid-cols-[1fr_13rem] gap-3">
+          <label className={labelClass}>Name on the key<input autoFocus value={label} onChange={(e) => setLabel(e.target.value)} className={fieldClass} /></label>
+          <label className={labelClass}>When pressed
             <select value={mode} onChange={(e) => setMode(e.target.value as CommandMode)} className={fieldClass}>
-              <option value="send">send</option>
-              <option value="insert">insert</option>
-              <option value="template">template</option>
+              <option value="send">Send it</option>
+              <option value="insert">Put it in the message box</option>
+              <option value="template">Ask for the blanks first</option>
             </select>
           </label>
         </div>
-        <label className="mt-2 block text-xs text-zinc-400">
-          Body {mode === 'template' && <span className="text-zinc-500">· use {'{{name}}'} for each blank</span>}
+        <label className={`${labelClass} mt-3`}>
+          What Claude is told {mode === 'template' && <span className="normal-case tracking-normal">· write {'{{name}}'} for each blank</span>}
           <textarea value={body} rows={4} onChange={(e) => setBody(e.target.value)} className={`${fieldClass} resize-none font-mono text-xs`} />
         </label>
-        <div className="mt-2 grid grid-cols-[1fr_9rem_4.5rem] gap-2">
-          <label className="text-xs text-zinc-400">Group<input value={groupName} onChange={(e) => setGroupName(e.target.value)} className={fieldClass} /></label>
-          <label className="text-xs text-zinc-400">Saved in
-            <select value={scope} onChange={(e) => setScope(e.target.value as 'global' | 'repo')} className={fieldClass}>
-              <option value="global">mine (global)</option>
-              {cwd && <option value="repo">this repo</option>}
+        <div className="mt-3 grid grid-cols-[1fr_12rem_5rem] gap-3">
+          <label className={labelClass}>Group<input value={groupName} onChange={(e) => setGroupName(e.target.value)} className={fieldClass} /></label>
+          <label className={labelClass}>Saved for
+            <select value={scope} onChange={(e) => setScope(e.target.value as Scope)} className={fieldClass}>
+              {workspaceId && <option value="workspace">this workspace</option>}
+              <option value="global">just me, everywhere</option>
+              {cwd && <option value="repo">everyone in this repo</option>}
             </select>
           </label>
-          <label className="text-xs text-zinc-400">Slot
+          <label className={labelClass}>Key
             <select value={targetSlot} onChange={(e) => setTargetSlot(Number(e.target.value))} className={fieldClass}>
               {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>
         </div>
         {scope === 'repo' && (
-          <p className="mt-2 truncate text-xs text-zinc-500">
+          <p className="mt-2 truncate text-sm text-faint">
             Writes <span className="font-mono">.cc-control/commands.json</span> in {cwd}. Commit it to share with your team.
           </p>
         )}
-        {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
-        <p className="mt-3 text-xs text-zinc-500"><kbd>Tab</kbd> next field · <kbd>Enter</kbd> save (<kbd>Ctrl+Enter</kbd> in the body) · <kbd>Esc</kbd> cancel</p>
+        {error && <p className="mt-2 text-sm text-bad">{error}</p>}
+        <div className="mt-4 flex items-center">
+          <DialogKeys items={[['Tab', 'next field'], ['Enter', 'save'], ['Ctrl+Enter', 'save from the text box'], ['Esc', 'cancel']]} />
+          <button className="btn btn-primary ml-auto" onClick={save}>Save<Key k="Enter" size="sm" tone="ghost" /></button>
+        </div>
       </div>
     </Overlay>
   );
@@ -148,7 +158,7 @@ export function DeleteDialog({ group, slot }: { group: CommandGroup; slot: numbe
   useDialogKeys((e) => {
     const k = e.key.toLowerCase();
     if (k === 'y' || k === 'enter') {
-      send({ type: 'command.delete', ref: { scope: group.scope as 'global' | 'repo', cwd: sessionById(get().openId)?.cwd, group: group.name, slot } });
+      send({ type: 'command.delete', ref: { scope: group.scope as 'workspace' | 'global' | 'repo', cwd: sessionById(get().openId)?.cwd, workspaceId: group.workspaceId, group: group.name, slot } });
       close();
     } else if (k === 'n' || k === 'escape') close();
     else return false;
@@ -156,8 +166,9 @@ export function DeleteDialog({ group, slot }: { group: CommandGroup; slot: numbe
   });
   return (
     <Overlay label="Remove command">
-      <p className="text-sm text-zinc-200">Remove <span className="font-medium">{command?.label}</span> from {group.name}?</p>
-      <p className="mt-3 text-xs text-zinc-500"><kbd>Y</kbd>/<kbd>Enter</kbd> remove · <kbd>N</kbd>/<kbd>Esc</kbd> cancel</p>
+      <DialogTitle>Remove this workflow?</DialogTitle>
+      <p className="text-sub"><strong className="text-ink">{command?.label}</strong> comes off key {slot} in {group.name}.</p>
+      <DialogKeys items={[['Y', 'remove'], ['N', 'keep it']]} />
     </Overlay>
   );
 }
@@ -174,8 +185,9 @@ export function VoiceMatchDialog({ sessionId, text, command }: { sessionId: stri
   });
   return (
     <Overlay label="Voice command?">
-      <p className="text-sm text-zinc-200">You said <span className="font-medium">“{text}”</span>. Run <span className="font-medium text-sky-300">{command.label}</span>?</p>
-      <p className="mt-3 text-xs text-zinc-500"><kbd>Y</kbd>/<kbd>Enter</kbd> run it · <kbd>N</kbd> send the words instead · <kbd>Esc</kbd> drop it</p>
+      <DialogTitle>Run a workflow?</DialogTitle>
+      <p className="text-sub">You said <strong className="text-ink">“{text}”</strong>. Run <strong className="text-acc">{command.label}</strong>?</p>
+      <DialogKeys items={[['Y', 'run it'], ['N', 'send the words instead'], ['Esc', 'drop it']]} />
     </Overlay>
   );
 }

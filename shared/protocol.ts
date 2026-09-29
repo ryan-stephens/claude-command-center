@@ -97,7 +97,7 @@ export interface SessionActivity {
   /** Epoch ms the current turn began; absent between turns. */
   turnStartedAt?: number;
   /** The tool being run (phase 'tool' or 'approval'). */
-  tool?: { name: string; detail?: string };
+  tool?: { name: string; detail?: string; fields?: ToolFields };
   thinkingTokens?: number;
   retry?: { attempt: number; max: number; resumeAt: number; status: number | null };
   /** Subagents, shells and workflows: running ones, plus recently finished ones for context. */

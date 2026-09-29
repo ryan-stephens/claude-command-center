@@ -1,6 +1,6 @@
 import type { ClientMsg, CommandPack, ServerMsg } from '../shared/protocol.ts';
 import { onStatusChange } from './attention.ts';
-import { get, set } from './store.ts';
+import { get, groupKeyOf, set, setScope } from './store.ts';
 
 let socket: WebSocket | null = null;
 let retryMs = 1000;
@@ -44,11 +44,11 @@ export function send(msg: ClientMsg): boolean {
   return false;
 }
 
-export function createSession(cwd: string, prompt?: string): Promise<string> {
+export function createSession(cwd: string, prompt?: string, extraDirs?: string[]): Promise<string> {
   const reqId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     pendingCreates.set(reqId, { resolve, reject });
-    if (!send({ type: 'session.create', reqId, cwd, prompt })) {
+    if (!send({ type: 'session.create', reqId, cwd, prompt, extraDirs })) {
       pendingCreates.delete(reqId);
       reject(new Error('Not connected to the cc-control server. Try again in a moment.'));
     }
@@ -118,7 +118,7 @@ function receive(msg: ServerMsg): void {
       set({ permissions: { ...get().permissions, [msg.request.reqId]: msg.request } });
       lastPermissionAt = performance.now();
       // The card takes focus in the open session so Y / A / N work straight away, but never out
-      // of the composer: letters you're typing must not answer it (Esc gets you there).
+      // of the message box: letters you're typing must not answer it (Tab gets you there).
       const s = get();
       if (s.screen === 'session' && s.openId === msg.request.sessionId && s.zone !== 'composer') set({ zone: 'board' });
       return;
@@ -131,8 +131,8 @@ function receive(msg: ServerMsg): void {
     case 'board':
       if (msg.sessionId === get().openId) {
         // A board without the selected group (deleted, or another repo) resets the selection explicitly.
-        const keep = msg.groups.some((g) => `${g.scope}:${g.name}` === get().groupKey);
-        set({ board: { sessionId: msg.sessionId, groups: msg.groups }, ...(keep ? {} : { groupKey: msg.groups[0] ? `${msg.groups[0].scope}:${msg.groups[0].name}` : null }) });
+        const keep = msg.groups.some((g) => groupKeyOf(g) === get().groupKey);
+        set({ board: { sessionId: msg.sessionId, groups: msg.groups }, ...(keep ? {} : { groupKey: msg.groups[0] ? groupKeyOf(msg.groups[0]) : null }) });
       }
       return;
     case 'commands.changed': {
@@ -142,6 +142,18 @@ function receive(msg: ServerMsg): void {
     }
     case 'settings':
       set({ settings: msg.settings });
+      return;
+    case 'workspaces': {
+      const { scope } = get();
+      set({ workspaces: msg.workspaces, workspacesLoaded: true });
+      // A remembered workspace that is gone falls back to the first one (or everything else).
+      if (scope.kind === 'workspace' && !msg.workspaces.some((w) => w.id === scope.id)) {
+        setScope(msg.workspaces[0] ? { kind: 'workspace', id: msg.workspaces[0].id } : { kind: 'rest' });
+      }
+      return;
+    }
+    case 'library':
+      set({ library: { sources: msg.sources, repos: msg.repos, suggested: msg.suggested } });
       return;
     case 'pack':
       pendingExports.get(msg.reqId)?.(msg.pack);

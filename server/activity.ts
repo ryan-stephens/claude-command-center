@@ -1,5 +1,5 @@
 import type { ActivityPhase, ActivityTask, SessionActivity } from '../shared/protocol.ts';
-import { summarizeToolInput } from './transcript.ts';
+import { summarizeToolInput, toolFields } from './transcript.ts';
 
 // Folds the SDK's event stream into "what is this session doing right now", the same things
 // Claude Code shows on its spinner line: thinking, writing, which tool is running, compacting,
@@ -70,7 +70,8 @@ export function applyEvent(a: SessionActivity, m: Msg, now: number): SessionActi
     const content = (m.message as { content?: { type: string; name?: string; input?: unknown }[] })?.content ?? [];
     const toolUse = [...content].reverse().find((c) => c.type === 'tool_use');
     if (toolUse && a.phase === 'tool') {
-      return { ...a, tool: { name: toolUse.name ?? 'tool', detail: summarizeToolInput(toolUse.name ?? '', toolUse.input) } };
+      const name = toolUse.name ?? 'tool';
+      return { ...a, tool: { name, detail: summarizeToolInput(name, toolUse.input), fields: toolFields(name, toolUse.input) } };
     }
     return a;
   }

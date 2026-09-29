@@ -1,53 +1,103 @@
 import { useEffect } from 'react';
 import { Dialogs } from './components/Dialogs.tsx';
-import { SessionList } from './components/SessionList.tsx';
+import { Home } from './components/Home.tsx';
 import { SessionView } from './components/SessionView.tsx';
+import { Icon, Key, KeyHint, WsBadge } from './components/ui.tsx';
 import { armOnFirstGesture, setNotificationHandler } from './attention.ts';
 import { bindingsFor, displayCombo, type ActionId } from './bindings.ts';
-import { onKeyDown, onKeyUp, openSession } from './keys.ts';
+import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession } from './keys.ts';
+import { legendFor } from './legend.ts';
 import { stopVoice } from './voice.ts';
 import { maybeShowWelcome } from './components/Welcome.tsx';
-import { attention, NO_BINDINGS, set, toggleSound, useStore } from './store.ts';
+import { attention, currentWorkspace, NO_BINDINGS, set, toggleSound, useStore } from './store.ts';
 
-/** Context-sensitive key hints, so the current keys are always on screen. */
-function HintBar() {
+/** The keys that matter right now, as big keycaps. Changes with the focused column or zone. */
+function Legend() {
   const screen = useStore((s) => s.screen);
+  const homeCol = useStore((s) => s.homeCol);
   const zone = useStore((s) => s.zone);
-  const tab = useStore((s) => s.tab);
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
+  const focusId = useStore((s) => (s.screen === 'session' ? s.openId : s.selectedId));
+  const pending = useStore((s) => Object.values(s.permissions).some((p) => p.sessionId === focusId));
   const busy = useStore((s) => {
     const status = s.sessions.find((x) => x.id === s.openId)?.status;
-    return status === 'running' || status === 'requires_action';
+    return s.screen === 'session' && (status === 'running' || status === 'requires_action');
   });
-  // Rebindable keys show their current binding (first one if several).
+  const drafting = useStore((s) => Boolean(s.openId && s.drafts[s.openId]));
+  const inWorkspace = useStore((s) => s.scope.kind === 'workspace');
+  const modal = useStore((s) => s.modal);
+  if (modal) return null;
+  const items = legendFor({ screen, homeCol, zone, pending, busy, drafting, hasSelection: Boolean(focusId), inWorkspace, bindings });
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
-  const talk = `Hold ${k('pushToTalk')}`;
-  const hints: [string, string][] =
-    screen === 'list'
-      ? tab === 'inbox'
-        ? [['↑↓', 'move'], ['Y/A/N', 'approve'], ['Enter', 'open'], [k('nextAttention'), 'next'], ['Tab', 'tabs'], [k('newSession'), 'new']]
-        : [['↑↓', 'move'], ['Enter', 'open'], ['/', 'filter'], ['Tab', 'tabs'], [k('nextAttention'), 'needs you'], ['N', 'new'], ['R', 'rename'], ['X', 'stop']]
-      : zone === 'composer'
-        ? [['Enter', 'send'], busy ? ['Esc', 'stop Claude'] : ['Esc', 'board'], ['Tab', 'board'], [talk, 'talk (while empty)'], ['Numpad 1–9', 'fire (while empty)'], ['Alt+1–9', 'fire']]
-        : [busy ? ['Esc', 'stop Claude'] : ['Esc', 'list'], [talk, 'talk'], ['Numpad 1–9', 'fire'], ['Numpad ±', 'group'], ['←↑↓→ Enter', 'pick'], ['E', 'edit'], ['i', 'compose'], ['Y/A/N', 'approve'], ['PgUp/Dn', 'scroll']];
   return (
-    <footer className="hidden flex-wrap gap-x-4 gap-y-1 border-t border-zinc-800 px-4 py-1.5 text-xs text-zinc-500 md:flex">
-      {hints.map(([key, d]) => <span key={key}><kbd>{key}</kbd> {d}</span>)}
-      <span className="ml-auto"><kbd>{k('palette')}</kbd> palette · <kbd>{k('help')}</kbd> all keys</span>
+    <footer className="hidden items-center gap-x-6 gap-y-2 border-t border-line bg-col px-4 py-2.5 text-[13.5px] text-sub md:flex md:flex-wrap" aria-label="Keys you can press now">
+      {items.map((it) => <KeyHint key={it.label} k={it.keys} tone={it.tone}>{it.label}</KeyHint>)}
+      <span className="ml-auto flex items-center gap-5">
+        <KeyHint k={k('nextAttention')}>Next that needs you</KeyHint>
+        <KeyHint k={k('help')}>Every key</KeyHint>
+      </span>
     </footer>
   );
 }
 
-export function App() {
+function Header() {
   const screen = useStore((s) => s.screen);
   const connected = useStore((s) => s.connected);
   const lastError = useStore((s) => s.lastError);
   const flash = useStore((s) => s.flash);
   const sound = useStore((s) => s.sound);
-  const waiting = useStore((s) => Object.keys(s.permissions).length);
+  const theme = useStore((s) => s.theme);
   const needYou = useStore((s) => attention(s).length);
+  const waiting = useStore((s) => Object.keys(s.permissions).length);
+  const ws = useStore((s) => currentWorkspace(s));
+  const scopeKind = useStore((s) => s.scope.kind);
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
-  const keyFor = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
+  const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
+  return (
+    <header className="flex items-center gap-3 border-b border-line bg-col px-3 py-2 md:px-4">
+      <button onClick={() => set({ screen: 'list', openId: null })} className="whitespace-nowrap font-semibold tracking-tight" title="Home">
+        Command Center
+      </button>
+      {screen === 'list' && (
+        <span className="hidden min-w-0 items-center gap-2 text-sub md:flex">
+          <span className="text-faint">/</span>
+          <WsBadge ws={ws} size={22} />
+          <span className="truncate">{ws?.name ?? (scopeKind === 'rest' ? 'Everything else' : '')}</span>
+        </span>
+      )}
+      {flash && <span className="truncate text-sm text-busy" role="status">{flash}</span>}
+      {lastError && (
+        <button onClick={() => set({ lastError: null })} className="flex min-w-0 items-center gap-1.5 rounded-lg bg-bad-bg px-2 py-1 text-sm text-bad" title="Dismiss">
+          <Icon name="warn" size={15} /><span className="truncate">{lastError}</span><Icon name="x" size={14} />
+        </button>
+      )}
+      <span className="ml-auto" />
+      {needYou > 0 && (
+        <button onClick={jumpToAttention} className="flex items-center gap-2 whitespace-nowrap rounded-lg bg-attn-bg py-1 pl-3 pr-1.5 text-sm font-semibold text-attn">
+          {waiting > 0 ? `${needYou} need${needYou === 1 ? 's' : ''} you` : `${needYou} finished`}
+          <Key k={k('nextAttention')} size="sm" tone="attn" className="hidden md:inline-flex" />
+        </button>
+      )}
+      <button onClick={() => set({ modal: { kind: 'palette' } })} className="btn-ghost btn hidden md:inline-flex" title="Search sessions, workflows and actions">
+        <Icon name="search" size={16} />Search<Key k={k('palette')} size="sm" />
+      </button>
+      <button onClick={() => set({ modal: { kind: 'help' } })} className="btn-ghost btn hidden md:inline-flex" title="Every key">
+        <Icon name="keyboard" size={16} /><Key k={k('help')} size="sm" />
+      </button>
+      <button onClick={cycleTheme} className="btn-ghost btn px-2" title={`Theme: ${theme === 'system' ? 'match Windows' : theme} (${k('theme')})`} aria-label="Switch theme">
+        <Icon name={theme === 'system' ? 'auto' : theme === 'light' ? 'sun' : 'moon'} size={17} />
+      </button>
+      <button onClick={toggleSound} className="btn-ghost btn px-2" title={`Sound ${sound ? 'on' : 'off'} (${k('sound')})`} aria-label={sound ? 'Mute sounds' : 'Turn sounds on'}>
+        <Icon name={sound ? 'bell' : 'bellOff'} size={17} />
+      </button>
+      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${connected ? 'bg-ok' : 'pulse bg-bad'}`} title={connected ? 'Connected' : 'Reconnecting…'} role="status" aria-label={connected ? 'Connected' : 'Reconnecting'} />
+    </header>
+  );
+}
+
+export function App() {
+  const screen = useStore((s) => s.screen);
+  const needYou = useStore((s) => attention(s).length);
 
   useEffect(() => {
     window.addEventListener('keydown', onKeyDown);
@@ -65,34 +115,16 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    document.title = needYou ? `(${needYou}) cc-control` : 'cc-control';
+    document.title = needYou ? `(${needYou}) Command Center` : 'Command Center';
   }, [needYou]);
 
   return (
-    <div className="flex h-dvh flex-col">
-      <header className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2 md:gap-3 md:px-4">
-        <span className="whitespace-nowrap font-semibold tracking-tight text-zinc-100">cc-control</span>
-        {needYou > 0 && (
-          <button onClick={() => set({ screen: 'list', openId: null, tab: 'inbox' })} className="whitespace-nowrap rounded bg-amber-900 px-2 py-0.5 text-xs text-amber-200">
-            {waiting > 0 ? `${waiting} waiting on you` : `${needYou} finished`}
-            <span className="hidden md:inline"> · <kbd>{keyFor('nextAttention')}</kbd></span>
-          </button>
-        )}
-        {flash && <span className="truncate text-xs text-sky-300">{flash}</span>}
-        {lastError && (
-          <button onClick={() => set({ lastError: null })} className="truncate text-xs text-red-400" title="Dismiss">⚠ {lastError}</button>
-        )}
-        <button onClick={toggleSound} className="ml-auto whitespace-nowrap text-xs text-zinc-500 hover:text-zinc-300" title={`Sound (${keyFor('sound')})`}>
-          ♪<span className="hidden md:inline"> {sound ? 'sound' : 'muted'} <kbd>{keyFor('sound')}</kbd></span>
-          {!sound && <span className="md:hidden"> off</span>}
-        </button>
-        <span className={`whitespace-nowrap text-xs ${connected ? 'text-emerald-500' : 'text-red-400'}`} title={connected ? 'Connected' : 'Reconnecting…'}>
-          {connected ? '●' : '○'}<span className="hidden md:inline">{connected ? ' connected' : ' reconnecting…'}</span>
-        </span>
-      </header>
-      <main className="flex min-h-0 flex-1 flex-col">{screen === 'list' ? <SessionList /> : <SessionView />}</main>
-      <HintBar />
+    <div className="flex h-dvh flex-col bg-bg text-ink">
+      <Header />
+      <main className="flex min-h-0 flex-1 flex-col">{screen === 'list' ? <Home /> : <SessionView />}</main>
+      <Legend />
       <Dialogs />
     </div>
   );
 }
+

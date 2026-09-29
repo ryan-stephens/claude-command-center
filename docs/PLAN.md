@@ -3,7 +3,7 @@
 A slim, local, **keyboard-first** command center for Claude Code sessions.
 Pick a session with the arrow keys, press Enter, fire commands from the number pad, talk to it with a hotkey.
 
-Status: **Showcase-ready** (2026-09-28). Phases 0–5 done plus a hardening pass (§15). "Later" items are parked. · Started 2026-09-28
+Status: **Showcase-ready** (2026-09-28). Phases 0–5 done, a hardening pass (§15), live activity (§16) and the **cockpit redesign** with workspaces (§17). "Later" items are parked. · Started 2026-09-28
 
 ---
 
@@ -35,18 +35,24 @@ Target: going from "a session needs me" to "handled" should take **3 keystrokes 
 | `Alt+↑` / `Alt+↓` | Previous / next session, from anywhere |
 | `Alt+N` | Jump to the next session that **needs attention**: pending approvals first (oldest first), then sessions that finished unseen |
 | `M` | Sound on / off (outside text fields) |
+| `Alt+T` | Theme: match Windows → light → dark |
 | `Alt+Shift+N` (or `N` in the list) | New session (pick repo → optional first prompt). Not `Ctrl+Shift+N`: Chrome reserves it for an incognito window and pages can't intercept it. |
 
-### Session list (home)
+### Home (since §17: three columns plus the repo library)
 | Key | Action |
 |---|---|
-| `↑ ↓ ← →` | Move selection (list or grid) |
-| `Enter` | Open session |
-| `/` | Filter (repo, title, status) |
-| `Tab` / `Shift+Tab` | Cycle **Inbox** (needs you) → **Live** → **History** (all past sessions, resumable) |
-| `Y` / `A` / `N` | In the Inbox: answer the selected approval without opening the session. (`N` means "no" there; use `Alt+Shift+N` for a new session.) |
+| `← →` | Move between columns: **workspaces → sessions → preview** |
+| `↑ ↓` `Home` `End` | Choose in the focused column |
+| `1–9` / `0` | Jump to workspace 1–9 / everything outside your workspaces (number row or numpad) |
+| `Enter` | Open the selected session (in the workspace column: go to its sessions) |
+| `N` | New session in the current workspace |
+| `W` | New workspace; `E` / `Delete` in the workspace column edit / delete it |
+| `+` | Add a repo to the current workspace |
+| `Tab` | Go to the repo library (`← →` choose, `Enter` add to this workspace, `N` new session in it, `F` source folders); `Tab` or `Esc` back |
+| `/` | Filter sessions (title, repo, branch) |
+| `Y` / `A` / `N` | In the preview column: answer the selected session's approval without opening it |
 | `R` | Rename session |
-| `X` | Stop session (with confirmation) |
+| `X` | End session (with confirmation) |
 
 ### Session view
 Focus zones: **Composer** ↔ **Command board**. `Esc` steps outward: composer → board → list.
@@ -69,7 +75,9 @@ Focus zones: **Composer** ↔ **Command board**. `Esc` steps outward: composer �
 | `Ctrl+B` | Send the running tool or subagent to the background (like Ctrl+B in the terminal) |
 | `Tab` (in the composer) | Go to the board / approval card without interrupting |
 | **Hold `` ` `` (backtick)** or **Hold `Numpad .`** | **Push-to-talk** voice input. Release to send. Like the numpad, this works only while you aren't mid-message, so backticks still type. `Esc` while holding cancels. |
-| `Y` / `A` / `N` | Pending approval: **Y**es once / **A**lways / **N**o. Works when the approval card is focused, which happens automatically. |
+| `Y` / `A` / `N` | Pending approval: **Y**es once / **A**lways / **N**o. Works when the approval card is focused, which happens automatically unless you are in the message box (then `Tab`). `D` shows the raw details. |
+| `+` (on the number pad) | Give this session another repo to work in |
+| `Numpad /` · `Numpad *` | Type a message · search everything |
 
 The number keys and their labels are always visible on the command tiles (like a game hotbar), so nothing has to be memorised.
 
@@ -329,3 +337,39 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
   - **The header** has an **End session** button (same as `X`).
 
 **Verified headless** (`node -e` timers, Haiku): the live tool line with timers; `Esc` interrupted and the session went idle, staying in view; `Tab` then `Y` answered an approval; a background shell outlived its turn with the list badge on "background"; ✕ stopped it and the notice read "Background stopped"; `Ctrl+B` moved a running foreground command to the background.
+
+## 17. Cockpit redesign: workspaces, repo library, keys you can see
+
+2026-09-28. Goal from the owner: make it intuitive enough that a non-technical person could get coding work done, keep every capability, and make it a tool to use all day.
+
+**How we got here**
+1. **Audit** (`docs/UX-AUDIT.md`, screenshots in `docs/ux-audit/`): 20 findings ranked by how much they confuse. The blockers: no visible way to start, raw paths to pick a project, approvals needing a hidden `Tab`, and a first screen of 54 unfamiliar History rows.
+2. **Round 1** (`docs/design-directions.html`): three Apple-style directions (Inbox, Projects, Focus) that hid key hints behind hover. **The owner rejected all three.** They want a daily driver where keyboard use is *visibly expected*, and a way to group many repos and pull them into a session as context, with drag and drop from a folder of repos.
+3. **Round 2** (`docs/design-cockpit.html`): the **cockpit**. Approved as is, with the groups named **Workspaces** and the theme following the OS.
+
+**What changed**
+- **Home is three columns you walk with `← →`**: workspaces (keys `1–9`, `0` for everything else) → that workspace's sessions, bucketed **Needs you / Working / Done / Earlier** → a preview that shows the last reply or answers a pending approval. The focused column is lifted with an accent edge; every row shows its key.
+- **Workspaces** (`server/store.ts`, `shared/workspaces.ts`): a name, a colour, repo paths and a home repo, in SQLite. A session belongs to every workspace holding its `cwd` (Windows paths compare case-insensitively). Each workspace has its own **workflows** (a new `workspace` command scope, first on the number pad), seeded from starter templates in `shared/templates.ts` (Web app, API service, Docs, Blank). Slots 1–3 and 7–9 are the same in every template.
+- **Repo library** (`server/repo-library.ts`): git repos directly under the source folders you pick (one level, no watching; worktrees are followed through `.git` files). First run suggests sources from where past sessions ran (`suggestSources`). Drag a card onto a workspace (adds it), onto a session row or context bar (extra context), or use `+` / `Enter` from the keyboard.
+- **Extra repos per session**: the SDK takes `additionalDirectories` only at launch, so adding a repo to a live, idle session **restarts its CLI in place** (same id, same transcript, `resume`); a busy one refuses with a message. History sessions get them on resume. Kept in SQLite (`session_dirs`). Verified: added `docs-site` to a running `web-app` session, and the next turn read `docs-site/README.md` without an approval card.
+- **Plain language** (`web/plain.ts`, tested): tool steps as sentences ("Read index.html", "Changing src/a.ts", Claude's own Bash description), file names relative to the repo, and approval explanations ("Claude wants to check app.js for syntax errors") with a **risk rating**: safe (only looks), makes changes, careful (deletes, pushes, installs, network, admin, kills processes, infrastructure, publishes). Rules match at the start of each command in a `&&` / `|` chain, so `grep format` is not a disk format. The server now sends structured `fields` (description, file, edit before/after) with tool items, approvals and live activity.
+- **Transcript**: chat bubbles, and consecutive tool calls fold into a **steps card** (last 4 shown, rest behind "N earlier steps"). Edits show "See change" with a real line diff (`web/diff.ts`, LCS with folded context). The API cost moved to a tooltip; "done in 13s" reads "Finished in 13s".
+- **Approvals** explain themselves: what, risk and why, what it touches, then **Y Allow once / A Always allow (says exactly what) / N Don't allow** as big keycaps. Raw command and diff behind `D`. For careful actions, "Don't allow" is the highlighted default.
+- **Number pad drawn as a real numpad**, including `Num / * −`, `+` and `Enter` (tall), `0` (wide) and `.` (hold to talk), so what is on screen is what is under your hand. `Numpad /` focuses the message box, `Numpad *` opens search.
+- **Keys you can see**: keycaps are the visual language. A context **legend bar** (`web/legend.ts`, tested) shows the 5–8 keys that matter for the focused column or zone, in large keycaps; the full list stays in `?`.
+- **Theme** (`web/theme.ts`): light and dark tokens, following Windows unless you pick one (`Alt+T`, header button). Components use semantic tokens (`bg-surface`, `text-sub`, `text-attn`…) defined with Tailwind's `@theme inline`. Base and component CSS sit in `@layer base` / `@layer components` so utilities win.
+- **Words**: "Command Center"; sessions say "Waiting for your OK", "Working on it", "Finished · your turn", "Done", "Open in a terminal"; the context meter reads "Memory"; subagents are "helpers".
+- **First run** (`Welcome.tsx`): four key clusters (arrows, number pad, Y/A/N, Esc and talk), then straight into creating a workspace, including picking the repo folder. The seen flag is `cc-control.welcomed.v2`, so existing users see it once more.
+
+**Decisions and deviations**
+- **Approvals do not steal focus from the message box**, even when it is empty, contrary to a line in the cockpit mock. Starting to type just as a card appears would otherwise answer it (`a` = Always allow), which is the bug §15 #1 fixed. The card and the legend say "Tab to answer". The 400 ms grace stays.
+- On home, `N` is "new session" everywhere except the preview column, where `Y`/`A`/`N` answer the selected session's approval. That removes the old Inbox rule where `N` meant two things.
+- Inbox / Live / History tabs are gone: their jobs are the buckets, the header badge plus `Alt+N`, and "Everything else" (key `0`).
+
+**Verified** (headless Chromium on an isolated server and database, Haiku, throwaway repos under `%TEMP%\cc-demo`): welcome → workspace created from the folder picker → second workspace from the keyboard → `N` → prompt → approval answered with `Tab` `Y` → done → home with preview → drag a repo onto a workspace → `+` added a repo to a live session, which then answered from it → `?`, `Ctrl+K`, light and dark themes, phone 390×844 (workspace chips, session, number pad panel). No console errors. `pnpm typecheck`, `pnpm test` (59 tests) and `pnpm build` pass.
+
+**Known gaps**
+- Home loads the preview's transcript on selection (after 200 ms); very long histories make that first read slow, as before.
+- Workspace export and import as one JSON file is designed but not built yet; workflows export through the existing pack export only for your own (global) group.
+- Drag and drop needs a mouse; the keyboard path (`+`, `Enter` in the library) covers the same moves.
+

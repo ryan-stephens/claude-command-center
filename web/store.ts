@@ -1,12 +1,18 @@
 import { create } from 'zustand';
-import type { Command, CommandGroup, PermissionRequest, SessionActivity, SessionSummary, Settings, TranscriptItem } from '../shared/protocol.ts';
+import type { Command, CommandGroup, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, TranscriptItem, Workspace } from '../shared/protocol.ts';
+import { groupSessions, sessionsIn, type Flags, type Scope } from './home-model.ts';
+import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
 
-export type Tab = 'inbox' | 'live' | 'history';
-export const TABS: Tab[] = ['inbox', 'live', 'history'];
-/** Where keys go inside the session view. Esc steps outward: composer → board → list. */
+/** Home is three columns you walk with ← →, plus the repo library (Tab). */
+export type HomeCol = 'workspaces' | 'sessions' | 'preview' | 'library';
+export const HOME_COLS: HomeCol[] = ['workspaces', 'sessions', 'preview'];
+/** Where keys go inside the session view. Esc steps outward: composer → number pad → home. */
 export type SessionZone = 'composer' | 'board';
+/** Where a repo picked from the library goes. */
+export type RepoTarget = { kind: 'session'; id: string } | { kind: 'workspace'; id: string };
+
 export type Modal =
-  | { kind: 'new' }
+  | { kind: 'new'; workspaceId: string | null; repo?: string }
   | { kind: 'help' }
   | { kind: 'rename'; id: string }
   | { kind: 'stop'; id: string }
@@ -17,12 +23,26 @@ export type Modal =
   | { kind: 'palette' }
   | { kind: 'bindings' }
   | { kind: 'welcome' }
+  | { kind: 'workspace'; id: string | null }
+  | { kind: 'deleteWorkspace'; id: string }
+  | { kind: 'repoPicker'; target: RepoTarget }
+  | { kind: 'sources' }
   | null;
+
+export interface Library {
+  sources: string[];
+  repos: RepoInfo[];
+  suggested: string[];
+}
 
 interface State {
   connected: boolean;
   sessions: SessionSummary[];
   repos: string[];
+  workspaces: Workspace[];
+  /** False until the server has sent them once (so first-run setup doesn't flash). */
+  workspacesLoaded: boolean;
+  library: Library;
   transcripts: Record<string, TranscriptItem[]>;
   partials: Record<string, string>;
   /** Live sessions: what each is doing right now (phase, tool, background tasks). */
@@ -34,9 +54,14 @@ interface State {
   /** Short-lived status line message, e.g. "Nothing needs you". */
   flash: string | null;
   sound: boolean;
+  theme: ThemePref;
 
   screen: 'list' | 'session';
-  tab: Tab;
+  /** The workspace column's selection. */
+  scope: Scope;
+  homeCol: HomeCol;
+  /** Selected repo in the library row. */
+  libIndex: number;
   filter: string;
   filterFocused: boolean;
   selectedId: string | null;
@@ -47,23 +72,31 @@ interface State {
 
   /** Command board of the open session. */
   board: { sessionId: string; groups: CommandGroup[] } | null;
-  /** `${scope}:${name}` of the selected group, so it survives board refreshes. */
+  /** groupKeyOf() of the selected group, so it survives board refreshes. */
   groupKey: string | null;
-  /** Focused tile (1–9) while the board zone has focus. */
+  /** Focused key (1–9) while the number pad has focus. */
   boardSlot: number;
   /** Unsent composer text per session. The numpad fires commands only while this is empty. */
   drafts: Record<string, string>;
   /** Push-to-talk in progress: the live transcript, shown in the composer. */
   voice: { sessionId: string; state: 'listening' | 'finishing'; text: string } | null;
   settings: Settings;
-  /** Phones: command board panel shown under the composer. */
+  /** Phones: number pad panel shown under the composer. */
   mobileBoard: boolean;
+  /** A repo card is being dragged: drop targets light up. */
+  dragging: string | null;
 }
+
+const theme = loadTheme();
+applyTheme(theme);
 
 export const useStore = create<State>(() => ({
   connected: false,
   sessions: [],
   repos: [],
+  workspaces: [],
+  workspacesLoaded: false,
+  library: { sources: [], repos: [], suggested: [] },
   transcripts: {},
   partials: {},
   activity: {},
@@ -72,9 +105,12 @@ export const useStore = create<State>(() => ({
   lastError: null,
   flash: null,
   sound: loadSound(),
+  theme,
 
   screen: 'list',
-  tab: 'history',
+  scope: loadScope(),
+  homeCol: 'sessions',
+  libIndex: 0,
   filter: '',
   filterFocused: false,
   selectedId: null,
@@ -90,18 +126,19 @@ export const useStore = create<State>(() => ({
   voice: null,
   settings: {},
   mobileBoard: false,
+  dragging: null,
 }));
 
 export const set = useStore.setState;
 export const get = useStore.getState;
 
-type ListState = Pick<State, 'sessions' | 'tab' | 'filter' | 'permissions' | 'unread'>;
+type AttentionState = Pick<State, 'sessions' | 'permissions' | 'unread'>;
 
 /**
  * Sessions that need you, in the order Alt+N serves them: pending approvals
  * (oldest first), then sessions that finished unseen (oldest first).
  */
-export function attention(s: Pick<State, 'sessions' | 'permissions' | 'unread'>): SessionSummary[] {
+export function attention(s: AttentionState): SessionSummary[] {
   const byId = new Map(s.sessions.map((x) => [x.id, x]));
   const ids = [
     ...Object.values(s.permissions).sort((a, b) => a.createdAt - b.createdAt).map((p) => p.sessionId),
@@ -110,12 +147,57 @@ export function attention(s: Pick<State, 'sessions' | 'permissions' | 'unread'>)
   return [...new Set(ids)].map((id) => byId.get(id)).filter((x): x is SessionSummary => Boolean(x));
 }
 
-/** Sessions shown in the list for the current tab and filter, in display order. */
-export function visibleSessions(s: ListState): SessionSummary[] {
+export function flagsFor(s: Pick<State, 'permissions' | 'unread'>, id: string): Flags {
+  return { pending: Object.values(s.permissions).some((p) => p.sessionId === id), unread: id in s.unread };
+}
+
+/** A session's flags as a hook. Selects the two booleans separately: a fresh object per call would re-render forever. */
+export function useFlags(id: string | null): Flags {
+  const pending = useStore((s) => Boolean(id) && Object.values(s.permissions).some((p) => p.sessionId === id));
+  const unread = useStore((s) => Boolean(id) && id! in s.unread);
+  return { pending, unread };
+}
+
+type ListState = Pick<State, 'sessions' | 'workspaces' | 'scope' | 'filter' | 'permissions' | 'unread'>;
+
+/** The sessions column: the scope's sessions, filtered, grouped (needs you → working → done → earlier). */
+export function sessionGroups(s: ListState) {
   const needle = s.filter.trim().toLowerCase();
-  const base = s.tab === 'inbox' ? attention(s) : s.tab === 'live' ? s.sessions.filter((x) => x.live) : s.sessions;
-  if (!needle) return base;
-  return base.filter((x) => `${x.title} ${x.cwd} ${x.branch ?? ''} ${x.status ?? ''}`.toLowerCase().includes(needle));
+  let list = sessionsIn(s.scope, s.sessions, s.workspaces);
+  if (needle) list = list.filter((x) => `${x.title} ${x.cwd} ${x.branch ?? ''}`.toLowerCase().includes(needle));
+  return groupSessions(list, (x) => flagsFor(s, x.id), attention(s).map((x) => x.id));
+}
+
+/** The sessions column in display order: what ↑ ↓ walk through. */
+export function visibleSessions(s: ListState): SessionSummary[] {
+  return sessionGroups(s).flatMap((g) => g.sessions);
+}
+
+/** The workspace column's entries in key order: workspaces 1–9…, then "everything else" (0). */
+export function scopes(s: Pick<State, 'workspaces'>): Scope[] {
+  return [...s.workspaces.map((w): Scope => ({ kind: 'workspace', id: w.id })), { kind: 'rest' }];
+}
+
+export function sameScope(a: Scope, b: Scope): boolean {
+  return a.kind === b.kind && (a.kind === 'rest' || a.id === (b as { id: string }).id);
+}
+
+export function currentWorkspace(s: Pick<State, 'workspaces' | 'scope'>): Workspace | null {
+  const scope = s.scope;
+  return scope.kind === 'workspace' ? s.workspaces.find((w) => w.id === scope.id) ?? null : null;
+}
+
+export function setScope(scope: Scope): void {
+  set({ scope, filter: '' });
+  try { localStorage.setItem('cc-control.scope', JSON.stringify(scope)); } catch { /* ignore */ }
+}
+
+function loadScope(): Scope {
+  try {
+    const v = JSON.parse(localStorage.getItem('cc-control.scope') ?? 'null') as Scope | null;
+    if (v?.kind === 'workspace' && typeof v.id === 'string') return v;
+  } catch { /* default */ }
+  return { kind: 'rest' };
 }
 
 export function sessionById(id: string | null): SessionSummary | undefined {
@@ -152,7 +234,7 @@ export function toggleSound(): void {
   flash(sound ? 'Sound on' : 'Sound off');
 }
 
-export const groupKeyOf = (g: CommandGroup): string => `${g.scope}:${g.name}`;
+export const groupKeyOf = (g: CommandGroup): string => `${g.scope}:${g.workspaceId ?? ''}:${g.name}`;
 
 /**
  * The board group currently shown, falling back to the first for display. `exact` is false when
@@ -169,5 +251,5 @@ export function setDraft(id: string, text: string): void {
   set({ drafts: { ...get().drafts, [id]: text } });
 }
 
-/** Stable empty value for selectors (a fresh {} per call would re-render forever). */
+/** Stable empty values for selectors (a fresh {} or [] per call would re-render forever). */
 export const NO_BINDINGS: Record<string, string[]> = {};
