@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Command, CommandGroup, CommandMode } from '../../shared/protocol.ts';
-import { fillTemplate, placeholders } from '../commands.ts';
+import { fireCommand, fillTemplate, placeholders } from '../commands.ts';
 import { flash, get, sessionById, set } from '../store.ts';
 import { send } from '../ws.ts';
 import { close, Overlay } from './Overlay.tsx';
@@ -146,6 +146,28 @@ export function DeleteDialog({ group, slot }: { group: CommandGroup; slot: numbe
     <Overlay label="Remove command">
       <p className="text-sm text-zinc-200">Remove <span className="font-medium">{command?.label}</span> from {group.name}?</p>
       <p className="mt-3 text-xs text-zinc-500"><kbd>Y</kbd>/<kbd>Enter</kbd> remove · <kbd>N</kbd>/<kbd>Esc</kbd> cancel</p>
+    </Overlay>
+  );
+}
+
+/** A voice utterance that looked like a command, but not confidently: fire it, or send the words. */
+export function VoiceMatchDialog({ sessionId, text, command }: { sessionId: string; text: string; command: Command }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (k === 'y' || k === 'enter') { close(); fireCommand(sessionId, command); }
+      else if (k === 'n') { close(); send({ type: 'session.send', id: sessionId, text }); flash('Sent (voice)'); }
+      else if (k === 'escape') close();
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sessionId, text, command]);
+  return (
+    <Overlay label="Voice command?">
+      <p className="text-sm text-zinc-200">You said <span className="font-medium">“{text}”</span>. Run <span className="font-medium text-sky-300">{command.label}</span>?</p>
+      <p className="mt-3 text-xs text-zinc-500"><kbd>Y</kbd>/<kbd>Enter</kbd> run it · <kbd>N</kbd> send the words instead · <kbd>Esc</kbd> drop it</p>
     </Overlay>
   );
 }

@@ -128,7 +128,9 @@ function ApprovalCard({ p }: { p: PermissionRequest }) {
 }
 
 function Composer({ id, focused }: { id: string; focused: boolean }) {
-  const text = useStore((s) => s.drafts[id] ?? '');
+  const draft = useStore((s) => s.drafts[id] ?? '');
+  const voice = useStore((s) => (s.voice?.sessionId === id ? s.voice : null));
+  const text = voice ? voice.text : draft;
   const ref = useRef<HTMLTextAreaElement>(null);
   const running = useStore((s) => s.sessions.find((x) => x.id === id)?.status === 'running');
 
@@ -142,14 +144,21 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
   }, [focused, id]);
 
   function submit() {
-    if (!text.trim()) return;
-    send({ type: 'session.send', id, text });
+    if (voice || !draft.trim()) return;
+    send({ type: 'session.send', id, text: draft });
     setDraft(id, '');
   }
 
   return (
     <div className="border-t border-zinc-800 p-3">
+      {voice && (
+        <div className={`mb-1.5 flex items-center gap-2 text-xs ${voice.state === 'listening' ? 'text-red-400' : 'text-zinc-400'}`}>
+          <span className={`h-2 w-2 rounded-full ${voice.state === 'listening' ? 'animate-pulse bg-red-500' : 'bg-zinc-500'}`} />
+          {voice.state === 'listening' ? <>Listening… release to send · <kbd>Esc</kbd> cancel</> : 'Finishing…'}
+        </div>
+      )}
       <textarea
+        readOnly={Boolean(voice)}
         ref={ref}
         value={text}
         rows={Math.min(8, Math.max(2, text.split('\n').length))}
@@ -162,7 +171,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
           }
         }}
         placeholder={running ? 'Running… you can queue the next message  (Ctrl+. to interrupt)' : 'Message  (Enter to send · Numpad fires commands while empty · Esc for the board)'}
-        className="w-full resize-none rounded border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-600"
+        className={`w-full resize-none rounded border bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-600 ${voice ? 'border-red-800' : 'border-zinc-800'}`}
       />
     </div>
   );

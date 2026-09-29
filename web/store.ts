@@ -13,6 +13,7 @@ export type Modal =
   | { kind: 'template'; sessionId: string; command: Command }
   | { kind: 'edit'; group: CommandGroup | null; slot: number }
   | { kind: 'delete'; group: CommandGroup; slot: number }
+  | { kind: 'voiceMatch'; sessionId: string; text: string; command: Command }
   | null;
 
 interface State {
@@ -47,6 +48,8 @@ interface State {
   boardSlot: number;
   /** Unsent composer text per session. The numpad fires commands only while this is empty. */
   drafts: Record<string, string>;
+  /** Push-to-talk in progress: the live transcript, shown in the composer. */
+  voice: { sessionId: string; state: 'listening' | 'finishing'; text: string } | null;
 }
 
 export const useStore = create<State>(() => ({
@@ -75,6 +78,7 @@ export const useStore = create<State>(() => ({
   groupKey: null,
   boardSlot: 5,
   drafts: {},
+  voice: null,
 }));
 
 export const set = useStore.setState;

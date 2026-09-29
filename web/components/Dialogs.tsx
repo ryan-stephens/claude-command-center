@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { KEYMAP, openSession } from '../keys.ts';
 import { get, sessionById, set, useStore } from '../store.ts';
 import { createSession, send } from '../ws.ts';
-import { DeleteDialog, EditDialog, TemplateDialog } from './CommandDialogs.tsx';
+import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
 import { close, Overlay } from './Overlay.tsx';
 
 export function Dialogs() {
@@ -16,6 +16,7 @@ export function Dialogs() {
     case 'template': return <TemplateDialog sessionId={modal.sessionId} command={modal.command} />;
     case 'edit': return <EditDialog group={modal.group} slot={modal.slot} />;
     case 'delete': return <DeleteDialog group={modal.group} slot={modal.slot} />;
+    case 'voiceMatch': return <VoiceMatchDialog sessionId={modal.sessionId} text={modal.text} command={modal.command} />;
   }
 }
 

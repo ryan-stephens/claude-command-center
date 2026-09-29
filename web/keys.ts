@@ -3,6 +3,7 @@
 
 import type { PermissionDecision } from '../shared/protocol.ts';
 import { cycleGroup, exportPack, fireSlot, importPack } from './commands.ts';
+import { cancelVoice, isListening, startVoice, stopVoice } from './voice.ts';
 import { attention, currentGroup, flash, get, markRead, pendingFor, sessionById, set, TABS, toggleSound, visibleSessions } from './store.ts';
 import { send } from './ws.ts';
 
@@ -55,6 +56,14 @@ export const KEYMAP: { title: string; keys: [string, string][] }[] = [
       ['Delete', 'Remove the focused command'],
       ['Ctrl+↑ ↓ ← →', 'Move the focused command to the neighbouring slot'],
       ['Shift+E / Shift+I', 'Export / import your global commands as JSON'],
+    ],
+  },
+  {
+    title: 'Voice (Chrome / Edge)',
+    keys: [
+      ['Hold ` or Numpad .', 'Push-to-talk: speak, release to send (not while you are mid-message)'],
+      ['Esc (while holding)', 'Cancel without sending'],
+      ['Say a command label', 'Fires it instead of sending text, e.g. "code review"; "slot 3" fires slot 3'],
     ],
   },
 ];
@@ -237,6 +246,28 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
   return false;
 }
 
+const isPushToTalk = (e: KeyboardEvent) => (e.code === 'Backquote' || e.code === 'NumpadDecimal') && !e.ctrlKey && !e.altKey && !e.metaKey;
+
+/** Push-to-talk keydown. Same rule as the numpad: voice keys type normally once you've started a message. */
+function voiceKeys(e: KeyboardEvent): boolean {
+  if (isListening()) {
+    if (e.key === 'Escape') { cancelVoice(); return true; }
+    return isPushToTalk(e); // swallow auto-repeat of the held key
+  }
+  const s = get();
+  if (!isPushToTalk(e) || s.screen !== 'session' || !s.openId || e.repeat) return false;
+  if (s.zone === 'composer' && (s.drafts[s.openId] ?? '').length > 0) return false;
+  startVoice(s.openId);
+  return true;
+}
+
+export function onKeyUp(e: KeyboardEvent): void {
+  if (isListening() && isPushToTalk(e)) {
+    stopVoice();
+    e.preventDefault();
+  }
+}
+
 /**
  * Numpad and Alt+digit command keys in the session view. The numpad acts on the board
  * unless you're mid-message in the composer, so digits can still be typed there.
@@ -282,7 +313,8 @@ export function onKeyDown(e: KeyboardEvent): void {
   }
   const typing = isTextTarget(e.target);
   let handled = false;
-  if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { hop(e.key === 'ArrowUp' ? -1 : 1); handled = true; }
+  if (voiceKeys(e)) handled = true;
+  else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { hop(e.key === 'ArrowUp' ? -1 : 1); handled = true; }
   else if (e.altKey && !e.shiftKey && e.code === 'KeyN') { jumpToAttention(); handled = true; }
   else if (e.altKey && e.shiftKey && e.code === 'KeyN') { set({ modal: { kind: 'new' } }); handled = true; }
   else if (e.ctrlKey && e.key === '.') { if (s.openId) send({ type: 'session.interrupt', id: s.openId }); handled = true; }

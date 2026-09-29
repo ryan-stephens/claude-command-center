@@ -3,7 +3,7 @@
 A slim, local, **keyboard-first** command center for Claude Code sessions.
 Pick a session with the arrow keys, press Enter, fire commands from the number pad, talk to it with a hotkey.
 
-Status: **Phase 3 done** (command board, 2026-09-28) · Started 2026-09-28
+Status: **Phase 4 done** (voice, 2026-09-28) · Started 2026-09-28
 
 ---
 
@@ -65,7 +65,7 @@ Focus zones: **Composer** ↔ **Command board**. `Esc` steps outward: composer �
 | `PgUp` `PgDn` `Home` `End` | Scroll the transcript |
 | `Enter` / `Shift+Enter` (in the composer) | Send / newline |
 | `Ctrl+.` | Interrupt the running turn |
-| **Hold `` ` `` (backtick)** or **Hold `Numpad .`** | **Push-to-talk** voice input. Release to send. |
+| **Hold `` ` `` (backtick)** or **Hold `Numpad .`** | **Push-to-talk** voice input. Release to send. Like the numpad, this works only while you aren't mid-message, so backticks still type. `Esc` while holding cancels. |
 | `Y` / `A` / `N` | Pending approval: **Y**es once / **A**lways / **N**o. Works when the approval card is focused, which happens automatically. |
 
 The number keys and their labels are always visible on the command tiles (like a game hotbar), so nothing has to be memorised.
@@ -146,7 +146,7 @@ permission.respond {reqId, decision}
 | **1. Core** ✅ | Server, SessionManager, WS protocol, session list with full keyboard nav, session view with streaming output and composer, history + resume | Create / resume / chat with 3 sessions using only the keyboard |
 | **2. Attention** ✅ | Approval cards (Y/A/N), inbox, `Alt+N`, notifications and sound, tab-title count, interrupt | A blocked session is cleared in ≤ 3 keys from anywhere |
 | **3. Command board** ✅ | Groups, numpad slots, send/insert/template modes, editor, per-repo packs, auto slash-commands, import/export | A starter pack is fired entirely from the numpad |
-| **4. Voice** | Push-to-talk, transcript to composer, voice-triggered commands | Hold the key, speak, release, and it's sent |
+| **4. Voice** ✅ | Push-to-talk, transcript to composer, voice-triggered commands | Hold the key, speak, release, and it's sent |
 | **5. Polish** | `Ctrl+K` palette, `?` overlay, rebinding, phone layout, Tailscale + token, context-usage meter | Daily-driver quality |
 | Later | Local Whisper, diff viewer for edits, per-session cost, multi-machine, session templates ("new session in rc-hub with /card-author") | — |
 
@@ -251,3 +251,13 @@ Built 2026-09-28. **Done-when met**: the starter pack was fired from the numpad 
 - **Firing from a fallback group.** While the board was refreshing, the selected group wasn't found, and the lookup fell back to the first group. `fireSlot` now fires only on an exact group match, and a board that no longer has the selected group resets the selection explicitly.
 - **Creating a session or exporting while disconnected hung the dialog.** `send()` now reports failure, and those requests reject straight away.
 - **node:sqlite's ExperimentalWarning** is filtered out at load time. Other warnings still print.
+
+## 13. Phase 4 notes
+
+Built 2026-09-28. **Done-when met in automation**: hold the key, speak, release, and it's sent. Verified in Playwright with a fake `SpeechRecognition` injected into the page, because headless Chromium has no speech backend. The real recogniser passed by hand in the Phase 0 spike (Chrome and Edge); **the owner should try the integrated app once** (`pnpm start`, open a session, hold `` ` ``).
+
+- `web/voice.ts`: the push-to-talk controller. It listens while the key is held, and the live transcript replaces the composer text (read-only, with a red "Listening…" bar). Release calls `stop()`, and the recogniser's final `end` delivers the text. If Chrome ends recognition during a pause while the key is still held, it restarts. Window blur counts as a release, and `Esc` aborts. Errors are made readable (e.g. "Microphone blocked: allow it for this site in the address bar").
+- `web/voice-match.ts` (pure, with tests in `voice-match.test.ts`, run by `pnpm test` using `node:test`): an utterance of 5 words or fewer is matched against command labels on the board, searching the current group first. It uses Dice similarity over character bigrams after normalising punctuation and filler ("please", "run …"). A score of **0.85 or more fires** the command; **0.6 to 0.85 asks** (`Y` run it, `N` send the words, `Esc` drop it); anything lower is sent as text. "slot three" or "command 7" fires that slot.
+- **Surprise**: current Chromium exposes an unprefixed `SpeechRecognition`, and the code prefers it over `webkitSpeechRecognition`. Test fakes must replace both.
+
+Verified: dictation was sent as text; "continue" fired Continue; "summary" asked "Run Summarise?" and `N` sent the words; hold then `Esc` sent nothing and stayed in the session; typing a message with backticks still works; `Numpad .` + "slot two" fired slot 2.
