@@ -69,12 +69,12 @@ const hasModifier = (combo: string) => /(^|\+)(Ctrl|Alt|Meta)\+/.test(combo);
 const RESERVED = new Set([
   'Enter', 'Escape', 'Tab', 'Shift+Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete',
   'Home', 'End', 'PageUp', 'PageDown', 'Ctrl+C', 'Ctrl+V', 'Ctrl+X', 'Ctrl+A', 'Ctrl+Z',
-  // Screen keys: home (/ N W E R X + digits, F in the library), session (i T R X + D), approvals (Y A N D),
+  // Screen keys: home (/ N W E R X C + − digits, F in the library), session (i T R X + D), approvals (Y A N D),
   // number pad (E [ ] Shift+E Shift+I Ctrl+arrows).
-  'Y', 'A', 'N', 'E', 'I', 'R', 'X', 'T', 'W', 'D', 'F', '/', '[', ']', '=', 'Shift+=', 'Shift+E', 'Shift+I',
+  'Y', 'A', 'N', 'E', 'I', 'R', 'X', 'T', 'W', 'D', 'F', 'C', 'Shift+C', '-', '/', '[', ']', '=', 'Shift+=', 'Shift+E', 'Shift+I',
   ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(String),
   'Ctrl+ArrowUp', 'Ctrl+ArrowDown', 'Ctrl+ArrowLeft', 'Ctrl+ArrowRight',
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `Alt+${n}`),
+  ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `Alt+${n}`),
 ]);
 
 /** Returns an error message, or null if `combo` can be bound to `id`. */

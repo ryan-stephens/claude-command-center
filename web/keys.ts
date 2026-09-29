@@ -60,7 +60,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ['Enter / Shift+Enter', 'Send / new line (message box)'],
       ['Esc', 'While Claude is working: stop it. Otherwise step out: message box → number pad → home'],
-      ['Numpad 0', 'Back to home, even while Claude is working'],
+      ['Numpad 0 / Alt+0', 'Back to home, even while Claude is working'],
       ['Tab (message box)', 'Go to the number pad or the approval card without stopping Claude'],
       ['i', 'Back to the message box'],
       ['+ / −', 'Give this session another repo to work in / take one it was given back out (or its × above the conversation)'],
@@ -522,8 +522,10 @@ export function onKeyUp(e: KeyboardEvent): void {
 function commandKeys(e: KeyboardEvent): boolean {
   const s = get();
   if (s.screen !== 'session' || !s.openId) return false;
-  const digit = /^Digit([1-9])$/.exec(e.code);
+  const digit = /^Digit([0-9])$/.exec(e.code);
   if (e.altKey && !e.ctrlKey && !e.shiftKey && digit) {
+    // Alt + the number row mirrors the whole pad: 1–9 run workflows, 0 goes home like Numpad 0.
+    if (digit[1] === '0') { backToList(); return true; }
     set({ boardSlot: Number(digit[1]) });
     fireSlot(Number(digit[1]));
     return true;
