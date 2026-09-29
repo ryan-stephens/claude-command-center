@@ -6,7 +6,7 @@
 import type { PermissionDecision } from '../shared/protocol.ts';
 import { workspacesFor } from '../shared/workspaces.ts';
 import { ACTIONS, actionFor, bindingsFor, comboOf, displayCombo, type ActionId, type Bindings } from './bindings.ts';
-import { cycleGroup, exportPack, fireSlot, importPack } from './commands.ts';
+import { cycleGroup, exportPack, exportWorkspace, fireSlot, importPack, importWorkspace } from './commands.ts';
 import { sessionsIn } from './home-model.ts';
 import { nextTheme, applyTheme, THEME_LABEL } from './theme.ts';
 import { cancelVoice, isListening, startVoice, stopVoice } from './voice.ts';
@@ -30,6 +30,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['N', 'New session in this workspace'],
       ['W', 'New workspace'],
       ['E / Delete (workspace column)', 'Edit / delete the workspace'],
+      ['Shift+E / Shift+I (workspace column)', 'Export the workspace to share it / import one'],
       ['+', 'Add a repo to this workspace'],
       ['Tab', 'Go to the repo library (Enter adds the repo here, N starts a session in it, F picks the folders it lists)'],
       ['/', 'Filter sessions'],
@@ -309,6 +310,10 @@ function homeKeys(e: KeyboardEvent, typing: boolean): boolean {
   if (col === 'preview' && selected && pendingFor(selected)) {
     const decision = ({ y: 'allow', a: 'always', n: 'deny' } as const)[e.key.toLowerCase() as 'y' | 'a' | 'n'];
     if (decision) return respondPermission(decision, selected);
+  }
+  if (col === 'workspaces' && e.shiftKey) {
+    if (e.key === 'E' && s.scope.kind === 'workspace') { exportWorkspace(s.scope.id); return true; }
+    if (e.key === 'I') { importWorkspace(); return true; }
   }
   switch (e.key.toLowerCase()) {
     case 'n': newSession(); return true;

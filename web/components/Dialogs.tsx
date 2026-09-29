@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { addPath, homeRepo, removePath, repoName, samePath, WORKSPACE_COLORS } from '../../shared/workspaces.ts';
 import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
+import { exportWorkspace } from '../commands.ts';
 import { keymap, openSession } from '../keys.ts';
 import { get, NO_BINDINGS, sessionById, set, setScope, useStore, type RepoTarget } from '../store.ts';
 import { createSession, send } from '../ws.ts';
@@ -397,7 +398,8 @@ function WorkspaceDialog({ id }: { id: string | null }) {
         {error && <p className="mt-3 text-sm text-bad">{error}</p>}
         <div className="mt-5 flex items-center gap-3">
           <DialogKeys items={[['Tab', 'next part'], ['↑ ↓', 'choose repo'], ['Space', 'pick'], ['H', 'home repo']]} />
-          <button className="btn btn-primary ml-auto" onClick={save}>{existing ? 'Save' : 'Create workspace'}<Key k="Enter" size="sm" tone="ghost" /></button>
+          {existing && <button className="btn btn-ghost ml-auto" onClick={() => exportWorkspace(existing.id)} title="Save this workspace and its workflows as a file to share (Shift+E on home)"><Icon name="file" size={16} />Export</button>}
+          <button className={`btn btn-primary ${existing ? '' : 'ml-auto'}`} onClick={save}>{existing ? 'Save' : 'Create workspace'}<Key k="Enter" size="sm" tone="ghost" /></button>
         </div>
       </div>
     </Overlay>

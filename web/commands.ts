@@ -2,7 +2,7 @@
 
 import type { Command, CommandPack } from '../shared/protocol.ts';
 import { currentGroup, flash, get, set, setDraft } from './store.ts';
-import { requestExport, send } from './ws.ts';
+import { requestExport, requestWorkspaceFile, send } from './ws.ts';
 
 const PLACEHOLDER = /\{\{\s*([\w .-]+?)\s*\}\}/g;
 
@@ -54,28 +54,50 @@ export function cycleGroup(delta: number): void {
   set({ groupKey: `${g.scope}:${g.name}` });
 }
 
-export async function exportPack(): Promise<void> {
-  const pack = await requestExport().catch(() => null);
-  if (!pack) return;
-  const url = URL.createObjectURL(new Blob([`${JSON.stringify(pack, null, 2)}\n`], { type: 'application/json' }));
-  const a = Object.assign(document.createElement('a'), { href: url, download: 'cc-control-commands.json' });
+function download(name: string, data: unknown): void {
+  const url = URL.createObjectURL(new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: 'application/json' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
   a.click();
   URL.revokeObjectURL(url);
-  flash(`Exported ${pack.groups.length} group(s)`);
 }
 
-export function importPack(): void {
+/** Pick a JSON file and hand it over parsed. */
+function pickJson(onJson: (json: unknown, name: string) => void): void {
   const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/json,.json' });
   input.onchange = async () => {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const pack = JSON.parse(await file.text()) as CommandPack;
-      send({ type: 'pack.import', pack });
-      flash(`Imported ${file.name}`);
+      onJson(JSON.parse(await file.text()), file.name);
     } catch {
       set({ lastError: `${file.name} is not valid JSON.` });
     }
   };
   input.click();
+}
+
+export async function exportPack(): Promise<void> {
+  const pack = await requestExport().catch(() => null);
+  if (!pack) return;
+  download('cc-control-commands.json', pack);
+  flash(`Exported ${pack.groups.length} group(s)`);
+}
+
+export function importPack(): void {
+  pickJson((json, name) => {
+    send({ type: 'pack.import', pack: json as CommandPack });
+    flash(`Imported ${name}`);
+  });
+}
+
+/** A workspace and its workflows as one shareable file (repos by name, not path). */
+export async function exportWorkspace(id: string): Promise<void> {
+  const file = await requestWorkspaceFile(id).catch(() => null);
+  if (!file) return;
+  download(`${file.name.replace(/[^\w.-]+/g, '-').toLowerCase()}.workspace.json`, file);
+  flash(`Exported ${file.name}`);
+}
+
+export function importWorkspace(): void {
+  pickJson((json) => send({ type: 'workspace.import', file: json }));
 }

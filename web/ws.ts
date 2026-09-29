@@ -1,6 +1,6 @@
-import type { ClientMsg, CommandPack, ServerMsg } from '../shared/protocol.ts';
+import type { ClientMsg, CommandPack, ServerMsg, WorkspaceFile } from '../shared/protocol.ts';
 import { onStatusChange } from './attention.ts';
-import { get, groupKeyOf, set, setScope } from './store.ts';
+import { flash, get, groupKeyOf, set, setScope } from './store.ts';
 
 let socket: WebSocket | null = null;
 let retryMs = 1000;
@@ -8,6 +8,7 @@ let retryMs = 1000;
 export let lastPermissionAt = 0;
 const pendingCreates = new Map<string, { resolve: (id: string) => void; reject: (e: Error) => void }>();
 const pendingExports = new Map<string, (pack: CommandPack) => void>();
+const pendingWorkspaceFiles = new Map<string, (file: WorkspaceFile) => void>();
 
 export function connect(): void {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -28,6 +29,7 @@ export function connect(): void {
     for (const p of pendingCreates.values()) p.reject(new Error('Lost the connection to the cc-control server. Try again.'));
     pendingCreates.clear();
     pendingExports.clear();
+    pendingWorkspaceFiles.clear();
     setTimeout(connect, retryMs);
     retryMs = Math.min(retryMs * 2, 10_000); // back off while the server is down
 
@@ -61,6 +63,17 @@ export function requestExport(): Promise<CommandPack> {
     pendingExports.set(reqId, resolve);
     if (!send({ type: 'pack.export', reqId })) {
       pendingExports.delete(reqId);
+      reject(new Error('Not connected'));
+    }
+  });
+}
+
+export function requestWorkspaceFile(id: string): Promise<WorkspaceFile> {
+  const reqId = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    pendingWorkspaceFiles.set(reqId, resolve);
+    if (!send({ type: 'workspace.export', reqId, id })) {
+      pendingWorkspaceFiles.delete(reqId);
       reject(new Error('Not connected'));
     }
   });
@@ -154,6 +167,13 @@ function receive(msg: ServerMsg): void {
     }
     case 'library':
       set({ library: { sources: msg.sources, repos: msg.repos, suggested: msg.suggested } });
+      return;
+    case 'workspace.file':
+      pendingWorkspaceFiles.get(msg.reqId)?.(msg.file);
+      pendingWorkspaceFiles.delete(msg.reqId);
+      return;
+    case 'info':
+      flash(msg.message);
       return;
     case 'pack':
       pendingExports.get(msg.reqId)?.(msg.pack);

@@ -47,7 +47,8 @@ export function legendFor(x: LegendInput): LegendItem[] {
           { keys: ['1–9'], label: 'Jump to a workspace' },
           { keys: ['→'], label: 'Its sessions' },
           { keys: ['W'], label: 'New workspace' },
-          ...(x.inWorkspace ? [{ keys: ['E'], label: 'Edit' }, { keys: ['+'], label: 'Add a repo' }] : []),
+          ...(x.inWorkspace ? [{ keys: ['E'], label: 'Edit' }, { keys: ['+'], label: 'Add a repo' }, { keys: ['⇧E'], label: 'Share' }] : []),
+          { keys: ['⇧I'], label: 'Import' },
         ];
       case 'preview':
         return x.pending

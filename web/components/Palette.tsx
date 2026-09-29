@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { repoName } from '../../shared/workspaces.ts';
-import { exportPack, fireCommand, importPack } from '../commands.ts';
+import { exportPack, exportWorkspace, fireCommand, importPack, importWorkspace } from '../commands.ts';
 import { fuzzyScore } from '../fuzzy.ts';
 import { askStop, cycleTheme, hop, interrupt, jumpToAttention, newSession, openSession } from '../keys.ts';
 import { taskKind, taskRunning } from '../activity-label.ts';
@@ -43,9 +43,11 @@ export function Palette() {
       actions.push(
         action('addrepo', `Add a repo to ${ws.name}`, () => set({ modal: { kind: 'repoPicker', target: { kind: 'workspace', id: ws.id } } })),
         action('editws', `Edit workspace ${ws.name}`, () => set({ modal: { kind: 'workspace', id: ws.id } })),
+        action('exportws', `Export workspace ${ws.name} to share it`, () => exportWorkspace(ws.id)),
       );
     }
     actions.push(
+      action('importws', 'Import a workspace file', importWorkspace),
       action('sources', 'Choose the folders the repo library lists', () => set({ modal: { kind: 'sources' } })),
       action('home', 'Go home', home),
       action('theme', 'Switch theme (match Windows, light, dark)', cycleTheme),

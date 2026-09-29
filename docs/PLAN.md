@@ -359,6 +359,7 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 - **Keys you can see**: keycaps are the visual language. A context **legend bar** (`web/legend.ts`, tested) shows the 5–8 keys that matter for the focused column or zone, in large keycaps; the full list stays in `?`.
 - **Theme** (`web/theme.ts`): light and dark tokens, following Windows unless you pick one (`Alt+T`, header button). Components use semantic tokens (`bg-surface`, `text-sub`, `text-attn`…) defined with Tailwind's `@theme inline`. Base and component CSS sit in `@layer base` / `@layer components` so utilities win.
 - **Words**: "Command Center"; sessions say "Waiting for your OK", "Working on it", "Finished · your turn", "Done", "Open in a terminal"; the context meter reads "Memory"; subagents are "helpers".
+- **Share a workspace** (`server/workspace-file.ts`, tested): `Shift+E` / `Shift+I` in the workspace column (or the palette, or Export in its editor). The file lists repos **by folder name** plus the workflows; import matches the names against your own library and says which it could not find. Verified over the socket: export, import as a copy with one unknown repo, delete.
 - **First run** (`Welcome.tsx`): four key clusters (arrows, number pad, Y/A/N, Esc and talk), then straight into creating a workspace, including picking the repo folder. The seen flag is `cc-control.welcomed.v2`, so existing users see it once more.
 
 **Decisions and deviations**
@@ -370,6 +371,5 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 
 **Known gaps**
 - Home loads the preview's transcript on selection (after 200 ms); very long histories make that first read slow, as before.
-- Workspace export and import as one JSON file is designed but not built yet; workflows export through the existing pack export only for your own (global) group.
 - Drag and drop needs a mouse; the keyboard path (`+`, `Enter` in the library) covers the same moves.
 

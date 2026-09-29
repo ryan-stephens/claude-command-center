@@ -12,6 +12,7 @@ import { CommandService } from './commands.ts';
 import { PermissionBroker } from './permission-broker.ts';
 import { COOKIE, cookieToken, findRemoteIp, remoteHostAllowed, remoteToken, remoteUpgradeAllowed, tokenMatches } from './remote.ts';
 import { cleanSources, scanSources } from './repo-library.ts';
+import { workspaceFromFile, workspaceToFile } from './workspace-file.ts';
 import { SessionManager } from './session-manager.ts';
 import { Store } from './store.ts';
 
@@ -210,6 +211,26 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'library.scan':
       send(ws, library());
       return;
+    case 'workspace.export': {
+      const w = store.loadWorkspaces().find((x) => x.id === msg.id);
+      if (!w) throw new Error('That workspace no longer exists.');
+      send(ws, { type: 'workspace.file', reqId: msg.reqId, file: workspaceToFile(w, store.loadWorkspacePack(w.id)) });
+      return;
+    }
+    case 'workspace.import': {
+      const r = workspaceFromFile(msg.file, scanSources(store.librarySources()));
+      const w = cleanWorkspace({ ...r.workspace, id: crypto.randomUUID() });
+      store.saveWorkspace(w);
+      if (r.workflows.groups.length) store.saveWorkspacePack(w.id, r.workflows);
+      workspacesChanged();
+      send(ws, {
+        type: 'info',
+        message: r.missing.length
+          ? `Imported ${w.name}. Not in your repo library: ${r.missing.join(', ')}. Add them with + once you have them.`
+          : `Imported ${w.name} with ${w.repos.length} repo${w.repos.length === 1 ? '' : 's'}.`,
+      });
+      return;
+    }
   }
 }
 

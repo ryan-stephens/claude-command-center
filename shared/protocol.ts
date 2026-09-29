@@ -47,6 +47,16 @@ export interface Workspace {
   home?: string;
 }
 
+/** A workspace as a file to share: repos by folder name, since paths differ between machines. */
+export interface WorkspaceFile {
+  kind: 'cc-control.workspace';
+  version: 1;
+  name: string;
+  color: string;
+  repos: { name: string; home?: boolean }[];
+  workflows: CommandPack;
+}
+
 /** A git repo found under one of the library's source folders. */
 export interface RepoInfo {
   path: string;
@@ -198,7 +208,10 @@ export type ClientMsg =
   | { type: 'session.removeDir'; id: string; path: string }
   /** The folders the repo library scans for git repos. */
   | { type: 'library.setSources'; sources: string[] }
-  | { type: 'library.scan' };
+  | { type: 'library.scan' }
+  | { type: 'workspace.export'; reqId: string; id: string }
+  /** An untrusted WorkspaceFile; its repos are matched by name against the library. */
+  | { type: 'workspace.import'; file: unknown };
 
 export type ServerMsg =
   | { type: 'sessions'; sessions: SessionSummary[]; repos: string[] }
@@ -221,4 +234,7 @@ export type ServerMsg =
   | { type: 'workspaces'; workspaces: Workspace[] }
   /** `suggested`: likely source folders, from where past sessions ran, for the first-run setup. */
   | { type: 'library'; sources: string[]; repos: RepoInfo[]; suggested: string[] }
+  | { type: 'workspace.file'; reqId: string; file: WorkspaceFile }
+  /** Something worth a line in the status area, e.g. what an import could not match. */
+  | { type: 'info'; message: string }
   | { type: 'error'; message: string; reqId?: string };
