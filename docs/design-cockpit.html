@@ -1,0 +1,569 @@
+<title>cc-control Cockpit Concept</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: a concept brief. Sticky screen switcher on top; one large scaled mock per screen with notes beside it. */
+:root {
+  --bg: #f3f2ef; --panel: #ffffff; --ink: #1b1c1f; --sub: #55585f; --line: #dcdad4; --pick: #27313f;
+  --display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #16171a; --panel: #1e2024; --ink: #ecebe7; --sub: #a7a8ad; --line: #34363c; --pick: #dfe3ea; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #16171a; --panel: #1e2024; --ink: #ecebe7; --sub: #a7a8ad; --line: #34363c; --pick: #dfe3ea; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); margin: 0; padding-inline: 16px; }
+.wrap { max-width: 1320px; margin: 0 auto; padding-block: 40px 80px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.05; letter-spacing: -0.02em; }
+h2 { font-size: 26px; letter-spacing: -0.01em; }
+h3 { font-size: 16px; }
+p { margin: 0; max-width: 70ch; }
+.lede { color: var(--sub); font-size: 17px; margin-top: 12px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sub); }
+code { font: 13px var(--mono); }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; margin: 28px -16px 0; padding: 10px 16px; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.seg button { font: 500 14px var(--body); color: var(--sub); background: none; border: 0; border-radius: 7px; padding: 6px 12px; cursor: pointer; min-height: 34px; }
+.seg button[aria-pressed="true"] { background: var(--pick); color: var(--bg); }
+.seg button:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+.stage { margin-top: 28px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; align-items: start; }
+@media (max-width: 1000px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+.notes { display: grid; gap: 12px; position: sticky; top: 90px; }
+.notes > div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 8px; }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--sub); font-size: 14px; }
+.notes strong { color: var(--ink); }
+.frame { position: relative; width: 100%; overflow: hidden; border-radius: 14px; border: 1px solid var(--line); box-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 16px 40px -14px rgb(0 0 0 / 0.25); }
+.frame > .m { transform-origin: 0 0; position: absolute; top: 0; left: 0; }
+section.more { margin-top: 64px; display: grid; gap: 18px; }
+.cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.cols > div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: grid; gap: 8px; align-content: start; }
+.cols ul { margin: 0; padding-left: 18px; color: var(--sub); font-size: 14px; display: grid; gap: 5px; }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; font-size: 13px; color: var(--sub); }
+tr:last-child td { border-bottom: 0; }
+.k { font: 600 12px var(--mono); padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--panel); white-space: nowrap; }
+
+/* ============ Mock: keycaps are the visual language ============ */
+.m {
+  --m-bg: #0f1115; --m-col: #14171c; --m-surface: #1b1f26; --m-raise: #232832; --m-line: #2a2f39; --m-text: #e9ecf1; --m-sub: #a6aebb; --m-faint: #8790a0;
+  --m-amber: #f4b13e; --m-amber-bg: #3a2a10; --m-blue: #85adff; --m-blue-bg: #17233d; --m-green: #57cf91; --m-green-bg: #12301f; --m-red: #ff8877; --m-red-bg: #3b1714;
+  --acc: #ffb454; --acc-ink: #1a1206; --acc-soft: #3a2c15; --ring: #ffb454;
+  --kc-top: #2a303b; --kc-edge: #0a0c10; --kc-ink: #e9ecf1; --kc-line: #3a414e;
+  font: 15px/1.45 var(--body); color: var(--m-text); background: var(--m-bg); overflow: hidden;
+}
+.m[data-mt="light"] {
+  --m-bg: #eceae5; --m-col: #f4f3ef; --m-surface: #ffffff; --m-raise: #f7f6f2; --m-line: #d9d6ce; --m-text: #17181b; --m-sub: #50545c; --m-faint: #666a73;
+  --m-amber: #9a4a00; --m-amber-bg: #fff0d9; --m-blue: #1c5bc9; --m-blue-bg: #e7effd; --m-green: #16713e; --m-green-bg: #e3f4ea; --m-red: #b42318; --m-red-bg: #fde9e6;
+  --acc: #c25e00; --acc-ink: #ffffff; --acc-soft: #fbe9d6; --ring: #d36a00;
+  --kc-top: #ffffff; --kc-edge: #b9b5ab; --kc-ink: #26282d; --kc-line: #cfcbc1;
+}
+.m svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.m .row { display: flex; align-items: center; gap: 10px; }
+.m .col { display: flex; flex-direction: column; gap: 10px; }
+.m .grow { flex: 1; min-width: 0; }
+.m .sub { color: var(--m-sub); }
+.m .faint { color: var(--m-faint); font-size: 13px; }
+.m .mono { font: 13px var(--mono); }
+.m .trunc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* keycap */
+.m .kc { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 26px; padding: 0 7px; border-radius: 7px; background: var(--kc-top); border: 1px solid var(--kc-line); box-shadow: 0 2px 0 var(--kc-edge); color: var(--kc-ink); font: 700 12px var(--mono); white-space: nowrap; flex-shrink: 0; }
+.m .kc.sm { min-width: 20px; height: 20px; padding: 0 5px; font-size: 11px; border-radius: 5px; box-shadow: 0 1.5px 0 var(--kc-edge); }
+.m .kc.lg { min-width: 40px; height: 40px; font-size: 16px; border-radius: 9px; box-shadow: 0 3px 0 var(--kc-edge); }
+.m .kc.acc { background: var(--acc); color: var(--acc-ink); border-color: var(--acc); }
+.m .kc.amber { background: var(--m-amber-bg); color: var(--m-amber); border-color: color-mix(in srgb, var(--m-amber) 45%, transparent); }
+.m .kc.red { background: var(--m-red-bg); color: var(--m-red); border-color: color-mix(in srgb, var(--m-red) 45%, transparent); }
+.m .pill { display: inline-flex; align-items: center; gap: 6px; font: 600 12px var(--body); padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
+.m .p-amber { color: var(--m-amber); background: var(--m-amber-bg); }
+.m .p-blue { color: var(--m-blue); background: var(--m-blue-bg); }
+.m .p-green { color: var(--m-green); background: var(--m-green-bg); }
+.m .p-red { color: var(--m-red); background: var(--m-red-bg); }
+.m .p-grey { color: var(--m-sub); background: var(--m-raise); }
+.m .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; flex-shrink: 0; animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .m .spin { animation: none; } }
+.m .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.m .ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font: 700 13px var(--body); color: #fff; flex-shrink: 0; }
+.ic.store { background: #d9622b; } .ic.pay { background: #0f8a6c; } .ic.docs { background: #5b6ee8; } .ic.tools { background: #9a5bd8; } .ic.none { background: var(--m-raise); color: var(--m-sub); }
+.m .card { background: var(--m-surface); border: 1px solid var(--m-line); border-radius: 12px; }
+.m .hr { height: 1px; background: var(--m-line); }
+.m h4 { margin: 0; font: 700 11.5px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--m-faint); }
+.m .t2 { font-size: 15.5px; font-weight: 600; }
+.m .title { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+/* columns */
+.m .colm { background: var(--m-col); border-right: 1px solid var(--m-line); display: flex; flex-direction: column; min-width: 0; }
+.m .colhead { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; }
+.m .colm.dim > *:not(.colhead) { opacity: .72; }
+.m .colm.active { background: var(--m-surface); box-shadow: inset 0 3px 0 var(--acc); }
+.m .item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin: 0 8px; border-radius: 10px; }
+.m .item.sel { background: var(--m-raise); }
+.m .item.focus { background: var(--m-raise); outline: 2px solid var(--ring); outline-offset: -2px; box-shadow: 0 0 0 5px color-mix(in srgb, var(--ring) 18%, transparent); }
+.m .legend { display: flex; align-items: center; gap: 22px; padding: 10px 18px; border-top: 1px solid var(--m-line); background: var(--m-col); font-size: 13.5px; color: var(--m-sub); }
+.m .legend .row { gap: 7px; }
+.m .repo { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-radius: 10px; background: var(--m-surface); border: 1px solid var(--m-line); min-width: 0; }
+.m .grip { color: var(--m-faint); letter-spacing: -2px; font: 700 13px var(--mono); }
+.m .ctx { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 5px; border-radius: 99px; background: var(--m-raise); border: 1px solid var(--m-line); font-size: 13px; white-space: nowrap; }
+.m .drop { border: 2px dashed color-mix(in srgb, var(--acc) 70%, transparent); background: var(--acc-soft); color: var(--acc); }
+.m .step { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 14px; }
+.m .ok { color: var(--m-green); }
+.m .code { font: 12.5px/1.5 var(--mono); background: var(--m-bg); border: 1px solid var(--m-line); border-radius: 8px; padding: 9px 11px; }
+.m .scrim { position: absolute; inset: 0; background: rgb(6 8 12 / .55); }
+/* numpad */
+.m .pad { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(5, 70px); gap: 7px; }
+.m .key { position: relative; border-radius: 10px; background: var(--kc-top); border: 1px solid var(--kc-line); box-shadow: 0 3px 0 var(--kc-edge); padding: 7px 8px; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+.m .key b { font: 700 13px var(--mono); color: var(--m-faint); }
+.m .key span { font-size: 12.5px; font-weight: 600; line-height: 1.2; color: var(--kc-ink); }
+.m .key.fn span { color: var(--m-sub); font-weight: 500; }
+.m .key.empty span { color: var(--m-faint); font-weight: 400; }
+.m .key.hot { outline: 2px solid var(--ring); outline-offset: 1px; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-repo" viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 11 9-7 9 7"/><path d="M5 10v10h14V10"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 8v8M18 10c0 4-6 3-10 6"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1"/><path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/></symbol>
+  <symbol id="i-flow" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 6h4a4 4 0 0 1 4 4v0M7 18h4a4 4 0 0 0 4-4"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+</svg>
+
+<div class="wrap">
+  <p class="eyebrow">cc-control · UX redesign · round 2</p>
+  <h1>The cockpit: a Claude Code console you drive with the keyboard</h1>
+  <p class="lede">A second take, built on your feedback: something you keep open all day, where the layout itself tells you to use the arrows, the number pad and single-key shortcuts. Work is organised into <strong>domains</strong>, each holding several repos, fed from a <strong>repo library</strong> you drag from. Plain language and approvals that explain themselves carry over from round 1.</p>
+
+  <nav class="bar" aria-label="Mockup controls">
+    <div class="seg" role="group" aria-label="Screen">
+      <button type="button" data-screen="home" aria-pressed="true">Home</button>
+      <button type="button" data-screen="drag" aria-pressed="false">Drag a repo</button>
+      <button type="button" data-screen="session" aria-pressed="false">Session</button>
+      <button type="button" data-screen="ask" aria-pressed="false">Approval</button>
+      <button type="button" data-screen="domain" aria-pressed="false">New domain</button>
+      <button type="button" data-screen="first" aria-pressed="false">First run</button>
+    </div>
+    <div class="seg" role="group" aria-label="Mockup theme">
+      <button type="button" data-mt="dark" aria-pressed="true">Dark</button>
+      <button type="button" data-mt="light" aria-pressed="false">Light</button>
+    </div>
+  </nav>
+
+  <div class="stage">
+    <div>
+      <!-- ============ HOME ============ -->
+      <div class="frame" data-screen="home" data-w="1440" data-h="900"><div class="m" style="width:1440px;height:900px;display:flex;flex-direction:column">
+        <header class="row" style="padding:12px 18px;border-bottom:1px solid var(--m-line);gap:14px">
+          <strong style="font-size:16px">Command Center</strong>
+          <span class="faint">/</span><span class="row" style="gap:8px"><span class="ic store" style="width:22px;height:22px;font-size:11px;border-radius:6px">S</span>Storefront</span>
+          <span class="grow"></span>
+          <span class="row" style="gap:8px;padding:5px 8px 5px 12px;border-radius:10px;background:var(--m-amber-bg);color:var(--m-amber);font-weight:600;font-size:14px">2 need you <span class="kc sm amber">Alt N</span></span>
+          <span class="row faint" style="gap:6px;font-size:14px"><svg class="i"><use href="#i-search"/></svg>Search everything <span class="kc sm">Ctrl K</span></span>
+          <span class="row faint" style="gap:6px;font-size:14px">All keys <span class="kc sm">?</span></span>
+        </header>
+        <div style="flex:1;display:flex;min-height:0">
+          <!-- col 1: domains -->
+          <div class="colm dim" style="width:250px">
+            <div class="colhead"><h4 class="grow">Domains</h4><span class="kc sm">1–9</span></div>
+            <div class="item sel"><span class="kc sm">1</span><span class="ic store">S</span><div class="grow"><div class="t2">Storefront</div><div class="faint">5 repos · 4 sessions</div></div><span class="dot" style="background:var(--m-amber)"></span></div>
+            <div class="item"><span class="kc sm">2</span><span class="ic pay">P</span><div class="grow"><div class="t2">Payments</div><div class="faint">3 repos · 2 sessions</div></div><span class="spin" style="color:var(--m-blue)"></span></div>
+            <div class="item"><span class="kc sm">3</span><span class="ic docs">D</span><div class="grow"><div class="t2">Docs &amp; site</div><div class="faint">2 repos</div></div><span class="dot" style="background:var(--m-amber)"></span></div>
+            <div class="item"><span class="kc sm">4</span><span class="ic tools">T</span><div class="grow"><div class="t2">Internal tools</div><div class="faint">4 repos</div></div></div>
+            <div class="item" style="opacity:.8"><span class="kc sm">0</span><span class="ic none">·</span><div class="grow"><div class="t2">Unsorted</div><div class="faint">31 older sessions</div></div></div>
+            <div class="item sub" style="margin-top:6px"><span class="kc sm">D</span><svg class="i"><use href="#i-plus"/></svg>New domain</div>
+          </div>
+          <!-- col 2: sessions (focused) -->
+          <div class="colm active" style="width:430px">
+            <div class="colhead"><h4 class="grow">Storefront · sessions</h4><span class="row faint" style="gap:6px">New <span class="kc sm acc">N</span></span></div>
+            <div style="padding:0 16px 4px" class="faint">Needs you</div>
+            <div class="item focus"><span class="dot" style="background:var(--m-amber)"></span><div class="grow"><div class="t2 trunc">Add a footer to the home page</div><div class="faint row" style="gap:6px"><svg class="i" style="width:13px;height:13px"><use href="#i-repo"/></svg>web-app · wants to run a check</div></div><span class="pill p-amber">Your OK</span></div>
+            <div style="padding:10px 16px 4px" class="faint">Working</div>
+            <div class="item"><span class="spin" style="color:var(--m-blue)"></span><div class="grow"><div class="t2 trunc">Speed up product images</div><div class="faint row" style="gap:6px"><svg class="i" style="width:13px;height:13px"><use href="#i-repo"/></svg>web-app + cdn-worker · Editing resize.js</div></div><span class="faint">1:12</span></div>
+            <div style="padding:10px 16px 4px" class="faint">Done</div>
+            <div class="item"><svg class="i ok" style="width:16px;height:16px"><use href="#i-check"/></svg><div class="grow"><div class="t2 trunc">Rewrite checkout button labels</div><div class="faint">web-app · changed 2 files</div></div><span class="faint">20m</span></div>
+            <div class="item"><svg class="i ok" style="width:16px;height:16px"><use href="#i-check"/></svg><div class="grow"><div class="t2 trunc">Why is the cart API slow?</div><div class="faint">storefront-api · answered</div></div><span class="faint">2h</span></div>
+            <div class="item faint" style="margin-top:6px">Earlier in Storefront · 12 <span class="grow"></span><span class="kc sm">E</span></div>
+          </div>
+          <!-- col 3: preview -->
+          <div class="colm dim" style="flex:1;border-right:0">
+            <div class="colhead"><h4 class="grow">Preview</h4><span class="row faint" style="gap:6px">Open <span class="kc sm">Enter</span></span></div>
+            <div class="col" style="padding:4px 22px 18px;gap:14px">
+              <div class="title">Add a footer to the home page</div>
+              <div class="row" style="gap:8px;flex-wrap:wrap"><span class="faint">Context</span><span class="ctx"><span class="ic store" style="width:20px;height:20px;font-size:10px;border-radius:5px">W</span>web-app <span class="faint">home</span></span><span class="ctx" style="border-style:dashed;color:var(--m-faint)"><svg class="i" style="width:14px;height:14px"><use href="#i-plus"/></svg>drop a repo</span></div>
+              <div class="card col" style="padding:16px;gap:12px;border-color:color-mix(in srgb,var(--m-amber) 50%,var(--m-line))">
+                <div class="row"><span class="pill p-green"><svg class="i" style="width:13px;height:13px"><use href="#i-shield"/></svg>Safe · only reads</span><span class="faint">Touches app.js</span></div>
+                <div style="font-size:17px;font-weight:600">Claude wants to check app.js for mistakes</div>
+                <div class="sub" style="font-size:14px">Runs <span class="mono">node --check app.js</span> in web-app. Nothing is changed.</div>
+                <div class="row" style="gap:16px"><span class="row" style="gap:7px"><span class="kc acc">Y</span>Allow</span><span class="row" style="gap:7px"><span class="kc">A</span>Always for checks here</span><span class="row" style="gap:7px"><span class="kc">N</span>Don't allow</span></div>
+              </div>
+              <div class="sub" style="font-size:14px">Last from Claude: "I've added the footer to index.html. Now I'll check app.js."</div>
+            </div>
+          </div>
+        </div>
+        <!-- repo library -->
+        <div style="border-top:1px solid var(--m-line);background:var(--m-col);padding:12px 18px 14px">
+          <div class="row" style="margin-bottom:10px"><h4>Repo library</h4><span class="faint mono">D:\repos</span><span class="faint">· 24 repos</span><span class="grow"></span><span class="faint row" style="gap:6px">Drag onto a domain or a session, or select and press <span class="kc sm">+</span></span><span class="kc sm" style="margin-left:10px">Tab</span></div>
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px">
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">web-app</div><div class="faint row" style="gap:4px"><span class="dot" style="background:#d9622b;width:6px;height:6px"></span>Storefront</div></div></div>
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">storefront-api</div><div class="faint row" style="gap:4px"><span class="dot" style="background:#d9622b;width:6px;height:6px"></span>Storefront</div></div></div>
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">cdn-worker</div><div class="faint row" style="gap:4px"><span class="dot" style="background:#d9622b;width:6px;height:6px"></span>Storefront</div></div></div>
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">payments-api</div><div class="faint row" style="gap:4px"><span class="dot" style="background:#0f8a6c;width:6px;height:6px"></span>Payments</div></div></div>
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">design-tokens</div><div class="faint">not in a domain</div></div></div>
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">docs-site</div><div class="faint row" style="gap:4px"><span class="dot" style="background:#5b6ee8;width:6px;height:6px"></span>Docs &amp; site</div></div></div>
+            <div class="repo" style="border-style:dashed;background:transparent;color:var(--m-faint)"><svg class="i"><use href="#i-folder"/></svg><div class="grow" style="font-size:13px">Add a source folder…</div></div>
+          </div>
+        </div>
+        <div class="legend">
+          <span class="row"><span class="kc">←</span><span class="kc">→</span>Columns</span>
+          <span class="row"><span class="kc">↑</span><span class="kc">↓</span>Choose</span>
+          <span class="row"><span class="kc">Enter</span>Open</span>
+          <span class="row"><span class="kc">N</span>New session</span>
+          <span class="row"><span class="kc amber">Y</span><span class="kc amber">A</span><span class="kc amber">N</span>Answer here</span>
+          <span class="row"><span class="kc">Tab</span>Repo library</span>
+          <span class="grow"></span>
+          <span class="row"><span class="kc">?</span>Every key</span>
+        </div>
+      </div></div>
+
+      <!-- ============ DRAG ============ -->
+      <div class="frame" data-screen="drag" data-w="1440" data-h="900" hidden><div class="m" style="width:1440px;height:900px;display:flex;flex-direction:column;position:relative">
+        <header class="row" style="padding:12px 18px;border-bottom:1px solid var(--m-line);gap:14px"><strong style="font-size:16px">Command Center</strong><span class="faint">/</span><span class="row" style="gap:8px"><span class="ic store" style="width:22px;height:22px;font-size:11px;border-radius:6px">S</span>Storefront</span><span class="grow"></span></header>
+        <div style="flex:1;display:flex;min-height:0">
+          <div class="colm" style="width:250px">
+            <div class="colhead"><h4 class="grow">Domains</h4><span class="kc sm">1–9</span></div>
+            <div class="item sel"><span class="kc sm">1</span><span class="ic store">S</span><div class="grow"><div class="t2">Storefront</div><div class="faint">5 repos</div></div></div>
+            <div class="item drop" style="outline:none"><span class="kc sm">2</span><span class="ic pay">P</span><div class="grow"><div class="t2" style="color:var(--m-text)">Payments</div><div style="font-size:13px;font-weight:600">Drop to add design-tokens</div></div><svg class="i"><use href="#i-plus"/></svg></div>
+            <div class="item"><span class="kc sm">3</span><span class="ic docs">D</span><div class="grow"><div class="t2">Docs &amp; site</div><div class="faint">2 repos</div></div></div>
+            <div class="item"><span class="kc sm">4</span><span class="ic tools">T</span><div class="grow"><div class="t2">Internal tools</div><div class="faint">4 repos</div></div></div>
+          </div>
+          <div class="colm" style="width:430px">
+            <div class="colhead"><h4 class="grow">Storefront · sessions</h4></div>
+            <div class="item"><span class="dot" style="background:var(--m-amber)"></span><div class="grow"><div class="t2 trunc">Add a footer to the home page</div><div class="faint">web-app</div></div></div>
+            <div class="item" style="border:2px dashed color-mix(in srgb,var(--acc) 50%,transparent)"><span class="spin" style="color:var(--m-blue)"></span><div class="grow"><div class="t2 trunc">Speed up product images</div><div class="faint">web-app + cdn-worker</div></div><span class="faint" style="font-size:12px">or drop here</span></div>
+            <div class="item"><svg class="i ok" style="width:16px;height:16px"><use href="#i-check"/></svg><div class="grow"><div class="t2 trunc">Rewrite checkout button labels</div><div class="faint">web-app</div></div></div>
+          </div>
+          <div class="colm" style="flex:1;border-right:0">
+            <div class="colhead"><h4 class="grow">Where a repo can go</h4></div>
+            <div class="col" style="padding:6px 22px;gap:14px;max-width:560px">
+              <div class="row" style="gap:12px;align-items:flex-start"><span class="ic store" style="background:var(--acc-soft);color:var(--acc)"><svg class="i"><use href="#i-plus"/></svg></span><div><div class="t2">Onto a domain</div><div class="sub" style="font-size:14px">The repo joins that domain. New sessions there can use it, and its sessions from the terminal show up in the domain.</div></div></div>
+              <div class="row" style="gap:12px;align-items:flex-start"><span class="ic store" style="background:var(--acc-soft);color:var(--acc)"><svg class="i"><use href="#i-link"/></svg></span><div><div class="t2">Onto a session</div><div class="sub" style="font-size:14px">Claude can read and edit it alongside the session's own repo, for example to change an API and the app that calls it together.</div></div></div>
+              <div class="row" style="gap:12px;align-items:flex-start"><span class="ic store" style="background:var(--acc-soft);color:var(--acc)"><svg class="i"><use href="#i-plus"/></svg></span><div><div class="t2">Onto "New session"</div><div class="sub" style="font-size:14px">Starts a session in that repo, in the current domain.</div></div></div>
+              <div class="card" style="padding:12px 14px;font-size:14px" ><span class="sub">No mouse? Select the repo in the library with the arrows, press</span> <span class="kc sm">+</span> <span class="sub">and pick a domain or session from the list, with its number.</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--m-line);background:var(--m-col);padding:12px 18px 14px">
+          <div class="row" style="margin-bottom:10px"><h4>Repo library</h4><span class="faint mono">D:\repos</span></div>
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px">
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">web-app</div><div class="faint">Storefront</div></div></div>
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">storefront-api</div><div class="faint">Storefront</div></div></div>
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">cdn-worker</div><div class="faint">Storefront</div></div></div>
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">payments-api</div><div class="faint">Payments</div></div></div>
+            <div class="repo" style="border-style:dashed;opacity:.45"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">design-tokens</div><div class="faint">not in a domain</div></div></div>
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">docs-site</div><div class="faint">Docs &amp; site</div></div></div>
+            <div class="repo"><span class="grip">⋮⋮</span><div class="grow"><div class="trunc" style="font-weight:600;font-size:14px">admin-panel</div><div class="faint">Internal tools</div></div></div>
+          </div>
+        </div>
+        <!-- the dragged card -->
+        <div class="repo" style="position:absolute;left:150px;top:150px;width:200px;transform:rotate(-3deg);box-shadow:0 18px 40px -10px rgb(0 0 0 / .6);border-color:var(--acc)"><span class="grip">⋮⋮</span><div class="grow"><div style="font-weight:600;font-size:14px">design-tokens</div><div class="faint">→ Payments</div></div></div>
+      </div></div>
+
+      <!-- ============ SESSION ============ -->
+      <div class="frame" data-screen="session" data-w="1440" data-h="900" hidden><div class="m" style="width:1440px;height:900px;display:flex;flex-direction:column">
+        <header class="row" style="padding:12px 18px;border-bottom:1px solid var(--m-line);gap:12px">
+          <span class="row faint" style="gap:6px"><span class="kc sm">0</span>Home</span><span class="row" style="gap:8px"><span class="ic store" style="width:22px;height:22px;font-size:11px;border-radius:6px">S</span>Storefront</span><span class="faint">/</span>
+          <strong class="grow trunc">Speed up product images</strong>
+          <span class="pill p-blue"><span class="spin" style="width:10px;height:10px"></span>Working · 1:12</span>
+          <span class="faint row" style="gap:6px">Prev / next <span class="kc sm">Alt ↑</span><span class="kc sm">Alt ↓</span></span>
+        </header>
+        <div class="row" style="padding:9px 18px;border-bottom:1px solid var(--m-line);gap:8px;background:var(--m-col)">
+          <span class="faint" style="margin-right:4px">Context</span>
+          <span class="ctx"><span class="ic store" style="width:20px;height:20px;font-size:10px;border-radius:5px">W</span>web-app <span class="faint">home · main</span></span>
+          <span class="ctx"><span class="ic store" style="width:20px;height:20px;font-size:10px;border-radius:5px">C</span>cdn-worker <span class="faint">main</span></span>
+          <span class="ctx" style="border-style:dashed;color:var(--m-faint)"><svg class="i" style="width:14px;height:14px"><use href="#i-plus"/></svg>Add a repo <span class="kc sm">+</span></span>
+          <span class="grow"></span><span class="faint">Memory used 34%</span>
+        </div>
+        <div style="flex:1;display:flex;min-height:0">
+          <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div class="col" style="flex:1;padding:22px 34px;gap:14px;overflow:hidden">
+              <div style="align-self:flex-end;max-width:70%;background:var(--acc-soft);border-radius:14px 14px 4px 14px;padding:10px 14px">Product images load slowly on mobile. Resize them in the CDN worker and use the smaller ones in the web app.</div>
+              <div>I'll add a resize step to cdn-worker, then point the product grid in web-app at the resized URLs.</div>
+              <div class="card" style="padding:8px 14px">
+                <div class="step"><svg class="i ok"><use href="#i-check"/></svg><span class="grow">Read <b>ProductGrid.jsx</b> in web-app</span></div>
+                <div class="step"><svg class="i ok"><use href="#i-check"/></svg><span class="grow">Changed <b>worker.js</b> in cdn-worker <span style="color:var(--m-green)">+24</span></span><span class="faint">See change</span></div>
+                <div class="step" style="color:var(--m-blue)"><span class="spin"></span><span class="grow">Editing <b>resize.js</b> in cdn-worker</span><span>0:08</span></div>
+              </div>
+            </div>
+            <div class="row" style="padding:8px 34px;border-top:1px solid var(--m-line);gap:16px;font-size:14px"><span class="spin" style="color:var(--m-blue)"></span><span class="grow">Editing resize.js · 0:08 · turn 1:12</span><span class="row" style="gap:6px"><span class="kc sm">Ctrl B</span>Background</span><span class="row" style="gap:6px"><span class="kc sm red">Esc</span>Stop</span></div>
+            <div style="padding:10px 34px 16px"><div class="row" style="border:2px solid var(--acc);border-radius:14px;padding:10px 12px 10px 16px;background:var(--m-surface)"><span class="grow faint">Message Claude · Enter to send · it starts when this step finishes</span><span class="row faint" style="gap:6px;font-size:13px">Hold <span class="kc sm">`</span> to talk</span></div></div>
+          </div>
+          <!-- numpad -->
+          <aside style="width:360px;border-left:1px solid var(--m-line);background:var(--m-col);padding:14px 16px;display:flex;flex-direction:column;gap:12px">
+            <div class="row"><h4 class="grow">Number pad</h4><span class="faint">Storefront workflows</span></div>
+            <div class="pad">
+              <div class="key fn"><b>Num</b><span>—</span></div>
+              <div class="key fn"><b>/</b><span>Ask a question</span></div>
+              <div class="key fn"><b>*</b><span>All workflows</span></div>
+              <div class="key fn"><b>−</b><span>Prev group</span></div>
+              <div class="key"><b>7</b><span>Run the tests</span></div>
+              <div class="key"><b>8</b><span>Review my changes</span></div>
+              <div class="key"><b>9</b><span>Commit my work</span></div>
+              <div class="key fn" style="grid-row:span 2"><b>+</b><span>Next group</span></div>
+              <div class="key hot"><b>4</b><span>Start dev server</span></div>
+              <div class="key"><b>5</b><span>Explain…</span></div>
+              <div class="key"><b>6</b><span>Ship it (tests → review → PR)</span></div>
+              <div class="key"><b>1</b><span>Continue</span></div>
+              <div class="key"><b>2</b><span>Summarise</span></div>
+              <div class="key empty"><b>3</b><span>Empty · E to add</span></div>
+              <div class="key fn" style="grid-row:span 2"><b>Enter</b><span>Send</span></div>
+              <div class="key fn" style="grid-column:span 2"><b>0</b><span>Back to home</span></div>
+              <div class="key fn"><b>.</b><span>Hold to talk</span></div>
+            </div>
+            <div class="row" style="gap:6px;flex-wrap:wrap;font-size:13px" ><span class="p-grey pill" style="background:var(--acc-soft);color:var(--acc)">Storefront</span><span class="pill p-grey">Everyday</span><span class="pill p-grey">Skills</span><span class="pill p-grey">Built-in</span></div>
+            <div class="faint" style="margin-top:auto">No number pad? <span class="kc sm">Alt 1–9</span> does the same.</div>
+          </aside>
+        </div>
+        <div class="legend">
+          <span class="row"><span class="kc">Enter</span>Send</span>
+          <span class="row"><span class="kc red">Esc</span>Stop Claude</span>
+          <span class="row"><span class="kc">1–9</span>Workflow (number pad)</span>
+          <span class="row"><span class="kc">`</span>Hold to talk</span>
+          <span class="row"><span class="kc">+</span>Add a repo</span>
+          <span class="row"><span class="kc">Alt ↑↓</span>Other sessions</span>
+          <span class="grow"></span>
+          <span class="row"><span class="kc">?</span>Every key</span>
+        </div>
+      </div></div>
+
+      <!-- ============ APPROVAL ============ -->
+      <div class="frame" data-screen="ask" data-w="1440" data-h="900" hidden><div class="m" style="width:1440px;height:900px;display:flex;flex-direction:column">
+        <header class="row" style="padding:12px 18px;border-bottom:1px solid var(--m-line);gap:12px">
+          <span class="row faint" style="gap:6px"><span class="kc sm">0</span>Home</span><span class="row" style="gap:8px"><span class="ic pay" style="width:22px;height:22px;font-size:11px;border-radius:6px">P</span>Payments</span><span class="faint">/</span>
+          <strong class="grow">Clean up and rebuild the API</strong>
+          <span class="pill p-amber">Waiting for your OK · 0:14</span>
+        </header>
+        <div style="flex:1;display:flex;min-height:0">
+          <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div class="col" style="flex:1;padding:22px 34px;gap:14px">
+              <div style="align-self:flex-end;max-width:70%;background:var(--acc-soft);border-radius:14px 14px 4px 14px;padding:10px 14px">The build looks stale. Clean it up and rebuild.</div>
+              <div>I'll delete the old build output and build it again from scratch.</div>
+            </div>
+            <div style="padding:0 34px 18px">
+              <div style="border:2px solid var(--m-red);border-radius:16px;background:var(--m-surface);padding:18px 20px;display:flex;flex-direction:column;gap:14px;box-shadow:0 0 0 6px color-mix(in srgb,var(--m-red) 14%,transparent)">
+                <div class="row" style="gap:10px"><span class="pill p-red"><svg class="i" style="width:13px;height:13px"><use href="#i-warn"/></svg>Careful · deletes files</span><span class="faint">In payments-api · 214 files</span><span class="grow"></span><span class="faint">Details <span class="kc sm">D</span></span></div>
+                <div style="font-size:20px;font-weight:700">Delete the <span class="mono" style="font-size:18px">dist</span> folder and everything in it?</div>
+                <div class="sub" style="font-size:14px">These are generated files and can be rebuilt, but they won't go to the Recycle Bin.</div>
+                <div class="code">rm -rf dist</div>
+                <div class="row" style="gap:12px">
+                  <span class="row" style="gap:10px;padding:8px 16px 8px 8px;border-radius:12px;background:var(--m-raise);border:1px solid var(--m-line)"><span class="kc lg">Y</span><span><b>Allow once</b><br><span class="faint">just this command</span></span></span>
+                  <span class="row" style="gap:10px;padding:8px 16px 8px 8px;border-radius:12px;background:var(--m-raise);border:1px solid var(--m-line)"><span class="kc lg">A</span><span><b>Always allow</b><br><span class="faint">"rm -rf dist" in payments-api</span></span></span>
+                  <span class="row" style="gap:10px;padding:8px 16px 8px 8px;border-radius:12px;background:var(--m-raise);border:2px solid var(--acc)"><span class="kc lg acc">N</span><span><b>Don't allow</b><br><span class="faint">Claude will try another way</span></span></span>
+                  <span class="grow"></span>
+                  <span class="faint" style="max-width:220px;font-size:13px">Or just type a different instruction. Keys work even while the cursor is in the message box.</span>
+                </div>
+              </div>
+            </div>
+            <div style="padding:0 34px 16px"><div class="row" style="border:1px solid var(--m-line);border-radius:14px;padding:10px 16px;background:var(--m-surface)"><span class="grow faint">Message Claude…</span></div></div>
+          </div>
+          <aside style="width:360px;border-left:1px solid var(--m-line);background:var(--m-col);padding:16px;display:flex;flex-direction:column;gap:12px">
+            <h4>How risky is it?</h4>
+            <div class="row" style="gap:10px;font-size:14px"><span class="pill p-green">Safe</span><span class="sub">Reads files, lists folders, runs checks</span></div>
+            <div class="row" style="gap:10px;font-size:14px"><span class="pill p-blue">Changes</span><span class="sub">Edits files in your repos</span></div>
+            <div class="row" style="gap:10px;font-size:14px"><span class="pill p-red">Careful</span><span class="sub">Deletes, pushes, installs, or touches things outside the repo</span></div>
+            <div class="hr"></div>
+            <div class="faint">The rating is a hint worked out from the command. You still decide.</div>
+          </aside>
+        </div>
+        <div class="legend">
+          <span class="row"><span class="kc amber">Y</span>Allow once</span><span class="row"><span class="kc amber">A</span>Always</span><span class="row"><span class="kc amber">N</span>Don't allow</span><span class="row"><span class="kc">D</span>Details</span><span class="row"><span class="kc red">Esc</span>Stop Claude</span><span class="grow"></span><span class="row"><span class="kc">Alt N</span>Next thing that needs you</span>
+        </div>
+      </div></div>
+
+      <!-- ============ NEW DOMAIN ============ -->
+      <div class="frame" data-screen="domain" data-w="1440" data-h="900" hidden><div class="m" style="width:1440px;height:900px;position:relative">
+        <div class="scrim"></div>
+        <div class="card" style="position:absolute;left:50%;top:60px;transform:translateX(-50%);width:880px;padding:26px;display:flex;flex-direction:column;gap:20px;border-radius:18px;box-shadow:0 30px 80px -20px rgb(0 0 0 / .6)">
+          <div class="row"><div class="title grow">New domain</div><span class="faint row" style="gap:6px">Cancel <span class="kc sm">Esc</span></span></div>
+          <div class="row" style="gap:16px">
+            <div class="col" style="gap:6px;flex:1"><h4>Name</h4><div style="border:2px solid var(--acc);border-radius:10px;padding:10px 12px;font-size:16px">Payments</div></div>
+            <div class="col" style="gap:6px"><h4>Colour</h4><div class="row" style="gap:6px"><span class="ic pay" style="outline:2px solid var(--m-text);outline-offset:2px">P</span><span class="ic store"></span><span class="ic docs"></span><span class="ic tools"></span></div></div>
+          </div>
+          <div class="col" style="gap:8px">
+            <div class="row"><h4 class="grow">Repos in this domain · 3 picked</h4><span class="faint">from <span class="mono">D:\repos</span> · type to filter</span></div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+              <div class="repo" style="border:2px solid var(--acc)"><span class="kc sm acc">✓</span><div class="grow"><b>payments-api</b><div class="faint row" style="gap:4px"><svg class="i" style="width:13px;height:13px"><use href="#i-home"/></svg>home repo · main</div></div></div>
+              <div class="repo" style="border:2px solid var(--acc)"><span class="kc sm acc">✓</span><div class="grow"><b>billing-worker</b><div class="faint">main</div></div></div>
+              <div class="repo" style="border:2px solid var(--acc);outline:2px solid var(--ring);outline-offset:2px"><span class="kc sm acc">✓</span><div class="grow"><b>design-tokens</b><div class="faint">also in Storefront</div></div></div>
+              <div class="repo"><span class="kc sm"> </span><div class="grow"><b>web-app</b><div class="faint">Storefront</div></div></div>
+              <div class="repo"><span class="kc sm"> </span><div class="grow"><b>docs-site</b><div class="faint">Docs &amp; site</div></div></div>
+              <div class="repo"><span class="kc sm"> </span><div class="grow"><b>admin-panel</b><div class="faint">Internal tools</div></div></div>
+            </div>
+            <div class="faint row" style="gap:6px"><span class="kc sm">Space</span>pick · <span class="kc sm">H</span>make home repo (where new sessions start) · a repo can be in several domains</div>
+          </div>
+          <div class="col" style="gap:8px">
+            <h4>Start with these workflows</h4>
+            <div class="row" style="gap:8px;flex-wrap:wrap"><span class="ctx" style="padding:6px 12px;border-color:var(--acc);color:var(--acc)"><svg class="i" style="width:14px;height:14px"><use href="#i-flow"/></svg>API service</span><span class="ctx" style="padding:6px 12px">Web app</span><span class="ctx" style="padding:6px 12px">Docs</span><span class="ctx" style="padding:6px 12px">Blank</span><span class="faint">· or copy from a domain</span></div>
+            <div class="faint">Workflows are the number-pad keys: saved instructions like "Run the tests" or "Ship it". They live in the domain, so a teammate can import the domain and get the same keys.</div>
+          </div>
+          <div class="row" style="justify-content:flex-end;gap:12px"><span class="row" style="gap:8px;padding:9px 16px;border-radius:10px;background:var(--acc);color:var(--acc-ink);font-weight:600">Create domain <span class="kc sm">Enter</span></span></div>
+        </div>
+      </div></div>
+
+      <!-- ============ FIRST RUN ============ -->
+      <div class="frame" data-screen="first" data-w="1440" data-h="900" hidden><div class="m" style="width:1440px;height:900px;position:relative;display:grid;place-items:center">
+        <div class="col" style="width:1100px;gap:26px;align-items:center">
+          <div class="col" style="gap:8px;align-items:center;text-align:center"><div class="title" style="font-size:32px">Your keyboard runs Claude Code</div><div class="sub" style="font-size:16px;max-width:640px">Everything also works with the mouse, but these few keys will get you through the day. They are always shown at the bottom of the screen.</div></div>
+          <div class="row" style="gap:28px;align-items:flex-start">
+            <!-- arrows -->
+            <div class="card col" style="padding:18px;gap:14px;width:250px;align-items:center">
+              <div style="display:grid;grid-template-columns:repeat(3,44px);gap:6px"><span></span><span class="kc lg">↑</span><span></span><span class="kc lg">←</span><span class="kc lg">↓</span><span class="kc lg">→</span></div>
+              <div style="text-align:center"><div class="t2">Move around</div><div class="sub" style="font-size:14px">Left and right between columns, up and down to choose. <span class="kc sm">Enter</span> opens.</div></div>
+            </div>
+            <!-- numpad -->
+            <div class="card col" style="padding:18px;gap:14px;width:250px;align-items:center">
+              <div style="display:grid;grid-template-columns:repeat(3,44px);gap:6px"><span class="kc lg">7</span><span class="kc lg">8</span><span class="kc lg">9</span><span class="kc lg">4</span><span class="kc lg acc">5</span><span class="kc lg">6</span><span class="kc lg">1</span><span class="kc lg">2</span><span class="kc lg">3</span></div>
+              <div style="text-align:center"><div class="t2">Run a workflow</div><div class="sub" style="font-size:14px">Each number is a saved instruction, like "Run the tests". The pad on screen matches yours.</div></div>
+            </div>
+            <!-- answer -->
+            <div class="card col" style="padding:18px;gap:14px;width:250px;align-items:center">
+              <div class="row" style="gap:6px;height:94px"><span class="kc lg amber">Y</span><span class="kc lg amber">A</span><span class="kc lg amber">N</span></div>
+              <div style="text-align:center"><div class="t2">Answer Claude</div><div class="sub" style="font-size:14px">Yes, always, or no, when Claude asks to do something. <span class="kc sm">Alt N</span> finds the next question.</div></div>
+            </div>
+            <!-- stop / talk -->
+            <div class="card col" style="padding:18px;gap:14px;width:250px;align-items:center">
+              <div class="row" style="gap:6px;height:94px"><span class="kc lg red">Esc</span><span class="kc lg">`</span></div>
+              <div style="text-align:center"><div class="t2">Stop · talk</div><div class="sub" style="font-size:14px"><span class="kc sm">Esc</span> stops Claude right away. Hold <span class="kc sm">`</span> and speak instead of typing.</div></div>
+            </div>
+          </div>
+          <div class="row" style="gap:14px"><span class="row" style="gap:8px;padding:10px 18px;border-radius:12px;background:var(--acc);color:var(--acc-ink);font-weight:600">Set up my first domain <span class="kc sm">Enter</span></span><span class="sub row" style="gap:6px">Skip <span class="kc sm">Esc</span></span></div>
+        </div>
+      </div></div>
+    </div>
+
+    <aside class="notes" aria-label="Notes for this screen">
+      <div data-note="home">
+        <h3>Home: three columns you walk with the arrows</h3>
+        <ul>
+          <li><strong>Domains → sessions → preview</strong>, like Finder's column view. <span class="k">←</span> <span class="k">→</span> moves between columns; the focused one is lifted and outlined, the others dim.</li>
+          <li>Every row shows its key. Domains are <span class="k">1</span>–<span class="k">9</span>; <span class="k">0</span> is "Unsorted" (sessions outside any domain, including terminal ones).</li>
+          <li>The preview answers an approval <em>without opening the session</em>, as the Inbox does today.</li>
+          <li>The <strong>repo library</strong> is scanned from source folders you choose (e.g. <code>D:\repos</code>). Each card shows its domain(s).</li>
+          <li>A bottom legend of 6–7 large keycaps replaces today's 9 small hints, and changes with the focused column.</li>
+        </ul>
+      </div>
+      <div data-note="drag" hidden>
+        <h3>Drag a repo</h3>
+        <ul>
+          <li>Drop on a <strong>domain</strong>: the repo joins it. Drop on a <strong>session</strong>: it becomes extra context for that session. Drop on <strong>New</strong>: a session starts there.</li>
+          <li>Keyboard version: select the card, <span class="k">+</span>, then pick a target by its number.</li>
+          <li>Under the hood, extra context is the SDK's <code>additionalDirectories</code>. A running session picks it up with a quick resume; the conversation is kept.</li>
+        </ul>
+      </div>
+      <div data-note="session" hidden>
+        <h3>Session: the number pad is on screen</h3>
+        <ul>
+          <li>The board is drawn as a <strong>real number pad</strong>, including <span class="k">0</span> (home), <span class="k">.</span> (talk), <span class="k">+</span>/<span class="k">−</span> (groups), <span class="k">/</span>, <span class="k">*</span> and <span class="k">Enter</span>, so what you see is what's under your hand.</li>
+          <li>Keys are <strong>workflows</strong>: named instructions, some multi-step ("Ship it: tests → review → PR"). The domain's workflows come first.</li>
+          <li>The <strong>context bar</strong> shows every repo Claude can work in, and is a drop target.</li>
+          <li>Steps are in plain words and say <em>which repo</em> they touch.</li>
+        </ul>
+      </div>
+      <div data-note="ask" hidden>
+        <h3>Approvals</h3>
+        <ul>
+          <li>Plain question first, risk rating, what it touches, then the raw command.</li>
+          <li><span class="k">Y</span> <span class="k">A</span> <span class="k">N</span> work <strong>even while you're typing</strong> in the message box, as long as the box is empty, so the Tab step is gone.</li>
+          <li>"Always" says exactly what it will always allow, and where.</li>
+          <li>Risk (safe / changes / careful) comes from a small, tested rule set over the tool and command.</li>
+        </ul>
+      </div>
+      <div data-note="domain" hidden>
+        <h3>Setting up a domain</h3>
+        <ul>
+          <li>Name, colour, repos picked from the library (<span class="k">Space</span>), and a <strong>home repo</strong> where new sessions start.</li>
+          <li>A repo can be in several domains.</li>
+          <li>Workflows come from starter sets, or copied from another domain. A domain exports as one JSON file, so a team shares its setup the way repo packs work today.</li>
+        </ul>
+      </div>
+      <div data-note="first" hidden>
+        <h3>First run</h3>
+        <ul>
+          <li>Teaches the <strong>four key groups</strong> as physical key clusters, so it clicks that the keyboard is the interface.</li>
+          <li>Then goes straight into creating a domain from your repo folder, so the first screen is never empty.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Open questions</h3>
+        <ul>
+          <li><strong>Name:</strong> "Domain", or "Workspace" / "Space"?</li>
+          <li>Theme: dark by default for an all-day tool, light available. OK?</li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+
+  <section class="more">
+    <h2>How it fits together</h2>
+    <div class="cols">
+      <div><h3>Domains</h3><ul><li>A named group of repos, with a colour, a home repo and its own workflows.</li><li>Sessions belong to a domain by their folder, so terminal sessions sort themselves too.</li><li>Stored in the local SQLite file; export and import as JSON.</li></ul></div>
+      <div><h3>Repo library</h3><ul><li>One or more source folders, scanned for git repos (name, branch, last change).</li><li>Rescans on focus; no background indexing of your code.</li><li>Repos outside any source folder can still be added by path.</li></ul></div>
+      <div><h3>Keyboard</h3><ul><li>Everything that works today keeps its key: numpad, <span class="k">Alt</span>+<span class="k">N</span>, Y/A/N, <span class="k">Esc</span> to stop, <span class="k">Ctrl</span>+<span class="k">B</span>, <span class="k">Ctrl</span>+<span class="k">K</span>, <span class="k">?</span>, rebinding.</li><li>New: <span class="k">←</span><span class="k">→</span> columns, <span class="k">1</span>–<span class="k">9</span> domains on home, <span class="k">+</span> add repo, <span class="k">D</span> new domain.</li></ul></div>
+    </div>
+    <h2 style="margin-top:12px">Where today's features go</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Today</th><th>In the cockpit</th></tr></thead>
+      <tbody>
+        <tr><td>Inbox / Live / History tabs</td><td>"Needs you / Working / Done / Earlier" inside each domain; header badge and <span class="k">Alt</span>+<span class="k">N</span> across all domains; "Unsorted" for the rest</td></tr>
+        <tr><td>New session (path typing)</td><td><span class="k">N</span> in a domain starts in its home repo; pick another repo from the domain or drag one from the library</td></tr>
+        <tr><td>Resume / fork history</td><td>Open any Done or Earlier session and type; the "open in a terminal" warning is kept, in plain words</td></tr>
+        <tr><td>Command board, groups, repo packs, slash commands</td><td>The on-screen number pad, with domain workflows first, then your own, then skills</td></tr>
+        <tr><td>Tile editor, import / export</td><td>Same keys (<span class="k">E</span>, <span class="k">Del</span>, <span class="k">Shift</span>+<span class="k">E</span>/<span class="k">I</span>); domain export includes its workflows</td></tr>
+        <tr><td>Activity line, background tasks, per-task stop</td><td>The line above the message box, with plain step names</td></tr>
+        <tr><td>Voice, palette, rebinding, sound, context meter, phone layout</td><td>Unchanged in function; context meter reads "Memory used"; phone shows one column at a time</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const state = { screen: 'home', mt: 'dark' };
+  try { Object.assign(state, JSON.parse(localStorage.getItem('cccockpit') || '{}')); } catch {}
+  const frames = [...document.querySelectorAll('.frame')];
+  function fit() {
+    for (const f of frames) {
+      if (f.hidden) continue;
+      const s = Math.min(1, f.clientWidth / +f.dataset.w);
+      f.firstElementChild.style.transform = `scale(${s})`;
+      f.style.height = `${Math.round(+f.dataset.h * s)}px`;
+    }
+  }
+  function apply() {
+    for (const f of frames) f.hidden = f.dataset.screen !== state.screen;
+    document.querySelectorAll('[data-note]').forEach((n) => { n.hidden = n.dataset.note !== state.screen; });
+    document.querySelectorAll('.m').forEach((m) => { m.dataset.mt = state.mt; });
+    document.querySelectorAll('button[data-screen]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.screen === state.screen)));
+    document.querySelectorAll('button[data-mt]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mt === state.mt)));
+    try { localStorage.setItem('cccockpit', JSON.stringify(state)); } catch {}
+    fit();
+  }
+  document.querySelector('.bar').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.screen) state.screen = b.dataset.screen;
+    if (b.dataset.mt) state.mt = b.dataset.mt;
+    apply();
+  });
+  new ResizeObserver(fit).observe(document.body);
+  apply();
+})();
+</script>
