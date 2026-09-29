@@ -1,4 +1,4 @@
-import { getSessionMessages, query, renameSession, type Query, type SDKMessage, type SlashCommand } from '@anthropic-ai/claude-agent-sdk';
+import { getSessionMessages, query, renameSession, type ModelInfo, type Query, type SDKMessage, type SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { statSync } from 'node:fs';
 import { MODES, type ImageAttachment, type PermissionMode, type SessionActivity, type SessionStatus, type SessionSummary, type Todo, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { applyEvent, backgroundRunning, idleActivity, setApproval, startTurn } from './activity.ts';
@@ -77,6 +77,8 @@ export class SessionManager {
   private slashByCwd = new Map<string, SlashCommand[]>();
   /** The newest slash-command list seen from any session: most commands and skills are the same everywhere. */
   private lastSlash?: SlashCommand[];
+  /** Models /model can switch to; the same for every session. */
+  private models?: ModelInfo[];
   /** A CLI started only to ask for the command list (at most one at a time). */
   private probing = false;
   /** Resumes in flight: a second send while the transcript loads must join it, not start another CLI. */
@@ -358,16 +360,22 @@ export class SessionManager {
     return known;
   }
 
+  /** Models /model can switch to, once any CLI has said. */
+  modelChoices(): ModelInfo[] | undefined {
+    return this.models;
+  }
+
   private probeSlash(cwd: string): void {
     if (this.probing) return;
     this.probing = true;
     async function* idle(): AsyncGenerator<never> { await new Promise(() => {}); }
     const q = query({ prompt: idle(), options: { cwd, model: MODEL, env: SDK_ENV } });
     const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timed out')), 20_000));
-    Promise.race([q.supportedCommands(), timeout])
-      .then((cmds) => {
+    Promise.race([Promise.all([q.supportedCommands(), q.supportedModels()]), timeout])
+      .then(([cmds, models]) => {
         this.slashByCwd.set(cwd, cmds);
         this.lastSlash = cmds;
+        this.models = models;
         this.events.commandsChanged();
       }, () => { /* no suggestions until a session runs */ })
       .finally(() => { q.close(); this.probing = false; });
@@ -413,6 +421,7 @@ export class SessionManager {
     this.live.set(id, l);
     this.pump(l);
     q.supportedCommands().then((cmds) => this.setSlash(l, cmds), () => {});
+    if (!this.models) q.supportedModels().then((m) => { this.models = m; this.events.commandsChanged(); }, () => {});
     return l;
   }
 

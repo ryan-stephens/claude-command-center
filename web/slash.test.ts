@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { SlashInfo } from '../shared/protocol.ts';
-import { exactCommand, matchSlash, runsAlone, slashQuery } from './slash.ts';
+import { argQuery, exactCommand, hintChoices, matchSlash, runsAlone, slashQuery } from './slash.ts';
 
 const cmds: SlashInfo[] = [
   { name: 'clear', description: 'Start a new session', aliases: ['reset', 'new'] },
@@ -52,4 +52,20 @@ test('exactCommand recognises a finished command, by name or alias', () => {
   assert.equal(exactCommand('/reset', cmds)?.name, 'clear');
   assert.equal(exactCommand('/mod', cmds), undefined);
   assert.equal(exactCommand('hello', cmds), undefined);
+});
+
+test('hintChoices reads the choices out of an argument hint', () => {
+  assert.deepEqual(hintChoices('<low|medium|high|xhigh|max|auto>'), ['low', 'medium', 'high', 'xhigh', 'max', 'auto']);
+  assert.deepEqual(hintChoices('[on|off]'), ['on', 'off']);
+  assert.deepEqual(hintChoices('[auto|<tokens>]'), null, 'one real choice is not a menu');
+  assert.equal(hintChoices('<model>'), null);
+  assert.equal(hintChoices('[name]'), null);
+  assert.equal(hintChoices(undefined), null);
+});
+
+test('argQuery spots an argument being typed', () => {
+  assert.deepEqual(argQuery('/effort hi'), { name: 'effort', partial: 'hi' });
+  assert.deepEqual(argQuery('/model '), { name: 'model', partial: '' });
+  assert.equal(argQuery('/model sonnet now'), null);
+  assert.equal(argQuery('/model'), null);
 });

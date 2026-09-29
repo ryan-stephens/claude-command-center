@@ -35,7 +35,7 @@ test('session: Esc means stop while busy, and typing hides the numpad and talk k
   assert.ok(labels({ ...s }).includes('Hold ` Talk'));
   assert.ok(!labels({ ...s, drafting: true }).some((x) => x.includes('Talk')));
   assert.ok(labels({ ...s, pending: true }).includes('Tab Answer Claude'));
-  assert.deepEqual(labels({ ...s, zone: 'board', pending: true }).slice(0, 3), ['Y Allow', 'A Always', 'N Don’t allow']);
+  assert.deepEqual(labels({ ...s, zone: 'board', pending: true }).slice(0, 4), ['← →+Enter Choose', 'Y Allow', 'A Always', 'N Don’t allow']);
   assert.ok(labels({ ...s, zone: 'board' }).includes('Esc Home'));
 });
 
@@ -45,7 +45,7 @@ test('rebound keys show their current binding', () => {
 
 test('a question or a plan changes the answer keys', () => {
   const q = labels({ screen: 'session', zone: 'board', pending: true, pendingKind: 'question' });
-  assert.ok(q.includes('1–4 Pick') && q.includes('Enter Send answers') && q.includes('N Skip'));
+  assert.ok(q.includes('↑+↓ Choose') && q.includes('Enter Pick') && q.includes('N Skip'));
   assert.ok(!q.includes('Y Allow'), 'a question is answered, not allowed');
   const p = labels({ screen: 'session', zone: 'board', pending: true, pendingKind: 'plan' });
   assert.ok(p.includes('Y Start the plan') && p.includes('N Keep planning'));

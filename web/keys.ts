@@ -3,7 +3,7 @@
 // for the bar at the bottom; add a row to both whenever you add a key. Global shortcuts come
 // from bindings.ts so they can be rebound.
 
-import type { PermissionDecision } from '../shared/protocol.ts';
+import type { PermissionDecision, PermissionRequest } from '../shared/protocol.ts';
 import { workspacesFor } from '../shared/workspaces.ts';
 import { ACTIONS, actionFor, bindingsFor, comboOf, displayCombo, type ActionId, type Bindings } from './bindings.ts';
 import { cycleGroup, exportPack, exportWorkspace, fireSlot, importPack, importWorkspace } from './commands.ts';
@@ -16,7 +16,8 @@ import {
   toggleBucket, toggleFold, toggleSound, unfoldAllBuckets, visibleSessions, type HomeCol,
 } from './store.ts';
 import { lastPermissionAt, send } from './ws.ts';
-import { answersFor, firstOpen, freshQa, MODE_LABEL, nextMode, pick } from './questions.ts';
+import { answersFor, enterOnRow, firstOpen, freshQa, goTo, MODE_LABEL, nextMode, pick } from './questions.ts';
+import { explainPermission } from './plain.ts';
 
 /** Keys pressed this soon after an approval card appears were aimed at something else. */
 const APPROVAL_GRACE_MS = 400;
@@ -62,6 +63,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Enter / Shift+Enter', 'Send / new line (message box)'],
       ['Shift+Tab', 'Switch mode, like Claude Code: asks first → accepts edits → plan first'],
       ['/ (start of a message)', 'Suggests commands and skills as you type, like Claude Code: ↑ ↓ choose, Tab completes, Enter runs, Esc hides'],
+      ['/model, /effort … then ↑ ↓', 'Commands with choices list them (models, effort levels, on/off): pick one with the arrows and Enter'],
       ['@ (message box)', 'Suggests files in the repos Claude can use; Tab or Enter puts it in'],
       ['↑ ↓ (empty message box)', 'Your earlier messages, like Claude Code'],
       ['Ctrl+V / drop (message box)', 'Attach an image; Backspace in an empty box takes the last one off'],
@@ -89,12 +91,14 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
     title: 'Questions from Claude',
     keys: [
-      ['1–4', 'Pick an answer (on a multi-select, turn it on or off)'],
-      ['↑ ↓', 'Previous / next question'],
+      ['↑ ↓  then Enter', 'Choose an answer and pick it, like Claude Code (a single choice moves on to the next question)'],
+      ['1–4', 'Pick an answer directly (on a multi-select, turn it on or off; Space does too)'],
+      ['← →', 'Previous / next question'],
       ['O', 'Type your own answer'],
       ['Enter', 'Send the answers'],
       ['N', 'Skip: Claude decides'],
       ['Y / A / N (plan)', 'Start the plan asking first / accepting edits / keep planning'],
+      ['← →  then Enter (any card)', 'Choose Allow / Always / Don’t allow (or a plan’s answer) with the arrows, like Claude Code'],
     ],
   },
   {
@@ -193,31 +197,80 @@ export function submitAnswers(): void {
   set({ qa: null });
 }
 
-/** Keys on a question card (the number pad side of the session): 1–9 pick, ↑ ↓ move, O your own, Enter send, N skip. */
-function questionKeys(e: KeyboardEvent, typing: boolean): boolean {
+/** The answers a tool or plan card offers, in the order they are drawn (← → walk them). */
+export function approvalChoices(req: PermissionRequest): PermissionDecision[] {
+  if (req.plan !== undefined) return ['allow', 'always', 'deny'];
+  return req.canAlways ? ['allow', 'always', 'deny'] : ['allow', 'deny'];
+}
+
+/** Which answer is highlighted before you move: the card's main button ("Don't allow" when it's risky). */
+export function defaultChoice(req: PermissionRequest): number {
+  const choices = approvalChoices(req);
+  const careful = req.plan === undefined && explainPermission(req, sessionById(req.sessionId)?.cwd).risk === 'careful';
+  return careful ? choices.indexOf('deny') : 0;
+}
+
+export function approvalIndex(req: PermissionRequest): number {
+  const pick = get().approvalPick;
+  return pick?.reqId === req.reqId ? pick.index : defaultChoice(req);
+}
+
+/**
+ * Keys on the card waiting in the open session, like Claude Code's prompts: arrows choose, Enter
+ * confirms. The letter and number keys (Y A N, 1–4) keep working alongside.
+ */
+function cardKeys(e: KeyboardEvent, typing: boolean): boolean {
   const s = get();
   if (s.screen !== 'session' || s.zone !== 'board' || typing || e.ctrlKey || e.altKey || e.metaKey) return false;
   const req = pendingFor(s.openId);
-  if (!req?.questions?.length) return false;
-  const qs = req.questions;
+  if (!req) return false;
+  if (req.questions?.length) return questionKeys(e, req);
+  const choices = approvalChoices(req);
+  const at = approvalIndex(req);
+  switch (e.key) {
+    case 'ArrowLeft': case 'ArrowUp': set({ approvalPick: { reqId: req.reqId, index: Math.max(0, at - 1) } }); return true;
+    case 'ArrowRight': case 'ArrowDown': set({ approvalPick: { reqId: req.reqId, index: Math.min(choices.length - 1, at + 1) } }); return true;
+    case 'Enter': respondPermission(choices[at]); return true;
+  }
+  return false;
+}
+
+/** A question card: ↑ ↓ choose a row, Enter picks it (and moves on), ← → change question, 1–9 pick directly. */
+function questionKeys(e: KeyboardEvent, req: PermissionRequest): boolean {
+  const s = get();
+  const qs = req.questions!;
   let qa = s.qa?.reqId === req.reqId ? s.qa : freshQa(req.reqId, qs.length);
   const q = qs[qa.at];
+  const rows = q.options.length + 1; // the last row is "type your own"
+  const focusOther = () => setTimeout(() => document.getElementById(`qa-other-${qa.at}`)?.focus(), 0);
   const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
   if (digit) {
-    const opt = q.options[Number(digit[1]) - 1];
+    const n = Number(digit[1]) - 1;
+    const opt = q.options[n];
     if (opt) {
-      qa = pick(qa, q, qa.at, opt.label);
+      qa = { ...pick(qa, q, qa.at, opt.label), hl: n };
       const next = firstOpen(qa, qs);
-      if (!q.multiSelect && next >= 0) qa = { ...qa, at: next };
+      if (!q.multiSelect && next >= 0) qa = goTo(qa, next, qs.length);
       set({ qa });
     }
     return true;
   }
   switch (e.key) {
-    case 'ArrowDown': set({ qa: { ...qa, at: Math.min(qs.length - 1, qa.at + 1) } }); return true;
-    case 'ArrowUp': set({ qa: { ...qa, at: Math.max(0, qa.at - 1) } }); return true;
-    case 'Enter': set({ qa }); submitAnswers(); return true;
-    case 'o': case 'O': set({ qa }); setTimeout(() => document.getElementById(`qa-other-${qa.at}`)?.focus(), 0); return true;
+    case 'ArrowDown': set({ qa: { ...qa, hl: Math.min(rows - 1, qa.hl + 1) } }); return true;
+    case 'ArrowUp': set({ qa: { ...qa, hl: Math.max(0, qa.hl - 1) } }); return true;
+    case 'ArrowRight': set({ qa: goTo(qa, qa.at + 1, qs.length) }); return true;
+    case 'ArrowLeft': set({ qa: goTo(qa, qa.at - 1, qs.length) }); return true;
+    case ' ':
+      if (qa.hl >= rows - 1) { set({ qa }); focusOther(); } else set({ qa: pick(qa, q, qa.at, q.options[qa.hl].label) });
+      return true;
+    case 'Enter': {
+      const r = enterOnRow(qa, qs);
+      set({ qa: r.state });
+      if (r.then === 'send') submitAnswers();
+      else if (r.then === 'other') focusOther();
+      return true;
+    }
+    case 'o': case 'O': set({ qa }); focusOther(); return true;
     case 'n': case 'N': if (respondPermission('deny')) set({ qa: null }); return true;
   }
   return false;
@@ -677,7 +730,7 @@ export function onKeyDown(e: KeyboardEvent): void {
   let handled = false;
   if (voiceKeys(e)) handled = true;
   else if (globalAction(e, typing)) handled = true;
-  else if (questionKeys(e, typing)) handled = true;
+  else if (cardKeys(e, typing)) handled = true;
   else if (commandKeys(e)) handled = true;
   else if (s.screen === 'session') handled = sessionKeys(e, typing);
   else handled = homeKeys(e, typing);

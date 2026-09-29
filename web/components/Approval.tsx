@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { PermissionRequest, Question } from '../../shared/protocol.ts';
-import { approvalDetails, openSession, respondPermission, submitAnswers } from '../keys.ts';
+import { approvalChoices, approvalDetails, approvalIndex, openSession, respondPermission, submitAnswers } from '../keys.ts';
 import { answered, freshQa, pick, typeOther, type QaState } from '../questions.ts';
 import { set } from '../store.ts';
 import { lineDiff } from '../diff.ts';
@@ -82,6 +82,8 @@ function QuestionCard({ p, compact }: { p: PermissionRequest; compact: boolean }
 
 function QuestionBlock({ q, qi, qa, current, readOnly, onChange }: { q: Question; qi: number; qa: QaState; current: boolean; readOnly: boolean; onChange: (s: QaState) => void }) {
   const picked = qa.picks[qi] ?? [];
+  const keyboard = useStore((s) => s.zone === 'board') && current;
+  const lit = (row: number) => keyboard && qa.hl === row;
   return (
     <section className={`rounded-xl ${current ? 'bg-raise/50 p-3 outline-2 outline-acc/50' : readOnly ? '' : 'p-3 opacity-80'}`} onClick={() => !readOnly && onChange({ ...qa, at: qi })}>
       <div className="mb-1.5 flex items-center gap-2">
@@ -97,8 +99,8 @@ function QuestionBlock({ q, qi, qa, current, readOnly, onChange }: { q: Question
             <li key={o.label}>
               <button
                 disabled={readOnly}
-                onClick={(e) => { e.stopPropagation(); onChange({ ...pick(qa, q, qi, o.label), at: qi }); }}
-                className={`flex w-full items-start gap-2.5 rounded-xl border px-2.5 py-1.5 text-left ${on ? 'border-acc bg-acc-soft' : 'border-line hover:bg-raise'}`}
+                onClick={(e) => { e.stopPropagation(); onChange({ ...pick(qa, q, qi, o.label), at: qi, hl: oi }); }}
+                className={`flex w-full items-start gap-2.5 rounded-xl border px-2.5 py-1.5 text-left ${on ? 'border-acc bg-acc-soft' : 'border-line hover:bg-raise'} ${lit(oi) ? 'is-focus' : ''}`}
               >
                 {!readOnly && <Key k={String(oi + 1)} size="sm" tone={on ? 'acc' : undefined} />}
                 <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center border ${q.multiSelect ? 'rounded' : 'rounded-full'} ${on ? 'border-acc bg-acc text-acc-ink' : 'border-line'}`}>{on && <Icon name="check" size={11} />}</span>
@@ -112,7 +114,7 @@ function QuestionBlock({ q, qi, qa, current, readOnly, onChange }: { q: Question
         })}
       </ul>
       {!readOnly && (
-        <label className="mt-1.5 flex items-center gap-2.5 px-1" onClick={(e) => e.stopPropagation()}>
+        <label className={`mt-1.5 flex items-center gap-2.5 rounded-xl px-1 py-0.5 ${lit(q.options.length) ? 'is-focus' : ''}`} onClick={(e) => e.stopPropagation()}>
           <Key k="O" size="sm" />
           <input
             id={`qa-other-${qi}`}
@@ -134,6 +136,7 @@ function QuestionBlock({ q, qi, qa, current, readOnly, onChange }: { q: Question
 /** Claude proposes a plan (plan mode's ExitPlanMode): read it, then start it or keep planning. */
 function PlanCard({ p, compact, sessionId }: { p: PermissionRequest; compact: boolean; sessionId?: string }) {
   const answer = (d: 'allow' | 'always' | 'deny') => respondPermission(d, sessionId ?? p.sessionId);
+  const lit = useLit(p, compact);
   return (
     <div className={`${CARD} ${compact ? 'p-4' : 'p-5'}`} role="alertdialog" aria-label="Claude has a plan">
       <span className="inline-flex items-center gap-1.5 rounded-full bg-calm-bg px-2.5 py-0.5 text-[12.5px] font-semibold text-calm">
@@ -143,16 +146,24 @@ function PlanCard({ p, compact, sessionId }: { p: PermissionRequest; compact: bo
         <Markdown remarkPlugins={[remarkGfm]}>{p.plan || '(The plan is empty.)'}</Markdown>
       </div>
       <div className="mt-4 flex flex-wrap gap-2.5">
-        <Choice k="Y" title="Yes, start" sub="asks before each change" onClick={() => answer('allow')} primary />
-        <Choice k="A" title="Yes, and accept edits" sub="edits files without asking" onClick={() => answer('always')} />
-        <Choice k="N" title="Keep planning" sub="then tell Claude what to change" onClick={() => answer('deny')} />
+        <Choice k="Y" title="Yes, start" sub="asks before each change" onClick={() => answer('allow')} primary lit={lit('allow')} />
+        <Choice k="A" title="Yes, and accept edits" sub="edits files without asking" onClick={() => answer('always')} lit={lit('always')} />
+        <Choice k="N" title="Keep planning" sub="then tell Claude what to change" onClick={() => answer('deny')} lit={lit('deny')} />
       </div>
       {!compact && <TabHint />}
     </div>
   );
 }
 
+/** Which answer the arrow keys are on, when the keyboard is on the card (not in the home preview). */
+function useLit(p: PermissionRequest, compact: boolean): (d: 'allow' | 'always' | 'deny') => boolean {
+  const keyboard = useStore((s) => s.screen === 'session' && s.zone === 'board' && !compact);
+  const index = useStore(() => approvalIndex(p));
+  return (d) => keyboard && approvalChoices(p)[index] === d;
+}
+
 function ToolApproval({ p, cwd, compact, sessionId }: { p: PermissionRequest; cwd?: string; compact: boolean; sessionId?: string }) {
+  const lit = useLit(p, compact);
   const typing = useStore((s) => s.screen === 'session' && s.zone === 'composer');
   const details = useDetailsOpen();
   const x = explainPermission(p, cwd);
@@ -183,9 +194,9 @@ function ToolApproval({ p, cwd, compact, sessionId }: { p: PermissionRequest; cw
         </div>
       )}
       <div className={`mt-4 flex flex-wrap gap-2.5 ${compact ? '' : 'md:gap-3'}`}>
-        <Choice k="Y" title="Allow once" sub="just this time" onClick={() => answer('allow')} primary={x.risk !== 'careful'} />
-        {p.canAlways && <Choice k="A" title="Always allow" sub={x.always} onClick={() => answer('always')} />}
-        <Choice k="N" title="Don’t allow" sub="Claude tries another way" onClick={() => answer('deny')} primary={x.risk === 'careful'} />
+        <Choice k="Y" title="Allow once" sub="just this time" onClick={() => answer('allow')} primary={x.risk !== 'careful'} lit={lit('allow')} />
+        {p.canAlways && <Choice k="A" title="Always allow" sub={x.always} onClick={() => answer('always')} lit={lit('always')} />}
+        <Choice k="N" title="Don’t allow" sub="Claude tries another way" onClick={() => answer('deny')} primary={x.risk === 'careful'} lit={lit('deny')} />
       </div>
       {typing && !compact && (
         <p className="mt-3 flex items-center gap-1.5 text-sm text-attn">
@@ -196,11 +207,12 @@ function ToolApproval({ p, cwd, compact, sessionId }: { p: PermissionRequest; cw
   );
 }
 
-function Choice({ k, title, sub, onClick, primary }: { k: string; title: string; sub: string; onClick: () => void; primary?: boolean }) {
+function Choice({ k, title, sub, onClick, primary, lit }: { k: string; title: string; sub: string; onClick: () => void; primary?: boolean; lit?: boolean }) {
   return (
     <button
       onClick={onClick}
-      className={`flex min-w-0 max-w-full items-center gap-2.5 rounded-xl border py-1.5 pl-1.5 pr-3.5 text-left hover:bg-raise ${primary ? 'border-2 border-acc' : 'border-line bg-raise/60'}`}
+      aria-pressed={lit || undefined}
+      className={`flex min-w-0 max-w-full items-center gap-2.5 rounded-xl border py-1.5 pl-1.5 pr-3.5 text-left hover:bg-raise ${primary ? 'border-2 border-acc' : 'border-line bg-raise/60'} ${lit ? 'is-focus' : ''}`}
     >
       <Key k={k} size="lg" tone={primary ? 'acc' : undefined} />
       <span className="min-w-0">

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Command, CommandGroup, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, Todo, TranscriptItem, Workspace } from '../shared/protocol.ts';
+import type { Command, CommandGroup, ModelChoice, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, Todo, TranscriptItem, Workspace } from '../shared/protocol.ts';
 import { bucketToggled, loadFolds, saveFolds, toggled, unfolded, type FoldKey, type Folds } from './folds.ts';
 import type { QaState } from './questions.ts';
 import { bucketOf, groupSessions, sessionsIn, type Bucket, type Flags, type Scope } from './home-model.ts';
@@ -79,7 +79,9 @@ interface State {
   /** Command board of the open session. */
   board: { sessionId: string; groups: CommandGroup[] } | null;
   /** Slash commands of the open session, for suggestions as you type "/". */
-  slash: { sessionId: string; commands: SlashInfo[] } | null;
+  slash: { sessionId: string; commands: SlashInfo[]; models: ModelChoice[] } | null;
+  /** Arrow-key choice on a tool or plan card: which answer is highlighted. */
+  approvalPick: { reqId: string; index: number } | null;
   /** groupKeyOf() of the selected group, so it survives board refreshes. */
   groupKey: string | null;
   /** Focused key (1–9) while the number pad has focus. */
@@ -136,6 +138,7 @@ export const useStore = create<State>(() => ({
 
   board: null,
   slash: null,
+  approvalPick: null,
   groupKey: null,
   boardSlot: 5,
   drafts: {},

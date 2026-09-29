@@ -54,3 +54,20 @@ export function mention(path: string): string {
   const p = path.replace(/\\/g, '/');
   return /\s/.test(p) ? `@"${p}"` : `@${p}`;
 }
+
+/**
+ * The fixed choices an argument hint lists, e.g. "<low|medium|high>" or "[on|off]", so they can
+ * be picked like Claude Code's menus. Placeholders ("<tokens>") are left out; null when fewer than two.
+ */
+export function hintChoices(hint: string | undefined): string[] | null {
+  const m = /^[[<]+([^\]>]+)[\]>]+$/.exec(hint?.trim() ?? '');
+  if (!m || !m[1].includes('|')) return null;
+  const words = m[1].split('|').map((w) => w.trim()).filter((w) => /^[\w.-]+$/.test(w));
+  return words.length >= 2 ? words : null;
+}
+
+/** An argument being typed for a command: "/effort hi" → the command name and "hi". */
+export function argQuery(text: string): { name: string; partial: string } | null {
+  const m = /^\/(\S+) (\S*)$/.exec(text);
+  return m ? { name: m[1], partial: m[2] } : null;
+}

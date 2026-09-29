@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Question } from '../shared/protocol.ts';
-import { answered, answersFor, firstOpen, freshQa, nextMode, pick, typeOther } from './questions.ts';
+import { answered, answersFor, enterOnRow, firstOpen, freshQa, nextMode, pick, typeOther } from './questions.ts';
 
 const lib: Question = { question: 'Which date library?', header: 'Library', multiSelect: false, options: [{ label: 'date-fns', description: '' }, { label: 'dayjs', description: '' }] };
 const feats: Question = { question: 'Which features?', header: 'Features', multiSelect: true, options: [{ label: 'Dark mode', description: '' }, { label: 'Search', description: '' }] };
@@ -45,4 +45,19 @@ test('nextMode cycles like Shift+Tab in Claude Code', () => {
   assert.equal(nextMode('acceptEdits'), 'plan');
   assert.equal(nextMode('plan'), 'default');
   assert.equal(nextMode('bypassPermissions'), 'default');
+});
+
+test('Enter on a row: a single choice picks and moves on, then sends after the last', () => {
+  let s = freshQa('r', 2);
+  let r = enterOnRow({ ...s, hl: 1 }, [lib, feats]);
+  assert.equal(r.then, 'stay');
+  assert.deepEqual(r.state.picks[0], ['dayjs']);
+  assert.equal(r.state.at, 1, 'moved to the next question');
+  s = r.state;
+  r = enterOnRow(s, [lib, feats]);
+  assert.deepEqual(r.state.picks[1], ['Dark mode'], 'multi-select: Enter turns the row on');
+  assert.equal(r.then, 'stay');
+  r = enterOnRow(r.state, [lib, feats]);
+  assert.equal(r.then, 'send', 'Enter again on a picked row, with everything answered, sends');
+  assert.equal(enterOnRow({ ...freshQa('r', 1), hl: 2 }, [lib]).then, 'other', 'the last row is "type your own"');
 });

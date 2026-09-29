@@ -213,7 +213,7 @@ function receive(msg: ServerMsg): void {
         const keep = msg.groups.some((g) => groupKeyOf(g) === get().groupKey);
         set({
           board: { sessionId: msg.sessionId, groups: msg.groups },
-          ...(msg.slash ? { slash: { sessionId: msg.sessionId, commands: msg.slash } } : {}),
+          ...(msg.slash ? { slash: { sessionId: msg.sessionId, commands: msg.slash, models: msg.models ?? [] } } : {}),
           ...(keep ? {} : { groupKey: msg.groups[0] ? groupKeyOf(msg.groups[0]) : null }),
         });
       }

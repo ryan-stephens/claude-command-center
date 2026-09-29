@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { FileHit, ImageAttachment, SlashInfo, Todo, TranscriptItem } from '../../shared/protocol.ts';
+import type { FileHit, ImageAttachment, ModelChoice, SlashInfo, Todo, TranscriptItem } from '../../shared/protocol.ts';
 import { workspacesFor } from '../../shared/workspaces.ts';
 import { turnClock } from '../activity-label.ts';
-import { exactCommand, fileQuery, matchSlash, mention, runsAlone, slashQuery } from '../slash.ts';
+import { argQuery, exactCommand, fileQuery, hintChoices, matchSlash, mention, runsAlone, slashQuery } from '../slash.ts';
 import { historyFor, loadPrompts, rememberPrompt } from '../prompt-history.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { statusLabel } from '../home-model.ts';
@@ -22,6 +22,7 @@ import { Icon, Key, Pill, WsBadge } from './ui.tsx';
 
 const EMPTY: TranscriptItem[] = [];
 const NO_SLASH: SlashInfo[] = [];
+const NO_MODELS: ModelChoice[] = [];
 
 /** The number pad, folded away: the conversation gets the width; Tab (or a click) still opens it. */
 function PadRail() {
@@ -187,6 +188,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
   const status = useStore((s) => s.sessions.find((x) => x.id === id)?.status);
   const pending = useStore((s) => Object.values(s.permissions).some((p) => p.sessionId === id));
   const commands = useStore((s) => (s.slash?.sessionId === id ? s.slash.commands : NO_SLASH));
+  const models = useStore((s) => (s.slash?.sessionId === id ? s.slash.models : NO_MODELS));
   const items = useStore((s) => s.transcripts[id] ?? EMPTY);
   const ref = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
@@ -200,7 +202,13 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
   const [saved, setSaved] = useState('');
 
   const slashQ = voice ? null : slashQuery(draft);
-  const atQ = voice || slashQ !== null ? null : fileQuery(draft, caret);
+  // A command's argument with fixed choices (/model, /effort, on/off), picked like Claude Code's menus.
+  const argQ = voice || slashQ !== null ? null : argQuery(draft);
+  const argCmd = argQ ? exactCommand(`/${argQ.name}`, commands) : undefined;
+  const argChoices: { value: string; label: string; desc?: string }[] | null = !argCmd ? null
+    : argCmd.name === 'model' ? models.map((m) => ({ value: m.value, label: m.displayName, desc: m.description }))
+    : hintChoices(argCmd.argumentHint)?.map((v) => ({ value: v, label: v })) ?? null;
+  const atQ = voice || slashQ !== null || argChoices ? null : fileQuery(draft, caret);
   const hidden = hiddenFor === draft;
 
   // "@" file suggestions come from the server, a moment after typing stops.
@@ -223,6 +231,16 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
         if (run && runsAlone(c)) { sendText(`/${c.name}`); } else setDraft(id, `/${c.name} `);
       },
     }))
+    : argChoices && argQ && argCmd ? argChoices
+      .filter((c) => !argQ.partial || `${c.value} ${c.label}`.toLowerCase().includes(argQ.partial.toLowerCase()))
+      .map((c) => ({
+        key: c.value,
+        title: c.label,
+        aside: c.label !== c.value ? c.value : undefined,
+        desc: c.desc,
+        enter: 'run' as const,
+        take: () => sendText(`/${argCmd.name} ${c.value}`),
+      }))
     : atQ ? files.map((f) => ({
       key: f.path,
       title: f.label,
@@ -240,7 +258,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
     : [];
   const chosen = suggestions[Math.min(pick, suggestions.length - 1)];
   const typedCommand = !suggestions.length && !voice ? exactCommand(draft, commands) : undefined;
-  useEffect(() => { setPick(0); }, [slashQ, atQ?.query]);
+  useEffect(() => { setPick(0); }, [slashQ, atQ?.query, argQ?.partial, argQ?.name]);
 
   useEffect(() => {
     const el = ref.current;
@@ -308,7 +326,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
       )}
       {suggestions.length > 0 && focused && (
         <div className="relative mx-auto max-w-3xl">
-          <ul className="absolute inset-x-0 bottom-1.5 z-10 max-h-80 overflow-y-auto rounded-2xl border border-line bg-surface p-1.5 shadow-xl" role="listbox" aria-label={slashQ !== null ? 'Commands' : 'Files'}>
+          <ul className="absolute inset-x-0 bottom-1.5 z-10 max-h-80 overflow-y-auto rounded-2xl border border-line bg-surface p-1.5 shadow-xl" role="listbox" aria-label={slashQ !== null ? 'Commands' : argChoices ? 'Choices' : 'Files'}>
             {suggestions.map((c) => (
               <li
                 key={c.key}
@@ -318,7 +336,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
                 onMouseDown={(e) => { e.preventDefault(); c.take(true); ref.current?.focus(); }}
                 className={`flex cursor-pointer items-baseline gap-3 rounded-xl px-3 py-1.5 ${c === chosen ? 'is-focus bg-raise' : ''}`}
               >
-                {slashQ === null && <Icon name="file" size={14} className="shrink-0 self-center text-faint" />}
+                {slashQ === null && !argChoices && <Icon name="file" size={14} className="shrink-0 self-center text-faint" />}
                 <span className="min-w-0 shrink truncate font-mono text-[14px] font-semibold">{c.title}</span>
                 {c.aside && <span className="shrink-0 text-xs text-faint">{c.aside}</span>}
                 <span className="min-w-0 grow truncate text-sm text-sub">{c.desc}</span>
@@ -327,7 +345,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
             ))}
             <li className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 pb-0.5 pt-1.5 text-xs text-faint" role="presentation">
               <span className="flex items-center gap-1"><Key k="↑ ↓" size="sm" />choose</span>
-              <span className="flex items-center gap-1"><Key k="Tab" size="sm" />{slashQ !== null ? 'complete' : 'insert'}</span>
+              <span className="flex items-center gap-1"><Key k="Tab" size="sm" />{slashQ !== null ? 'complete' : argChoices ? 'pick' : 'insert'}</span>
               <span className="flex items-center gap-1"><Key k="Enter" size="sm" />{chosen?.enter}</span>
               <span className="flex items-center gap-1"><Key k="Esc" size="sm" />hide</span>
             </li>

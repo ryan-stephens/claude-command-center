@@ -218,6 +218,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         slash: slash?.filter((c) => !c.name.startsWith('_')).map((c) => ({
           name: c.name, description: c.description, ...(c.argumentHint ? { argumentHint: c.argumentHint } : {}), ...(c.aliases?.length ? { aliases: c.aliases } : {}),
         })),
+        models: manager.modelChoices()?.map((m) => ({ value: m.value, displayName: m.displayName, ...(m.description ? { description: m.description } : {}) })),
       });
       return;
     }

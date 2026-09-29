@@ -250,6 +250,14 @@ export interface SlashInfo {
   aliases?: string[];
 }
 
+/** A model /model can switch to (SDK supportedModels). */
+export interface ModelChoice {
+  /** What goes after /model, e.g. "sonnet". */
+  value: string;
+  displayName: string;
+  description?: string;
+}
+
 /** Shareable JSON: the format of repo packs and of import/export. */
 export interface CommandPack {
   version: 1;
@@ -329,7 +337,7 @@ export type ServerMsg =
   | { type: 'session.todos'; id: string; todos: Todo[] }
   | { type: 'permission.request'; request: PermissionRequest }
   | { type: 'permission.resolved'; reqId: string }
-  | { type: 'board'; sessionId: string; groups: CommandGroup[]; /** Its slash commands, for suggestions in the message box. */ slash?: SlashInfo[] }
+  | { type: 'board'; sessionId: string; groups: CommandGroup[]; /** Its slash commands, for suggestions in the message box. */ slash?: SlashInfo[]; /** Models /model offers. */ models?: ModelChoice[] }
   /** Some commands changed: clients refetch the board of the open session. */
   | { type: 'commands.changed' }
   | { type: 'pack'; reqId: string; pack: CommandPack }

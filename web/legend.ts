@@ -37,20 +37,23 @@ const k = (b: Bindings, id: ActionId) => displayCombo(bindingsFor(id, b)[0] ?? '
 function answerKeys(kind: LegendInput['pendingKind']): LegendItem[] {
   if (kind === 'question') {
     return [
-      { keys: ['1–4'], label: 'Pick', tone: 'attn' },
-      { keys: ['Enter'], label: 'Send answers', tone: 'attn' },
+      { keys: ['↑', '↓'], label: 'Choose', tone: 'attn' },
+      { keys: ['Enter'], label: 'Pick', tone: 'attn' },
+      { keys: ['← →'], label: 'Question' },
       { keys: ['O'], label: 'Your own answer' },
       { keys: ['N'], label: 'Skip' },
     ];
   }
   if (kind === 'plan') {
     return [
+      { keys: ['← →', 'Enter'], label: 'Choose' },
       { keys: ['Y'], label: 'Start the plan', tone: 'attn' },
       { keys: ['A'], label: 'Start, accepting edits', tone: 'attn' },
       { keys: ['N'], label: 'Keep planning', tone: 'attn' },
     ];
   }
   return [
+    { keys: ['← →', 'Enter'], label: 'Choose' },
     { keys: ['Y'], label: 'Allow', tone: 'attn' },
     { keys: ['A'], label: 'Always', tone: 'attn' },
     { keys: ['N'], label: 'Don’t allow', tone: 'attn' },
@@ -84,7 +87,7 @@ export function legendFor(x: LegendInput): LegendItem[] {
       case 'preview':
         return x.pending
           ? [
-            ...(x.pendingKind === 'question' ? [{ keys: ['Enter'], label: 'Open to answer', tone: 'attn' as const }] : answerKeys(x.pendingKind).filter((i) => i.keys[0] !== 'D')),
+            ...(x.pendingKind === 'question' ? [{ keys: ['Enter'], label: 'Open to answer', tone: 'attn' as const }] : answerKeys(x.pendingKind).filter((i) => i.keys[0] !== 'D' && i.label !== 'Choose')),
             ...(x.pendingKind === 'question' ? [] : [{ keys: ['Enter'], label: 'Open' }]),
             { keys: ['←'], label: 'Back' },
           ]

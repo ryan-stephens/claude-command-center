@@ -514,3 +514,25 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 - No console errors. `pnpm typecheck`, `pnpm test` (101) and `pnpm build` pass.
 
 **Not yet:** rewinding files to an earlier message (Claude Code's `Esc Esc`; the SDK has `rewindFiles` with `enableFileCheckpointing`); `!` shell commands; a model picker beyond `/model`.
+
+## 23. Arrow keys and Enter, like Claude Code's menus
+
+2026-09-29. The owner: Claude Code lets you pick with the arrow keys, for `/model`'s list and whenever Claude needs a decision.
+
+**Commands with choices** (`web/slash.ts` `hintChoices` / `argQuery`, tested): once a command is completed (`/model `, `/effort `), its choices fill the same suggestion list, filtered as you type, and `↑ ↓` `Enter` runs `/command choice`.
+- `/model` lists the SDK's `supportedModels()`: Default, Opus 5.5, Fable 5.1, Haiku 4.5, Sonnet 5 and older ones, fetched once per server (from the first live session, or from the no-prompt probe) and sent with the board.
+- Other commands take their choices from the argument hint when it lists fixed words (`<low|medium|high|xhigh|max|auto>`, `[on|off]`, colours). Placeholders like `<tokens>` are not offered.
+- **Verified with the SDK:** `/model sonnet` sent as text switches the session ("Set model to Sonnet 5"), and the next reply came from `claude-sonnet-5`.
+
+**Cards answer with the arrows** (`cardKeys` in `web/keys.ts`), when the keyboard is on the card (`Tab` from the message box):
+- **Approvals and plans:** `← →` (or `↑ ↓`) walk Allow / Always / Don't allow (or a plan's three answers), and `Enter` confirms. The highlight starts on the card's main button, which is "Don't allow" for careful actions.
+- **Questions:** `↑ ↓` walk the answers, with "type your own" as the last row. `Enter` picks: a single choice moves on to the next unanswered question, and sends after the last. On a multi-select, `Enter` turns a row on, and `Enter` on a row that is already on sends once everything is answered (`enterOnRow`, tested). `Space` toggles, and `← →` change question.
+- `Y` `A` `N` and `1–4` still work. The highlighted choice shows the focus ring, and the legend and `?` say "← → Enter Choose". Enter no longer fires a number-pad workflow while a card is waiting.
+
+**Verified** (headless Chromium, isolated server, Haiku):
+- A question answered with `Tab` `↓` `Enter`: Claude replied "Blue".
+- `/mod` `Enter` listed 11 models, the arrows reached Haiku 4.5, and `Enter` gave "Set model to …".
+- `/effort` `Tab` offered low…auto.
+- A Bash approval (`node -e`) went `Tab` → highlighted "Allow once" → `→ →` "Don't allow" → `Enter`. The card closed and the command did not run.
+- `echo` does not ask at all, because the CLI treats it as read-only, as Claude Code does.
+- No console errors. `pnpm test` (104) passes.
