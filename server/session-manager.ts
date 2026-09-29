@@ -1,4 +1,4 @@
-import { getSessionMessages, query, renameSession, type Query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { getSessionMessages, query, renameSession, type Query, type SDKMessage, type SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { statSync } from 'node:fs';
 import type { SessionStatus, SessionSummary, TranscriptItem } from '../shared/protocol.ts';
 import { ACTIVE_ELSEWHERE_MS, HistoryIndex } from './history-index.ts';
@@ -21,6 +21,7 @@ interface LiveSession {
   partial: string;
   ctxPct?: number;
   lastModified: number;
+  slash?: SlashCommand[];
 }
 
 export interface SessionEvents {
@@ -29,6 +30,8 @@ export interface SessionEvents {
   items(id: string, items: TranscriptItem[]): void;
   partial(id: string, text: string): void;
   forked(oldId: string, newId: string): void;
+  /** A session's slash commands arrived or changed (feeds the auto command groups). */
+  commandsChanged(): void;
 }
 
 export class SessionManager {
@@ -37,6 +40,8 @@ export class SessionManager {
   private live = new Map<string, LiveSession>();
   /** Sessions we stopped recently: their fresh mtime is ours, not a terminal's. */
   private recentlyOwned = new Map<string, number>();
+  /** Last slash-command list seen per cwd, so history sessions get auto groups too. */
+  private slashByCwd = new Map<string, SlashCommand[]>();
   private events: SessionEvents;
 
   constructor(events: SessionEvents, broker: PermissionBroker) {
@@ -146,6 +151,20 @@ export class SessionManager {
     this.history.scheduleRefresh();
   }
 
+  cwdOf(id: string): string | undefined {
+    return this.live.get(id)?.cwd ?? this.history.get(id)?.cwd;
+  }
+
+  /** Repo packs may only be written into directories that sessions actually run in. */
+  isKnownCwd(cwd: string): boolean {
+    return [...this.live.values()].some((l) => l.cwd === cwd) || this.history.repos().includes(cwd);
+  }
+
+  slashCommands(id: string): SlashCommand[] | undefined {
+    const cwd = this.cwdOf(id);
+    return this.live.get(id)?.slash ?? (cwd ? this.slashByCwd.get(cwd) : undefined);
+  }
+
   onPermissionChange(sessionId: string): void {
     const l = this.live.get(sessionId);
     if (!l) return;
@@ -178,6 +197,7 @@ export class SessionManager {
     };
     this.live.set(id, l);
     this.pump(l);
+    q.supportedCommands().then((cmds) => this.setSlash(l, cmds), () => {});
     return l;
   }
 
@@ -194,6 +214,10 @@ export class SessionManager {
 
   private handle(l: LiveSession, msg: SDKMessage): void {
     l.lastModified = Date.now();
+    if (msg.type === 'system' && msg.subtype === 'commands_changed') {
+      this.setSlash(l, msg.commands);
+      return;
+    }
     if (msg.type === 'system' && msg.subtype === 'session_state_changed') {
       // Keep requires_action while a card is still open (state events can race the broker).
       if (!(msg.state === 'running' && this.broker.hasPending(l.id))) this.setStatus(l, msg.state);
@@ -225,6 +249,12 @@ export class SessionManager {
         () => {},
       );
     }
+  }
+
+  private setSlash(l: LiveSession, cmds: SlashCommand[]): void {
+    l.slash = cmds;
+    this.slashByCwd.set(l.cwd, cmds);
+    this.events.commandsChanged();
   }
 
   private setStatus(l: LiveSession, status: SessionStatus): void {

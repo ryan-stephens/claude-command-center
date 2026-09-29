@@ -1,15 +1,18 @@
 import { create } from 'zustand';
-import type { PermissionRequest, SessionSummary, TranscriptItem } from '../shared/protocol.ts';
+import type { Command, CommandGroup, PermissionRequest, SessionSummary, TranscriptItem } from '../shared/protocol.ts';
 
 export type Tab = 'inbox' | 'live' | 'history';
 export const TABS: Tab[] = ['inbox', 'live', 'history'];
-/** Where keys go inside the session view. Esc steps outward: composer → transcript → list. */
-export type SessionZone = 'composer' | 'transcript';
+/** Where keys go inside the session view. Esc steps outward: composer → board → list. */
+export type SessionZone = 'composer' | 'board';
 export type Modal =
   | { kind: 'new' }
   | { kind: 'help' }
   | { kind: 'rename'; id: string }
   | { kind: 'stop'; id: string }
+  | { kind: 'template'; sessionId: string; command: Command }
+  | { kind: 'edit'; group: CommandGroup | null; slot: number }
+  | { kind: 'delete'; group: CommandGroup; slot: number }
   | null;
 
 interface State {
@@ -35,6 +38,15 @@ interface State {
   zone: SessionZone;
   expandTools: boolean;
   modal: Modal;
+
+  /** Command board of the open session. */
+  board: { sessionId: string; groups: CommandGroup[] } | null;
+  /** `${scope}:${name}` of the selected group, so it survives board refreshes. */
+  groupKey: string | null;
+  /** Focused tile (1–9) while the board zone has focus. */
+  boardSlot: number;
+  /** Unsent composer text per session. The numpad fires commands only while this is empty. */
+  drafts: Record<string, string>;
 }
 
 export const useStore = create<State>(() => ({
@@ -58,6 +70,11 @@ export const useStore = create<State>(() => ({
   zone: 'composer',
   expandTools: false,
   modal: null,
+
+  board: null,
+  groupKey: null,
+  boardSlot: 5,
+  drafts: {},
 }));
 
 export const set = useStore.setState;
@@ -118,4 +135,21 @@ export function toggleSound(): void {
   set({ sound });
   try { localStorage.setItem('cc-control.sound', sound ? 'on' : 'off'); } catch { /* ignore */ }
   flash(sound ? 'Sound on' : 'Sound off');
+}
+
+export const groupKeyOf = (g: CommandGroup): string => `${g.scope}:${g.name}`;
+
+/**
+ * The board group currently shown, falling back to the first for display. `exact` is false when
+ * the selected group isn't on the board (yet), and firing must not happen then.
+ */
+export function currentGroup(s: Pick<State, 'board' | 'groupKey'>): { group: CommandGroup | null; index: number; exact: boolean } {
+  const groups = s.board?.groups ?? [];
+  const i = groups.findIndex((g) => groupKeyOf(g) === s.groupKey);
+  const index = i < 0 ? 0 : i;
+  return { group: groups[index] ?? null, index, exact: i >= 0 || s.groupKey === null };
+}
+
+export function setDraft(id: string, text: string): void {
+  set({ drafts: { ...get().drafts, [id]: text } });
 }

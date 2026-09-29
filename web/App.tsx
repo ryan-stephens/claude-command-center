@@ -17,8 +17,8 @@ function HintBar() {
         ? [['↑↓', 'move'], ['Y/A/N', 'approve'], ['Enter', 'open'], ['Alt+N', 'next'], ['Tab', 'tabs'], ['Alt+Shift+N', 'new']]
         : [['↑↓', 'move'], ['Enter', 'open'], ['/', 'filter'], ['Tab', 'tabs'], ['Alt+N', 'needs you'], ['N', 'new'], ['R', 'rename'], ['X', 'stop']]
       : zone === 'composer'
-        ? [['Enter', 'send'], ['Shift+Enter', 'newline'], ['Esc', 'transcript'], ['Ctrl+.', 'interrupt'], ['Alt+↑↓', 'hop']]
-        : [['i', 'compose'], ['↑↓', 'scroll'], ['T', 'tools'], ['Y/A/N', 'approve'], ['Esc', 'list'], ['Alt+N', 'needs you'], ['Alt+↑↓', 'hop']];
+        ? [['Enter', 'send'], ['Numpad 1–9', 'fire (while empty)'], ['Alt+1–9', 'fire'], ['Esc', 'board'], ['Ctrl+.', 'interrupt'], ['Alt+N', 'needs you']]
+        : [['Numpad 1–9', 'fire'], ['Numpad ±', 'group'], ['←↑↓→ Enter', 'pick'], ['E', 'edit'], ['i', 'compose'], ['Y/A/N', 'approve'], ['PgUp/Dn', 'scroll'], ['Esc', 'list']];
   return (
     <footer className="flex flex-wrap gap-x-4 gap-y-1 border-t border-zinc-800 px-4 py-1.5 text-xs text-zinc-500">
       {hints.map(([k, d]) => <span key={k}><kbd>{k}</kbd> {d}</span>)}

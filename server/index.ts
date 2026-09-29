@@ -6,8 +6,10 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMsg, ServerMsg } from '../shared/protocol.ts';
+import { CommandService } from './commands.ts';
 import { PermissionBroker } from './permission-broker.ts';
 import { SessionManager } from './session-manager.ts';
+import { Store } from './store.ts';
 
 // Local-only by design: this is effectively a remote shell. Never bind anything but loopback.
 const HOST = '127.0.0.1';
@@ -41,13 +43,18 @@ const manager: SessionManager = new SessionManager({
   items: (id, items) => broadcast({ type: 'session.items', id, items }),
   partial: (id, text) => broadcast({ type: 'session.partial', id, text }),
   forked: (oldId, newId) => broadcast({ type: 'session.forked', oldId, newId }),
+  commandsChanged: () => broadcast({ type: 'commands.changed' }),
 }, broker);
+const commands = new CommandService(new Store());
 
 function snapshot(): ServerMsg {
   return { type: 'sessions', sessions: manager.summaries(), repos: manager.history.repos() };
 }
 
 async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
+  if ('ref' in msg && msg.ref.scope === 'repo' && !manager.isKnownCwd(msg.ref.cwd ?? '')) {
+    throw new Error('Repo commands can only be saved in a directory that has sessions.');
+  }
   switch (msg.type) {
     case 'session.create': {
       const id = await manager.create(msg.cwd, msg.prompt);
@@ -71,6 +78,28 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     case 'permission.respond':
       broker.respond(msg.reqId, msg.decision);
+      return;
+    case 'board.get':
+      send(ws, { type: 'board', sessionId: msg.sessionId, groups: commands.board(manager.cwdOf(msg.sessionId), manager.slashCommands(msg.sessionId)) });
+      return;
+    case 'command.save':
+      commands.save(msg.ref, msg.command);
+      broadcast({ type: 'commands.changed' });
+      return;
+    case 'command.delete':
+      commands.delete(msg.ref);
+      broadcast({ type: 'commands.changed' });
+      return;
+    case 'command.swap':
+      commands.swap(msg.ref, msg.otherSlot);
+      broadcast({ type: 'commands.changed' });
+      return;
+    case 'pack.import':
+      commands.importPack(msg.pack);
+      broadcast({ type: 'commands.changed' });
+      return;
+    case 'pack.export':
+      send(ws, { type: 'pack', reqId: msg.reqId, pack: commands.exportPack() });
       return;
   }
 }

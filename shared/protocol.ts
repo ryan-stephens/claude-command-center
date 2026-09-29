@@ -39,6 +39,42 @@ export interface PermissionRequest {
 
 export type PermissionDecision = 'allow' | 'always' | 'deny';
 
+// ---- Command board ---------------------------------------------------------
+
+/** send: fire immediately · insert: drop into the composer · template: fill {{placeholders}} first */
+export type CommandMode = 'send' | 'insert' | 'template';
+/** global: SQLite · repo: <cwd>/.cc-control/commands.json · auto: the session's slash commands (read-only) */
+export type CommandScope = 'global' | 'repo' | 'auto';
+
+export interface Command {
+  label: string;
+  body: string;
+  mode: CommandMode;
+  /** 1–9, the numpad key. */
+  slot: number;
+}
+
+export interface CommandGroup {
+  name: string;
+  scope: CommandScope;
+  commands: Command[];
+}
+
+/** Shareable JSON: the format of repo packs and of import/export. */
+export interface CommandPack {
+  version: 1;
+  groups: { name: string; commands: (Omit<Command, 'mode'> & { mode?: CommandMode })[] }[];
+}
+
+/** Addresses one tile in an editable scope. */
+export interface SlotRef {
+  scope: 'global' | 'repo';
+  /** Required for repo scope: whose `.cc-control/commands.json`. */
+  cwd?: string;
+  group: string;
+  slot: number;
+}
+
 export type ClientMsg =
   | { type: 'session.create'; reqId: string; cwd: string; prompt?: string }
   | { type: 'session.open'; id: string }
@@ -46,7 +82,15 @@ export type ClientMsg =
   | { type: 'session.interrupt'; id: string }
   | { type: 'session.stop'; id: string }
   | { type: 'session.rename'; id: string; title: string }
-  | { type: 'permission.respond'; reqId: string; decision: PermissionDecision };
+  | { type: 'permission.respond'; reqId: string; decision: PermissionDecision }
+  /** Ask for the board of a session (its cwd's repo pack, global groups, its slash commands). */
+  | { type: 'board.get'; sessionId: string }
+  | { type: 'command.save'; ref: SlotRef; command: Omit<Command, 'slot'> }
+  | { type: 'command.delete'; ref: SlotRef }
+  /** Swap two slots in the same group (Ctrl+arrows). */
+  | { type: 'command.swap'; ref: SlotRef; otherSlot: number }
+  | { type: 'pack.import'; pack: CommandPack }
+  | { type: 'pack.export'; reqId: string };
 
 export type ServerMsg =
   | { type: 'sessions'; sessions: SessionSummary[]; repos: string[] }
@@ -60,4 +104,8 @@ export type ServerMsg =
   | { type: 'session.partial'; id: string; text: string }
   | { type: 'permission.request'; request: PermissionRequest }
   | { type: 'permission.resolved'; reqId: string }
+  | { type: 'board'; sessionId: string; groups: CommandGroup[] }
+  /** Some commands changed: clients refetch the board of the open session. */
+  | { type: 'commands.changed' }
+  | { type: 'pack'; reqId: string; pack: CommandPack }
   | { type: 'error'; message: string; reqId?: string };

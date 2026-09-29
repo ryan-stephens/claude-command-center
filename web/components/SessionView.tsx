@@ -3,8 +3,9 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { PermissionRequest, TranscriptItem } from '../../shared/protocol.ts';
 import { respondPermission } from '../keys.ts';
-import { set, useStore } from '../store.ts';
+import { set, setDraft, useStore } from '../store.ts';
 import { send } from '../ws.ts';
+import { CommandBoard } from './CommandBoard.tsx';
 import { shortPath, StatusBadge } from './StatusBadge.tsx';
 
 const EMPTY: TranscriptItem[] = [];
@@ -45,24 +46,28 @@ export function SessionView() {
         )}
       </div>
 
-      <div
-        id="transcript"
-        ref={scrollRef}
-        tabIndex={-1}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-        }}
-        onClick={() => set({ zone: 'transcript' })}
-        className={`min-h-0 flex-1 overflow-y-auto px-4 py-3 outline-none ${zone === 'transcript' ? 'ring-1 ring-inset ring-sky-800' : ''}`}
-      >
-        {items.length === 0 && !partial && <p className="text-zinc-600">No messages yet.</p>}
-        {items.map((it) => <Item key={it.uuid} it={it} results={results} expand={expandTools} />)}
-        {partial && <div className="md mb-3 text-zinc-200"><Markdown remarkPlugins={[remarkGfm]}>{partial}</Markdown></div>}
-        {permission && <ApprovalCard p={permission} />}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div
+            id="transcript"
+            ref={scrollRef}
+            tabIndex={-1}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+            }}
+            onClick={() => set({ zone: 'board' })}
+            className="min-h-0 flex-1 overflow-y-auto px-4 py-3 outline-none"
+          >
+            {items.length === 0 && !partial && <p className="text-zinc-600">No messages yet.</p>}
+            {items.map((it) => <Item key={it.uuid} it={it} results={results} expand={expandTools} />)}
+            {partial && <div className="md mb-3 text-zinc-200"><Markdown remarkPlugins={[remarkGfm]}>{partial}</Markdown></div>}
+            {permission && <ApprovalCard p={permission} />}
+          </div>
+          <Composer id={id} focused={zone === 'composer'} />
+        </div>
+        <CommandBoard focused={zone === 'board'} />
       </div>
-
-      <Composer id={id} focused={zone === 'composer'} />
     </div>
   );
 }
@@ -123,19 +128,23 @@ function ApprovalCard({ p }: { p: PermissionRequest }) {
 }
 
 function Composer({ id, focused }: { id: string; focused: boolean }) {
-  const [text, setText] = useState('');
+  const text = useStore((s) => s.drafts[id] ?? '');
   const ref = useRef<HTMLTextAreaElement>(null);
   const running = useStore((s) => s.sessions.find((x) => x.id === id)?.status === 'running');
 
   useEffect(() => {
-    if (focused) ref.current?.focus();
-    else ref.current?.blur();
+    const el = ref.current;
+    if (!el) return;
+    if (focused) {
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length); // after an "insert" command, keep typing at the end
+    } else el.blur();
   }, [focused, id]);
 
   function submit() {
     if (!text.trim()) return;
     send({ type: 'session.send', id, text });
-    setText('');
+    setDraft(id, '');
   }
 
   return (
@@ -144,7 +153,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
         ref={ref}
         value={text}
         rows={Math.min(8, Math.max(2, text.split('\n').length))}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => setDraft(id, e.target.value)}
         onFocus={() => set({ zone: 'composer' })}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -152,7 +161,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
             submit();
           }
         }}
-        placeholder={running ? 'Running… you can queue the next message  (Ctrl+. to interrupt)' : 'Message  (Enter to send, Shift+Enter for newline, Esc to leave)'}
+        placeholder={running ? 'Running… you can queue the next message  (Ctrl+. to interrupt)' : 'Message  (Enter to send · Numpad fires commands while empty · Esc for the board)'}
         className="w-full resize-none rounded border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-600"
       />
     </div>

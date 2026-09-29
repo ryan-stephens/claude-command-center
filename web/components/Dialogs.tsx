@@ -1,17 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { KEYMAP, openSession } from '../keys.ts';
 import { get, sessionById, set, useStore } from '../store.ts';
 import { createSession, send } from '../ws.ts';
-
-function Overlay({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <div className="fixed inset-0 z-10 flex items-start justify-center bg-black/60 p-4 pt-[12vh]" role="dialog" aria-label={label}>
-      <div className="w-full max-w-xl rounded-lg border border-zinc-700 bg-zinc-900 p-4 shadow-2xl">{children}</div>
-    </div>
-  );
-}
-
-const close = () => set({ modal: null });
+import { DeleteDialog, EditDialog, TemplateDialog } from './CommandDialogs.tsx';
+import { close, Overlay } from './Overlay.tsx';
 
 export function Dialogs() {
   const modal = useStore((s) => s.modal);
@@ -21,6 +13,9 @@ export function Dialogs() {
     case 'new': return <NewSessionDialog />;
     case 'rename': return <RenameDialog id={modal.id} />;
     case 'stop': return <StopDialog id={modal.id} />;
+    case 'template': return <TemplateDialog sessionId={modal.sessionId} command={modal.command} />;
+    case 'edit': return <EditDialog group={modal.group} slot={modal.slot} />;
+    case 'delete': return <DeleteDialog group={modal.group} slot={modal.slot} />;
   }
 }
 

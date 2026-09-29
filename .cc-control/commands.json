@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "groups": [
+    {
+      "name": "cc-control",
+      "commands": [
+        { "slot": 1, "label": "Typecheck", "body": "Run `pnpm typecheck` and fix any errors.", "mode": "send" },
+        { "slot": 2, "label": "Build", "body": "Run `pnpm build` and report errors only.", "mode": "send" },
+        { "slot": 3, "label": "SDK spike", "body": "Run `pnpm spike` and show the PASS/FAIL table.", "mode": "send" },
+        { "slot": 4, "label": "Plan status", "body": "Read docs/PLAN.md and tell me the phase status and the next concrete step.", "mode": "send" },
+        { "slot": 5, "label": "Update plan…", "body": "Update docs/PLAN.md: {{change}}", "mode": "template" },
+        { "slot": 6, "label": "Keymap check", "body": "Check that every key handled in web/keys.ts has a KEYMAP entry and a hint, and list any gaps.", "mode": "send" }
+      ]
+    }
+  ]
+}

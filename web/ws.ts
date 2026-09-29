@@ -1,9 +1,10 @@
-import type { ClientMsg, ServerMsg } from '../shared/protocol.ts';
+import type { ClientMsg, CommandPack, ServerMsg } from '../shared/protocol.ts';
 import { onStatusChange } from './attention.ts';
 import { get, set } from './store.ts';
 
 let socket: WebSocket | null = null;
 const pendingCreates = new Map<string, { resolve: (id: string) => void; reject: (e: Error) => void }>();
+const pendingExports = new Map<string, (pack: CommandPack) => void>();
 
 export function connect(): void {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -11,7 +12,10 @@ export function connect(): void {
   socket.onopen = () => {
     set({ connected: true, lastError: null });
     const { openId } = get();
-    if (openId) send({ type: 'session.open', id: openId });
+    if (openId) {
+      send({ type: 'session.open', id: openId });
+      send({ type: 'board.get', sessionId: openId });
+    }
   };
   socket.onclose = () => {
     set({ connected: false });
@@ -20,16 +24,34 @@ export function connect(): void {
   socket.onmessage = (e) => receive(JSON.parse(e.data) as ServerMsg);
 }
 
-export function send(msg: ClientMsg): void {
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
-  else set({ lastError: 'Not connected to the cc-control server.' });
+export function send(msg: ClientMsg): boolean {
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(msg));
+    return true;
+  }
+  set({ lastError: 'Not connected to the cc-control server.' });
+  return false;
 }
 
 export function createSession(cwd: string, prompt?: string): Promise<string> {
   const reqId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     pendingCreates.set(reqId, { resolve, reject });
-    send({ type: 'session.create', reqId, cwd, prompt });
+    if (!send({ type: 'session.create', reqId, cwd, prompt })) {
+      pendingCreates.delete(reqId);
+      reject(new Error('Not connected to the cc-control server. Try again in a moment.'));
+    }
+  });
+}
+
+export function requestExport(): Promise<CommandPack> {
+  const reqId = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    pendingExports.set(reqId, resolve);
+    if (!send({ type: 'pack.export', reqId })) {
+      pendingExports.delete(reqId);
+      reject(new Error('Not connected'));
+    }
   });
 }
 
@@ -64,6 +86,7 @@ function receive(msg: ServerMsg): void {
         openId: s.openId === msg.oldId ? msg.newId : s.openId,
         selectedId: s.selectedId === msg.oldId ? msg.newId : s.selectedId,
       });
+      if (get().openId === msg.newId) send({ type: 'board.get', sessionId: msg.newId });
       return;
     }
     case 'session.transcript':
@@ -81,7 +104,7 @@ function receive(msg: ServerMsg): void {
       set({ permissions: { ...get().permissions, [msg.request.reqId]: msg.request } });
       // The approval card takes focus in the open session so Y / A / N work straight away.
       const s = get();
-      if (s.screen === 'session' && s.openId === msg.request.sessionId) set({ zone: 'transcript' });
+      if (s.screen === 'session' && s.openId === msg.request.sessionId) set({ zone: 'board' });
       return;
     }
     case 'permission.resolved': {
@@ -89,6 +112,22 @@ function receive(msg: ServerMsg): void {
       set({ permissions: rest });
       return;
     }
+    case 'board':
+      if (msg.sessionId === get().openId) {
+        // A board without the selected group (deleted, or another repo) resets the selection explicitly.
+        const keep = msg.groups.some((g) => `${g.scope}:${g.name}` === get().groupKey);
+        set({ board: { sessionId: msg.sessionId, groups: msg.groups }, ...(keep ? {} : { groupKey: msg.groups[0] ? `${msg.groups[0].scope}:${msg.groups[0].name}` : null }) });
+      }
+      return;
+    case 'commands.changed': {
+      const { openId } = get();
+      if (openId) send({ type: 'board.get', sessionId: openId });
+      return;
+    }
+    case 'pack':
+      pendingExports.get(msg.reqId)?.(msg.pack);
+      pendingExports.delete(msg.reqId);
+      return;
     case 'error':
       if (msg.reqId && pendingCreates.has(msg.reqId)) {
         pendingCreates.get(msg.reqId)!.reject(new Error(msg.message));

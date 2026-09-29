@@ -2,7 +2,8 @@
 // KEYMAP is the single source for the `?` overlay and the hint bar; add a row whenever you add a key.
 
 import type { PermissionDecision } from '../shared/protocol.ts';
-import { attention, flash, get, markRead, pendingFor, sessionById, set, TABS, toggleSound, visibleSessions } from './store.ts';
+import { cycleGroup, exportPack, fireSlot, importPack } from './commands.ts';
+import { attention, currentGroup, flash, get, markRead, pendingFor, sessionById, set, TABS, toggleSound, visibleSessions } from './store.ts';
 import { send } from './ws.ts';
 
 export const KEYMAP: { title: string; keys: [string, string][] }[] = [
@@ -35,12 +36,25 @@ export const KEYMAP: { title: string; keys: [string, string][] }[] = [
     title: 'Session view',
     keys: [
       ['Enter / Shift+Enter', 'Send / newline (composer)'],
-      ['Esc', 'Step out: composer → transcript → list'],
-      ['i or Enter', 'Focus the composer (transcript)'],
-      ['↑ ↓  PgUp PgDn  Home End', 'Scroll the transcript'],
+      ['Esc or Numpad 0', 'Step out: composer → board → list'],
+      ['i', 'Focus the composer'],
+      ['PgUp PgDn  Home End', 'Scroll the transcript'],
       ['T', 'Expand / collapse tool calls'],
       ['Y / A / N', 'Approval: yes once / always / no'],
-      ['R / X', 'Rename / stop (transcript)'],
+      ['R / X', 'Rename / stop the session'],
+    ],
+  },
+  {
+    title: 'Command board',
+    keys: [
+      ['Numpad 1–9', 'Fire command N in the current group (from the composer only while it is empty)'],
+      ['Alt+1–9', 'Fire command N, always'],
+      ['Numpad + / −  or  ] / [', 'Next / previous group'],
+      ['↑ ↓ ← →  then Enter', 'Move on the board (laid out like the numpad) and fire'],
+      ['E', 'Edit the focused tile (on a slash command: copy it into your own group)'],
+      ['Delete', 'Remove the focused command'],
+      ['Ctrl+↑ ↓ ← →', 'Move the focused command to the neighbouring slot'],
+      ['Shift+E / Shift+I', 'Export / import your global commands as JSON'],
     ],
   },
 ];
@@ -51,8 +65,9 @@ function isTextTarget(t: EventTarget | null): boolean {
 
 export function openSession(id: string): void {
   markRead(id);
-  set({ screen: 'session', openId: id, selectedId: id, zone: pendingFor(id) ? 'transcript' : 'composer', filterFocused: false });
+  set({ screen: 'session', openId: id, selectedId: id, zone: pendingFor(id) ? 'board' : 'composer', filterFocused: false, board: null });
   send({ type: 'session.open', id });
+  send({ type: 'board.get', sessionId: id });
 }
 
 export function backToList(): void {
@@ -147,18 +162,63 @@ function listKeys(e: KeyboardEvent, typing: boolean): boolean {
   return false;
 }
 
+// The board is laid out like a numpad: 7 8 9 / 4 5 6 / 1 2 3.
+const GRID = [[7, 8, 9], [4, 5, 6], [1, 2, 3]];
+const ARROWS: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+
+function neighbour(slot: number, key: string): number {
+  const row = GRID.findIndex((r) => r.includes(slot));
+  const col = GRID[row].indexOf(slot);
+  const [dr, dc] = ARROWS[key];
+  return GRID[Math.min(2, Math.max(0, row + dr))][Math.min(2, Math.max(0, col + dc))];
+}
+
+function focusedTile() {
+  const s = get();
+  const { group } = currentGroup(s);
+  const command = group?.commands.find((c) => c.slot === s.boardSlot);
+  return { s, group, command, editable: group && group.scope !== 'auto' ? group : null };
+}
+
+function boardKeys(e: KeyboardEvent): boolean {
+  const { s, group, command, editable } = focusedTile();
+  if (e.key in ARROWS && !e.altKey && !e.metaKey) {
+    const target = neighbour(s.boardSlot, e.key);
+    if (e.ctrlKey) {
+      if (!editable || !command || target === s.boardSlot) return true;
+      const scope = editable.scope as 'global' | 'repo';
+      send({ type: 'command.swap', ref: { scope, cwd: sessionById(s.openId)?.cwd, group: editable.name, slot: s.boardSlot }, otherSlot: target });
+    }
+    set({ boardSlot: target });
+    return true;
+  }
+  if (e.ctrlKey || e.altKey || e.metaKey) return false;
+  switch (e.key) {
+    case 'Enter': fireSlot(s.boardSlot); return true;
+    case '[': cycleGroup(-1); return true;
+    case ']': cycleGroup(1); return true;
+    case 'E': exportPack(); return true;
+    case 'I': importPack(); return true;
+    case 'e': set({ modal: { kind: 'edit', group, slot: s.boardSlot } }); return true;
+    case 'Delete':
+    case 'Backspace':
+      if (editable && command) set({ modal: { kind: 'delete', group: editable, slot: s.boardSlot } });
+      return true;
+  }
+  return false;
+}
+
 function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
   const s = get();
   if (s.zone === 'composer') {
-    if (e.key === 'Escape') { set({ zone: 'transcript' }); return true; }
+    if (e.key === 'Escape') { set({ zone: 'board' }); return true; }
     return false; // Enter/Shift+Enter live on the composer itself
   }
   if (typing) return false;
+  if (boardKeys(e)) return true;
+  if (e.ctrlKey || e.altKey || e.metaKey) return false;
   switch (e.key) {
     case 'Escape': backToList(); return true;
-    case 'Enter': set({ zone: 'composer' }); return true;
-    case 'ArrowUp': scrollTranscript(-80); return true;
-    case 'ArrowDown': scrollTranscript(80); return true;
     case 'PageUp': scrollTranscript(-window.innerHeight * 0.8); return true;
     case 'PageDown': scrollTranscript(window.innerHeight * 0.8); return true;
     case 'Home': scrollTranscript('top'); return true;
@@ -177,8 +237,43 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
   return false;
 }
 
+/**
+ * Numpad and Alt+digit command keys in the session view. The numpad acts on the board
+ * unless you're mid-message in the composer, so digits can still be typed there.
+ */
+function commandKeys(e: KeyboardEvent): boolean {
+  const s = get();
+  if (s.screen !== 'session' || !s.openId) return false;
+  const digit = /^Digit([1-9])$/.exec(e.code);
+  if (e.altKey && !e.ctrlKey && !e.shiftKey && digit) {
+    set({ boardSlot: Number(digit[1]) });
+    fireSlot(Number(digit[1]));
+    return true;
+  }
+  if (!e.code.startsWith('Numpad') || e.ctrlKey || e.altKey || e.metaKey) return false;
+  if (s.zone === 'composer' && (s.drafts[s.openId] ?? '').length > 0) return false;
+  const pad = /^Numpad([1-9])$/.exec(e.code);
+  if (pad) {
+    set({ boardSlot: Number(pad[1]) });
+    fireSlot(Number(pad[1]));
+    return true;
+  }
+  switch (e.code) {
+    case 'Numpad0':
+      if (s.zone === 'composer') set({ zone: 'board' });
+      else backToList();
+      return true;
+    case 'NumpadAdd': cycleGroup(1); return true;
+    case 'NumpadSubtract': cycleGroup(-1); return true;
+  }
+  return false;
+}
+
 export function onKeyDown(e: KeyboardEvent): void {
   if (e.isComposing) return;
+  // A dialog that handles a key may close itself before the event bubbles here; never let that
+  // same keypress act on the screen underneath (Enter would fire a tile, Esc would leave the session).
+  if (e.target instanceof Element && e.target.closest('[role=dialog]')) return;
   const s = get();
   if (s.modal) {
     // Dialogs own their keys; help closes on Esc or ?.
@@ -192,7 +287,9 @@ export function onKeyDown(e: KeyboardEvent): void {
   else if (e.altKey && e.shiftKey && e.code === 'KeyN') { set({ modal: { kind: 'new' } }); handled = true; }
   else if (e.ctrlKey && e.key === '.') { if (s.openId) send({ type: 'session.interrupt', id: s.openId }); handled = true; }
   else if (!typing && e.key === '?') { set({ modal: { kind: 'help' } }); handled = true; }
+  else if (commandKeys(e)) handled = true;
+  else if (s.screen === 'session') handled = sessionKeys(e, typing);
   else if (e.ctrlKey || e.metaKey || e.altKey) return;
-  else handled = s.screen === 'list' ? listKeys(e, typing) : sessionKeys(e, typing);
+  else handled = listKeys(e, typing);
   if (handled) e.preventDefault();
 }
