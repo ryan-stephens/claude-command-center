@@ -8,7 +8,7 @@
 
 Running several Claude Code sessions across several repos means a lot of terminal-tab hunting: which one finished, which one is waiting on a permission prompt, which repo it was in, and typing the same "run the tests and summarise failures" prompt for the tenth time. Command Center puts all of it on one screen and makes the common moves single keystrokes.
 
-- **Workspaces.** Group the repos you work on together ("Storefront", "Payments") and pick them with `1`–`9`. Your repo folder becomes a **repo library** you drag from: drop a repo on a workspace to add it, or on a session so Claude can work in both at once.
+- **Workspaces.** Group the repos you work on together ("Storefront", "Payments") and pick them with `1`–`9`. **Every session in a workspace can use all of its repos**, so Claude can change the API and the web app in one go. Your repo folder becomes a **repo library** you drag from: drop a repo on a workspace to add it, or on a single session to give just that one another repo.
 - **Know who needs you.** Each workspace's sessions are sorted into *Needs you*, *Working*, *Done* and *Earlier*. `Alt+N` jumps to the next one that needs you from anywhere; `Y` / `A` / `N` answers.
 - **Approvals you can judge.** "Claude wants to check app.js for syntax errors", rated *safe*, *makes changes* or *careful* (deletes files, pushes, installs…), with what it touches. The raw command sits behind `D`.
 - **Follow along in plain words.** Claude's actions fold into readable steps ("Read index.html", "Changed src/app.js +3") with a real diff behind "See change", and a live line says what it's doing right now. `Esc` stops it, just like in the terminal.
@@ -44,7 +44,7 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `↑ ↓` `Enter` | Choose and open |
 | | `1`–`9` / `0` | Pick a workspace / everything outside your workspaces |
 | | `N` / `W` | New session here / new workspace |
-| | `+` | Add a repo to this workspace |
+| | `+` / `−` | Add a repo to this workspace / remove one |
 | | `Tab` | The repo library |
 | | `F` (in the library) | Pick the folders it lists: walk the disk with `↑ ↓ → ←`, `Space` uses the folder you're in |
 | Pickers | `Ctrl+O` | Browse to any folder (new session, add a repo) |
@@ -52,7 +52,7 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `Y` / `A` / `N` | Allow once / always / don't allow (`Tab` first if you're in the message box) |
 | | Hold `` ` `` | Push-to-talk |
 | | `Esc` (while working) | Stop Claude |
-| | `+` | Let this session work in another repo |
+| | `+` / `−` | Give this session another repo / take one back out |
 | | `Ctrl+B` | Send the running step to the background |
 
 ## Sharing with your team

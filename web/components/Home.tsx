@@ -2,7 +2,7 @@ import { useEffect, useRef, type DragEvent, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { SessionSummary, TranscriptItem, Workspace } from '../../shared/protocol.ts';
-import { repoName, samePath, workspacesFor } from '../../shared/workspaces.ts';
+import { homeRepo, repoName, samePath, workspacesFor } from '../../shared/workspaces.ts';
 import { activityShort, turnClock } from '../activity-label.ts';
 import { age, BUCKET_TITLE, sessionsIn, statusLabel } from '../home-model.ts';
 import { askStop, newSession, openSession } from '../keys.ts';
@@ -183,6 +183,7 @@ function SessionColumn() {
         </button>
       }
     >
+      {ws && <WorkspaceRepos ws={ws} />}
       {(filterFocused || filter) && (
         <div className="px-3 pb-2">
           <input
@@ -211,6 +212,32 @@ function SessionColumn() {
         ))}
       </div>
     </Column>
+  );
+}
+
+/** The workspace's repos: every session in it can use all of them. Drop a repo card here to add one. */
+function WorkspaceRepos({ ws }: { ws: Workspace }) {
+  const dragging = useStore((s) => s.dragging);
+  const home = homeRepo(ws);
+  if (!ws.repos.length) return null; // the empty state below says how to add some
+  return (
+    <div className={`mx-3 mb-2 flex flex-wrap items-center gap-1.5 rounded-xl px-1.5 py-1 ${dragging ? 'outline-1 outline-dashed outline-acc/60' : ''}`} {...dropProps((path) => { send({ type: 'workspace.addRepo', id: ws.id, path }); })}>
+      <span className="text-xs text-faint" title="Every session in this workspace can read and change all of these repos">Sessions here can use</span>
+      {ws.repos.map((r) => (
+        <span key={r} title={samePath(r, home ?? '') ? `${r}\nHome: new sessions start here` : r} className="inline-flex items-center gap-1 rounded-full border border-line bg-raise py-0.5 pl-2 pr-0.5 text-xs">
+          {samePath(r, home ?? '') && <Icon name="home" size={12} className="text-acc" />}{repoName(r)}
+          <button className="rounded-full p-0.5 text-faint hover:bg-surface hover:text-bad" onClick={() => send({ type: 'workspace.removeRepo', id: ws.id, path: r })} aria-label={`Remove ${repoName(r)} from ${ws.name}`}>
+            <Icon name="x" size={11} />
+          </button>
+        </span>
+      ))}
+      <button className="inline-flex items-center gap-1 rounded-full border border-dashed border-line px-2 py-0.5 text-xs text-faint hover:text-ink" onClick={() => set({ modal: { kind: 'repoPicker', target: { kind: 'workspace', id: ws.id } } })}>
+        <Icon name="plus" size={11} />{dragging ? 'Drop to add' : 'Add'}<Key k="+" size="sm" />
+      </button>
+      <button className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-faint hover:text-ink" onClick={() => set({ modal: { kind: 'repoRemove', target: { kind: 'workspace', id: ws.id } } })}>
+        Remove<Key k="−" size="sm" />
+      </button>
+    </div>
   );
 }
 
@@ -345,17 +372,32 @@ function PreviewColumn() {
   );
 }
 
-/** The repos a session works in, as chips; drop a repo card here to add one. */
+/**
+ * The repos a session can use, as chips: its own, its workspace's (removed from the workspace),
+ * and ones added to it alone (× takes them out). Drop a repo card here to add one.
+ */
 export function ContextChips({ s, ws, onAdd, removable = false }: { s: SessionSummary; ws: Workspace | null; onAdd?: () => void; removable?: boolean }) {
   const dragging = useStore((st) => st.dragging);
+  const workspaces = useStore((st) => st.workspaces);
+  const fromWs = s.workspaceDirs ?? [];
+  const own = (s.extraDirs ?? []).filter((d) => !fromWs.some((w) => samePath(w, d)));
+  const ownerOf = (d: string) => workspacesFor(s.cwd, workspaces).find((w) => w.repos.some((r) => samePath(r, d))) ?? null;
   return (
     <div className="flex flex-wrap items-center gap-2" {...dropProps((path) => { send({ type: 'session.addDir', id: s.id, path }); })}>
-      <span className="text-sm text-faint">Works in</span>
+      <span className="text-sm text-faint">Claude can use</span>
       <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-raise py-0.5 pl-1 pr-3 text-sm" title={s.cwd}>
         <WsBadge ws={ws} size={20} />{repoName(s.cwd)}<span className="text-faint">{s.branch && s.branch !== 'HEAD' ? s.branch : 'home'}</span>
       </span>
-      {s.extraDirs?.map((d) => (
-        <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-raise py-0.5 pl-2.5 pr-1.5 text-sm" title={d}>
+      {fromWs.map((d) => {
+        const owner = ownerOf(d);
+        return (
+          <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line py-0.5 pl-1.5 pr-3 text-sm" title={`${d}\nFrom the ${owner?.name ?? ''} workspace: every session there can use it. Remove it from the workspace (− on home).`}>
+            <WsBadge ws={owner} size={16} />{repoName(d)}
+          </span>
+        );
+      })}
+      {own.map((d) => (
+        <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-raise py-0.5 pl-2.5 pr-1.5 text-sm" title={`${d}\nAdded to this session only.`}>
           <Icon name="link" size={13} className="text-faint" />{repoName(d)}
           {removable && (
             <button className="rounded-full p-0.5 text-faint hover:bg-surface hover:text-bad" onClick={() => send({ type: 'session.removeDir', id: s.id, path: d })} aria-label={`Stop working in ${repoName(d)}`}>

@@ -1,12 +1,12 @@
 import { getSessionMessages, query, renameSession, type Query, type SDKMessage, type SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { statSync } from 'node:fs';
-import type { SessionActivity, SessionStatus, SessionSummary, TranscriptItem } from '../shared/protocol.ts';
+import type { SessionActivity, SessionStatus, SessionSummary, TranscriptItem, Workspace } from '../shared/protocol.ts';
 import { applyEvent, backgroundRunning, idleActivity, setApproval, startTurn } from './activity.ts';
 import { ACTIVE_ELSEWHERE_MS, HistoryIndex } from './history-index.ts';
 import { InputQueue } from './input-queue.ts';
 import { PermissionBroker } from './permission-broker.ts';
 import { normalize } from './transcript.ts';
-import { addPath, removePath, repoName, samePath } from '../shared/workspaces.ts';
+import { addPath, isInside, removePath, repoName, samePath, workspaceRepos } from '../shared/workspaces.ts';
 
 // session_state_changed is only emitted with this flag (Phase 0 finding, PLAN.md §9).
 const SDK_ENV = { ...process.env, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1' } as Record<string, string>;
@@ -28,6 +28,10 @@ interface LiveSession {
   activityTimer?: NodeJS.Timeout;
   /** Replaced by a restart (to pick up a new repo); its ending is not the session's. */
   replaced?: boolean;
+  /** The extra repos its CLI was launched with (the SDK only takes them at launch). */
+  dirs: string[];
+  /** Its repos changed while it was busy: restart it into them once it is idle. */
+  dirsStale?: boolean;
 }
 
 /** Where each session's extra repos persist (SQLite), so resumes get them back. */
@@ -65,6 +69,8 @@ export class SessionManager {
   private forkedTo = new Map<string, string>();
   private events: SessionEvents;
   private dirs: DirStore;
+  /** Every workspace; a session can use all repos of the workspaces holding its cwd. */
+  private workspaces: Workspace[] = [];
 
   constructor(events: SessionEvents, broker: PermissionBroker, dirs: DirStore) {
     this.events = events;
@@ -87,6 +93,7 @@ export class SessionManager {
         live: false,
         activeElsewhere: !owned && h.lastModified > now - ACTIVE_ELSEWHERE_MS,
         extraDirs: this.extraDirsOf(h.sessionId),
+        workspaceDirs: this.workspaceDirsOf(h.cwd ?? ''),
       });
     }
     for (const l of this.live.values()) out.set(l.id, this.liveSummary(l));
@@ -171,6 +178,38 @@ export class SessionManager {
     return dirs.length ? dirs : undefined;
   }
 
+  /** Repos a session gets from its workspaces: every repo of every workspace holding its cwd, except its own. */
+  workspaceDirsOf(cwd: string): string[] | undefined {
+    const out = cwd ? workspaceRepos(cwd, this.workspaces) : [];
+    return out.length ? out : undefined;
+  }
+
+  /** What a session's CLI launches with: its workspaces' repos plus its own, the ones that exist today. */
+  private launchDirs(id: string, cwd: string): string[] {
+    let out = this.workspaceDirsOf(cwd) ?? [];
+    for (const d of this.dirs.sessionDirs(id)) if (!isInside(cwd, d)) out = addPath(out, d);
+    return out.filter(isDir); // a repo on an unplugged drive must not stop the session starting
+  }
+
+  /** Workspaces changed: live sessions whose repos changed restart into them (now, or once idle). */
+  setWorkspaces(workspaces: Workspace[]): void {
+    this.workspaces = workspaces;
+    for (const l of [...this.live.values()]) this.applyDirs(l);
+  }
+
+  /** Restart a live session into its current repos if they changed; a busy one waits until it is idle. */
+  private applyDirs(l: LiveSession): void {
+    if (this.live.get(l.id) !== l) return;
+    const next = this.launchDirs(l.id, l.cwd);
+    const added = next.filter((d) => !l.dirs.some((x) => samePath(x, d)));
+    const removed = l.dirs.filter((d) => !next.some((x) => samePath(x, d)));
+    if (!added.length && !removed.length) { l.dirsStale = false; return; }
+    if (l.status !== 'idle' || backgroundRunning(l.activity)) { l.dirsStale = true; return; }
+    const names = (list: string[]) => list.map(repoName).join(', ');
+    const note = [added.length ? `Now also working in ${names(added)}.` : '', removed.length ? `No longer working in ${names(removed)}.` : ''].filter(Boolean).join(' ');
+    this.restart(l, note);
+  }
+
   /**
    * Let a session work in another repo too. The SDK only takes extra directories at launch, so a
    * live session restarts in place (same id, same transcript); a history session gets it on resume.
@@ -179,14 +218,14 @@ export class SessionManager {
     if (!isDir(path)) throw new Error(`Not a directory: ${path}`);
     const cwd = this.cwdOf(id);
     if (cwd && samePath(cwd, path)) return; // already its own repo
-    await this.changeDirs(id, addPath(this.dirs.sessionDirs(id), path), `Now also working in ${repoName(path)}.`);
+    await this.changeDirs(id, addPath(this.dirs.sessionDirs(id), path));
   }
 
   async removeDir(id: string, path: string): Promise<void> {
-    await this.changeDirs(id, removePath(this.dirs.sessionDirs(id), path), `No longer working in ${repoName(path)}.`);
+    await this.changeDirs(id, removePath(this.dirs.sessionDirs(id), path));
   }
 
-  private async changeDirs(id: string, dirs: string[], note: string): Promise<void> {
+  private async changeDirs(id: string, dirs: string[]): Promise<void> {
     const before = this.dirs.sessionDirs(id);
     if (before.length === dirs.length && before.every((d, i) => samePath(d, dirs[i]))) return;
     const l = this.live.get(id);
@@ -194,7 +233,7 @@ export class SessionManager {
       throw new Error('Claude is still working. Add or remove repos once it has finished.');
     }
     this.dirs.setSessionDirs(id, dirs);
-    if (l) this.restart(l, note);
+    if (l) { this.applyDirs(l); this.emitUpsert(id); }
     else this.events.sessionsChanged();
   }
 
@@ -283,6 +322,7 @@ export class SessionManager {
   private start(opts: { id: string; cwd: string; title: string; items?: TranscriptItem[]; options: Record<string, unknown> }): LiveSession {
     const input = new InputQueue();
     const id = opts.id;
+    const dirs = this.launchDirs(id, opts.cwd);
     const q = query({
       prompt: input,
       options: {
@@ -291,14 +331,14 @@ export class SessionManager {
         env: SDK_ENV,
         includePartialMessages: true,
         permissionMode: 'default',
-        additionalDirectories: this.dirs.sessionDirs(id),
+        additionalDirectories: dirs,
         canUseTool: (tool, toolInput, { signal, suggestions }) => this.broker.ask(id, tool, toolInput, suggestions, signal),
         ...opts.options,
       },
     });
     const l: LiveSession = {
       id, cwd: opts.cwd, title: opts.title, input, q,
-      status: 'idle', items: opts.items ?? [], partial: '', lastModified: Date.now(), activity: idleActivity(Date.now()),
+      status: 'idle', items: opts.items ?? [], partial: '', lastModified: Date.now(), activity: idleActivity(Date.now()), dirs,
     };
     this.live.set(id, l);
     this.pump(l);
@@ -371,6 +411,12 @@ export class SessionManager {
     if (l.status === status) return;
     l.status = status;
     this.emitUpsert(l.id);
+    this.applyWhenIdle(l);
+  }
+
+  /** A workspace change waited for this session to finish; apply it now (outside the message loop). */
+  private applyWhenIdle(l: LiveSession): void {
+    if (l.dirsStale && l.status === 'idle' && !backgroundRunning(l.activity)) setTimeout(() => this.applyDirs(l), 0);
   }
 
   private retire(l: LiveSession): void {
@@ -401,6 +447,7 @@ export class SessionManager {
       ctxPct: l.ctxPct,
       background: backgroundRunning(l.activity) || undefined,
       extraDirs: this.extraDirsOf(l.id),
+      workspaceDirs: this.workspaceDirsOf(l.cwd),
     };
   }
 
@@ -437,7 +484,10 @@ export class SessionManager {
   private setActivity(l: LiveSession, activity: SessionActivity): void {
     const bgBefore = backgroundRunning(l.activity);
     l.activity = activity;
-    if (backgroundRunning(activity) !== bgBefore) this.emitUpsert(l.id); // list badge
+    if (backgroundRunning(activity) !== bgBefore) {
+      this.emitUpsert(l.id); // list badge
+      if (bgBefore) this.applyWhenIdle(l);
+    }
     if (l.activityTimer) return;
     l.activityTimer = setTimeout(() => {
       l.activityTimer = undefined;

@@ -24,8 +24,10 @@ export interface SessionSummary {
   ctxPct?: number;
   /** Live sessions: subagents / shells still running in the background. */
   background?: number;
-  /** Extra repos this session can read and edit besides its own cwd (SDK `additionalDirectories`). */
+  /** Repos added to this session itself, besides its own cwd (SDK `additionalDirectories`). */
   extraDirs?: string[];
+  /** Repos it can use because a workspace holding its cwd lists them (also `additionalDirectories`). */
+  workspaceDirs?: string[];
 }
 
 /** The parts of a tool call worth showing in plain language (a Bash call's own description, the file, an edit). */

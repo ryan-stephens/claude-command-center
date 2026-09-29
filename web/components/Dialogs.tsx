@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
-import { addPath, homeRepo, isInside, removePath, repoName, samePath, WORKSPACE_COLORS } from '../../shared/workspaces.ts';
+import { addPath, homeRepo, isInside, removePath, repoName, samePath, WORKSPACE_COLORS, workspaceRepos, workspacesFor } from '../../shared/workspaces.ts';
 import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
@@ -32,6 +32,7 @@ export function Dialogs() {
     case 'workspace': return <WorkspaceDialog id={modal.id} />;
     case 'deleteWorkspace': return <DeleteWorkspaceDialog id={modal.id} />;
     case 'repoPicker': return <RepoPicker target={modal.target} />;
+    case 'repoRemove': return <RepoRemover target={modal.target} />;
     case 'sources': return <SourcesDialog />;
   }
 }
@@ -83,9 +84,13 @@ function repoChoices(workspaceId: string | null): RepoChoice[] {
   return paths.map((p) => ({ path: p, name: repoName(p) }));
 }
 
-/** Two steps, all keyboard: where (Space adds more repos as context), then what to do. */
+/**
+ * Two steps, all keyboard: where, then what to do. A session in a workspace can use all of its
+ * repos by itself; outside one, Space adds more repos for Claude to use.
+ */
 function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; repo?: string }) {
   const ws = useStore((s) => s.workspaces.find((w) => w.id === workspaceId) ?? null);
+  const workspaces = useStore((s) => s.workspaces);
   const choices = useMemo(() => repoChoices(workspaceId), [workspaceId]);
   const start = repo ?? (ws ? homeRepo(ws) : undefined);
   const [step, setStep] = useState<'where' | 'browse' | 'what'>(repo || (ws && ws.repos.length === 1) ? 'what' : 'where');
@@ -152,7 +157,7 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
               else if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(anotherRow, index + 1)); }
               else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - 1)); }
               else if (e.key.toLowerCase() === 'o' && e.ctrlKey) { e.preventDefault(); browse(typedPath || undefined); }
-              else if (e.key === ' ' && !query.trim() && matches[index]) {
+              else if (e.key === ' ' && !ws && !query.trim() && matches[index]) {
                 // Space (with an empty filter) adds the highlighted repo as extra context.
                 e.preventDefault();
                 const p = matches[index].path;
@@ -199,7 +204,8 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
               onClick={() => browse(typedPath || undefined)}
             />
           </ul>
-          <DialogKeys items={[['↑ ↓', 'choose'], ['1–9', 'pick'], ['Enter', 'next'], ['Space', 'also let Claude use it'], ['Ctrl+O', 'another folder'], ['Esc', 'cancel']]} />
+          {ws && ws.repos.length > 1 && <p className="mt-2 text-sm text-faint">Claude can use every repo in {ws.name}; this is just where it starts.</p>}
+          <DialogKeys items={[['↑ ↓', 'choose'], ['1–9', 'pick'], ['Enter', 'next'], ...(ws ? [] : [['Space', 'also let Claude use it'] as [string, string]]), ['Ctrl+O', 'another folder'], ['Esc', 'cancel']]} />
         </>
       ) : step === 'browse' ? (
         <>
@@ -211,7 +217,11 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
           <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
             <span className="text-faint">In</span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-raise px-2.5 py-0.5 font-semibold" title={cwd}><Icon name="repo" size={14} />{repoName(cwd)}</span>
-            {extras.map((d) => <span key={d} className="inline-flex items-center gap-1.5 rounded-full bg-raise px-2.5 py-0.5" title={d}><Icon name="link" size={13} />{repoName(d)}</span>)}
+            {workspaceRepos(cwd, workspaces).map((d) => {
+              const owner = workspacesFor(cwd, workspaces).find((w) => w.repos.some((r) => samePath(r, d))) ?? null;
+              return <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5" title={`${d}\nFrom the ${owner?.name ?? ''} workspace`}><WsBadge ws={owner} size={14} />{repoName(d)}</span>;
+            })}
+            {extras.filter((d) => !workspaceRepos(cwd, workspaces).some((w) => samePath(w, d))).map((d) => <span key={d} className="inline-flex items-center gap-1.5 rounded-full bg-raise px-2.5 py-0.5" title={d}><Icon name="link" size={13} />{repoName(d)}</span>)}
             {choices.length > 1 && <button className="text-faint underline hover:text-ink" onClick={() => setStep('where')}>change</button>}
           </div>
           <div className="eyebrow mb-2">What should Claude do?</div>
@@ -544,6 +554,74 @@ function RepoPicker({ target }: { target: RepoTarget }) {
         />
       </ul>
       <DialogKeys items={[['↑ ↓', 'choose'], ['1–9', 'pick'], ['Enter', 'add'], ['Ctrl+O', 'another folder'], ['Esc', 'cancel']]} />
+    </Overlay>
+  );
+}
+
+/**
+ * Take a repo out of a workspace (every session in it stops using it) or out of a session (only the
+ * ones added to that session; its workspace's repos are removed from the workspace).
+ */
+function RepoRemover({ target }: { target: RepoTarget }) {
+  const ws = useStore((s) => (target.kind === 'workspace' ? s.workspaces.find((w) => w.id === target.id) : undefined));
+  const session = useStore((s) => (target.kind === 'session' ? s.sessions.find((x) => x.id === target.id) : undefined));
+  const workspaces = useStore((s) => s.workspaces);
+  const [index, setIndex] = useState(0);
+  const fromWs = session?.workspaceDirs ?? [];
+  const removable = ws ? ws.repos : (session?.extraDirs ?? []).filter((d) => !fromWs.some((w) => samePath(w, d)));
+  const home = ws ? homeRepo(ws) : undefined;
+
+  function remove(path: string | undefined) {
+    if (!path) return;
+    if (target.kind === 'workspace') send({ type: 'workspace.removeRepo', id: target.id, path });
+    else send({ type: 'session.removeDir', id: target.id, path });
+    close();
+  }
+
+  useDialogKeys((e) => {
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowDown') setIndex(Math.min(removable.length - 1, index + 1));
+    else if (e.key === 'ArrowUp') setIndex(Math.max(0, index - 1));
+    else if (e.key === 'Enter' || e.key === 'Delete') remove(removable[index]);
+    else if (/^[1-9]$/.test(e.key) && removable[Number(e.key) - 1]) remove(removable[Number(e.key) - 1]);
+    else return false;
+    return true;
+  });
+
+  const title = ws ? `Remove a repo from ${ws.name}` : 'Stop this session using a repo';
+  return (
+    <Overlay label={title}>
+      <DialogTitle>{title}</DialogTitle>
+      <p className="mb-3 text-sm text-sub">
+        {ws
+          ? 'Sessions in this workspace stop using it (a session that is working finishes first). Sessions that run in it leave the workspace. The repo itself is untouched.'
+          : session?.live ? 'The session restarts in place without it; the conversation is kept.' : 'It takes effect the next time the session runs.'}
+      </p>
+      <ul className="space-y-0.5" role="listbox" aria-label="Repos">
+        {removable.map((p, i) => (
+          <li key={p} role="option" aria-selected={i === index} onMouseMove={() => { if (i !== index) setIndex(i); }} onClick={() => remove(p)} title={p} className={`flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 ${i === index ? 'is-focus bg-raise' : ''}`}>
+            <Key k={String(i + 1)} size="sm" />
+            <Icon name="repo" size={16} className="text-faint" />
+            <span className="shrink-0 whitespace-nowrap font-semibold">{repoName(p)}</span>
+            {home && samePath(p, home) && <span className="shrink-0 rounded bg-acc-soft px-1.5 text-xs text-acc">home</span>}
+            <span className="min-w-0 truncate font-mono text-xs text-faint">{p}</span>
+          </li>
+        ))}
+        {session && fromWs.map((d) => {
+          const owner = workspacesFor(session.cwd, workspaces).find((w) => w.repos.some((r) => samePath(r, d))) ?? null;
+          return (
+            <li key={d} className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-faint" title={d}>
+              <span className="w-5" />
+              <WsBadge ws={owner} size={16} />
+              <span className="shrink-0 whitespace-nowrap">{repoName(d)}</span>
+              <span className="min-w-0 truncate text-xs">from {owner?.name ?? 'its workspace'}: remove it there (− on home)</span>
+            </li>
+          );
+        })}
+        {!removable.length && !fromWs.length && <li className="px-2.5 py-2 text-sm text-sub">{ws ? `${ws.name} has no repos.` : 'This session only uses its own repo.'}</li>}
+        {!removable.length && fromWs.length > 0 && <li className="px-2.5 py-2 text-sm text-sub">Nothing was added to this session itself.</li>}
+      </ul>
+      <DialogKeys items={[['↑ ↓', 'choose'], ['1–9', 'remove'], ['Enter', 'remove'], ['Esc', 'cancel']]} />
     </Overlay>
   );
 }

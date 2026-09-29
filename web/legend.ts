@@ -49,7 +49,7 @@ export function legendFor(x: LegendInput): LegendItem[] {
           { keys: ['1–9'], label: 'Jump to a workspace' },
           { keys: ['→'], label: 'Its sessions' },
           { keys: ['W'], label: 'New workspace' },
-          ...(x.inWorkspace ? [{ keys: ['E'], label: 'Edit' }, { keys: ['+'], label: 'Add a repo' }, { keys: ['⇧E'], label: 'Share' }] : []),
+          ...(x.inWorkspace ? [{ keys: ['E'], label: 'Edit' }, { keys: ['+'], label: 'Add a repo' }, { keys: ['−'], label: 'Remove one' }, { keys: ['⇧E'], label: 'Share' }] : []),
           { keys: ['⇧I'], label: 'Import' },
         ];
       case 'preview':
@@ -95,7 +95,7 @@ export function legendFor(x: LegendInput): LegendItem[] {
       : [{ keys: ['1–9'], label: 'Run a workflow' }, { keys: ['Enter'], label: 'Run focused key' }]),
     x.busy ? stop : { keys: ['Esc'], label: 'Home' },
     { keys: ['i'], label: 'Type a message' },
-    { keys: ['+'], label: 'Add a repo' },
+    { keys: ['+', '−'], label: 'Add / remove a repo' },
     ...(!x.pending ? [{ keys: ['E'], label: 'Edit key' }] : []),
   ];
 }

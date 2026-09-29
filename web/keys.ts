@@ -31,7 +31,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['W', 'New workspace'],
       ['E / Delete (workspace column)', 'Edit / delete the workspace'],
       ['Shift+E / Shift+I (workspace column)', 'Export the workspace to share it / import one'],
-      ['+', 'Add a repo to this workspace'],
+      ['+ / −', 'Add a repo to this workspace / remove one (every session in it can use them all)'],
       ['Tab', 'Go to the repo library (Enter adds the repo here, N starts a session in it, F picks the folders it lists)'],
       ['/', 'Filter sessions'],
       ['Y / A / N (preview column)', 'Answer the selected session’s approval without opening it'],
@@ -60,8 +60,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Numpad 0', 'Back to home, even while Claude is working'],
       ['Tab (message box)', 'Go to the number pad or the approval card without stopping Claude'],
       ['i', 'Back to the message box'],
-      ['+', 'Give this session another repo to work in'],
-      ['Ctrl+K  “Stop working in …”', 'Take an added repo back out (or its × in the bar above the conversation)'],
+      ['+ / −', 'Give this session another repo to work in / take one it was given back out (or its × above the conversation)'],
       ['PgUp PgDn  Home End', 'Scroll the conversation'],
       ['T', 'Show or hide every step’s details'],
       ['R / X', 'Rename / end the session'],
@@ -239,6 +238,12 @@ function visibleSelection(): string | null {
   return visibleSessions(s).some((x) => x.id === s.selectedId) ? s.selectedId : null;
 }
 
+function removeRepoFromWorkspace(): void {
+  const ws = currentWorkspace(get());
+  if (ws) set({ modal: { kind: 'repoRemove', target: { kind: 'workspace', id: ws.id } } });
+  else flash('Pick a workspace first (1–9)');
+}
+
 function addRepoToWorkspace(): void {
   const ws = currentWorkspace(get());
   if (ws) set({ modal: { kind: 'repoPicker', target: { kind: 'workspace', id: ws.id } } });
@@ -326,6 +331,7 @@ function homeKeys(e: KeyboardEvent, typing: boolean): boolean {
       return true;
     case '/': set({ filterFocused: true, homeCol: 'sessions' }); return true;
     case '+': case '=': addRepoToWorkspace(); return true;
+    case '-': removeRepoFromWorkspace(); return true;
     case 'Delete':
       if (col === 'workspaces' && s.scope.kind === 'workspace') set({ modal: { kind: 'deleteWorkspace', id: s.scope.id } });
       return true;
@@ -434,6 +440,7 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
     case 'Home': scrollTranscript('top'); return true;
     case 'End': scrollTranscript('bottom'); return true;
     case '+': case '=': if (s.openId) set({ modal: { kind: 'repoPicker', target: { kind: 'session', id: s.openId } } }); return true;
+    case '-': if (s.openId) set({ modal: { kind: 'repoRemove', target: { kind: 'session', id: s.openId } } }); return true;
   }
   switch (e.key.toLowerCase()) {
     case 'i': set({ zone: 'composer' }); return true;

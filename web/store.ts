@@ -26,6 +26,8 @@ export type Modal =
   | { kind: 'workspace'; id: string | null }
   | { kind: 'deleteWorkspace'; id: string }
   | { kind: 'repoPicker'; target: RepoTarget }
+  /** Take a repo out of a workspace, or out of a session (the ones added to it). */
+  | { kind: 'repoRemove'; target: RepoTarget }
   | { kind: 'sources' }
   | null;
 

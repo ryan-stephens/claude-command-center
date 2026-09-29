@@ -116,7 +116,10 @@ function updateWorkspace(id: string, change: (w: Workspace) => Workspace): void 
 }
 
 function workspacesChanged(): void {
-  broadcast({ type: 'workspaces', workspaces: store.loadWorkspaces() });
+  const workspaces = store.loadWorkspaces();
+  manager.setWorkspaces(workspaces); // sessions can use every repo of their workspaces
+  broadcast({ type: 'workspaces', workspaces });
+  broadcast(snapshot());
   broadcast({ type: 'commands.changed' }); // workspace workflows follow the workspace's repos
 }
 
@@ -326,6 +329,7 @@ wss.on('connection', (ws) => {
   for (const [id, activity] of manager.activities()) send(ws, { type: 'session.activity', id, activity });
 });
 
+manager.setWorkspaces(store.loadWorkspaces());
 await manager.history.start();
 
 function listen(hostname: string, app: Hono, trusted: (req: IncomingMessage) => boolean, onReady: () => void) {

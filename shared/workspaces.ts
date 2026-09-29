@@ -34,6 +34,18 @@ export function workspacesFor(cwd: string, workspaces: Workspace[]): Workspace[]
   return workspaces.filter((w) => w.repos.some((r) => isInside(cwd, r)));
 }
 
+/**
+ * Repos a session in `cwd` can use because of its workspaces: every repo of every workspace
+ * holding `cwd`, except the one it runs in (or any that contains it).
+ */
+export function workspaceRepos(cwd: string, workspaces: Workspace[]): string[] {
+  let out: string[] = [];
+  for (const w of workspacesFor(cwd, workspaces)) {
+    for (const r of w.repos) if (!isInside(cwd, r)) out = addPath(out, r);
+  }
+  return out;
+}
+
 /** Where new sessions in a workspace start. */
 export function homeRepo(w: Workspace): string | undefined {
   return w.home && w.repos.some((r) => samePath(r, w.home!)) ? w.home : w.repos[0];

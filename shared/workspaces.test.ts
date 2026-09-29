@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Workspace } from './protocol.ts';
-import { addPath, homeRepo, isInside, normPath, repoName, samePath, suggestSources, workspacesFor } from './workspaces.ts';
+import { addPath, homeRepo, isInside, normPath, repoName, samePath, suggestSources, workspaceRepos, workspacesFor } from './workspaces.ts';
 
 const ws = (id: string, repos: string[], home?: string): Workspace => ({ id, name: id, color: 'blue', repos, home });
 
@@ -46,4 +46,15 @@ test('repoName is the last folder', () => {
 test('suggestSources finds the parents that hold several past session folders', () => {
   const cwds = ['D:\\repos\\a', 'D:\\repos\\b', 'D:\\repos\\c', 'C:\\Users\\me', 'C:\\work\\x', 'C:\\work\\y', 'C:\\tmp\\once'];
   assert.deepEqual(suggestSources(cwds), ['D:\\repos', 'C:\\work']);
+});
+
+test('a session can use every repo of the workspaces holding its folder, except its own', () => {
+  const ws = (id: string, repos: string[]): Workspace => ({ id, name: id, color: 'blue', repos });
+  const all = [ws('store', ['C:/r/web', 'C:/r/api', 'C:/r/docs']), ws('pay', ['C:/r/api', 'C:/r/billing']), ws('other', ['C:/r/x'])];
+  assert.deepEqual(workspaceRepos('C:/r/web', all), ['C:/r/api', 'C:/r/docs']);
+  // In two workspaces: both sets, once each.
+  assert.deepEqual(workspaceRepos('c:/r/API', all), ['C:/r/web', 'C:/r/docs', 'C:/r/billing']);
+  // A subfolder of a repo belongs to its workspace; the repo containing it is not "another" repo.
+  assert.deepEqual(workspaceRepos('C:/r/web/packages/ui', all), ['C:/r/api', 'C:/r/docs']);
+  assert.deepEqual(workspaceRepos('D:/elsewhere', all), []);
 });

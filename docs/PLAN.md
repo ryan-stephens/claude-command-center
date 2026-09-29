@@ -47,7 +47,7 @@ Target: going from "a session needs me" to "handled" should take **3 keystrokes 
 | `Enter` | Open the selected session (in the workspace column: go to its sessions) |
 | `N` | New session in the current workspace |
 | `W` | New workspace; `E` / `Delete` in the workspace column edit / delete it |
-| `+` | Add a repo to the current workspace |
+| `+` / `−` | Add a repo to the current workspace / remove one (every session in it can use them all) |
 | `Tab` | Go to the repo library (`← →` choose, `Enter` add to this workspace, `N` new session in it, `F` source folders); `Tab` or `Esc` back |
 | `/` | Filter sessions (title, repo, branch) |
 | `Y` / `A` / `N` | In the preview column: answer the selected session's approval without opening it |
@@ -419,3 +419,20 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 **Known gaps**
 - The picker lists only folders, one level at a time, with no search across the disk; paste a path to jump.
 - Repo counts look one level down, the same depth the library scans, so a folder of folders of repos shows 0.
+
+## 19. A workspace is the context: its sessions can use all of its repos
+
+2026-09-28. The owner's call: people expect every session in a workspace, new or running, to be able to use every repo in it. Until now a workspace only grouped repos, and a session could use other repos only when they were added to it one by one.
+
+**What changed**
+- **The rule** (`workspaceRepos` in `shared/workspaces.ts`, tested): a session in `cwd` can use every repo of every workspace that holds `cwd`, except its own (or one that contains it). On top of that come the repos added to that session alone. All of them go to the SDK as `additionalDirectories`. Repos that don't exist right now (an unplugged drive) are left out, so they can't stop a session starting.
+- **Changes reach running sessions** (`SessionManager.setWorkspaces` / `applyDirs`): the server passes every workspace change to the manager. Each live session remembers the repos its CLI launched with. If they differ, an idle session restarts in place (same id and transcript, as in §17) with a note ("Now also working in payments-api." / "No longer working in …"). A busy one is marked and restarts once it is idle and nothing runs in the background. History sessions get the new set when they are resumed. `SessionSummary.workspaceDirs` carries the inherited repos to the page.
+- **Removing** mirrors adding, with `−` next to `+`. On home, `−` opens "Remove a repo from *workspace*" (`↑ ↓`, `1–9` or `Enter`), which warns that sessions running in that repo leave the workspace. In a session, `−` opens "Stop this session using a repo", which lists only the repos added to that session and shows the workspace's repos greyed out with "remove it there". The picker is `RepoRemover` in `Dialogs.tsx`. The old `Ctrl+K` "Stop working in …" action still works.
+- **Labels say which kind is which:** the session bar reads **"Claude can use"**: its own repo, the workspace's repos (with the workspace badge, not removable there), then its own additions (with ×). The sessions column of a workspace has a strip, **"Sessions here can use"**, listing its repos with the home repo marked, × on each, and `+ Add` / `Remove −`. Repo cards can be dropped on the strip. The new-session dialog lists the workspace's repos next to the chosen one and says "Claude can use every repo in *workspace*; this is just where it starts". Space-to-add-more is offered only outside a workspace, where it still matters.
+- `?`, the legend and the README list `+ / −` for both.
+
+**Verified** (headless Chromium, isolated server on `:7788`, Haiku, the demo repos): workspace Demo = web-app + docs-site. `N` → web-app → the dialog showed docs-site coming along. Asked for the first line of `docs-site\README.md` by absolute path, and Claude read it and answered "Acme docs" **with no approval card**. The session bar read "Claude can use web-app · docs-site". `+` added payments-api to the workspace, and the idle live session restarted with "Now also working in payments-api". `−` on home → `3` removed it, giving "No longer working in payments-api". In the session, `+` added cdn-worker to it alone, and `−` offered cdn-worker with docs-site greyed as Demo's; `1` removed it. No console errors. `pnpm typecheck`, `pnpm test` (76) and `pnpm build` pass.
+
+**Known gaps**
+- A busy session picks up a workspace change only after its turn. Until then its chips already show the new set.
+- One session can't opt out of one of its workspace's repos. Take the repo out of the workspace, or run the session outside it.
