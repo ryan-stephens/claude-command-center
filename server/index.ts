@@ -3,12 +3,15 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { IncomingMessage } from 'node:http';
 import { existsSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { ClientMsg, ServerMsg, Settings } from '../shared/protocol.ts';
+import type { ClientMsg, ServerMsg, Settings, Workspace } from '../shared/protocol.ts';
+import { addPath, removePath, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { CommandService } from './commands.ts';
 import { PermissionBroker } from './permission-broker.ts';
 import { COOKIE, cookieToken, findRemoteIp, remoteHostAllowed, remoteToken, remoteUpgradeAllowed, tokenMatches } from './remote.ts';
+import { cleanSources, scanSources } from './repo-library.ts';
 import { SessionManager } from './session-manager.ts';
 import { Store } from './store.ts';
 
@@ -38,6 +41,9 @@ const broker = new PermissionBroker(
   },
 );
 
+const store = new Store();
+const commands = new CommandService(store);
+
 const manager: SessionManager = new SessionManager({
   sessionsChanged: () => broadcast(snapshot()),
   upsert: (session) => broadcast({ type: 'session.upsert', session }),
@@ -46,9 +52,7 @@ const manager: SessionManager = new SessionManager({
   forked: (oldId, newId) => broadcast({ type: 'session.forked', oldId, newId }),
   commandsChanged: () => broadcast({ type: 'commands.changed' }),
   activity: (id, activity) => broadcast({ type: 'session.activity', id, activity }),
-}, broker);
-const store = new Store();
-const commands = new CommandService(store);
+}, broker, store);
 
 /** Only known keys with sane shapes reach the database. */
 function cleanSettings(raw: unknown): Settings {
@@ -65,19 +69,58 @@ function cleanSettings(raw: unknown): Settings {
   return out;
 }
 
+/** Untrusted workspace from a client: a name, a known colour, absolute repo paths (deduplicated). */
+function cleanWorkspace(raw: unknown): Workspace {
+  const w = (raw ?? {}) as Partial<Workspace>;
+  const name = typeof w.name === 'string' ? w.name.trim().slice(0, 60) : '';
+  if (!name) throw new Error('A workspace needs a name.');
+  const id = typeof w.id === 'string' && /^[\w-]{1,64}$/.test(w.id) ? w.id : crypto.randomUUID();
+  const color = (WORKSPACE_COLORS as readonly string[]).includes(w.color ?? '') ? w.color! : 'blue';
+  let repos: string[] = [];
+  for (const r of Array.isArray(w.repos) ? w.repos : []) {
+    if (typeof r === 'string' && isAbsolute(r.trim())) repos = addPath(repos, r.trim());
+  }
+  repos = repos.slice(0, 50);
+  const home = typeof w.home === 'string' && repos.some((r) => samePath(r, w.home!)) ? w.home : undefined;
+  return { id, name, color, repos, home };
+}
+
+function updateWorkspace(id: string, change: (w: Workspace) => Workspace): void {
+  const w = store.loadWorkspaces().find((x) => x.id === id);
+  if (!w) throw new Error('That workspace no longer exists.');
+  store.saveWorkspace(cleanWorkspace(change(w)));
+  workspacesChanged();
+}
+
+function workspacesChanged(): void {
+  broadcast({ type: 'workspaces', workspaces: store.loadWorkspaces() });
+  broadcast({ type: 'commands.changed' }); // workspace workflows follow the workspace's repos
+}
+
+function library(): ServerMsg {
+  const sources = store.librarySources();
+  const suggested = suggestSources(manager.history.repos()).filter((p) => !sources.some((s) => samePath(s, p)));
+  return { type: 'library', sources, repos: scanSources(sources), suggested };
+}
+
+/** Repo commands may only be written into folders cc-control already works with. */
+function isKnownCwd(cwd: string): boolean {
+  return manager.isKnownCwd(cwd) || store.loadWorkspaces().some((w) => w.repos.some((r) => samePath(r, cwd)));
+}
+
 function snapshot(): ServerMsg {
   return { type: 'sessions', sessions: manager.summaries(), repos: manager.history.repos() };
 }
 
 async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
   for (const ref of 'ref' in msg ? [msg.ref, 'from' in msg ? msg.from : undefined] : []) {
-    if (ref?.scope === 'repo' && !manager.isKnownCwd(ref.cwd ?? '')) {
+    if (ref?.scope === 'repo' && !isKnownCwd(ref.cwd ?? '')) {
       throw new Error('Repo commands can only be saved in a directory that has sessions.');
     }
   }
   switch (msg.type) {
     case 'session.create': {
-      const id = await manager.create(msg.cwd, msg.prompt);
+      const id = await manager.create(msg.cwd, msg.prompt, Array.isArray(msg.extraDirs) ? msg.extraDirs.filter((d) => typeof d === 'string') : []);
       send(ws, { type: 'session.created', reqId: msg.reqId, id });
       return;
     }
@@ -132,6 +175,41 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       store.saveSettings(cleanSettings(msg.settings));
       broadcast({ type: 'settings', settings: store.loadSettings() });
       return;
+    case 'workspace.save': {
+      const w = cleanWorkspace(msg.workspace);
+      const isNew = !store.loadWorkspaces().some((x) => x.id === w.id);
+      store.saveWorkspace(w);
+      if (isNew) commands.seedWorkspace(w, msg.template);
+      workspacesChanged();
+      return;
+    }
+    case 'workspace.delete':
+      store.deleteWorkspace(msg.id);
+      workspacesChanged();
+      return;
+    case 'workspace.addRepo':
+      if (typeof msg.path !== 'string' || !isAbsolute(msg.path)) throw new Error('Pick a folder by its full path.');
+      updateWorkspace(msg.id, (w) => ({ ...w, repos: addPath(w.repos, msg.path) }));
+      return;
+    case 'workspace.removeRepo':
+      updateWorkspace(msg.id, (w) => ({ ...w, repos: removePath(w.repos, msg.path) }));
+      return;
+    case 'session.addDir':
+      await manager.addDir(msg.id, msg.path);
+      return;
+    case 'session.removeDir':
+      await manager.removeDir(msg.id, msg.path);
+      return;
+    case 'library.setSources': {
+      const sources = cleanSources(msg.sources);
+      if (Array.isArray(msg.sources) && msg.sources.length && !sources.length) throw new Error('That folder does not exist.');
+      store.setLibrarySources(sources);
+      broadcast(library());
+      return;
+    }
+    case 'library.scan':
+      send(ws, library());
+      return;
   }
 }
 
@@ -176,6 +254,8 @@ wss.on('connection', (ws) => {
   });
   send(ws, snapshot());
   send(ws, { type: 'settings', settings: store.loadSettings() });
+  send(ws, { type: 'workspaces', workspaces: store.loadWorkspaces() });
+  send(ws, library());
   for (const request of broker.list()) send(ws, { type: 'permission.request', request });
   for (const [id, activity] of manager.activities()) send(ws, { type: 'session.activity', id, activity });
 });

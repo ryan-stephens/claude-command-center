@@ -1,6 +1,6 @@
 import type { PermissionResult, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionDecision, PermissionRequest } from '../shared/protocol.ts';
-import { summarizeToolInput } from './transcript.ts';
+import { summarizeToolInput, toolFields } from './transcript.ts';
 
 interface Pending {
   request: PermissionRequest;
@@ -33,6 +33,7 @@ export class PermissionBroker {
       sessionId,
       tool,
       input: summarizeToolInput(tool, toolInput),
+      fields: toolFields(tool, toolInput),
       canAlways: Boolean(suggestions?.length),
       createdAt: Date.now(),
     };

@@ -9,7 +9,7 @@ const MODE_ICON: Record<CommandMode, [string, string]> = {
   insert: ['✎', 'Drops into the composer'],
   template: ['{ }', 'Asks for the blanks first'],
 };
-const SCOPE_TAG = { global: 'mine', repo: 'repo', auto: 'slash' } as const;
+const SCOPE_TAG = { workspace: 'workspace', global: 'mine', repo: 'repo', auto: 'slash' } as const;
 
 export function CommandBoard({ focused, compact = false }: { focused: boolean; compact?: boolean }) {
   const board = useStore((s) => s.board);

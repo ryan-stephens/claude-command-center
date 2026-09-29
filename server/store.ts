@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite';
-import type { CommandPack, Settings } from '../shared/protocol.ts';
+import type { CommandPack, Settings, Workspace } from '../shared/protocol.ts';
 import { emptyPack, STARTER_PACK, validatePack } from './packs.ts';
 
 // node:sqlite prints an ExperimentalWarning on load. It's built in and works; keep the console clean.
@@ -16,7 +16,7 @@ const { DatabaseSync } = await import('node:sqlite');
 
 export const DB_PATH = process.env.CC_CONTROL_DB || join(homedir(), '.cc-control', 'cc-control.db');
 
-/** One SQLite file for everything cc-control owns. Today: the global command groups. */
+/** One SQLite file for everything cc-control owns: commands, settings, workspaces and per-session extra repos. */
 export class Store {
   private db: DatabaseSyncType;
 
@@ -35,6 +35,9 @@ export class Store {
         mode TEXT NOT NULL,
         PRIMARY KEY (group_name, slot)
       );
+      CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, position INTEGER NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS workspace_commands (workspace_id TEXT PRIMARY KEY, pack TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS session_dirs (session_id TEXT PRIMARY KEY, dirs TEXT NOT NULL);
     `);
     this.db.exec('PRAGMA foreign_keys = ON');
     if (!this.db.prepare("SELECT 1 FROM meta WHERE key = 'seeded'").get()) {
@@ -95,5 +98,56 @@ export class Store {
       this.db.exec('ROLLBACK');
       throw e;
     }
+  }
+
+  loadWorkspaces(): Workspace[] {
+    const rows = this.db.prepare('SELECT id, data FROM workspaces ORDER BY position').all() as { id: string; data: string }[];
+    return rows.flatMap((r) => {
+      try { return [{ ...(JSON.parse(r.data) as Omit<Workspace, 'id'>), id: r.id }]; } catch { return []; }
+    });
+  }
+
+  /** Insert or replace; a new workspace goes to the end. */
+  saveWorkspace(w: Workspace): void {
+    const { id, ...data } = w;
+    const pos = (this.db.prepare('SELECT position FROM workspaces WHERE id = ?').get(id) as { position: number } | undefined)?.position
+      ?? ((this.db.prepare('SELECT MAX(position) AS m FROM workspaces').get() as { m: number | null }).m ?? -1) + 1;
+    this.db.prepare('INSERT INTO workspaces (id, position, data) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
+      .run(id, pos, JSON.stringify(data));
+  }
+
+  deleteWorkspace(id: string): void {
+    this.db.prepare('DELETE FROM workspaces WHERE id = ?').run(id);
+    this.db.prepare('DELETE FROM workspace_commands WHERE workspace_id = ?').run(id);
+  }
+
+  loadWorkspacePack(id: string): CommandPack | null {
+    const row = this.db.prepare('SELECT pack FROM workspace_commands WHERE workspace_id = ?').get(id) as { pack: string } | undefined;
+    if (!row) return null;
+    try { return validatePack(JSON.parse(row.pack)); } catch { return null; }
+  }
+
+  saveWorkspacePack(id: string, pack: CommandPack): void {
+    this.db.prepare('INSERT INTO workspace_commands (workspace_id, pack) VALUES (?, ?) ON CONFLICT(workspace_id) DO UPDATE SET pack = excluded.pack')
+      .run(id, JSON.stringify(pack));
+  }
+
+  /** Extra repos a session works in, kept so a resume (even after a restart) gets them back. */
+  sessionDirs(id: string): string[] {
+    const row = this.db.prepare('SELECT dirs FROM session_dirs WHERE session_id = ?').get(id) as { dirs: string } | undefined;
+    try { return row ? (JSON.parse(row.dirs) as string[]) : []; } catch { return []; }
+  }
+
+  setSessionDirs(id: string, dirs: string[]): void {
+    if (!dirs.length) this.db.prepare('DELETE FROM session_dirs WHERE session_id = ?').run(id);
+    else this.db.prepare('INSERT INTO session_dirs (session_id, dirs) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET dirs = excluded.dirs').run(id, JSON.stringify(dirs));
+  }
+
+  librarySources(): string[] {
+    try { return JSON.parse(this.getMeta('library.sources') ?? '[]') as string[]; } catch { return []; }
+  }
+
+  setLibrarySources(sources: string[]): void {
+    this.setMeta('library.sources', JSON.stringify(sources));
   }
 }

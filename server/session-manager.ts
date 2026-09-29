@@ -6,6 +6,7 @@ import { ACTIVE_ELSEWHERE_MS, HistoryIndex } from './history-index.ts';
 import { InputQueue } from './input-queue.ts';
 import { PermissionBroker } from './permission-broker.ts';
 import { normalize } from './transcript.ts';
+import { addPath, removePath, repoName, samePath } from '../shared/workspaces.ts';
 
 // session_state_changed is only emitted with this flag (Phase 0 finding, PLAN.md §9).
 const SDK_ENV = { ...process.env, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1' } as Record<string, string>;
@@ -25,6 +26,14 @@ interface LiveSession {
   slash?: SlashCommand[];
   activity: SessionActivity;
   activityTimer?: NodeJS.Timeout;
+  /** Replaced by a restart (to pick up a new repo); its ending is not the session's. */
+  replaced?: boolean;
+}
+
+/** Where each session's extra repos persist (SQLite), so resumes get them back. */
+export interface DirStore {
+  sessionDirs(id: string): string[];
+  setSessionDirs(id: string, dirs: string[]): void;
 }
 
 /** Activity changes on every stream event; clients get at most one update per this many ms. */
@@ -55,10 +64,12 @@ export class SessionManager {
   /** History id → the fork it became, so late sends to the old id follow the fork. */
   private forkedTo = new Map<string, string>();
   private events: SessionEvents;
+  private dirs: DirStore;
 
-  constructor(events: SessionEvents, broker: PermissionBroker) {
+  constructor(events: SessionEvents, broker: PermissionBroker, dirs: DirStore) {
     this.events = events;
     this.broker = broker;
+    this.dirs = dirs;
     this.history = new HistoryIndex(() => events.sessionsChanged());
   }
 
@@ -75,15 +86,22 @@ export class SessionManager {
         lastModified: h.lastModified,
         live: false,
         activeElsewhere: !owned && h.lastModified > now - ACTIVE_ELSEWHERE_MS,
+        extraDirs: this.extraDirsOf(h.sessionId),
       });
     }
     for (const l of this.live.values()) out.set(l.id, this.liveSummary(l));
     return [...out.values()].sort((a, b) => b.lastModified - a.lastModified);
   }
 
-  async create(cwd: string, prompt?: string): Promise<string> {
+  async create(cwd: string, prompt?: string, extraDirs: string[] = []): Promise<string> {
     if (!isDir(cwd)) throw new Error(`Not a directory: ${cwd}`);
     const id = crypto.randomUUID();
+    let dirs: string[] = [];
+    for (const d of extraDirs) {
+      if (!isDir(d)) throw new Error(`Not a directory: ${d}`);
+      if (!samePath(d, cwd)) dirs = addPath(dirs, d);
+    }
+    this.dirs.setSessionDirs(id, dirs);
     this.start({ id, cwd, title: firstLine(prompt) || 'New session', options: { sessionId: id } });
     if (prompt?.trim()) this.send(id, prompt);
     else this.emitUpsert(id);
@@ -128,6 +146,7 @@ export class SessionManager {
     if (!summary) throw new Error(`Unknown session ${id}`);
     const fork = Boolean(summary.activeElsewhere);
     const newId = fork ? crypto.randomUUID() : id;
+    if (fork) this.dirs.setSessionDirs(newId, this.dirs.sessionDirs(id));
     const items = await this.transcript(id);
     const l = this.start({
       id: newId,
@@ -145,6 +164,54 @@ export class SessionManager {
       this.events.items(newId, [notice]);
     }
     return l;
+  }
+
+  extraDirsOf(id: string): string[] | undefined {
+    const dirs = this.dirs.sessionDirs(id);
+    return dirs.length ? dirs : undefined;
+  }
+
+  /**
+   * Let a session work in another repo too. The SDK only takes extra directories at launch, so a
+   * live session restarts in place (same id, same transcript); a history session gets it on resume.
+   */
+  async addDir(id: string, path: string): Promise<void> {
+    if (!isDir(path)) throw new Error(`Not a directory: ${path}`);
+    const cwd = this.cwdOf(id);
+    if (cwd && samePath(cwd, path)) return; // already its own repo
+    await this.changeDirs(id, addPath(this.dirs.sessionDirs(id), path), `Now also working in ${repoName(path)}.`);
+  }
+
+  async removeDir(id: string, path: string): Promise<void> {
+    await this.changeDirs(id, removePath(this.dirs.sessionDirs(id), path), `No longer working in ${repoName(path)}.`);
+  }
+
+  private async changeDirs(id: string, dirs: string[], note: string): Promise<void> {
+    const before = this.dirs.sessionDirs(id);
+    if (before.length === dirs.length && before.every((d, i) => samePath(d, dirs[i]))) return;
+    const l = this.live.get(id);
+    if (l && (l.status !== 'idle' || backgroundRunning(l.activity))) {
+      throw new Error('Claude is still working. Add or remove repos once it has finished.');
+    }
+    this.dirs.setSessionDirs(id, dirs);
+    if (l) this.restart(l, note);
+    else this.events.sessionsChanged();
+  }
+
+  /** Swap the CLI process under a live session, resuming the same transcript with new options. */
+  private restart(l: LiveSession, note: string): void {
+    l.replaced = true;
+    this.live.delete(l.id); // pump() sees it is no longer current and won't retire the session
+    clearTimeout(l.activityTimer);
+    l.input.close();
+    l.q.close();
+    const began = l.items.some((i) => i.kind === 'user');
+    const next = this.start({ id: l.id, cwd: l.cwd, title: l.title, items: l.items, options: began ? { resume: l.id } : { sessionId: l.id } });
+    next.ctxPct = l.ctxPct;
+    const notice: TranscriptItem = { kind: 'notice', uuid: crypto.randomUUID(), text: note };
+    next.items.push(notice);
+    this.events.items(l.id, [notice]);
+    this.emitUpsert(l.id);
   }
 
   async stopTask(id: string, taskId: string): Promise<void> {
@@ -224,6 +291,7 @@ export class SessionManager {
         env: SDK_ENV,
         includePartialMessages: true,
         permissionMode: 'default',
+        additionalDirectories: this.dirs.sessionDirs(id),
         canUseTool: (tool, toolInput, { signal, suggestions }) => this.broker.ask(id, tool, toolInput, suggestions, signal),
         ...opts.options,
       },
@@ -242,6 +310,7 @@ export class SessionManager {
     try {
       for await (const msg of l.q) this.handle(l, msg);
     } catch (e) {
+      if (l.replaced) return;
       const notice: TranscriptItem = { kind: 'notice', uuid: crypto.randomUUID(), text: `Session ended with an error: ${(e as Error).message}` };
       l.items.push(notice);
       this.events.items(l.id, [notice]);
@@ -328,6 +397,7 @@ export class SessionManager {
       status: l.status,
       ctxPct: l.ctxPct,
       background: backgroundRunning(l.activity) || undefined,
+      extraDirs: this.extraDirsOf(l.id),
     };
   }
 

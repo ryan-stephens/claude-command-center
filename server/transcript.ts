@@ -1,4 +1,4 @@
-import type { TranscriptItem } from '../shared/protocol.ts';
+import type { ToolFields, TranscriptItem } from '../shared/protocol.ts';
 
 // Normalises SDK messages (live `SDKMessage` and stored `SessionMessage` share the
 // `{ type, uuid, message: { content } }` shape) into flat transcript items.
@@ -7,6 +7,7 @@ type Block = { type: string; [k: string]: unknown };
 type AnyMessage = { type: string; uuid?: string; subtype?: string; message?: unknown; [k: string]: unknown };
 
 const MAX_RESULT_CHARS = 4000;
+const MAX_EDIT_CHARS = 1500;
 
 export function summarizeToolInput(name: string, input: unknown): string {
   if (!input || typeof input !== 'object') return String(input ?? '');
@@ -15,6 +16,33 @@ export function summarizeToolInput(name: string, input: unknown): string {
   if (typeof pick === 'string') return pick;
   void name;
   return JSON.stringify(input);
+}
+
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+const clip = (s: string): string => (s.length > MAX_EDIT_CHARS ? `${s.slice(0, MAX_EDIT_CHARS)}\n…` : s);
+const SEP = '\n…\n';
+
+/** The fields the UI turns into plain language: a Bash call's own description, the file, an edit's before/after. */
+export function toolFields(name: string, input: unknown): ToolFields | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const i = input as Record<string, unknown>;
+  const f: ToolFields = {
+    command: str(i.command),
+    description: str(i.description),
+    filePath: str(i.file_path) ?? str(i.notebook_path) ?? str(i.path),
+    pattern: str(i.pattern),
+    url: str(i.url),
+  };
+  if (name === 'Edit' && typeof i.old_string === 'string' && typeof i.new_string === 'string') {
+    f.edit = { before: clip(i.old_string), after: clip(i.new_string) };
+  } else if (name === 'Write' && typeof i.content === 'string') {
+    f.edit = { before: '', after: clip(i.content) };
+  } else if (name === 'MultiEdit' && Array.isArray(i.edits)) {
+    const edits = i.edits as { old_string?: string; new_string?: string }[];
+    f.edit = { before: clip(edits.map((e) => e.old_string ?? '').join(SEP)), after: clip(edits.map((e) => e.new_string ?? '').join(SEP)) };
+  }
+  for (const k of Object.keys(f) as (keyof ToolFields)[]) if (f[k] === undefined) delete f[k];
+  return Object.keys(f).length ? f : undefined;
 }
 
 function blockText(content: unknown): string {
@@ -59,7 +87,8 @@ export function normalize(msg: AnyMessage): TranscriptItem[] {
       if (msg.type === 'user' && msg.isMeta) return;
       items.push({ kind: msg.type as 'user' | 'assistant', uuid: id, text: String(b.text) });
     } else if (b.type === 'tool_use') {
-      items.push({ kind: 'tool', uuid: id, toolUseId: String(b.id), name: String(b.name), input: summarizeToolInput(String(b.name), b.input) });
+      const name = String(b.name);
+      items.push({ kind: 'tool', uuid: id, toolUseId: String(b.id), name, input: summarizeToolInput(name, b.input), fields: toolFields(name, b.input) });
     } else if (b.type === 'tool_result') {
       items.push({ kind: 'tool_result', uuid: id, toolUseId: String(b.tool_use_id), text: truncate(blockText(b.content)), isError: Boolean(b.is_error) });
     }

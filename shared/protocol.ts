@@ -17,12 +17,48 @@ export interface SessionSummary {
   ctxPct?: number;
   /** Live sessions: subagents / shells still running in the background. */
   background?: number;
+  /** Extra repos this session can read and edit besides its own cwd (SDK `additionalDirectories`). */
+  extraDirs?: string[];
+}
+
+/** The parts of a tool call worth showing in plain language (a Bash call's own description, the file, an edit). */
+export interface ToolFields {
+  command?: string;
+  /** Claude's own one-line explanation of a Bash call, e.g. "Check app.js for syntax errors". */
+  description?: string;
+  filePath?: string;
+  pattern?: string;
+  url?: string;
+  /** Edit / Write: the text replaced and its replacement, trimmed for display. */
+  edit?: { before: string; after: string };
+}
+
+// ---- Workspaces and the repo library -----------------------------------------
+
+/** A named group of repos. Sessions belong to it by their cwd. */
+export interface Workspace {
+  id: string;
+  name: string;
+  /** One of WORKSPACE_COLORS. */
+  color: string;
+  /** Absolute repo paths, in display order. */
+  repos: string[];
+  /** Where new sessions start; defaults to the first repo. */
+  home?: string;
+}
+
+/** A git repo found under one of the library's source folders. */
+export interface RepoInfo {
+  path: string;
+  name: string;
+  branch?: string;
+  lastModified?: number;
 }
 
 export type TranscriptItem =
   | { kind: 'user'; uuid: string; text: string }
   | { kind: 'assistant'; uuid: string; text: string }
-  | { kind: 'tool'; uuid: string; toolUseId: string; name: string; input: string }
+  | { kind: 'tool'; uuid: string; toolUseId: string; name: string; input: string; fields?: ToolFields }
   | { kind: 'tool_result'; uuid: string; toolUseId: string; text: string; isError: boolean }
   | { kind: 'result'; uuid: string; subtype: string; durationMs?: number; costUsd?: number }
   | { kind: 'notice'; uuid: string; text: string };
@@ -74,6 +110,7 @@ export interface PermissionRequest {
   tool: string;
   /** Human-readable summary of the tool input. */
   input: string;
+  fields?: ToolFields;
   /** Whether an "Always allow" rule is on offer. */
   canAlways: boolean;
   /** Epoch ms; the inbox and Alt+N serve the oldest first. */
@@ -92,8 +129,8 @@ export interface Settings {
 
 /** send: fire immediately · insert: drop into the composer · template: fill {{placeholders}} first */
 export type CommandMode = 'send' | 'insert' | 'template';
-/** global: SQLite · repo: <cwd>/.cc-control/commands.json · auto: the session's slash commands (read-only) */
-export type CommandScope = 'global' | 'repo' | 'auto';
+/** workspace: SQLite, per workspace · global: SQLite · repo: <cwd>/.cc-control/commands.json · auto: the session's slash commands (read-only) */
+export type CommandScope = 'workspace' | 'global' | 'repo' | 'auto';
 
 export interface Command {
   label: string;
@@ -107,6 +144,8 @@ export interface CommandGroup {
   name: string;
   scope: CommandScope;
   commands: Command[];
+  /** Workspace scope: which workspace owns the group. */
+  workspaceId?: string;
 }
 
 /** Shareable JSON: the format of repo packs and of import/export. */
@@ -117,15 +156,17 @@ export interface CommandPack {
 
 /** Addresses one tile in an editable scope. */
 export interface SlotRef {
-  scope: 'global' | 'repo';
+  scope: 'workspace' | 'global' | 'repo';
   /** Required for repo scope: whose `.cc-control/commands.json`. */
   cwd?: string;
+  /** Required for workspace scope. */
+  workspaceId?: string;
   group: string;
   slot: number;
 }
 
 export type ClientMsg =
-  | { type: 'session.create'; reqId: string; cwd: string; prompt?: string }
+  | { type: 'session.create'; reqId: string; cwd: string; prompt?: string; extraDirs?: string[] }
   | { type: 'session.open'; id: string }
   | { type: 'session.send'; id: string; text: string }
   | { type: 'session.interrupt'; id: string }
@@ -145,7 +186,19 @@ export type ClientMsg =
   | { type: 'command.swap'; ref: SlotRef; otherSlot: number }
   | { type: 'pack.import'; pack: CommandPack }
   | { type: 'pack.export'; reqId: string }
-  | { type: 'settings.set'; settings: Settings };
+  | { type: 'settings.set'; settings: Settings }
+  /** Create (no matching id) or replace a workspace. */
+  | { type: 'workspace.save'; workspace: Workspace; /** New workspaces: a WORKFLOW_TEMPLATES id to seed its workflows. */ template?: string }
+  | { type: 'workspace.delete'; id: string }
+  /** Add one repo to a workspace (drag and drop). */
+  | { type: 'workspace.addRepo'; id: string; path: string }
+  | { type: 'workspace.removeRepo'; id: string; path: string }
+  /** Give a session another repo to work in. A live, idle session restarts in place to pick it up. */
+  | { type: 'session.addDir'; id: string; path: string }
+  | { type: 'session.removeDir'; id: string; path: string }
+  /** The folders the repo library scans for git repos. */
+  | { type: 'library.setSources'; sources: string[] }
+  | { type: 'library.scan' };
 
 export type ServerMsg =
   | { type: 'sessions'; sessions: SessionSummary[]; repos: string[] }
@@ -165,4 +218,7 @@ export type ServerMsg =
   | { type: 'commands.changed' }
   | { type: 'pack'; reqId: string; pack: CommandPack }
   | { type: 'settings'; settings: Settings }
+  | { type: 'workspaces'; workspaces: Workspace[] }
+  /** `suggested`: likely source folders, from where past sessions ran, for the first-run setup. */
+  | { type: 'library'; sources: string[]; repos: RepoInfo[]; suggested: string[] }
   | { type: 'error'; message: string; reqId?: string };

@@ -12,7 +12,7 @@
     "build": "vite build",
     "start": "vite build && node server/index.ts",
     "typecheck": "tsc",
-    "test": "node --test \"web/**/*.test.ts\" \"server/**/*.test.ts\"",
+    "test": "node --test \"web/**/*.test.ts\" \"server/**/*.test.ts\" \"shared/**/*.test.ts\"",
     "spike": "node spike/sdk-spike.mjs",
     "spike:voice": "node spike/voice-server.mjs"
   },
