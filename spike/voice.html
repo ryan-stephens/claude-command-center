@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice spike</title>
+<style>
+  :root { --bg: #111418; --fg: #e6e8eb; --muted: #8a929c; --accent: #f5a524; --ok: #3ecf8e; --err: #f36b6b; --panel: #1a1f25; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { color: var(--muted); margin: 0 0 20px; }
+  kbd { background: var(--panel); border: 1px solid #333a42; border-radius: 4px; padding: 1px 6px; font-family: ui-monospace, monospace; }
+  #status { display: inline-block; padding: 4px 12px; border-radius: 999px; background: var(--panel); margin-bottom: 16px; }
+  #status.listening { background: var(--accent); color: #111; }
+  #status.error { background: var(--err); color: #111; }
+  #live { min-height: 3em; padding: 12px; background: var(--panel); border-radius: 8px; margin-bottom: 16px; }
+  #live .interim { color: var(--muted); }
+  ol { padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  li small { color: var(--muted); }
+  .sent { color: var(--ok); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Voice spike</h1>
+  <p>Hold <kbd>`</kbd> (or <kbd>Numpad .</kbd>) to talk. Release to "send". Uses <code>webkitSpeechRecognition</code>.</p>
+  <div id="status">idle</div>
+  <div id="live"></div>
+  <ol id="sent"></ol>
+</main>
+<script>
+  const statusEl = document.getElementById('status');
+  const liveEl = document.getElementById('live');
+  const sentEl = document.getElementById('sent');
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  function setStatus(text, cls = '') { statusEl.textContent = text; statusEl.className = cls; }
+
+  if (!SR) {
+    setStatus('SpeechRecognition not supported in this browser', 'error');
+  } else {
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = navigator.language || 'en-US';
+
+    let holding = false;
+    let finalText = '';
+    let interimText = '';
+    let pressedAt = 0;
+    let releasedAt = 0;
+
+    const render = () => {
+      liveEl.innerHTML = '';
+      liveEl.append(finalText);
+      const span = document.createElement('span');
+      span.className = 'interim';
+      span.textContent = interimText;
+      liveEl.append(span);
+    };
+
+    rec.onresult = (e) => {
+      interimText = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript;
+        else interimText += r[0].transcript;
+      }
+      render();
+    };
+    rec.onerror = (e) => setStatus(`error: ${e.error}`, 'error');
+    rec.onend = () => {
+      // Recognition finished flushing after release: this is the moment the app would auto-send.
+      const text = (finalText + interimText).trim();
+      if (text) {
+        const li = document.createElement('li');
+        li.innerHTML = `<span class="sent"></span> <small></small>`;
+        li.firstChild.textContent = text;
+        li.lastChild.textContent = `(${Date.now() - releasedAt} ms after release, held ${releasedAt - pressedAt} ms)`;
+        sentEl.prepend(li);
+      }
+      finalText = interimText = '';
+      render();
+      if (!statusEl.classList.contains('error')) setStatus('idle');
+    };
+
+    const isPttKey = (e) => e.code === 'Backquote' || e.code === 'NumpadDecimal';
+
+    window.addEventListener('keydown', (e) => {
+      if (!isPttKey(e)) return;
+      e.preventDefault();
+      if (e.repeat || holding) return;
+      holding = true;
+      pressedAt = Date.now();
+      finalText = interimText = '';
+      setStatus('listening…', 'listening');
+      try { rec.start(); } catch (err) { setStatus(`start failed: ${err.message}`, 'error'); }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (!isPttKey(e) || !holding) return;
+      e.preventDefault();
+      holding = false;
+      releasedAt = Date.now();
+      setStatus('finishing…');
+      rec.stop();
+    });
+  }
+</script>
+</body>
+</html>
