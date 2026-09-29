@@ -27,8 +27,10 @@ export interface LegendInput {
   /** Home: a real workspace is selected (not "everything else"). */
   inWorkspace: boolean;
   bindings: Bindings;
-  /** The preview column fits on screen (otherwise approvals are answered by opening the session). */
+  /** The docked session fits beside the list (otherwise Enter opens sessions full screen). */
   previewShown?: boolean;
+  /** On home, stepped into the docked session: it takes the session keys. */
+  docked?: boolean;
 }
 
 const k = (b: Bindings, id: ActionId) => displayCombo(bindingsFor(id, b)[0] ?? '');
@@ -63,7 +65,7 @@ function answerKeys(kind: LegendInput['pendingKind']): LegendItem[] {
 
 export function legendFor(x: LegendInput): LegendItem[] {
   const b = x.bindings;
-  if (x.screen === 'list') {
+  if (x.screen === 'list' && !x.docked) {
     switch (x.homeCol) {
       case 'library':
         return [
@@ -84,19 +86,15 @@ export function legendFor(x: LegendInput): LegendItem[] {
           ...(x.inWorkspace ? [{ keys: ['E'], label: 'Edit' }, { keys: ['+'], label: 'Add a repo' }, { keys: ['−'], label: 'Remove one' }, { keys: ['⇧E'], label: 'Share' }] : []),
           { keys: ['⇧I'], label: 'Import' },
         ];
-      case 'preview':
-        return x.pending
-          ? [
-            ...(x.pendingKind === 'question' ? [{ keys: ['Enter'], label: 'Open to answer', tone: 'attn' as const }] : answerKeys(x.pendingKind).filter((i) => i.keys[0] !== 'D' && i.label !== 'Choose')),
-            ...(x.pendingKind === 'question' ? [] : [{ keys: ['Enter'], label: 'Open' }]),
-            { keys: ['←'], label: 'Back' },
-          ]
-          : [{ keys: ['Enter'], label: 'Open' }, { keys: ['←'], label: 'Back' }, { keys: ['R'], label: 'Rename' }, { keys: ['X'], label: 'End session' }];
       default:
         return [
           { keys: ['←', '→'], label: 'Columns' },
           { keys: ['↑', '↓'], label: 'Choose' },
-          ...(x.hasSelection ? [{ keys: ['Enter'], label: 'Open' }] : []),
+          ...(x.hasSelection
+            ? x.previewShown === false
+              ? [{ keys: ['Enter'], label: 'Open' }]
+              : [{ keys: ['Enter'], label: 'Go into it' }, { keys: [k(b, 'expand')], label: 'Full screen' }]
+            : []),
           ...(x.pending ? [x.previewShown === false ? { keys: ['Enter'], label: 'Open to answer', tone: 'attn' as const } : { keys: ['→'], label: 'Answer it here', tone: 'attn' as const }] : []),
           { keys: ['N'], label: 'New session', tone: 'acc' },
           { keys: ['/'], label: 'Filter' },
@@ -106,6 +104,10 @@ export function legendFor(x: LegendInput): LegendItem[] {
     }
   }
   const stop: LegendItem = { keys: ['Esc'], label: 'Stop Claude', tone: 'bad' };
+  // Docked beside the list: Esc goes back to the list, the expand key opens it full screen.
+  const size: LegendItem[] = x.docked
+    ? [{ keys: [k(b, 'expand')], label: 'Full screen' }]
+    : x.previewShown === false ? [] : [{ keys: [k(b, 'expand')], label: 'Beside the list' }];
   if (x.zone === 'composer') {
     return [
       { keys: ['Enter'], label: 'Send' },
@@ -113,6 +115,8 @@ export function legendFor(x: LegendInput): LegendItem[] {
       ...(x.pending ? [{ keys: ['Tab'], label: 'Answer Claude', tone: 'attn' as const }] : [{ keys: ['Tab'], label: 'Number pad' }]),
       { keys: ['⇧Tab'], label: 'Mode' },
       ...(!x.drafting ? [{ keys: ['1–9'], label: 'Workflow (number pad)' }, { keys: [`Hold ${k(b, 'pushToTalk')}`], label: 'Talk' }] : []),
+      ...(x.docked && !x.busy ? [{ keys: ['Esc'], label: 'Back to the list' }] : []),
+      ...size,
       { keys: [k(b, 'prevSession'), k(b, 'nextSession')], label: 'Other sessions' },
     ];
   }
@@ -120,9 +124,10 @@ export function legendFor(x: LegendInput): LegendItem[] {
     ...(x.pending
       ? answerKeys(x.pendingKind)
       : [{ keys: ['1–9'], label: 'Run a workflow' }, { keys: ['Enter'], label: 'Run focused key' }]),
-    x.busy ? stop : { keys: ['Esc'], label: 'Home' },
+    x.busy ? stop : { keys: ['Esc'], label: x.docked ? 'Back to the list' : 'Home' },
     { keys: ['i'], label: 'Type a message' },
+    ...size,
     { keys: ['+', '−'], label: 'Add / remove a repo' },
-    ...(!x.pending ? [{ keys: ['E'], label: 'Edit key' }, { keys: ['C'], label: 'Fold pad' }] : []),
+    ...(!x.pending ? [{ keys: ['E'], label: 'Edit key' }, { keys: ['C'], label: x.docked ? 'Fold this pane' : 'Fold pad' }] : []),
   ];
 }

@@ -17,9 +17,22 @@ test('home sessions column teaches the column model and new session', () => {
   assert.ok(labels({ pending: true, previewShown: false }).includes('Enter Open to answer'), 'no hidden-column promise');
 });
 
-test('the preview answers approvals; without one it offers open', () => {
-  assert.deepEqual(labels({ homeCol: 'preview', pending: true }).slice(0, 3), ['Y Allow', 'A Always', 'N Don’t allow']);
-  assert.equal(labels({ homeCol: 'preview' })[0], 'Enter Open');
+test('the sessions column goes into the docked session, or full screen when it does not fit', () => {
+  assert.ok(labels({}).includes('Enter Go into it'));
+  assert.ok(labels({}).includes('Ctrl+Enter Full screen'));
+  const narrow = labels({ previewShown: false });
+  assert.ok(narrow.includes('Enter Open') && !narrow.some((x) => x.includes('Full screen')));
+});
+
+test('docked: session keys, Esc back to the list, the expand key goes full screen', () => {
+  const d = { homeCol: 'preview' as const, docked: true };
+  const c = labels(d);
+  assert.ok(c.includes('Enter Send') && c.includes('Esc Back to the list') && c.includes('Ctrl+Enter Full screen'));
+  assert.ok(!labels({ ...d, busy: true }).includes('Esc Back to the list'), 'Esc stops Claude first');
+  assert.deepEqual(labels({ ...d, zone: 'board', pending: true }).slice(0, 4), ['← →+Enter Choose', 'Y Allow', 'A Always', 'N Don’t allow']);
+  assert.ok(labels({ ...d, zone: 'board' }).includes('C Fold this pane'));
+  assert.ok(labels({ screen: 'session' }).includes('Ctrl+Enter Beside the list'));
+  assert.ok(!labels({ screen: 'session', previewShown: false }).some((x) => x.includes('Beside')));
 });
 
 test('workspace-only keys hide outside a workspace', () => {
@@ -49,6 +62,5 @@ test('a question or a plan changes the answer keys', () => {
   assert.ok(!q.includes('Y Allow'), 'a question is answered, not allowed');
   const p = labels({ screen: 'session', zone: 'board', pending: true, pendingKind: 'plan' });
   assert.ok(p.includes('Y Start the plan') && p.includes('N Keep planning'));
-  assert.ok(labels({ homeCol: 'preview', pending: true, pendingKind: 'question' }).includes('Enter Open to answer'));
   assert.ok(labels({ screen: 'session', zone: 'composer' }).includes('⇧Tab Mode'));
 });

@@ -8,6 +8,8 @@ export interface Folds {
   workspaces: boolean;
   /** Home: the repo library is a one-line bar (it opens while you are in it). */
   library: boolean;
+  /** Home: the docked session is a slim rail (it opens while you are in it). */
+  dock: boolean;
   /** Session: the number pad is folded away (it opens while you are on it). */
   pad: boolean;
   /** Session: Claude's to-do list shows only its summary line. */
@@ -16,9 +18,9 @@ export interface Folds {
   buckets: Partial<Record<Bucket, boolean>>;
 }
 
-export type FoldKey = 'workspaces' | 'library' | 'pad' | 'todos';
+export type FoldKey = 'workspaces' | 'library' | 'dock' | 'pad' | 'todos';
 
-export const NO_FOLDS: Folds = { workspaces: false, library: false, pad: false, todos: false, buckets: {} };
+export const NO_FOLDS: Folds = { workspaces: false, library: false, dock: false, pad: false, todos: false, buckets: {} };
 const KEY = 'cc-control.folds';
 
 /** Whatever was saved, keeping only known keys with the right types. */
@@ -28,7 +30,7 @@ export function parseFolds(raw: string | null): Folds {
     if (!v || typeof v !== 'object') return NO_FOLDS;
     const buckets: Folds['buckets'] = {};
     for (const b of ['needs', 'working', 'done', 'earlier'] as const) if (v.buckets?.[b] === true) buckets[b] = true;
-    return { workspaces: v.workspaces === true, library: v.library === true, pad: v.pad === true, todos: v.todos === true, buckets };
+    return { workspaces: v.workspaces === true, library: v.library === true, dock: v.dock === true, pad: v.pad === true, todos: v.todos === true, buckets };
   } catch {
     return NO_FOLDS;
   }

@@ -1,19 +1,18 @@
-import { useEffect, useRef, type DragEvent, type ReactNode } from 'react';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import type { SessionSummary, TranscriptItem, Workspace } from '../../shared/protocol.ts';
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import type { SessionSummary, Workspace } from '../../shared/protocol.ts';
 import { homeRepo, repoName, samePath, workspacesFor } from '../../shared/workspaces.ts';
 import { activityShort, turnClock } from '../activity-label.ts';
 import { age, BUCKET_TITLE, sessionsIn, statusLabel } from '../home-model.ts';
-import { askStop, newSession, openSession } from '../keys.ts';
+import { bindingsFor, displayCombo } from '../bindings.ts';
+import { dockSession, newSession, openSession } from '../keys.ts';
 import { unfolded } from '../folds.ts';
 import {
-  attention, currentWorkspace, get, useFlags, pendingFor, sameScope, scopes, sessionGroups, set, setScope, toggleBucket, toggleFold, useStore,
+  attention, currentWorkspace, get, isDocked, NO_BINDINGS, useFlags, sameScope, scopes, sessionGroups, set, setScope, toggleBucket, toggleFold, useStore,
   visibleSessions, type HomeCol,
 } from '../store.ts';
 import { send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
-import { ApprovalCard } from './Approval.tsx';
+import { SessionView } from './SessionView.tsx';
 import { Icon, Key, Pill, WsBadge } from './ui.tsx';
 
 export const REPO_MIME = 'text/x-cc-repo';
@@ -43,7 +42,7 @@ export function Home() {
       <div className="flex min-h-0 flex-1">
         <WorkspaceColumn />
         <SessionColumn />
-        <PreviewColumn />
+        <DockColumn />
       </div>
       <RepoLibrary />
     </div>
@@ -55,7 +54,8 @@ function Column({ col, title, right, children, className = '' }: { col: HomeCol;
   return (
     <section
       aria-label={typeof title === 'string' ? title : undefined}
-      onMouseDown={() => { if (get().homeCol !== col) set({ homeCol: col }); }}
+      // Clicking another column steps out of the session beside the list.
+      onMouseDown={() => { if (get().homeCol !== col) set({ homeCol: col, openId: null }); }}
       className={`flex min-h-0 min-w-0 flex-col border-r border-line ${active ? 'bg-surface shadow-[inset_0_3px_0_var(--c-acc)]' : 'bg-col'} ${className}`}
     >
       <div className="flex items-center gap-2 px-4 pb-2 pt-3.5">
@@ -251,6 +251,8 @@ function SessionColumn() {
   const active = useStore((s) => s.homeCol === 'sessions');
   const activity = useStore((s) => s.activity);
   const folds = useStore((s) => s.folds);
+  const dockFolded = useStore((s) => s.folds.dock);
+  const docked = useStore(isDocked);
   const now = useNow(Object.values(activity).some((a) => a.phase !== 'idle'));
   const ws = currentWorkspace({ workspaces, scope });
   const groups = sessionGroups({ sessions, workspaces, scope, filter, permissions, unread });
@@ -273,7 +275,8 @@ function SessionColumn() {
     <Column
       col="sessions"
       title={title}
-      className="flex-1 md:w-[27rem] md:flex-none"
+      // Beside a session the list keeps a fixed width (narrower on small laptops); with the session folded away it takes the room.
+      className={`flex-1 md:w-[27rem] md:flex-none lg:w-[22rem] xl:w-[27rem] ${dockFolded && !docked ? 'lg:flex-1' : ''}`}
       right={
         <button className="btn btn-primary min-h-0 py-1 pl-2.5 pr-1.5 text-sm" onClick={() => newSession()} title="New session in this workspace">
           <Icon name="plus" size={15} />New<Key k="N" size="sm" tone="ghost" />
@@ -413,92 +416,64 @@ function SessionRow({ s, selected, focused, now }: { s: SessionSummary; selected
   );
 }
 
-// ---- Preview -------------------------------------------------------------------------------
+// ---- The selected session, beside the list ---------------------------------------------------
 
-const EMPTY: TranscriptItem[] = [];
+/** `value`, once it has stopped changing for `ms`: arrowing through the list doesn't load every row. */
+function useSettled<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    if (settled === value) return;
+    const t = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(t);
+  }, [value, settled, ms]);
+  return settled;
+}
 
-function PreviewColumn() {
+/**
+ * The selected session itself, beside the list: its conversation, cards, to-do list and message
+ * box. → or Enter steps into it (it takes the session keys), Esc steps back out, Ctrl+Enter makes
+ * it full screen. Folded (C), it is a rail and opens only while you are in it.
+ */
+function DockColumn() {
+  const docked = useStore(isDocked);
+  const openId = useStore((s) => s.openId);
   const selectedId = useStore((s) => {
     const visible = visibleSessions(s);
     return visible.some((x) => x.id === s.selectedId) ? s.selectedId : null;
   });
-  const s = useStore((st) => st.sessions.find((x) => x.id === selectedId));
-  const items = useStore((st) => (selectedId ? st.transcripts[selectedId] ?? EMPTY : EMPTY));
-  const loaded = useStore((st) => Boolean(selectedId && st.transcripts[selectedId]));
-  const request = useStore((st) => Object.values(st.permissions).find((p) => p.sessionId === selectedId));
-  const flags = useFlags(selectedId);
-  const workspaces = useStore((st) => st.workspaces);
+  const folded = useStore((s) => s.folds.dock);
+  const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
+  const settled = useSettled(selectedId, 200);
+  const id = docked ? openId : settled;
+  const exists = useStore((s) => Boolean(id && s.sessions.some((x) => x.id === id)));
 
-  // Load the transcript of whatever is selected, after the selection settles.
-  useEffect(() => {
-    if (!selectedId || loaded) return;
-    const t = setTimeout(() => send({ type: 'session.open', id: selectedId }), 200);
-    return () => clearTimeout(t);
-  }, [selectedId, loaded]);
-
-  if (!s) {
+  if (folded && !docked) {
     return (
-      <Column col="preview" title="Preview" className="hidden flex-1 border-r-0 lg:flex">
-        <p className="px-5 text-sub">Select a session to see where it is up to.</p>
-      </Column>
+      <section aria-label="Session (folded)" className="hidden w-14 shrink-0 flex-col items-center gap-4 bg-col py-3 lg:flex">
+        <button onClick={() => toggleFold('dock')} aria-expanded={false} aria-label="Show the selected session beside the list" title="Show the selected session beside the list" className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-raise hover:text-ink">
+          <Icon name="back" size={15} />
+        </button>
+        <button onClick={() => { if (selectedId) dockSession(selectedId); }} title="Go into the selected session here (→ or Enter)" className="flex flex-col items-center gap-1.5 text-faint hover:text-ink">
+          <Icon name="collapse" size={18} />
+          <Key k="→" size="sm" />
+        </button>
+        <button onClick={() => { if (selectedId) openSession(selectedId); }} title={`Full screen (${displayCombo(bindingsFor('expand', bindings)[0] ?? '')})`} className="text-faint hover:text-ink">
+          <Icon name="expand" size={18} />
+        </button>
+      </section>
     );
   }
-  const status = statusLabel(s, flags);
-  const talk = recentExchanges(items, 3);
-  const ws = workspacesFor(s.cwd, workspaces)[0] ?? null;
   return (
-    <Column
-      col="preview"
-      title="Preview"
-      className="hidden flex-1 border-r-0 lg:flex"
+    <section
+      aria-label="Session"
+      onMouseDown={() => { if (!docked && id && exists) dockSession(id); }}
+      className={`hidden min-w-0 flex-1 flex-col bg-bg lg:flex ${docked ? 'shadow-[inset_0_3px_0_var(--c-acc)]' : ''}`}
     >
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pb-5">
-        <div>
-          <h3 className="text-[22px] font-bold leading-tight tracking-tight">{s.title}</h3>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-faint">
-            {status.text && <Pill tone={status.tone} spin={status.tone === 'blue'}>{status.text}</Pill>}
-            <span>{s.branch && s.branch !== 'HEAD' ? `${s.branch} · ` : ''}{age(s.lastModified)} ago</span>
-          </div>
-        </div>
-        <ContextChips s={s} ws={ws} />
-        {request && <ApprovalCard p={request} cwd={s.cwd} compact sessionId={s.id} />}
-        <div className="flex flex-wrap gap-2">
-          <button className="btn btn-primary" onClick={() => openSession(s.id)}>{s.live ? 'Open' : 'Open and continue'}<Key k="Enter" size="sm" tone="ghost" /></button>
-          <button className="btn" onClick={() => set({ modal: { kind: 'rename', id: s.id } })}>Rename<Key k="R" size="sm" /></button>
-          {s.live && <button className="btn" onClick={() => askStop(s.id)}>End session<Key k="X" size="sm" /></button>}
-        </div>
-        {!request && talk.length > 0 && (
-          <div className="space-y-4 border-t border-line pt-4">
-            <div className="eyebrow">Recent conversation</div>
-            {talk.map((t, i) => (
-              <div key={t.key} className="space-y-1.5">
-                {t.you && <p className="line-clamp-2 rounded-xl bg-acc-soft/60 px-3 py-1.5 text-sm text-sub"><span className="font-semibold text-ink">You: </span>{t.you}</p>}
-                {t.claude && (
-                  <div className={`md text-[14.5px] text-sub ${i === talk.length - 1 ? 'line-clamp-[14]' : 'line-clamp-4'}`}>
-                    <Markdown remarkPlugins={[remarkGfm]}>{t.claude.slice(0, 1500)}</Markdown>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-        {!request && !talk.length && <p className="text-sub">{loaded ? 'Nothing said yet.' : 'Loading…'}</p>}
-      </div>
-    </Column>
+      {id && exists
+        ? <SessionView key={id} id={id} docked />
+        : <p className="px-5 pt-4 text-sub">{selectedId ? 'Loading…' : 'Select a session to see it here.'}</p>}
+    </section>
   );
-}
-
-/** The last `n` turns as (your message, Claude's last reply to it), oldest first, for the preview. */
-function recentExchanges(items: TranscriptItem[], n: number): { key: string; you?: string; claude?: string }[] {
-  const out: { key: string; you?: string; claude?: string }[] = [];
-  for (const it of items) {
-    if (it.kind === 'user') out.push({ key: it.uuid, you: it.text });
-    else if (it.kind === 'assistant') {
-      if (!out.length) out.push({ key: it.uuid });
-      out[out.length - 1].claude = it.text;
-    }
-  }
-  return out.slice(-n);
 }
 
 /**

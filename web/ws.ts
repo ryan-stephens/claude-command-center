@@ -1,6 +1,6 @@
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import { onStatusChange } from './attention.ts';
-import { flash, get, groupKeyOf, set, setScope } from './store.ts';
+import { activeSession, flash, get, groupKeyOf, set, setScope } from './store.ts';
 
 let socket: WebSocket | null = null;
 let retryMs = 1000;
@@ -199,7 +199,7 @@ function receive(msg: ServerMsg): void {
       // The card takes focus in the open session so Y / A / N work straight away, but never out
       // of the message box: letters you're typing must not answer it (Tab gets you there).
       const s = get();
-      if (s.screen === 'session' && s.openId === msg.request.sessionId && s.zone !== 'composer') set({ zone: 'board' });
+      if (activeSession(s) === msg.request.sessionId && s.zone !== 'composer') set({ zone: 'board' });
       return;
     }
     case 'permission.resolved': {

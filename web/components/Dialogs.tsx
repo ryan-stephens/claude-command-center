@@ -281,7 +281,7 @@ function StopDialog({ id }: { id: string }) {
     if (k === 'y' || k === 'enter') {
       send({ type: 'session.stop', id });
       close();
-      if (get().openId === id) set({ screen: 'list', openId: null });
+      if (get().openId === id) set({ screen: 'list', openId: null, homeCol: 'sessions' });
     } else if (k === 'n' || k === 'escape') close();
     else return false;
     return true;
@@ -292,7 +292,7 @@ function StopDialog({ id }: { id: string }) {
       <p className="text-sub"><strong className="text-ink">{sessionById(id)?.title}</strong> stops, along with anything it is running in the background. It stays in the list, and you can pick it up again any time.</p>
       <div className="mt-5 flex justify-end gap-2.5">
         <button className="btn" onClick={close}>Keep it<Key k="N" size="sm" /></button>
-        <button className="btn btn-primary" onClick={() => { send({ type: 'session.stop', id }); close(); if (get().openId === id) set({ screen: 'list', openId: null }); }}>End session<Key k="Y" size="sm" tone="ghost" /></button>
+        <button className="btn btn-primary" onClick={() => { send({ type: 'session.stop', id }); close(); if (get().openId === id) set({ screen: 'list', openId: null, homeCol: 'sessions' }); }}>End session<Key k="Y" size="sm" tone="ghost" /></button>
       </div>
     </Overlay>
   );

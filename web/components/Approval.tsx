@@ -7,7 +7,7 @@ import { answered, freshQa, pick, typeOther, type QaState } from '../questions.t
 import { set } from '../store.ts';
 import { lineDiff } from '../diff.ts';
 import { explainPermission, RISK_LABEL, type Risk } from '../plain.ts';
-import { useStore } from '../store.ts';
+import { activeSession, useStore } from '../store.ts';
 import { Icon, Key } from './ui.tsx';
 
 const RISK_STYLE: Record<Risk, { pill: string; border: string; icon: 'shield' | 'edit' | 'warn' }> = {
@@ -38,7 +38,7 @@ export function ApprovalCard({ p, cwd, compact = false, sessionId }: { p: Permis
 }
 
 function TabHint() {
-  const typing = useStore((s) => s.screen === 'session' && s.zone === 'composer');
+  const typing = useStore((s) => activeSession(s) !== null && s.zone === 'composer');
   if (!typing) return null;
   return (
     <p className="mt-3 flex items-center gap-1.5 text-sm text-attn">
@@ -157,14 +157,14 @@ function PlanCard({ p, compact, sessionId }: { p: PermissionRequest; compact: bo
 
 /** Which answer the arrow keys are on, when the keyboard is on the card (not in the home preview). */
 function useLit(p: PermissionRequest, compact: boolean): (d: 'allow' | 'always' | 'deny') => boolean {
-  const keyboard = useStore((s) => s.screen === 'session' && s.zone === 'board' && !compact);
+  const keyboard = useStore((s) => activeSession(s) === p.sessionId && s.zone === 'board' && !compact);
   const index = useStore(() => approvalIndex(p));
   return (d) => keyboard && approvalChoices(p)[index] === d;
 }
 
 function ToolApproval({ p, cwd, compact, sessionId }: { p: PermissionRequest; cwd?: string; compact: boolean; sessionId?: string }) {
   const lit = useLit(p, compact);
-  const typing = useStore((s) => s.screen === 'session' && s.zone === 'composer');
+  const typing = useStore((s) => activeSession(s) === p.sessionId && s.zone === 'composer');
   const details = useDetailsOpen();
   const x = explainPermission(p, cwd);
   const style = RISK_STYLE[x.risk];

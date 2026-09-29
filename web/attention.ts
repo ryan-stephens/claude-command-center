@@ -2,7 +2,7 @@
 // browser notification. Signals are skipped for the session you're actively looking at.
 
 import type { SessionStatus, SessionSummary } from '../shared/protocol.ts';
-import { get, markRead, set } from './store.ts';
+import { activeSession, get, markRead, set } from './store.ts';
 
 type Kind = 'needs' | 'done';
 
@@ -23,14 +23,14 @@ export function armOnFirstGesture(): void {
   window.addEventListener('pointerdown', arm, true);
   // Coming back to the tab counts as seeing the open session.
   window.addEventListener('focus', () => {
-    const { screen, openId } = get();
-    if (screen === 'session' && openId) markRead(openId);
+    const openId = activeSession(get());
+    if (openId) markRead(openId);
   });
 }
 
 function isWatching(id: string): boolean {
   const s = get();
-  return s.screen === 'session' && s.openId === id && document.visibilityState === 'visible' && document.hasFocus();
+  return activeSession(s) === id && document.visibilityState === 'visible' && document.hasFocus();
 }
 
 /** Call on every session upsert with the status it had before. */

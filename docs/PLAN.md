@@ -41,17 +41,18 @@ Target: going from "a session needs me" to "handled" should take **3 keystrokes 
 ### Home (since §17: three columns plus the repo library)
 | Key | Action |
 |---|---|
-| `← →` | Move between columns: **workspaces → sessions → preview** |
+| `← →` | Move between columns: **workspaces → sessions → the selected session** (docked beside the list, §24) |
 | `↑ ↓` `Home` `End` | Choose in the focused column |
 | `1–9` / `0` | Jump to workspace 1–9 / everything outside your workspaces (number row or numpad) |
-| `Enter` | Open the selected session (in the workspace column: go to its sessions) |
+| `Enter` / `→` | Step into the selected session beside the list (§24); under 1024 px, open it full screen (in the workspace column, `Enter` goes to its sessions) |
+| `Ctrl+Enter` | The selected session full screen; again, back beside the list |
 | `N` | New session in the current workspace |
 | `W` | New workspace; `E` / `Delete` in the workspace column edit / delete it |
 | `+` / `−` | Add a repo to the current workspace / remove one (every session in it can use them all) |
 | `Tab` | Go to the repo library (`← →` choose, `Enter` add to this workspace, `N` new session in it, `F` source folders); `Tab` or `Esc` back |
 | `/` | Filter sessions (title, repo, branch) |
-| `C` / `Shift+C` | Fold what you're in: the workspace column (to a rail), the selected session's group, the repo library / open every group |
-| `Y` / `A` / `N` | In the preview column: answer the selected session's approval without opening it |
+| `C` / `Shift+C` | Fold what you're in: the workspace column (to a rail), the selected session's group, the repo library, the docked session (from its number pad) / open every group |
+| `Esc` / `Numpad 0` | In the session beside the list: back to the list (`Esc` stops Claude first while it works) |
 | `R` | Rename session |
 | `X` | End session (with confirmation) |
 
@@ -536,3 +537,42 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 - A Bash approval (`node -e`) went `Tab` → highlighted "Allow once" → `→ →` "Don't allow" → `Enter`. The card closed and the command did not run.
 - `echo` does not ask at all, because the CLI treats it as read-only, as Claude Code does.
 - No console errors. `pnpm test` (104) passes.
+
+## 24. The session itself beside the list, instead of a preview
+
+2026-09-29. The owner didn't get much from the preview column (the last three exchanges plus Open, Rename and End). They wanted selecting a session on home to show **the session itself**, usable right there, with a clear way to make it full screen and back.
+
+**Design: reuse, not a copy.** The third home column now renders the real `SessionView` with a `docked` flag: the live transcript, approval, question and plan cards, the to-do list, the activity line, the "Claude can use" chips and the message box with `/`, `@`, choices, history and images. Nothing was reimplemented for it.
+- **Focus model:** `openId` is set while `screen` stays `'list'` and `homeCol` is `'preview'`. One rule, `activeSession()` in `web/store.ts` (tested in `dock.test.ts`), replaced every `screen === 'session'` check: `cardKeys`, `sessionKeys`, the numpad and `Alt+1–9`, push-to-talk, the interrupt and background shortcuts, card highlighting, the approval auto-focus in `ws.ts` and "you've seen it" in `attention.ts`. So the docked session takes exactly the keys it takes full screen. Clicking another column (or a row) steps out.
+- **Header:** the title, status, a full-screen button with its key, and a chevron that folds the pane. "End session" shows as a button from 1536 px up; below that, `X` still ends it from the list or the pad. Full screen gains a "Beside the list" button.
+- **The number pad** is a rail beside the list. It opens while you use it (`Tab` from the message box when nothing is waiting), but a waiting card keeps the width, so `Tab` goes to the card with the pad still a rail.
+
+**Keys** (legend, `?` and README updated; `legend.test.ts` covers them):
+| Key | Where | Does |
+|---|---|---|
+| `↑ ↓` | sessions column | Choose; the pane follows once the selection settles for 200 ms (`useSettled`), then loads the transcript if it isn't loaded yet |
+| `→` / `Enter` | sessions column, filter box | Step into the docked session: its message box, or its card when one is waiting |
+| `Ctrl+Enter` | anywhere | New rebindable `expand` action: the session you're in (or the selected one) full screen, and from full screen back beside the list. The composer lets it through instead of sending |
+| `Esc` | docked | Back to the list (from the message box too, because the pad is only a rail here). While Claude works, `Esc` stops it first, as everywhere |
+| `Numpad 0` / `Alt+0` | docked | Back to the list, even while Claude works |
+| `C` | docked, on the pad | Folds the pane to a rail and steps out, like the repo library. Folded, `→` / `Enter` still open it while you're in it; the rail's chevron unfolds it. Remembered with the other folds (`folds.dock`) |
+| `Alt+↑ ↓`, `Alt+N` | docked | Move the docked pane to the previous / next session, or the next that needs you, without leaving home |
+| Double-click | a row | Full screen, as before |
+
+**Narrow screens:** under 1024 px the pane isn't shown (`shownCols`), and `Enter` opens full screen as it did. Phones still open a session with a tap.
+
+**What went:** the preview's "Recent conversation" summary and its Y/A/N-from-the-preview-column keys. Answering from home now happens in the real card: `→` lands on it when one is waiting. The sessions column is 22 rem between 1024 and 1280 px so the pane has room, and takes the whole width when the pane is folded.
+
+**Cost:** the transcript is still loaded once per selection (never on each arrow press), and a docked step-in doesn't re-read it when it is already loaded. `board.get` (the pad and the `/` list) is only asked for once you step in.
+
+**Verified** (headless Chromium, isolated server on `:7788` with its own database and build, Demo workspace, Haiku), 24 checks:
+- Selecting a fresh session shows its real transcript beside the list, with "Press → or Enter in the list to type here" in the message box and "Enter Go into it · Ctrl+Enter Full screen" in the legend.
+- `↓ ↑` then `→` puts the focus in its message box. The legend switches to the session keys, with `Esc` "Back to the list" once Claude is idle ("Stop Claude" while it works).
+- Sent "Reply with just the word PONG." from home and got PONG. `/cl` offered `/clear`, and `Esc` hid it and stayed in the box. `@READ` offered files.
+- A Bash approval (`node -e`) appeared in the pane. `Tab` reached it, the legend showed the answers, `← ←` `Enter` allowed it, and Claude reported 42.
+- `Ctrl+Enter` went full screen, and `Ctrl+Enter` again came back beside the list with the focus still in it. `Esc` returned to the list.
+- `Enter` `Tab` `C` folded the pane to a rail and stepped out. The fold survived a reload, `Enter` still opened the pane, and `Esc` folded it again. The rail's chevron unfolded it.
+- `?` describes it. At 900 px `Enter` opened full screen and `Numpad 0` came back. A 390 px phone has no sideways scroll, and a tap opens the session.
+- No console errors. `pnpm typecheck`, `pnpm test` (107) and `pnpm build` pass.
+
+**Found on the way:** the docked header first truncated the title to "Re…", and `Tab` onto a card opened the full 24 rem pad beside the list, squeezing the card. The header now shows the full-screen control as icon and key below 1536 px, and a waiting card keeps the pad a rail.

@@ -12,8 +12,8 @@ import { nextTheme, applyTheme, THEME_LABEL } from './theme.ts';
 import { cancelVoice, isListening, startVoice, stopVoice } from './voice.ts';
 import { BUCKET_TITLE } from './home-model.ts';
 import {
-  attention, bucketOfSelected, currentGroup, currentWorkspace, flash, get, HOME_COLS, markRead, pendingFor, sameScope, scopes, sessionById, set, setScope,
-  toggleBucket, toggleFold, toggleSound, unfoldAllBuckets, visibleSessions, type HomeCol,
+  activeSession, attention, bucketOfSelected, currentGroup, currentWorkspace, flash, get, HOME_COLS, markRead, pendingFor, sameScope, scopes, sessionById, set, setScope,
+  isDocked, toggleBucket, toggleFold, toggleSound, unfoldAllBuckets, visibleSessions, type HomeCol,
 } from './store.ts';
 import { lastPermissionAt, send } from './ws.ts';
 import { answersFor, enterOnRow, firstOpen, freshQa, goTo, MODE_LABEL, nextMode, pick } from './questions.ts';
@@ -26,10 +26,13 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
     title: 'Home',
     keys: [
-      ['← →', 'Move between columns: workspaces, sessions, preview'],
-      ['↑ ↓  Home End', 'Choose in the current column'],
+      ['← →', 'Move between columns: workspaces, sessions, and the selected session beside them'],
+      ['↑ ↓  Home End', 'Choose in the current column (the selected session shows beside the list)'],
       ['1–9  /  0', 'Jump to workspace 1–9 / everything outside your workspaces'],
-      ['Enter', 'Open the session (in the workspace column: go to its sessions)'],
+      ['Enter / →', 'Go into the selected session beside the list: type, answer Claude, run workflows (a narrow window opens it full screen; in the workspace column, Enter goes to its sessions)'],
+      ['Ctrl+Enter', 'Open the selected session full screen (again: back beside the list)'],
+      ['Esc / Numpad 0 (in the session beside the list)', 'Back to the list (while Claude is working, Esc stops it first)'],
+      ['Double-click a session', 'Open it full screen'],
       ['N', 'New session in this workspace'],
       ['W', 'New workspace'],
       ['E / Delete (workspace column)', 'Edit / delete the workspace'],
@@ -37,9 +40,8 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['+ / −', 'Add a repo to this workspace / remove one (every session in it can use them all)'],
       ['Tab', 'Go to the repo library (Enter adds the repo here, N starts a session in it, F picks the folders it lists)'],
       ['/', 'Filter sessions'],
-      ['C', 'Collapse or expand what you are in: the workspace column, the selected session’s group, the repo library'],
+      ['C', 'Collapse or expand what you are in: the workspace column, the selected session’s group, the repo library, the session beside the list (from its number pad)'],
       ['Shift+C', 'Expand every group of sessions'],
-      ['Y / A / N (preview column)', 'Answer the selected session’s approval without opening it'],
       ['R / X', 'Rename / end the selected session'],
     ],
   },
@@ -68,7 +70,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['↑ ↓ (empty message box)', 'Your earlier messages, like Claude Code'],
       ['Ctrl+V / drop (message box)', 'Attach an image; Backspace in an empty box takes the last one off'],
       ['Esc', 'While Claude is working: stop it. Otherwise step out: message box → number pad → home'],
-      ['Numpad 0 / Alt+0', 'Back to home, even while Claude is working'],
+      ['Numpad 0 / Alt+0', 'Back to home (or to the list, beside it), even while Claude is working'],
       ['Tab (message box)', 'Go to the number pad or the approval card without stopping Claude'],
       ['i', 'Back to the message box'],
       ['+ / −', 'Give this session another repo to work in / take one it was given back out (or its × above the conversation)'],
@@ -130,6 +132,7 @@ const ACTION_HELP: Partial<Record<ActionId, string>> = {
   sound: 'Sound on / off (outside text fields)',
   pushToTalk: 'Push-to-talk: hold, speak, release to send (not while you are mid-message)',
   theme: 'Theme: match Windows → light → dark',
+  expand: 'The session you are in: full screen, and back beside the list on home',
 };
 
 /** Help sections with the current bindings filled in. */
@@ -166,8 +169,37 @@ export function openSession(id: string): void {
   send({ type: 'board.get', sessionId: id });
 }
 
+/**
+ * Step into a session beside the list on home: it takes the session keys there (type, answer,
+ * workflows) without leaving home. Where it doesn't fit (under 1024 px) it opens full screen.
+ */
+export function dockSession(id: string): void {
+  if (!shownCols().includes('preview')) { openSession(id); return; }
+  const s = get();
+  const fresh = s.openId !== id;
+  markRead(id);
+  set({ screen: 'list', openId: id, selectedId: id, homeCol: 'preview', zone: pendingFor(id) ? 'board' : 'composer', filterFocused: false, ...(fresh ? { board: null } : {}) });
+  // The pane usually loaded the transcript already, while the row was selected.
+  if (!s.transcripts[id]) send({ type: 'session.open', id });
+  if (fresh || !s.board) send({ type: 'board.get', sessionId: id });
+  document.getElementById(`row-${id}`)?.scrollIntoView({ block: 'nearest' });
+}
+
+/** Out to the session list: from full screen, or from the session beside it. */
 export function backToList(): void {
-  set({ screen: 'list', openId: null });
+  set({ screen: 'list', openId: null, homeCol: 'sessions' });
+}
+
+/** Ctrl+Enter: the session you are in (or the selected one) full screen, and back beside the list. */
+export function toggleExpand(): void {
+  const s = get();
+  if (s.screen === 'session' && s.openId) {
+    if (shownCols().includes('preview')) dockSession(s.openId);
+    else flash('Widen the window to keep a session beside the list');
+    return;
+  }
+  const id = activeSession(s) ?? visibleSelection();
+  if (id) openSession(id);
 }
 
 export function respondPermission(decision: PermissionDecision, sessionId = get().openId): boolean {
@@ -221,7 +253,7 @@ export function approvalIndex(req: PermissionRequest): number {
  */
 function cardKeys(e: KeyboardEvent, typing: boolean): boolean {
   const s = get();
-  if (s.screen !== 'session' || s.zone !== 'board' || typing || e.ctrlKey || e.altKey || e.metaKey) return false;
+  if (!activeSession(s) || s.zone !== 'board' || typing || e.ctrlKey || e.altKey || e.metaKey) return false;
   const req = pendingFor(s.openId);
   if (!req) return false;
   if (req.questions?.length) return questionKeys(e, req);
@@ -318,7 +350,9 @@ export function jumpToAttention(): void {
   const list = attention(s);
   if (!list.length) { flash('Nothing needs you'); return; }
   const i = list.findIndex((x) => x.id === s.openId);
-  openSession(list[(i + 1) % list.length].id);
+  const next = list[(i + 1) % list.length].id;
+  if (isDocked(s)) dockSession(next);
+  else openSession(next);
 }
 
 /** Alt+↑ / Alt+↓: previous / next session in the sessions column. */
@@ -326,12 +360,13 @@ export function hop(delta: number): void {
   const s = get();
   const list = visibleSessions(s);
   if (!list.length) return;
-  const current = s.screen === 'session' ? s.openId : s.selectedId;
+  const current = activeSession(s) ?? s.selectedId;
   const i = list.findIndex((x) => x.id === current);
   // Not in this list (e.g. filtered out): start from the matching end.
   const from = i < 0 ? (delta > 0 ? -1 : list.length) : i;
   const next = list[(from + delta + list.length) % list.length];
   if (s.screen === 'session') openSession(next.id);
+  else if (isDocked(s)) dockSession(next.id);
   else selectSession(next.id);
 }
 
@@ -384,7 +419,7 @@ function addRepoToWorkspace(): void {
 
 // ---- Home -------------------------------------------------------------------------------
 
-/** Columns shown at this window width (the preview needs 1024px, workspaces and the library 768px). */
+/** Columns shown at this window width (the docked session needs 1024px, workspaces and the library 768px). */
 export function shownCols(): HomeCol[] {
   const wide = (px: number) => typeof matchMedia === 'undefined' || matchMedia(`(min-width: ${px}px)`).matches;
   return HOME_COLS.filter((c) => (c === 'preview' ? wide(1024) : c === 'workspaces' ? wide(768) : true));
@@ -395,7 +430,11 @@ function moveCol(delta: number): void {
   const col = get().homeCol;
   const cols = shownCols();
   const i = Math.max(0, cols.indexOf(col === 'library' ? 'sessions' : col));
-  set({ homeCol: cols[Math.min(cols.length - 1, Math.max(0, i + delta))] });
+  const to = cols[Math.min(cols.length - 1, Math.max(0, i + delta))];
+  if (to !== 'preview') { set({ homeCol: to }); return; }
+  // → into the session beside the list steps into it (its message box).
+  const id = visibleSelection();
+  if (id) dockSession(id);
 }
 
 function libraryKeys(e: KeyboardEvent): boolean {
@@ -438,7 +477,7 @@ function homeKeys(e: KeyboardEvent, typing: boolean): boolean {
     switch (e.key) {
       case 'ArrowUp': moveSelection(-1); return true;
       case 'ArrowDown': moveSelection(1); return true;
-      case 'Enter': if (selected) openSession(selected); return true;
+      case 'Enter': if (selected) dockSession(selected); return true;
       case 'Escape': set({ filter: '', filterFocused: false }); return true;
     }
     return false;
@@ -450,8 +489,9 @@ function homeKeys(e: KeyboardEvent, typing: boolean): boolean {
   const digit = /^(Digit|Numpad)(\d)$/.exec(e.code);
   if (digit && !e.shiftKey) { scopeByDigit(Number(digit[2])); return true; }
 
-  // A column hidden at this width (the window shrank) acts as the sessions column.
-  const col: HomeCol = shownCols().includes(s.homeCol) ? s.homeCol : 'sessions';
+  // A column hidden at this width (the window shrank), or the session pane once its session is
+  // gone (ended from a dialog), acts as the sessions column. A docked session has its own keys.
+  const col: HomeCol = shownCols().includes(s.homeCol) && s.homeCol !== 'preview' ? s.homeCol : 'sessions';
   switch (e.key) {
     case 'ArrowLeft': moveCol(-1); return true;
     case 'ArrowRight': moveCol(1); return true;
@@ -461,7 +501,7 @@ function homeKeys(e: KeyboardEvent, typing: boolean): boolean {
     case 'End': if (col === 'workspaces') moveScope(99); else moveSelection('last'); return true;
     case 'Enter':
       if (col === 'workspaces') set({ homeCol: 'sessions' });
-      else if (selected) openSession(selected);
+      else if (selected) dockSession(selected);
       return true;
     case 'Escape':
       if (s.filter) set({ filter: '' });
@@ -473,11 +513,6 @@ function homeKeys(e: KeyboardEvent, typing: boolean): boolean {
     case 'Delete':
       if (col === 'workspaces' && s.scope.kind === 'workspace') set({ modal: { kind: 'deleteWorkspace', id: s.scope.id } });
       return true;
-  }
-  // The preview answers the selected session's approval without opening it.
-  if (col === 'preview' && selected && pendingFor(selected)) {
-    const decision = ({ y: 'allow', a: 'always', n: 'deny' } as const)[e.key.toLowerCase() as 'y' | 'a' | 'n'];
-    if (decision) return respondPermission(decision, selected);
   }
   if (col === 'workspaces' && e.shiftKey) {
     if (e.key === 'E' && s.scope.kind === 'workspace') { exportWorkspace(s.scope.id); return true; }
@@ -569,6 +604,8 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
   if (s.zone === 'composer') {
     if (e.key === 'Escape') {
       if (isBusy(s.openId)) interrupt(s.openId);
+      // Beside the list, the pad is a rail: Esc goes straight back to the list.
+      else if (isDocked(s)) backToList();
       else set({ zone: 'board' });
       return true;
     }
@@ -595,7 +632,17 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
     case 'i': set({ zone: 'composer' }); return true;
     case 't': set({ expandTools: !s.expandTools }); return true;
     case 'l': toggleFold('todos'); return true;
-    case 'c': toggleFold('pad'); flash(get().folds.pad ? 'Number pad folded: Tab opens it' : 'Number pad stays open'); return true;
+    case 'c':
+      if (isDocked(s)) {
+        // Like the repo library: a folded pane opens while you are in it, so folding it steps out.
+        toggleFold('dock');
+        if (get().folds.dock) { backToList(); flash('Session pane folded: → or Enter opens it'); }
+        else flash('Session pane stays open beside the list');
+        return true;
+      }
+      toggleFold('pad');
+      flash(get().folds.pad ? 'Number pad folded: Tab opens it' : 'Number pad stays open');
+      return true;
     case 'y': return respondPermission('allow');
     case 'a': return respondPermission('always');
     case 'n': return respondPermission('deny');
@@ -630,7 +677,7 @@ function voiceKeys(e: KeyboardEvent): boolean {
     return isPushToTalk(e); // swallow auto-repeat of the held key
   }
   const s = get();
-  if (!isPushToTalk(e) || s.screen !== 'session' || !s.openId || e.repeat) return false;
+  if (!isPushToTalk(e) || !activeSession(s) || !s.openId || e.repeat) return false;
   if (s.zone === 'composer' && (s.drafts[s.openId] ?? '').length > 0) return false;
   pttCode = e.code;
   startVoice(s.openId);
@@ -651,7 +698,7 @@ export function onKeyUp(e: KeyboardEvent): void {
  */
 function commandKeys(e: KeyboardEvent): boolean {
   const s = get();
-  if (s.screen !== 'session' || !s.openId) return false;
+  if (!activeSession(s) || !s.openId) return false;
   const digit = /^Digit([0-9])$/.exec(e.code);
   if (e.altKey && !e.ctrlKey && !e.shiftKey && digit) {
     // Alt + the number row mirrors the whole pad: 1–9 run workflows, 0 goes home like Numpad 0.
@@ -684,7 +731,7 @@ function globalAction(e: KeyboardEvent, typing: boolean): boolean {
   const id = combo ? actionFor(combo, get().settings.bindings ?? {}) : null;
   if (!id || id === 'pushToTalk') return false;
   if (typing && !ACTIONS.find((a) => a.id === id)!.inText) return false;
-  const { openId } = get();
+  const openId = activeSession(get());
   switch (id) {
     case 'palette': set({ modal: { kind: 'palette' } }); break;
     case 'help': set({ modal: { kind: 'help' } }); break;
@@ -692,6 +739,7 @@ function globalAction(e: KeyboardEvent, typing: boolean): boolean {
     case 'prevSession': hop(-1); break;
     case 'nextSession': hop(1); break;
     case 'newSession': newSession(); break;
+    case 'expand': toggleExpand(); break;
     case 'interrupt': interrupt(openId); break;
     case 'background': if (openId) send({ type: 'session.background', id: openId }); break;
     case 'sound': toggleSound(); break;
@@ -732,7 +780,7 @@ export function onKeyDown(e: KeyboardEvent): void {
   else if (globalAction(e, typing)) handled = true;
   else if (cardKeys(e, typing)) handled = true;
   else if (commandKeys(e)) handled = true;
-  else if (s.screen === 'session') handled = sessionKeys(e, typing);
+  else if (activeSession(s)) handled = sessionKeys(e, typing);
   else handled = homeKeys(e, typing);
   if (handled) e.preventDefault();
 }

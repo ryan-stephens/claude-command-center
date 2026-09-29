@@ -3,7 +3,7 @@
 
 export type ActionId =
   | 'palette' | 'help' | 'nextAttention' | 'prevSession' | 'nextSession'
-  | 'newSession' | 'interrupt' | 'background' | 'sound' | 'theme' | 'pushToTalk';
+  | 'newSession' | 'expand' | 'interrupt' | 'background' | 'sound' | 'theme' | 'pushToTalk';
 
 export interface ActionDef {
   id: ActionId;
@@ -20,6 +20,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'prevSession', label: 'Previous session', defaults: ['Alt+ArrowUp'], inText: true },
   { id: 'nextSession', label: 'Next session', defaults: ['Alt+ArrowDown'], inText: true },
   { id: 'newSession', label: 'New session', defaults: ['Alt+Shift+N'], inText: true },
+  { id: 'expand', label: 'Full screen / back beside the list (the session you are in)', defaults: ['Ctrl+Enter'], inText: true },
   { id: 'interrupt', label: 'Interrupt the open session (Esc also works while it is busy)', defaults: ['Ctrl+.'], inText: true },
   { id: 'background', label: 'Send the running tool or subagent to the background', defaults: ['Ctrl+B'], inText: true },
   { id: 'sound', label: 'Sound on / off', defaults: ['M'], inText: false },

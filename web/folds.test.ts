@@ -7,8 +7,8 @@ test('parseFolds keeps only known keys and survives junk', () => {
   assert.deepEqual(parseFolds('not json'), NO_FOLDS);
   assert.deepEqual(parseFolds('[1,2]').buckets, {});
   assert.deepEqual(
-    parseFolds(JSON.stringify({ workspaces: true, pad: 'yes', library: false, buckets: { earlier: true, bogus: true, done: 1 } })),
-    { workspaces: true, library: false, pad: false, todos: false, buckets: { earlier: true } },
+    parseFolds(JSON.stringify({ workspaces: true, pad: 'yes', library: false, dock: true, buckets: { earlier: true, bogus: true, done: 1 } })),
+    { workspaces: true, library: false, dock: true, pad: false, todos: false, buckets: { earlier: true } },
   );
 });
 

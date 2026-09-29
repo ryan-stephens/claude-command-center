@@ -17,7 +17,7 @@ interface Item {
 }
 
 const MAX_RESULTS = 12;
-const home = () => set({ screen: 'list', openId: null });
+const home = () => set({ screen: 'list', openId: null, homeCol: 'sessions' });
 
 /** Ctrl+K: fuzzy search over actions, workspaces, the open session's workflows, and every session. */
 export function Palette() {

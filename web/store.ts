@@ -5,7 +5,11 @@ import type { QaState } from './questions.ts';
 import { bucketOf, groupSessions, sessionsIn, type Bucket, type Flags, type Scope } from './home-model.ts';
 import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
 
-/** Home is three columns you walk with ← →, plus the repo library (Tab). */
+/**
+ * Home is three columns you walk with ← →, plus the repo library (Tab). The third, 'preview', holds
+ * the selected session itself, docked: stepping into it (openId set, screen still 'list') makes it
+ * take the session keys exactly as it does full screen.
+ */
 export type HomeCol = 'workspaces' | 'sessions' | 'preview' | 'library';
 export const HOME_COLS: HomeCol[] = ['workspaces', 'sessions', 'preview'];
 /** Where keys go inside the session view. Esc steps outward: composer → number pad → home. */
@@ -249,6 +253,17 @@ function loadScope(): Scope {
     if (v?.kind === 'workspace' && typeof v.id === 'string') return v;
   } catch { /* default */ }
   return { kind: 'rest' };
+}
+
+/** The session that takes the session keys: open full screen, or docked on home and stepped into. */
+export function activeSession(s: Pick<State, 'screen' | 'homeCol' | 'openId'>): string | null {
+  if (!s.openId) return null;
+  return s.screen === 'session' || s.homeCol === 'preview' ? s.openId : null;
+}
+
+/** On home, stepped into the docked session. */
+export function isDocked(s: Pick<State, 'screen' | 'homeCol' | 'openId'>): boolean {
+  return s.screen === 'list' && s.homeCol === 'preview' && Boolean(s.openId);
 }
 
 export function sessionById(id: string | null): SessionSummary | undefined {

@@ -9,7 +9,7 @@ import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession, shownCols
 import { legendFor } from './legend.ts';
 import { stopVoice } from './voice.ts';
 import { maybeShowWelcome } from './components/Welcome.tsx';
-import { attention, currentWorkspace, NO_BINDINGS, set, toggleSound, useStore } from './store.ts';
+import { activeSession, attention, currentWorkspace, isDocked, NO_BINDINGS, set, toggleSound, useStore } from './store.ts';
 
 /** The keys that matter right now, as big keycaps. Changes with the focused column or zone. */
 function Legend() {
@@ -17,7 +17,8 @@ function Legend() {
   const homeCol = useStore((s) => s.homeCol);
   const zone = useStore((s) => s.zone);
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
-  const focusId = useStore((s) => (s.screen === 'session' ? s.openId : s.selectedId));
+  const docked = useStore(isDocked);
+  const focusId = useStore((s) => activeSession(s) ?? (s.screen === 'list' ? s.selectedId : null));
   const pending = useStore((s) => Object.values(s.permissions).some((p) => p.sessionId === focusId));
   const pendingKind = useStore((s) => {
     const p = Object.values(s.permissions).find((x) => x.sessionId === focusId);
@@ -25,14 +26,15 @@ function Legend() {
   });
   const busy = useStore((s) => {
     const status = s.sessions.find((x) => x.id === s.openId)?.status;
-    return s.screen === 'session' && (status === 'running' || status === 'requires_action');
+    return Boolean(activeSession(s)) && (status === 'running' || status === 'requires_action');
   });
   const drafting = useStore((s) => Boolean(s.openId && s.drafts[s.openId]));
   const inWorkspace = useStore((s) => s.scope.kind === 'workspace');
   const modal = useStore((s) => s.modal);
   if (modal) return null;
-  const col = shownCols().includes(homeCol) || homeCol === 'library' ? homeCol : 'sessions';
-  const items = legendFor({ screen, homeCol: col, zone, pending, pendingKind, busy, drafting, hasSelection: Boolean(focusId), inWorkspace, bindings, previewShown: shownCols().includes('preview') });
+  // The session pane without a session in it (it was ended) acts as the list, as in homeKeys.
+  const col = (shownCols().includes(homeCol) && (homeCol !== 'preview' || docked)) || homeCol === 'library' ? homeCol : 'sessions';
+  const items = legendFor({ screen, homeCol: col, zone, pending, pendingKind, busy, drafting, hasSelection: Boolean(focusId), inWorkspace, bindings, previewShown: shownCols().includes('preview'), docked });
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
     <footer className="hidden items-center gap-x-6 gap-y-2 border-t border-line bg-col px-4 py-2.5 text-[13.5px] text-sub md:flex md:flex-wrap" aria-label="Keys you can press now">
@@ -60,7 +62,7 @@ function Header() {
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
     <header className="flex items-center gap-3 border-b border-line bg-col px-3 py-2 md:px-4">
-      <button onClick={() => set({ screen: 'list', openId: null })} className="whitespace-nowrap font-semibold tracking-tight" title="Home">
+      <button onClick={() => set({ screen: 'list', openId: null, homeCol: 'sessions' })} className="whitespace-nowrap font-semibold tracking-tight" title="Home">
         Command Center
       </button>
       {screen === 'list' && (

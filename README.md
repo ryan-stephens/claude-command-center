@@ -2,7 +2,7 @@
 
 **A keyboard-driven cockpit for your Claude Code sessions.** Group your repos into workspaces, see at a glance what needs you, what's working and what's done, and drive every session with the arrow keys, the number pad or your voice. Everything also works with a mouse.
 
-![Home: workspaces, their sessions and a preview, over the repo library, with the keys that work right now along the bottom](docs/screenshots/home.png)
+![Home: workspaces, their sessions and the selected session itself beside the list, over the repo library, with the keys that work right now along the bottom](docs/screenshots/home.png)
 
 ## Why
 
@@ -10,6 +10,7 @@ Running several Claude Code sessions across several repos means a lot of termina
 
 - **Workspaces.** Group the repos you work on together ("Storefront", "Payments") and pick them with `1`–`9`. **Every session in a workspace can use all of its repos**, so Claude can change the API and the web app in one go. Your repo folder becomes a **repo library** you drag from: drop a repo on a workspace to add it, or on a single session to give just that one another repo.
 - **Know who needs you.** Each workspace's sessions are sorted into *Needs you*, *Working*, *Done* and *Earlier*. `Alt+N` jumps to the next one that needs you from anywhere; `Y` / `A` / `N` answers.
+- **Work without leaving the list.** The selected session shows beside the list, live: its conversation, approvals, questions and plans, to-do list and message box. `→` or `Enter` steps into it to type, answer or run a workflow; `Esc` steps back out; `Ctrl+Enter` makes it full screen and brings it back.
 - **Approvals you can judge.** "Claude wants to check app.js for syntax errors", rated *safe*, *makes changes* or *careful* (deletes files, pushes, installs…), with what it touches. The raw command sits behind `D`.
 - **Follow along in plain words.** Claude's actions fold into readable steps ("Read index.html", "Changed src/app.js +3") with a real diff behind "See change", and a live line says what it's doing right now. `Esc` stops it, just like in the terminal.
 - **Workflows on the number pad.** The pad on screen is drawn like the one under your hand; each key is a saved instruction such as "Run the tests" or "Commit my work". Workspaces come with starter workflows, and share them as a file.
@@ -41,13 +42,15 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `Ctrl+K` | Search actions, workflows, workspaces and sessions |
 | | `?` | Every key (`B` there to rebind) |
 | | `Alt+↑` / `Alt+↓` | Previous / next session |
-| Home | `← →` | Move between columns: workspaces, sessions, preview |
-| | `↑ ↓` `Enter` | Choose and open |
+| Home | `← →` | Move between columns: workspaces, sessions, the selected session |
+| | `↑ ↓` | Choose; the session shows beside the list |
+| | `Enter` / `→` | Step into it: type, answer Claude, run workflows (`Esc` back out) |
+| | `Ctrl+Enter` | Full screen, and back beside the list |
 | | `1`–`9` / `0` | Pick a workspace / everything outside your workspaces |
 | | `N` / `W` | New session here / new workspace |
 | | `+` / `−` | Add a repo to this workspace / remove one |
 | | `Tab` | The repo library |
-| | `C` / `Shift+C` | Fold what you're in (workspace column, a group of sessions, the repo library) / open every group |
+| | `C` / `Shift+C` | Fold what you're in (workspace column, a group of sessions, the repo library, the session beside the list) / open every group |
 | | `F` (in the library) | Pick the folders it lists: walk the disk with `↑ ↓ → ←`, `Space` uses the folder you're in |
 | Pickers | `Ctrl+O` | Browse to any folder (new session, add a repo) |
 | Session | `Numpad 1–9` / `Alt+1–9` | Run a workflow |
