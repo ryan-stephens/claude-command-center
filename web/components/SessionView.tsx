@@ -257,7 +257,9 @@ function Composer({ id, focused, docked = false }: { id: string; focused: boolea
     : argCmd.name === 'model' ? models.map((m) => ({ value: m.value, label: m.displayName, desc: m.description }))
     : hintChoices(argCmd.argumentHint)?.map((v) => ({ value: v, label: v })) ?? null;
   const atQ = voice || slashQ !== null || argChoices ? null : fileQuery(draft, caret);
-  const hidden = hiddenFor === draft;
+  // No suggestions while ↑ ↓ walk earlier messages: a recalled "/model sonnet" would open its
+  // choices and trap the arrows there. Editing the recalled text (histAt back to -1) brings them back.
+  const hidden = hiddenFor === draft || histAt >= 0;
 
   // "@" file suggestions come from the server, a moment after typing stops.
   useEffect(() => {
