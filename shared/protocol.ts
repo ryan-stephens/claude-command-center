@@ -33,6 +33,8 @@ export interface PermissionRequest {
   input: string;
   /** Whether an "Always allow" rule is on offer. */
   canAlways: boolean;
+  /** Epoch ms; the inbox and Alt+N serve the oldest first. */
+  createdAt: number;
 }
 
 export type PermissionDecision = 'allow' | 'always' | 'deny';

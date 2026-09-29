@@ -1,16 +1,23 @@
-import { useEffect, useRef } from 'react';
-import { openSession } from '../keys.ts';
-import { set, useStore, visibleSessions } from '../store.ts';
+import { useEffect, useRef, type ReactNode } from 'react';
+import type { SessionSummary, TranscriptItem } from '../../shared/protocol.ts';
+import { openSession, respondPermission } from '../keys.ts';
+import { attention, set, TABS, useStore, visibleSessions } from '../store.ts';
 import { relativeTime, shortPath, StatusBadge } from './StatusBadge.tsx';
 
 export function SessionList() {
   const sessions = useStore((s) => s.sessions);
+  const permissions = useStore((s) => s.permissions);
+  const unread = useStore((s) => s.unread);
   const tab = useStore((s) => s.tab);
   const filter = useStore((s) => s.filter);
   const filterFocused = useStore((s) => s.filterFocused);
   const selectedId = useStore((s) => s.selectedId);
-  const list = visibleSessions({ sessions, tab, filter });
-  const liveCount = sessions.filter((s) => s.live).length;
+  const list = visibleSessions({ sessions, tab, filter, permissions, unread });
+  const counts = {
+    inbox: attention({ sessions, permissions, unread }).length,
+    live: sessions.filter((s) => s.live).length,
+    history: sessions.length,
+  };
   const filterRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -27,15 +34,17 @@ export function SessionList() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
         <div className="flex gap-1" role="tablist">
-          {(['live', 'history'] as const).map((t) => (
+          {TABS.map((t) => (
             <button
               key={t}
               role="tab"
               aria-selected={tab === t}
               onClick={() => set({ tab: t })}
-              className={`rounded px-3 py-1 text-sm ${tab === t ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
+              className={`rounded px-3 py-1 text-sm capitalize ${tab === t ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'} ${
+                t === 'inbox' && counts.inbox ? 'text-amber-300' : ''
+              }`}
             >
-              {t === 'live' ? `Live ${liveCount}` : `History ${sessions.length}`}
+              {t} {counts[t]}
             </button>
           ))}
           <span className="self-center pl-1 text-xs text-zinc-600"><kbd>Tab</kbd></span>
@@ -52,11 +61,7 @@ export function SessionList() {
       </div>
 
       <ul className="min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label="Sessions">
-        {list.length === 0 && (
-          <li className="p-8 text-center text-zinc-500">
-            {tab === 'live' ? <>No live sessions. Press <kbd>N</kbd> to start one, or <kbd>Tab</kbd> for history.</> : 'No sessions match.'}
-          </li>
-        )}
+        {list.length === 0 && <EmptyState tab={tab} filtered={Boolean(filter.trim())} />}
         {list.map((s) => (
           <li
             key={s.id}
@@ -65,20 +70,60 @@ export function SessionList() {
             aria-selected={s.id === selectedId}
             onClick={() => set({ selectedId: s.id })}
             onDoubleClick={() => openSession(s.id)}
-            className={`grid cursor-default grid-cols-[7.5rem_1fr_14rem_3rem] items-center gap-3 border-l-2 px-4 py-2 text-sm ${
+            className={`cursor-default border-l-2 px-4 py-2 text-sm ${
               s.id === selectedId ? 'border-sky-500 bg-zinc-800/70' : 'border-transparent hover:bg-zinc-900'
             } ${s.status === 'requires_action' ? 'bg-amber-950/40' : ''}`}
           >
-            <StatusBadge s={s} />
-            <span className="truncate text-zinc-100" title={s.title}>{s.title}</span>
-            <span className="truncate text-zinc-500" title={s.cwd}>
-              {shortPath(s.cwd)}{s.branch && <span className="text-zinc-600"> · {s.branch}</span>}
-              {s.ctxPct !== undefined && <span className="text-zinc-600"> · {Math.round(s.ctxPct)}%</span>}
-            </span>
-            <span className="text-right text-zinc-600">{relativeTime(s.lastModified)}</span>
+            <div className="grid grid-cols-[7.5rem_1fr_14rem_3rem] items-center gap-3">
+              <StatusBadge s={s} />
+              <span className="flex min-w-0 items-center gap-2">
+                {unread[s.id] && <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" title="Finished while you were away" />}
+                <span className={`truncate ${unread[s.id] ? 'font-medium text-white' : 'text-zinc-100'}`} title={s.title}>{s.title}</span>
+              </span>
+              <span className="truncate text-zinc-500" title={s.cwd}>
+                {shortPath(s.cwd)}{s.branch && <span className="text-zinc-600"> · {s.branch}</span>}
+                {s.ctxPct !== undefined && <span className="text-zinc-600"> · {Math.round(s.ctxPct)}%</span>}
+              </span>
+              <span className="text-right text-zinc-600">{relativeTime(s.lastModified)}</span>
+            </div>
+            {tab === 'inbox' && <InboxDetail s={s} selected={s.id === selectedId} />}
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function EmptyState({ tab, filtered }: { tab: string; filtered: boolean }) {
+  let body: ReactNode = 'No sessions match.';
+  if (!filtered && tab === 'inbox') body = <>Nothing needs you. Approvals and finished turns land here; <kbd>Alt+N</kbd> jumps to them from anywhere.</>;
+  else if (!filtered && tab === 'live') body = <>No live sessions. Press <kbd>N</kbd> to start one, or <kbd>Tab</kbd> for history.</>;
+  return <li className="p-8 text-center text-zinc-500">{body}</li>;
+}
+
+const EMPTY: TranscriptItem[] = [];
+
+/** Inbox rows show what's being asked (answerable in place) or how the turn ended. */
+function InboxDetail({ s, selected }: { s: SessionSummary; selected: boolean }) {
+  const request = useStore((st) => Object.values(st.permissions).find((p) => p.sessionId === s.id));
+  const items = useStore((st) => st.transcripts[s.id] ?? EMPTY);
+  if (request) {
+    return (
+      <div className="mt-1.5 ml-[8.25rem] flex items-center gap-3 text-xs">
+        <span className="shrink-0 text-amber-200">Allow <span className="font-mono">{request.tool}</span>?</span>
+        <span className="truncate font-mono text-zinc-400">{request.input}</span>
+        <span className={`ml-auto flex shrink-0 gap-1.5 ${selected ? '' : 'opacity-50'}`}>
+          <button className="btn" onClick={() => respondPermission('allow', s.id)}><kbd>Y</kbd></button>
+          {request.canAlways && <button className="btn" onClick={() => respondPermission('always', s.id)}><kbd>A</kbd></button>}
+          <button className="btn" onClick={() => respondPermission('deny', s.id)}><kbd>N</kbd></button>
+        </span>
+      </div>
+    );
+  }
+  const last = [...items].reverse().find((i) => i.kind === 'assistant');
+  return (
+    <div className="mt-1 ml-[8.25rem] truncate text-xs text-zinc-500">
+      {last?.kind === 'assistant' ? last.text.replace(/\s+/g, ' ').slice(0, 200) : 'Finished its turn.'}
     </div>
   );
 }

@@ -34,6 +34,7 @@ export class PermissionBroker {
       tool,
       input: summarizeToolInput(tool, toolInput),
       canAlways: Boolean(suggestions?.length),
+      createdAt: Date.now(),
     };
     return new Promise((resolve) => {
       this.pending.set(reqId, { request, toolInput, suggestions, resolve });

@@ -2,7 +2,7 @@
 // KEYMAP is the single source for the `?` overlay and the hint bar; add a row whenever you add a key.
 
 import type { PermissionDecision } from '../shared/protocol.ts';
-import { get, pendingFor, sessionById, set, visibleSessions } from './store.ts';
+import { attention, flash, get, markRead, pendingFor, sessionById, set, TABS, toggleSound, visibleSessions } from './store.ts';
 import { send } from './ws.ts';
 
 export const KEYMAP: { title: string; keys: [string, string][] }[] = [
@@ -10,9 +10,11 @@ export const KEYMAP: { title: string; keys: [string, string][] }[] = [
     title: 'Global',
     keys: [
       ['?', 'Keyboard help'],
+      ['Alt+N', 'Jump to the next session that needs you (approvals first, then finished)'],
       ['Alt+↑ / Alt+↓', 'Previous / next session, from anywhere'],
       ['Alt+Shift+N', 'New session'],
       ['Ctrl+.', 'Interrupt the open session'],
+      ['M', 'Sound on / off (outside text fields)'],
     ],
   },
   {
@@ -22,8 +24,9 @@ export const KEYMAP: { title: string; keys: [string, string][] }[] = [
       ['Enter', 'Open session'],
       ['/', 'Filter by title, repo, branch or status'],
       ['Esc', 'Clear the filter'],
-      ['Tab', 'Switch Live / History'],
-      ['N', 'New session'],
+      ['Tab', 'Cycle Inbox / Live / History'],
+      ['Y / A / N', 'Inbox: answer the selected approval without opening it'],
+      ['N', 'New session (outside the Inbox)'],
       ['R', 'Rename session'],
       ['X', 'Stop a live session'],
     ],
@@ -47,6 +50,7 @@ function isTextTarget(t: EventTarget | null): boolean {
 }
 
 export function openSession(id: string): void {
+  markRead(id);
   set({ screen: 'session', openId: id, selectedId: id, zone: pendingFor(id) ? 'transcript' : 'composer', filterFocused: false });
   send({ type: 'session.open', id });
 }
@@ -55,8 +59,8 @@ export function backToList(): void {
   set({ screen: 'list', openId: null });
 }
 
-export function respondPermission(decision: PermissionDecision): boolean {
-  const req = pendingFor(get().openId);
+export function respondPermission(decision: PermissionDecision, sessionId = get().openId): boolean {
+  const req = pendingFor(sessionId);
   if (!req) return false;
   send({ type: 'permission.respond', reqId: req.reqId, decision });
   return true;
@@ -82,6 +86,15 @@ function hop(delta: number): void {
   else moveSelection(delta);
 }
 
+/** Alt+N: open the next session that needs you, cycling past the one already open. */
+function jumpToAttention(): void {
+  const s = get();
+  const list = attention(s);
+  if (!list.length) { flash('Nothing needs you'); return; }
+  const i = list.findIndex((x) => x.id === s.openId);
+  openSession(list[(i + 1) % list.length].id);
+}
+
 function scrollTranscript(by: number | 'top' | 'bottom'): void {
   const el = document.getElementById('transcript');
   if (!el) return;
@@ -94,13 +107,25 @@ function askStop(id: string | null): void {
   if (sessionById(id)?.live) set({ modal: { kind: 'stop', id: id! } });
 }
 
+/** The selected row, but only if the current tab and filter actually show it. Keys must never act on a hidden row. */
+function visibleSelection(): string | null {
+  const s = get();
+  return visibleSessions(s).some((x) => x.id === s.selectedId) ? s.selectedId : null;
+}
+
 function listKeys(e: KeyboardEvent, typing: boolean): boolean {
   const s = get();
+  const selected = visibleSelection();
   switch (e.key) {
     case 'ArrowUp': moveSelection(-1); return true;
     case 'ArrowDown': moveSelection(1); return true;
-    case 'Enter': if (s.selectedId) openSession(s.selectedId); return true;
-    case 'Tab': set({ tab: s.tab === 'live' ? 'history' : 'live' }); queueMicrotask(() => moveSelection('first')); return true;
+    case 'Enter': if (selected) openSession(selected); return true;
+    case 'Tab': {
+      const step = e.shiftKey ? TABS.length - 1 : 1;
+      set({ tab: TABS[(TABS.indexOf(s.tab) + step) % TABS.length] });
+      queueMicrotask(() => moveSelection('first'));
+      return true;
+    }
     case 'Escape': set({ filter: '', filterFocused: false }); return true;
   }
   if (typing) return false;
@@ -109,10 +134,15 @@ function listKeys(e: KeyboardEvent, typing: boolean): boolean {
     case 'End': moveSelection('last'); return true;
     case '/': set({ filterFocused: true }); return true;
   }
+  if (s.tab === 'inbox' && selected && pendingFor(selected)) {
+    const decision = ({ y: 'allow', a: 'always', n: 'deny' } as const)[e.key.toLowerCase() as 'y' | 'a' | 'n'];
+    if (decision) return respondPermission(decision, selected);
+  }
   switch (e.key.toLowerCase()) {
-    case 'n': set({ modal: { kind: 'new' } }); return true;
-    case 'r': if (s.selectedId) set({ modal: { kind: 'rename', id: s.selectedId } }); return true;
-    case 'x': askStop(s.selectedId); return true;
+    case 'm': toggleSound(); return true;
+    case 'n': if (s.tab !== 'inbox') set({ modal: { kind: 'new' } }); return true;
+    case 'r': if (selected) set({ modal: { kind: 'rename', id: selected } }); return true;
+    case 'x': askStop(selected); return true;
   }
   return false;
 }
@@ -137,6 +167,7 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
   switch (e.key.toLowerCase()) {
     case 'i': set({ zone: 'composer' }); return true;
     case 't': set({ expandTools: !s.expandTools }); return true;
+    case 'm': toggleSound(); return true;
     case 'y': return respondPermission('allow');
     case 'a': return respondPermission('always');
     case 'n': return respondPermission('deny');
@@ -157,6 +188,7 @@ export function onKeyDown(e: KeyboardEvent): void {
   const typing = isTextTarget(e.target);
   let handled = false;
   if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { hop(e.key === 'ArrowUp' ? -1 : 1); handled = true; }
+  else if (e.altKey && !e.shiftKey && e.code === 'KeyN') { jumpToAttention(); handled = true; }
   else if (e.altKey && e.shiftKey && e.code === 'KeyN') { set({ modal: { kind: 'new' } }); handled = true; }
   else if (e.ctrlKey && e.key === '.') { if (s.openId) send({ type: 'session.interrupt', id: s.openId }); handled = true; }
   else if (!typing && e.key === '?') { set({ modal: { kind: 'help' } }); handled = true; }

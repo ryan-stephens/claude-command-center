@@ -1,4 +1,5 @@
 import type { ClientMsg, ServerMsg } from '../shared/protocol.ts';
+import { onStatusChange } from './attention.ts';
 import { get, set } from './store.ts';
 
 let socket: WebSocket | null = null;
@@ -37,14 +38,19 @@ function receive(msg: ServerMsg): void {
     case 'sessions': {
       const { selectedId } = get();
       const stillThere = msg.sessions.some((s) => s.id === selectedId);
+      const before = new Map(get().sessions.map((s) => [s.id, s.status]));
       set({ sessions: msg.sessions, repos: msg.repos, selectedId: stillThere ? selectedId : (msg.sessions[0]?.id ?? null) });
+      // Snapshots carry live statuses too, so they can be where a transition shows up first.
+      for (const s of msg.sessions) if (before.has(s.id)) onStatusChange(before.get(s.id), s);
       return;
     }
     case 'session.upsert': {
+      const prev = get().sessions.find((s) => s.id === msg.session.id);
       const sessions = get().sessions.filter((s) => s.id !== msg.session.id);
       sessions.push(msg.session);
       sessions.sort((a, b) => b.lastModified - a.lastModified);
       set({ sessions });
+      onStatusChange(prev?.status, msg.session);
       return;
     }
     case 'session.created':

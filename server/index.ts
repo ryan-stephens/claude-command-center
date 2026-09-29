@@ -116,6 +116,11 @@ await manager.history.start();
 const server = serve({ fetch: app.fetch, hostname: HOST, port: PORT }, () => {
   console.log(`cc-control: http://localhost:${PORT}`);
 });
+server.on('error', (e: NodeJS.ErrnoException) => {
+  if (e.code !== 'EADDRINUSE') throw e;
+  console.error(`cc-control: port ${PORT} is already in use (another cc-control running?). Set CC_CONTROL_PORT to use another.`);
+  process.exit(1);
+});
 server.on('upgrade', (req, socket, head) => {
   if (req.url !== '/ws' || !isTrusted(req)) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');

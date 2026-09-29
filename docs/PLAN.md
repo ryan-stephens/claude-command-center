@@ -3,7 +3,7 @@
 A slim, local, **keyboard-first** command center for Claude Code sessions.
 Pick a session with the arrow keys, press Enter, fire commands from the number pad, talk to it with a hotkey.
 
-Status: **Phase 1 done** (core app, 2026-09-28) · Started 2026-09-28
+Status: **Phase 2 done** (attention, 2026-09-28) · Started 2026-09-28
 
 ---
 
@@ -33,7 +33,8 @@ Target: going from "a session needs me" to "handled" should take **3 keystrokes 
 | `Ctrl+K` | Command palette (fuzzy search over sessions, commands and actions) |
 | `?` | Keyboard help overlay |
 | `Alt+↑` / `Alt+↓` | Previous / next session, from anywhere |
-| `Alt+N` | Jump to the next session that **needs attention** |
+| `Alt+N` | Jump to the next session that **needs attention**: pending approvals first (oldest first), then sessions that finished unseen |
+| `M` | Sound on / off (outside text fields) |
 | `Alt+Shift+N` (or `N` in the list) | New session (pick repo → optional first prompt). Not `Ctrl+Shift+N`: Chrome reserves it for an incognito window and pages can't intercept it. |
 
 ### Session list (home)
@@ -42,7 +43,8 @@ Target: going from "a session needs me" to "handled" should take **3 keystrokes 
 | `↑ ↓ ← →` | Move selection (list or grid) |
 | `Enter` | Open session |
 | `/` | Filter (repo, title, status) |
-| `Tab` | Switch between **Live** and **History** (all past sessions, resumable) |
+| `Tab` / `Shift+Tab` | Cycle **Inbox** (needs you) → **Live** → **History** (all past sessions, resumable) |
+| `Y` / `A` / `N` | In the Inbox: answer the selected approval without opening the session. (`N` means "no" there; use `Alt+Shift+N` for a new session.) |
 | `R` | Rename session |
 | `X` | Stop session (with confirmation) |
 
@@ -138,7 +140,7 @@ permission.respond {reqId, decision}
 |---|---|---|
 | **0. Spike** (½ day) ✅ | Prove the risky bits in a script: SDK streaming input keeps a session alive across turns; `canUseTool` round-trip; auth uses the existing Claude login (`accountInfo()`); `resume` works on a terminal-created session; runs on Windows; Web Speech works on localhost | A script holds a multi-turn session with a manual approval |
 | **1. Core** ✅ | Server, SessionManager, WS protocol, session list with full keyboard nav, session view with streaming output and composer, history + resume | Create / resume / chat with 3 sessions using only the keyboard |
-| **2. Attention** | Approval cards (Y/A/N), inbox, `Alt+N`, notifications and sound, tab-title count, interrupt | A blocked session is cleared in ≤ 3 keys from anywhere |
+| **2. Attention** ✅ | Approval cards (Y/A/N), inbox, `Alt+N`, notifications and sound, tab-title count, interrupt | A blocked session is cleared in ≤ 3 keys from anywhere |
 | **3. Command board** | Groups, numpad slots, send/insert/template modes, editor, per-repo packs, auto slash-commands, import/export | A starter pack is fired entirely from the numpad |
 | **4. Voice** | Push-to-talk, transcript to composer, voice-triggered commands | Hold the key, speak, release, and it's sent |
 | **5. Polish** | `Ctrl+K` palette, `?` overlay, rebinding, phone layout, Tailscale + token, context-usage meter | Daily-driver quality |
@@ -211,3 +213,19 @@ Built 2026-09-28. `pnpm start` builds the web app and serves everything on `http
 - Stored transcripts have no `result` entries, so "done in Xs · $cost" lines only show for turns run live.
 - The SDK reports the branch `HEAD` for directories that aren't git repos.
 - The history list is capped at 300 sessions and refreshed on a 1.5 s debounce whenever a `.jsonl` under `~/.claude/projects` changes.
+
+## 11. Phase 2 notes
+
+Built 2026-09-28. **Done-when met**: parked in another session's composer, a blocked session was cleared with `Alt+N` `Y` (2 keys), verified in Playwright.
+
+- **Inbox tab** (`web/components/SessionList.tsx`): the sessions that need you, in `Alt+N` order. Approval rows show the tool and input, and `Y` / `A` / `N` answer them in place. Finished rows show a preview of the last reply.
+- **Unread**: a live session that goes `running → idle` while you aren't looking at it (not open, or the window isn't focused) gets a dot and joins the Inbox. Opening it, or focusing the window while it's open, clears the dot. This is client-side state, so a reload forgets it.
+- **Signals** (`web/attention.ts`): a Web Audio chime (two rising notes for "needs you", one soft note for "done"; `M` mutes it, and the preference is stored in `localStorage`), and a browser notification when the window isn't focused. Clicking the notification opens the session. Audio and the notification prompt are armed on the first key or click, as browsers require.
+- The tab title shows `(n)` and the header badge counts sessions that need you.
+
+**Bugs found while testing, and fixed**
+- **Keys acted on a hidden row.** After a reload with an empty Inbox, `Enter` opened the History row that was still selected but not visible. List keys now act only on a selection the current tab and filter actually show (`visibleSelection()` in `keys.ts`). During the test this sent a prompt into this very planning conversation. The "active elsewhere" guard caught it and **forked** instead of writing into the live transcript, which shows that guard is worth keeping.
+- **Missed "finished" transitions.** Full `sessions` snapshots, which are rebroadcast whenever a transcript changes, silently replaced live statuses. The later `upsert` then saw no change. Snapshots now run the same transition check.
+- **Orphaned dev processes.** `scripts/dev.mjs` now kills whole process trees on Windows (`taskkill /T`). Otherwise `node --watch` survives and keeps port 7777. The server now prints a clear "port in use" message instead of a stack trace.
+
+**Not verifiable headless**: the chime and the OS notification. Check them by hand: open the app, press any key once, start a session, switch to another window, and wait for it to finish.
