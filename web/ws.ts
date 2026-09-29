@@ -4,6 +4,8 @@ import { get, set } from './store.ts';
 
 let socket: WebSocket | null = null;
 let retryMs = 1000;
+/** When the newest approval card appeared; Y/A/N are ignored briefly after, so typing can't answer it. */
+export let lastPermissionAt = 0;
 const pendingCreates = new Map<string, { resolve: (id: string) => void; reject: (e: Error) => void }>();
 const pendingExports = new Map<string, (pack: CommandPack) => void>();
 
@@ -12,7 +14,8 @@ export function connect(): void {
   socket = new WebSocket(`${proto}://${location.host}/ws`);
   socket.onopen = () => {
     retryMs = 1000;
-    set({ connected: true, lastError: null });
+    // The server re-sends every pending approval on connect; anything we still hold is stale.
+    set({ connected: true, lastError: null, permissions: {}, partials: {} });
     const { openId } = get();
     if (openId) {
       send({ type: 'session.open', id: openId });
@@ -21,6 +24,10 @@ export function connect(): void {
   };
   socket.onclose = () => {
     set({ connected: false });
+    // Replies to in-flight requests died with the socket; fail them so no dialog hangs.
+    for (const p of pendingCreates.values()) p.reject(new Error('Lost the connection to the cc-control server. Try again.'));
+    pendingCreates.clear();
+    pendingExports.clear();
     setTimeout(connect, retryMs);
     retryMs = Math.min(retryMs * 2, 10_000); // back off while the server is down
 
@@ -106,9 +113,11 @@ function receive(msg: ServerMsg): void {
       return;
     case 'permission.request': {
       set({ permissions: { ...get().permissions, [msg.request.reqId]: msg.request } });
-      // The approval card takes focus in the open session so Y / A / N work straight away.
+      lastPermissionAt = performance.now();
+      // The card takes focus in the open session so Y / A / N work straight away, but never out
+      // of the composer: letters you're typing must not answer it (Esc gets you there).
       const s = get();
-      if (s.screen === 'session' && s.openId === msg.request.sessionId) set({ zone: 'board' });
+      if (s.screen === 'session' && s.openId === msg.request.sessionId && s.zone !== 'composer') set({ zone: 'board' });
       return;
     }
     case 'permission.resolved': {

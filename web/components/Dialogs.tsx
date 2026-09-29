@@ -5,7 +5,8 @@ import { createSession, send } from '../ws.ts';
 import { BindingsDialog } from './BindingsDialog.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
 import { Palette } from './Palette.tsx';
-import { close, Overlay } from './Overlay.tsx';
+import { Welcome } from './Welcome.tsx';
+import { close, Overlay, useDialogKeys } from './Overlay.tsx';
 
 export function Dialogs() {
   const modal = useStore((s) => s.modal);
@@ -21,6 +22,7 @@ export function Dialogs() {
     case 'voiceMatch': return <VoiceMatchDialog sessionId={modal.sessionId} text={modal.text} command={modal.command} />;
     case 'palette': return <Palette />;
     case 'bindings': return <BindingsDialog />;
+    case 'welcome': return <Welcome />;
   }
 }
 
@@ -169,20 +171,16 @@ function RenameDialog({ id }: { id: string }) {
 }
 
 function StopDialog({ id }: { id: string }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (k === 'y' || k === 'enter') {
-        send({ type: 'session.stop', id });
-        close();
-        if (get().openId === id) set({ screen: 'list', openId: null });
-      } else if (k === 'n' || k === 'escape') close();
-      else return;
-      e.preventDefault();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [id]);
+  useDialogKeys((e) => {
+    const k = e.key.toLowerCase();
+    if (k === 'y' || k === 'enter') {
+      send({ type: 'session.stop', id });
+      close();
+      if (get().openId === id) set({ screen: 'list', openId: null });
+    } else if (k === 'n' || k === 'escape') close();
+    else return false;
+    return true;
+  });
   return (
     <Overlay label="Stop session">
       <p className="text-sm text-zinc-200">Stop <span className="font-medium">{sessionById(id)?.title}</span>? It stays in History and can be resumed.</p>

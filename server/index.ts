@@ -69,8 +69,10 @@ function snapshot(): ServerMsg {
 }
 
 async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
-  if ('ref' in msg && msg.ref.scope === 'repo' && !manager.isKnownCwd(msg.ref.cwd ?? '')) {
-    throw new Error('Repo commands can only be saved in a directory that has sessions.');
+  for (const ref of 'ref' in msg ? [msg.ref, 'from' in msg ? msg.from : undefined] : []) {
+    if (ref?.scope === 'repo' && !manager.isKnownCwd(ref.cwd ?? '')) {
+      throw new Error('Repo commands can only be saved in a directory that has sessions.');
+    }
   }
   switch (msg.type) {
     case 'session.create': {
@@ -101,6 +103,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     case 'command.save':
       commands.save(msg.ref, msg.command);
+      if (msg.from) commands.delete(msg.from);
       broadcast({ type: 'commands.changed' });
       return;
     case 'command.delete':
@@ -219,6 +222,12 @@ if (process.argv.includes('--remote') || process.env.CC_CONTROL_REMOTE === '1') 
     console.log('  Treat that link like a password. Restart with --rotate-token to revoke it.');
   }));
 }
+
+// One failed background call (a history read, a context-usage fetch) must not take down every
+// live session with it. Log it and keep serving.
+process.on('unhandledRejection', (reason) => {
+  console.error('cc-control: unhandled rejection:', reason instanceof Error ? reason.stack : reason);
+});
 
 function shutdown(): void {
   manager.stopAll();

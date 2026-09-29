@@ -42,6 +42,10 @@ export class SessionManager {
   private recentlyOwned = new Map<string, number>();
   /** Last slash-command list seen per cwd, so history sessions get auto groups too. */
   private slashByCwd = new Map<string, SlashCommand[]>();
+  /** Resumes in flight: a second send while the transcript loads must join it, not start another CLI. */
+  private starting = new Map<string, Promise<LiveSession>>();
+  /** History id → the fork it became, so late sends to the old id follow the fork. */
+  private forkedTo = new Map<string, string>();
   private events: SessionEvents;
 
   constructor(events: SessionEvents, broker: PermissionBroker) {
@@ -92,27 +96,15 @@ export class SessionManager {
    * Returns the id the turn went to.
    */
   async send(id: string, text: string): Promise<string> {
-    let l = this.live.get(id);
+    const target = this.forkedTo.get(id) ?? id;
+    let l = this.live.get(target);
     if (!l) {
-      const summary = this.summaries().find((s) => s.id === id);
-      if (!summary) throw new Error(`Unknown session ${id}`);
-      const fork = Boolean(summary.activeElsewhere);
-      const newId = fork ? crypto.randomUUID() : id;
-      const items = await this.transcript(id);
-      l = this.start({
-        id: newId,
-        cwd: summary.cwd,
-        title: summary.title,
-        items,
-        options: fork ? { resume: id, forkSession: true, sessionId: newId } : { resume: id },
-      });
-      if (fork) {
-        // Tell clients to follow the new id (carrying the old transcript) before any of its items arrive.
-        this.events.forked(id, newId);
-        const notice: TranscriptItem = { kind: 'notice', uuid: crypto.randomUUID(), text: `Forked from ${id.slice(0, 8)}, which looked active in another window.` };
-        l.items.push(notice);
-        this.events.items(newId, [notice]);
+      let pending = this.starting.get(target);
+      if (!pending) {
+        pending = this.resume(target).finally(() => this.starting.delete(target));
+        this.starting.set(target, pending);
       }
+      l = await pending;
     }
     const userItem: TranscriptItem = { kind: 'user', uuid: crypto.randomUUID(), text };
     l.items.push(userItem);
@@ -120,6 +112,30 @@ export class SessionManager {
     l.input.push(text);
     this.setStatus(l, 'running');
     return l.id;
+  }
+
+  private async resume(id: string): Promise<LiveSession> {
+    const summary = this.summaries().find((s) => s.id === id);
+    if (!summary) throw new Error(`Unknown session ${id}`);
+    const fork = Boolean(summary.activeElsewhere);
+    const newId = fork ? crypto.randomUUID() : id;
+    const items = await this.transcript(id);
+    const l = this.start({
+      id: newId,
+      cwd: summary.cwd,
+      title: summary.title,
+      items,
+      options: fork ? { resume: id, forkSession: true, sessionId: newId } : { resume: id },
+    });
+    if (fork) {
+      this.forkedTo.set(id, newId);
+      // Tell clients to follow the new id (carrying the old transcript) before any of its items arrive.
+      this.events.forked(id, newId);
+      const notice: TranscriptItem = { kind: 'notice', uuid: crypto.randomUUID(), text: `Forked from ${id.slice(0, 8)}, which looked active in another window.` };
+      l.items.push(notice);
+      this.events.items(newId, [notice]);
+    }
+    return l;
   }
 
   async interrupt(id: string): Promise<void> {
@@ -265,6 +281,8 @@ export class SessionManager {
 
   private retire(l: LiveSession): void {
     this.live.delete(l.id);
+    // A CLI that died mid-approval leaves cards nobody can answer; clear them.
+    this.broker.cancelSession(l.id);
     this.recentlyOwned.set(l.id, Date.now());
     this.history.refresh().finally(() => this.events.sessionsChanged());
   }

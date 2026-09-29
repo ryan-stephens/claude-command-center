@@ -64,7 +64,14 @@ export function actionFor(combo: string, overrides: Bindings): ActionId | null {
 const hasModifier = (combo: string) => /(^|\+)(Ctrl|Alt|Meta)\+/.test(combo);
 
 // Keys the app itself relies on; rebinding onto them would break navigation.
-const RESERVED = new Set(['Enter', 'Escape', 'Tab', 'Shift+Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete', 'Ctrl+C', 'Ctrl+V', 'Ctrl+X', 'Ctrl+A', 'Ctrl+Z']);
+const RESERVED = new Set([
+  'Enter', 'Escape', 'Tab', 'Shift+Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete',
+  'Home', 'End', 'PageUp', 'PageDown', 'Ctrl+C', 'Ctrl+V', 'Ctrl+X', 'Ctrl+A', 'Ctrl+Z',
+  // Screen keys: list (/ N R X), session (i T R X), approvals (Y A N), board (E [ ] Shift+E Shift+I Ctrl+arrows).
+  'Y', 'A', 'N', 'E', 'I', 'R', 'X', 'T', '/', '[', ']', 'Shift+E', 'Shift+I',
+  'Ctrl+ArrowUp', 'Ctrl+ArrowDown', 'Ctrl+ArrowLeft', 'Ctrl+ArrowRight',
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `Alt+${n}`),
+]);
 
 /** Returns an error message, or null if `combo` can be bound to `id`. */
 export function validateBinding(id: ActionId, combo: string, overrides: Bindings): string | null {

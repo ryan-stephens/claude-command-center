@@ -38,6 +38,7 @@ export function Palette() {
       action('sound', `Turn sound ${get().sound ? 'off' : 'on'}`, toggleSound),
       action('help', 'Keyboard help', () => set({ modal: { kind: 'help' } })),
       action('bindings', 'Change keyboard shortcuts', () => set({ modal: { kind: 'bindings' } })),
+      action('welcome', 'Show the welcome tour', () => set({ modal: { kind: 'welcome' } })),
       action('export', 'Export my commands (JSON)', exportPack),
       action('import', 'Import commands (JSON)', importPack),
     ];
@@ -75,9 +76,16 @@ export function Palette() {
 
   const results = useMemo(() => {
     if (!query.trim()) return items.slice(0, MAX_RESULTS);
+    // Longer queries must match reasonably well; scattered one-letter hits are noise.
+    const q = query.replace(/\s+/g, '');
+    const minScore = q.length >= 3 ? q.length * 2 : 0;
     return items
-      .map((item) => ({ item, score: Math.max(fuzzyScore(query, item.label), fuzzyScore(query, `${item.label} ${item.detail ?? ''}`) - 1) }))
-      .filter((r) => r.score >= 0)
+      .map((item) => {
+        // The label decides; the detail (repo, group) only counts when the label doesn't match at all.
+        const label = fuzzyScore(query, item.label);
+        return { item, score: label >= 0 ? label : fuzzyScore(query, `${item.label} ${item.detail ?? ''}`) - 1 };
+      })
+      .filter((r) => r.score >= minScore)
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_RESULTS)
       .map((r) => r.item);

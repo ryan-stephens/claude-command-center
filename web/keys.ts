@@ -7,7 +7,10 @@ import { ACTIONS, actionFor, bindingsFor, comboOf, displayCombo, type ActionId, 
 import { cycleGroup, exportPack, fireSlot, importPack } from './commands.ts';
 import { cancelVoice, isListening, startVoice, stopVoice } from './voice.ts';
 import { attention, currentGroup, flash, get, markRead, pendingFor, sessionById, set, TABS, toggleSound, visibleSessions } from './store.ts';
-import { send } from './ws.ts';
+import { lastPermissionAt, send } from './ws.ts';
+
+/** Keys pressed this soon after an approval card appears were aimed at something else. */
+const APPROVAL_GRACE_MS = 400;
 
 const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
@@ -96,6 +99,7 @@ export function backToList(): void {
 export function respondPermission(decision: PermissionDecision, sessionId = get().openId): boolean {
   const req = pendingFor(sessionId);
   if (!req) return false;
+  if (performance.now() - lastPermissionAt < APPROVAL_GRACE_MS) return true; // swallow, don't answer
   send({ type: 'permission.respond', reqId: req.reqId, decision });
   return true;
 }
@@ -115,7 +119,9 @@ function hop(delta: number): void {
   if (!list.length) return;
   const current = s.screen === 'session' ? s.openId : s.selectedId;
   const i = list.findIndex((x) => x.id === current);
-  const next = list[(i + delta + list.length) % list.length];
+  // Not in this list (e.g. read and gone from the Inbox): start from the matching end.
+  const from = i < 0 ? (delta > 0 ? -1 : list.length) : i;
+  const next = list[(from + delta + list.length) % list.length];
   if (s.screen === 'session') openSession(next.id);
   else moveSelection(delta);
 }

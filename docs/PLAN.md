@@ -3,7 +3,7 @@
 A slim, local, **keyboard-first** command center for Claude Code sessions.
 Pick a session with the arrow keys, press Enter, fire commands from the number pad, talk to it with a hotkey.
 
-Status: **Phase 5 done** (polish, 2026-09-28). All planned phases complete; see "Later". · Started 2026-09-28
+Status: **Showcase-ready** (2026-09-28). Phases 0–5 done plus a hardening pass (§15). "Later" items are parked. · Started 2026-09-28
 
 ---
 
@@ -148,7 +148,7 @@ permission.respond {reqId, decision}
 | **3. Command board** ✅ | Groups, numpad slots, send/insert/template modes, editor, per-repo packs, auto slash-commands, import/export | A starter pack is fired entirely from the numpad |
 | **4. Voice** ✅ | Push-to-talk, transcript to composer, voice-triggered commands | Hold the key, speak, release, and it's sent |
 | **5. Polish** ✅ | `Ctrl+K` palette, `?` overlay, rebinding, phone layout, Tailscale + token, context-usage meter | Daily-driver quality |
-| Later | Local Whisper, diff viewer for edits, per-session cost, multi-machine, session templates ("new session in rc-hub with /card-author") | — |
+| Later (parked) | Local Whisper, diff viewer for edits, per-session cost, multi-machine, session templates. **Parked 2026-09-28:** the project is being prepared as an org showcase, so the focus is polish, reliability and docs rather than new integrations. | — |
 
 ## 7. Starter command pack (rc-hub, example)
 1. `/code-review high`
@@ -273,3 +273,30 @@ Built 2026-09-28.
 - **Remote access over Tailscale** (`server/remote.ts` + tests): `pnpm start -- --remote` (or `CC_CONTROL_REMOTE=1`) adds a second listener on the machine's Tailscale address, and only there. It refuses to start without one, and never binds 0.0.0.0 or the LAN. It prints a one-time sign-in link, `http://<tailscale-ip>:7777/auth?token=…`, which sets an HttpOnly, SameSite=Strict cookie. Every remote HTTP request and WebSocket upgrade then needs that cookie (compared in constant time), a Tailscale-IP or `*.ts.net` Host header, and a same-origin `Origin` header. The token persists in SQLite; `--rotate-token` revokes it. The loopback listener is unchanged and needs no token. Verified with a loopback alias standing in for the Tailscale IP (`CC_CONTROL_REMOTE_IP=127.0.0.2`, which only accepts Tailscale or loopback-alias addresses): 10/10 checks for no cookie, wrong token, sign-in redirect, wrong Host, and WebSocket without cookie / wrong origin / wrong token. **Not yet tried on a real tailnet**, because Tailscale isn't installed on this machine.
 - The reconnect loop now backs off from 1 s to 10 s while the server is down.
 - `pnpm test` runs 16 `node:test` tests (voice matcher, fuzzy, bindings, remote auth helpers).
+
+## 15. Showcase hardening
+
+2026-09-28, after Phase 5. The goal: a demo to the owner's organization, so no new integrations, just reliability, first impressions and docs.
+
+**Independent correctness review.** A separate review agent read the whole codebase and found 11 issues, all fixed and the key ones re-verified in Playwright:
+1. **An approval card stole focus from the composer**, so the next letters typed answered it (`a` = always allow). Cards no longer take focus from the composer; the card says "Esc first". Y / A / N are also ignored for 400 ms after a card appears.
+2. **Dialogs opened by Enter were confirmed by that same Enter.** React 19 attaches the dialog's window listener before the event finishes bubbling, so "Stop this session" from the palette stopped instantly, and the welcome tour closed at once. The shared `useDialogKeys` hook (`Overlay.tsx`) ignores events older than the dialog. Verified: the tour now stays open.
+3. **Two quick sends to a history session started two CLI processes** (or two forks). `SessionManager` now deduplicates in-flight resumes, and a fork's old id forwards to it. Verified: Enter then `Numpad 1` gave both turns to exactly one `claude.exe`.
+4. A CLI that died mid-approval left unanswerable cards. `retire()` now cancels them.
+5. Approvals held across a reconnect or server restart went stale. The client now clears them on connect, and the server re-sends the live ones.
+6. After a dialog closed over the composer, keys went nowhere. The composer refocuses when the dialog closes.
+7. The New-session dialog could hang if the socket dropped mid-create. Pending requests are now rejected on close.
+8. **Editing a tile into an occupied slot overwrote it silently**, and a failed move still deleted the original. The editor now asks ("Press Enter again to replace"). A move is a single `command.save` with `from`, and the server deletes the source only after the save succeeds. Verified.
+9. Rebinding could capture the screens' own keys (Y, A, N, E, `/`, `[`, Alt+1–9, …). These are now reserved, with tests.
+10. `Alt+↑/↓` from a session missing from the current list landed on the wrong row. Fixed.
+11. Voice restarted in a loop after a fatal mic error. Fatal errors now stop listening.
+
+The review found no issue in the security boundary (loopback Host/Origin guard, remote token checks) or in the repo-pack write paths.
+
+**Also added**
+- **Welcome card** on first visit (`Welcome.tsx`): the five keys worth knowing, with current bindings. It can be reopened from the palette ("Show the welcome tour").
+- **Palette ranking**: a minimum match quality for queries of 3 or more characters, and a session's repo path only counts when its title doesn't match. Scattered one-letter hits no longer flood the results.
+- **Phone header** collapses to icons, and the header shows current bindings rather than hard-coded ones.
+- **Server safety net**: unhandled promise rejections are logged instead of killing every live session.
+- **CI** (`.github/workflows/ci.yml`): typecheck, tests and build on every push and PR (`packageManager` pinned to pnpm 11.1.1).
+- **README** rewritten for a first-time reader, with screenshots in `docs/screenshots/`. They were taken with throwaway demo repos (`%TEMP%\cc-demo`) and a separate demo database, so no real session titles appear. Tailscale access is kept, but moved to a collapsed "Advanced" note.

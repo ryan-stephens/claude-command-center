@@ -3,7 +3,7 @@ import type { Command, CommandGroup, CommandMode } from '../../shared/protocol.t
 import { fireCommand, fillTemplate, placeholders } from '../commands.ts';
 import { flash, get, sessionById, set } from '../store.ts';
 import { send } from '../ws.ts';
-import { close, Overlay } from './Overlay.tsx';
+import { close, Overlay, useDialogKeys } from './Overlay.tsx';
 
 const fieldClass = 'mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100 outline-none focus:border-sky-600';
 
@@ -64,14 +64,30 @@ export function EditDialog({ group, slot }: { group: CommandGroup | null; slot: 
   const [body, setBody] = useState(existing?.body ?? '');
   const [mode, setMode] = useState<CommandMode>(existing?.mode ?? 'send');
   const [error, setError] = useState('');
+  /** The occupant the user already agreed to replace; any change of target asks again. */
+  const [replaceOk, setReplaceOk] = useState('');
 
   function save() {
     const name = groupName.trim();
     if (!label.trim() || !body.trim() || !name) { setError('Label, body and group are all required.'); return; }
     if (mode === 'template' && !placeholders(body).length) { setError('Template mode needs at least one {{placeholder}} in the body.'); return; }
-    send({ type: 'command.save', ref: { scope, cwd, group: name, slot: targetSlot }, command: { label: label.trim(), body, mode } });
-    const moved = editable && existing && (editable.scope !== scope || editable.name !== name || slot !== targetSlot);
-    if (moved) send({ type: 'command.delete', ref: { scope: editable.scope as 'global' | 'repo', cwd, group: editable.name, slot } });
+    const sameTile = editable && editable.scope === scope && editable.name === name && slot === targetSlot;
+    const occupant = sameTile ? undefined : get().board?.groups
+      .find((g) => g.scope === scope && g.name === name)?.commands.find((c) => c.slot === targetSlot);
+    const key = `${scope}:${name}:${targetSlot}`;
+    if (occupant && replaceOk !== key) {
+      setReplaceOk(key);
+      setError(`Slot ${targetSlot} of ${name} holds "${occupant.label}". Press Enter again to replace it, or pick another slot.`);
+      return;
+    }
+    const moved = editable && existing && !sameTile;
+    // One message: the server removes the old tile only after the new one is saved.
+    send({
+      type: 'command.save',
+      ref: { scope, cwd, group: name, slot: targetSlot },
+      command: { label: label.trim(), body, mode },
+      from: moved ? { scope: editable.scope as 'global' | 'repo', cwd, group: editable.name, slot } : undefined,
+    });
     set({ modal: null, groupKey: `${scope}:${name}`, boardSlot: targetSlot });
     flash(`Saved ${label.trim()}`);
   }
@@ -129,19 +145,15 @@ export function EditDialog({ group, slot }: { group: CommandGroup | null; slot: 
 
 export function DeleteDialog({ group, slot }: { group: CommandGroup; slot: number }) {
   const command = group.commands.find((c) => c.slot === slot);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (k === 'y' || k === 'enter') {
-        send({ type: 'command.delete', ref: { scope: group.scope as 'global' | 'repo', cwd: sessionById(get().openId)?.cwd, group: group.name, slot } });
-        close();
-      } else if (k === 'n' || k === 'escape') close();
-      else return;
-      e.preventDefault();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [group, slot]);
+  useDialogKeys((e) => {
+    const k = e.key.toLowerCase();
+    if (k === 'y' || k === 'enter') {
+      send({ type: 'command.delete', ref: { scope: group.scope as 'global' | 'repo', cwd: sessionById(get().openId)?.cwd, group: group.name, slot } });
+      close();
+    } else if (k === 'n' || k === 'escape') close();
+    else return false;
+    return true;
+  });
   return (
     <Overlay label="Remove command">
       <p className="text-sm text-zinc-200">Remove <span className="font-medium">{command?.label}</span> from {group.name}?</p>
@@ -152,18 +164,14 @@ export function DeleteDialog({ group, slot }: { group: CommandGroup; slot: numbe
 
 /** A voice utterance that looked like a command, but not confidently: fire it, or send the words. */
 export function VoiceMatchDialog({ sessionId, text, command }: { sessionId: string; text: string; command: Command }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (k === 'y' || k === 'enter') { close(); fireCommand(sessionId, command); }
-      else if (k === 'n') { close(); send({ type: 'session.send', id: sessionId, text }); flash('Sent (voice)'); }
-      else if (k === 'escape') close();
-      else return;
-      e.preventDefault();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [sessionId, text, command]);
+  useDialogKeys((e) => {
+    const k = e.key.toLowerCase();
+    if (k === 'y' || k === 'enter') { close(); fireCommand(sessionId, command); }
+    else if (k === 'n') { close(); send({ type: 'session.send', id: sessionId, text }); flash('Sent (voice)'); }
+    else if (k === 'escape') close();
+    else return false;
+    return true;
+  });
   return (
     <Overlay label="Voice command?">
       <p className="text-sm text-zinc-200">You said <span className="font-medium">“{text}”</span>. Run <span className="font-medium text-sky-300">{command.label}</span>?</p>

@@ -16,6 +16,7 @@ export type Modal =
   | { kind: 'voiceMatch'; sessionId: string; text: string; command: Command }
   | { kind: 'palette' }
   | { kind: 'bindings' }
+  | { kind: 'welcome' }
   | null;
 
 interface State {

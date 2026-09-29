@@ -69,6 +69,8 @@ export function startVoice(id: string): void {
   };
   r.onerror = (e) => {
     if (r !== rec || e.error === 'aborted') return;
+    // These won't fix themselves; stop, rather than restart from onend while the key is held.
+    if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network'].includes(e.error)) holding = false;
     const hint = e.error === 'not-allowed' ? 'Microphone blocked: allow it for this site in the address bar.' : e.error === 'no-speech' ? 'No speech heard.' : `Voice error: ${e.error}`;
     set({ lastError: hint });
   };

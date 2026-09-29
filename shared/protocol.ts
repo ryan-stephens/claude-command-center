@@ -91,7 +91,8 @@ export type ClientMsg =
   | { type: 'permission.respond'; reqId: string; decision: PermissionDecision }
   /** Ask for the board of a session (its cwd's repo pack, global groups, its slash commands). */
   | { type: 'board.get'; sessionId: string }
-  | { type: 'command.save'; ref: SlotRef; command: Omit<Command, 'slot'> }
+  /** `from`: the tile this edit moves away from; it is removed only after the save succeeds. */
+  | { type: 'command.save'; ref: SlotRef; command: Omit<Command, 'slot'>; from?: SlotRef }
   | { type: 'command.delete'; ref: SlotRef }
   /** Swap two slots in the same group (Ctrl+arrows). */
   | { type: 'command.swap'; ref: SlotRef; otherSlot: number }

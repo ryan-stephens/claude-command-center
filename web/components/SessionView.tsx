@@ -120,6 +120,7 @@ function Item({ it, results, expand }: { it: TranscriptItem; results: Map<string
 }
 
 function ApprovalCard({ p }: { p: PermissionRequest }) {
+  const typing = useStore((s) => s.zone === 'composer');
   return (
     <div className="mb-3 rounded border border-amber-600 bg-amber-950/50 p-3" role="alertdialog" aria-label="Tool approval">
       <div className="mb-1 text-sm text-amber-200">Allow <span className="font-mono text-amber-100">{p.tool}</span>?</div>
@@ -128,6 +129,7 @@ function ApprovalCard({ p }: { p: PermissionRequest }) {
         <button className="btn" onClick={() => respondPermission('allow')}><kbd>Y</kbd> Yes</button>
         {p.canAlways && <button className="btn" onClick={() => respondPermission('always')}><kbd>A</kbd> Always</button>}
         <button className="btn" onClick={() => respondPermission('deny')}><kbd>N</kbd> No</button>
+        {typing && <span className="self-center text-xs text-amber-300/80">You're in the composer: <kbd>Esc</kbd> first</span>}
       </div>
     </div>
   );
@@ -137,17 +139,18 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
   const draft = useStore((s) => s.drafts[id] ?? '');
   const voice = useStore((s) => (s.voice?.sessionId === id ? s.voice : null));
   const text = voice ? voice.text : draft;
+  const dialogOpen = useStore((s) => s.modal !== null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const running = useStore((s) => s.sessions.find((x) => x.id === id)?.status === 'running');
 
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || dialogOpen) return;
     if (focused) {
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length); // after an "insert" command, keep typing at the end
     } else el.blur();
-  }, [focused, id]);
+  }, [focused, id, dialogOpen]); // re-run when a dialog closes, so focus comes back here
 
   function submit() {
     if (voice || !draft.trim()) return;
