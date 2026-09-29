@@ -59,7 +59,7 @@ Focus zones: **Composer** â†” **Command board**. `Esc` steps outward: composer â
 | `i` or `Enter` (on the board) | Focus the composer |
 | `Enter` / `Shift+Enter` (in the composer) | Send / newline |
 | `Ctrl+.` | Interrupt the running turn |
-| **Hold `` ` `` (backtick)** or **Hold `Numpad .`** | **Push-to-talk** voice input. Release to stop. |
+| **Hold `` ` `` (backtick)** or **Hold `Numpad .`** | **Push-to-talk** voice input. Release to send. |
 | `Y` / `A` / `N` | Pending approval: **Y**es once / **A**lways / **N**o. Works when the approval card is focused, which happens automatically. |
 
 The number keys and their labels are always visible on the command tiles (like a game hotbar), so nothing has to be memorised.
@@ -154,9 +154,12 @@ permission.respond {reqId, decision}
 8. Continue
 9. `/simplify`
 
-## 8. Open decisions
-1. **Frontend framework**: React (recommended because it's slim and has the best hotkey/virtual-list ecosystem) or Angular (matches rc-hub).
-2. **Voice engine for v1**: Web Speech (instant, cloud) or local Whisper (private, more setup).
-3. **After voice release**: auto-send, or wait for Enter?
-4. **GitHub**: create a private `cc-control` repo now?
-5. **Distribution for "everyone"**: local `pnpm start` only, or publish later as `npx cc-control`?
+## 8. Decisions
+Locked 2026-09-28:
+1. **Frontend**: React + Vite + TS.
+2. **Voice v1**: browser Web Speech API. Local Whisper stays in "Later".
+3. **After voice release**: auto-send. Voice-matched commands still ask for confirmation when the match is low-confidence.
+4. **GitHub**: `https://github.com/ryan-stephens/claude-command-center` (local folder `D:\repos\cc-control`).
+
+Open:
+5. **Distribution for "everyone"**: local `pnpm start` only, or publish later as `npx cc-control`? This can wait until after phase 3.
