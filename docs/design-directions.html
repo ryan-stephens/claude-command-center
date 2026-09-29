@@ -1,0 +1,659 @@
+<title>cc-control Design Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap">
+<style>
+/* Layout: a proposal document with a sticky screen switcher; every direction shows the same screen, so they compare top to bottom. */
+:root {
+  --bg: #f3f2ef; --panel: #ffffff; --ink: #1b1c1f; --sub: #55585f; --line: #dcdad4; --pick: #27313f;
+  --display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #16171a; --panel: #1e2024; --ink: #ecebe7; --sub: #a7a8ad; --line: #34363c; --pick: #dfe3ea; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #16171a; --panel: #1e2024; --ink: #ecebe7; --sub: #a7a8ad; --line: #34363c; --pick: #dfe3ea; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); margin: 0; padding-inline: 16px; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 40px 80px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.05; letter-spacing: -0.02em; }
+h2 { font-size: 28px; letter-spacing: -0.01em; }
+h3 { font-size: 17px; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--sub); font-size: 17px; margin-top: 12px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sub); }
+code { font: 13px var(--mono); }
+
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; margin: 28px -16px 0; padding: 10px 16px; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.seg button { font: 500 14px var(--body); color: var(--sub); background: none; border: 0; border-radius: 7px; padding: 6px 12px; cursor: pointer; min-height: 34px; }
+.seg button[aria-pressed="true"] { background: var(--pick); color: var(--bg); }
+.seg button:focus-visible, .jump a:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+.jump { display: flex; gap: 14px; margin-left: auto; font-size: 14px; }
+.jump a { color: var(--sub); }
+
+.dir { margin-top: 56px; display: grid; gap: 18px; }
+.dir-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 40px; align-items: start; }
+.dir-head ul { margin: 0; padding-left: 18px; color: var(--sub); display: grid; gap: 4px; }
+.tag { display: inline-block; font: 600 12px var(--body); padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--sub); margin-left: 8px; vertical-align: middle; }
+.tradeoffs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tradeoffs div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.tradeoffs h3 { font-size: 14px; margin-bottom: 6px; }
+.tradeoffs ul { margin: 0; padding-left: 18px; color: var(--sub); font-size: 14px; display: grid; gap: 3px; }
+@media (max-width: 760px) { .dir-head, .tradeoffs { grid-template-columns: minmax(0, 1fr); } .jump { margin-left: 0; } }
+
+.frame { position: relative; width: 100%; overflow: hidden; border-radius: 14px; border: 1px solid var(--line); box-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 12px 32px -12px rgb(0 0 0 / 0.18); }
+.frame.phone { width: min(390px, 100%); margin: 0 auto; border-radius: 34px; border-width: 6px; border-color: var(--pick); }
+.frame > .m { transform-origin: 0 0; position: absolute; top: 0; left: 0; }
+.caption { color: var(--sub); font-size: 14px; }
+
+section.common { margin-top: 72px; display: grid; gap: 16px; }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; font-size: 13px; color: var(--sub); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 500; white-space: nowrap; }
+.pick { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 8px; }
+
+/* ============ Mock screens: their own token set, switchable light / dark ============ */
+.m {
+  --m-bg: #f4f5f7; --m-surface: #ffffff; --m-sunk: #eceef2; --m-line: #dfe2e8; --m-text: #16181d; --m-sub: #505763; --m-faint: #666d79;
+  --m-amber: #a24a05; --m-amber-bg: #fff3e0; --m-blue: #1d5fd1; --m-blue-bg: #e9f0fe; --m-green: #16713e; --m-green-bg: #e6f5ec; --m-red: #b42318; --m-red-bg: #fdecea;
+  --acc: #3451d1; --acc-ink: #ffffff; --acc-soft: #e9ecfb;
+  font: 15px/1.45 var(--body); color: var(--m-text); background: var(--m-bg); overflow: hidden;
+}
+.m[data-mt="dark"] {
+  --m-bg: #111317; --m-surface: #1a1d23; --m-sunk: #0c0e11; --m-line: #2b3039; --m-text: #eceef2; --m-sub: #aab1bd; --m-faint: #939baa;
+  --m-amber: #f5b041; --m-amber-bg: #382711; --m-blue: #86adff; --m-blue-bg: #172440; --m-green: #56cf92; --m-green-bg: #12301f; --m-red: #ff8a7a; --m-red-bg: #3a1714;
+  --acc: #97a8ff; --acc-ink: #111317; --acc-soft: #22284a;
+}
+.dir-b .m { --acc: #0f6e66; --acc-soft: #e2f3f1; }
+.dir-b .m[data-mt="dark"] { --acc: #5fd4c6; --acc-ink: #0c1413; --acc-soft: #133330; }
+.dir-c .m { --acc: #b8430f; --acc-soft: #fbece4; }
+.dir-c .m[data-mt="dark"] { --acc: #f39266; --acc-ink: #1a0f0a; --acc-soft: #3a2117; }
+.m svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.m .row { display: flex; align-items: center; gap: 10px; }
+.m .col { display: flex; flex-direction: column; gap: 10px; }
+.m .grow { flex: 1; min-width: 0; }
+.m .sub { color: var(--m-sub); }
+.m .faint { color: var(--m-faint); font-size: 13px; }
+.m .mono { font: 13px var(--mono); }
+.m .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--m-line); background: var(--m-surface); color: var(--m-text); font: 500 15px var(--body); white-space: nowrap; }
+.m .btn.primary { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+.m .btn.ghost { background: none; border-color: transparent; color: var(--m-sub); }
+.m .btn.danger { color: var(--m-red); }
+.m .btn.sm { min-height: 32px; padding: 0 12px; font-size: 14px; border-radius: 8px; }
+.m .pill { display: inline-flex; align-items: center; gap: 6px; font: 600 13px var(--body); padding: 3px 10px; border-radius: 99px; white-space: nowrap; }
+.m .p-amber { color: var(--m-amber); background: var(--m-amber-bg); }
+.m .p-blue { color: var(--m-blue); background: var(--m-blue-bg); }
+.m .p-green { color: var(--m-green); background: var(--m-green-bg); }
+.m .p-red { color: var(--m-red); background: var(--m-red-bg); }
+.m .p-grey { color: var(--m-sub); background: var(--m-sunk); }
+.m .av { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font: 700 14px var(--body); color: #fff; flex-shrink: 0; }
+.m .av.sm { width: 24px; height: 24px; border-radius: 6px; font-size: 11px; }
+.m .av.lg { width: 48px; height: 48px; border-radius: 12px; font-size: 19px; }
+.av.web { background: #4f6bed; } .av.pay { background: #0e8a6d; } .av.docs { background: #c0622d; } .av.more { background: var(--m-sunk); color: var(--m-sub); border: 1px dashed var(--m-line); }
+.m .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; flex-shrink: 0; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .m .spin { animation: none; } }
+.m .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.m .kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--m-line); border-bottom-width: 2px; border-radius: 5px; color: var(--m-faint); background: var(--m-surface); }
+.m .input { display: flex; align-items: center; gap: 10px; border: 1px solid var(--m-line); background: var(--m-surface); border-radius: 12px; padding: 10px 12px; color: var(--m-faint); }
+.m .card { background: var(--m-surface); border: 1px solid var(--m-line); border-radius: 14px; }
+.m .hr { height: 1px; background: var(--m-line); }
+.m .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 99px; border: 1px solid var(--m-line); background: var(--m-surface); font-size: 14px; white-space: nowrap; }
+.m .scrim { position: absolute; inset: 0; background: rgb(10 12 16 / 0.42); }
+.m .focus { outline: 3px solid color-mix(in srgb, var(--acc) 55%, transparent); outline-offset: 2px; }
+.m .bubble { background: var(--acc); color: var(--acc-ink); padding: 10px 14px; border-radius: 18px 18px 4px 18px; max-width: 70%; align-self: flex-end; }
+.m .step { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 14px; }
+.m .step .ok { color: var(--m-green); }
+.m .code { font: 13px/1.5 var(--mono); background: var(--m-sunk); border-radius: 8px; padding: 10px 12px; }
+.m .diff-add { color: var(--m-green); } .m .diff-del { color: var(--m-red); }
+.m h4 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--m-sub); }
+.m .title { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+.m .t2 { font-size: 17px; font-weight: 600; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><path d="m5 8 4 4-4 4M12 17h7"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3 13h5l1 3h6l1-3h5"/><path d="M5 5h14l2 8v6H3v-6z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-kb" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 8v8M18 10c0 4-6 3-10 6"/></symbol>
+</svg>
+
+<div class="wrap">
+  <p class="eyebrow">cc-control · UX redesign · step 2 of 4</p>
+  <h1>Three ways cc-control could feel</h1>
+  <p class="lede">Each direction fixes the same audit findings (<code>docs/UX-AUDIT.md</code>): a visible <em>New task</em> button, projects instead of paths, plain-language status and approvals, a readable transcript, quiet key hints and a light theme. They differ in what the app is organised around. Every existing feature and every keyboard shortcut survives in all three; the table at the end shows where each one lives.</p>
+
+  <nav class="bar" aria-label="Mockup controls">
+    <div class="seg" role="group" aria-label="Screen">
+      <button type="button" data-screen="home" aria-pressed="true">Home</button>
+      <button type="button" data-screen="work" aria-pressed="false">Working</button>
+      <button type="button" data-screen="ask" aria-pressed="false">Approval</button>
+      <button type="button" data-screen="new" aria-pressed="false">New task</button>
+      <button type="button" data-screen="phone" aria-pressed="false">Phone</button>
+    </div>
+    <div class="seg" role="group" aria-label="Mockup theme">
+      <button type="button" data-mt="light" aria-pressed="true">Light</button>
+      <button type="button" data-mt="dark" aria-pressed="false">Dark</button>
+    </div>
+    <div class="jump"><a href="#dir-a">A · Inbox</a><a href="#dir-b">B · Projects</a><a href="#dir-c">C · Focus</a><a href="#map">Feature map</a></div>
+  </nav>
+
+  <!-- =================================== A =================================== -->
+  <section class="dir dir-a" id="dir-a">
+    <div class="dir-head">
+      <div>
+        <p class="eyebrow">Direction A</p>
+        <h2>Inbox <span class="tag">organised by what needs you</span></h2>
+      </div>
+      <ul>
+        <li>Home is one calm list in three sections: <strong>Needs you</strong>, <strong>Working</strong>, <strong>Done</strong>, then <em>Earlier</em>. Projects live in a sidebar as filters.</li>
+        <li>A task reads like a Messages thread. Claude's actions fold into a "steps" summary with real file changes you can open.</li>
+        <li>Approvals rise as a sheet: what, where, how risky, three clear buttons.</li>
+        <li>Shortcuts are a row of named chips above the message box.</li>
+      </ul>
+    </div>
+
+    <div class="screen-set">
+      <!-- A · Home -->
+      <div class="frame" data-screen="home" data-w="1280" data-h="800"><div class="m" style="width:1280px;height:800px;display:flex">
+        <aside style="width:250px;background:var(--m-sunk);border-right:1px solid var(--m-line);padding:18px 14px;display:flex;flex-direction:column;gap:6px">
+          <div class="row" style="padding:0 8px 14px"><strong style="font-size:17px">Claude Command Center</strong></div>
+          <button class="btn primary" style="justify-content:flex-start"><svg class="i"><use href="#i-plus"/></svg>New task</button>
+          <div style="height:10px"></div>
+          <div class="row" style="padding:8px 10px;border-radius:9px;background:var(--m-surface);font-weight:600"><svg class="i"><use href="#i-inbox"/></svg><span class="grow">All tasks</span><span class="pill p-amber" style="padding:1px 8px">1</span></div>
+          <h4 style="padding:14px 10px 4px">Projects</h4>
+          <div class="row" style="padding:7px 10px"><span class="av sm web">W</span><span class="grow">Web app</span><span class="dot" style="background:var(--m-amber)"></span></div>
+          <div class="row" style="padding:7px 10px"><span class="av sm pay">P</span><span class="grow">Payments API</span><span class="spin" style="width:11px;height:11px;color:var(--m-blue)"></span></div>
+          <div class="row" style="padding:7px 10px"><span class="av sm docs">D</span><span class="grow">Docs site</span></div>
+          <div class="row sub" style="padding:7px 10px"><svg class="i"><use href="#i-folder"/></svg>Add a project…</div>
+          <div style="margin-top:auto" class="col">
+            <div class="row sub" style="padding:7px 10px;font-size:14px"><svg class="i"><use href="#i-kb"/></svg><span class="grow">Keyboard shortcuts</span><span class="kbd">?</span></div>
+            <div class="row sub" style="padding:7px 10px;font-size:14px"><svg class="i"><use href="#i-sun"/></svg>Appearance · Sound on</div>
+          </div>
+        </aside>
+        <main style="flex:1;padding:28px 40px;display:flex;flex-direction:column;gap:22px;min-width:0">
+          <div class="row"><div class="title grow">All tasks</div><div class="input" style="width:320px"><svg class="i"><use href="#i-search"/></svg><span class="grow">Search tasks and projects</span><span class="kbd">Ctrl K</span></div></div>
+          <div class="col" style="gap:8px">
+            <h4>Needs you · 1</h4>
+            <div class="card row" style="padding:16px 18px;gap:14px;border-color:color-mix(in srgb,var(--m-amber) 45%,var(--m-line));box-shadow:inset 4px 0 0 var(--m-amber)">
+              <span class="av web">W</span>
+              <div class="grow"><div class="t2">Add a footer to the home page</div><div class="sub">Web app · wants to <strong>check app.js for mistakes</strong></div></div>
+              <span class="pill p-amber">Waiting for your OK</span>
+              <button class="btn primary">Review</button>
+            </div>
+          </div>
+          <div class="col" style="gap:8px">
+            <h4>Working · 1</h4>
+            <div class="card row focus" style="padding:16px 18px;gap:14px">
+              <span class="av pay">P</span>
+              <div class="grow"><div class="t2">Explain how a payment is processed</div><div class="sub">Payments API · Reading server.js</div></div>
+              <span class="pill p-blue"><span class="spin" style="width:10px;height:10px"></span>Working on it · 0:42</span>
+              <button class="btn ghost"><svg class="i"><use href="#i-stop"/></svg>Stop</button>
+            </div>
+          </div>
+          <div class="col" style="gap:8px">
+            <h4>Done · today</h4>
+            <div class="card">
+              <div class="row" style="padding:14px 18px;gap:14px"><span class="av docs">D</span><div class="grow"><div class="t2">Write a Getting Started section</div><div class="sub">Docs site · Added a 5-step section to README.md</div></div><span class="pill p-green"><svg class="i" style="width:14px;height:14px"><use href="#i-check"/></svg>Done</span><span class="faint" style="width:70px;text-align:right">3 min ago</span></div>
+              <div class="hr" style="margin-left:66px"></div>
+              <div class="row" style="padding:14px 18px;gap:14px"><span class="av web">W</span><div class="grow"><div class="t2">Add a dark-mode switch</div><div class="sub">Web app · Changed 3 files</div></div><span class="pill p-green"><svg class="i" style="width:14px;height:14px"><use href="#i-check"/></svg>Done</span><span class="faint" style="width:70px;text-align:right">1 hr ago</span></div>
+            </div>
+          </div>
+          <div class="row sub" style="gap:6px"><svg class="i"><use href="#i-clock"/></svg>Earlier · 51 tasks from all your projects, including ones started in the terminal<svg class="i"><use href="#i-right"/></svg></div>
+        </main>
+      </div></div>
+
+      <!-- A · Working -->
+      <div class="frame" data-screen="work" data-w="1280" data-h="800" hidden><div class="m" style="width:1280px;height:800px;display:flex;flex-direction:column">
+        <header class="row" style="padding:14px 24px;border-bottom:1px solid var(--m-line);background:var(--m-surface);gap:14px">
+          <span class="row sub" style="gap:2px"><svg class="i"><use href="#i-back"/></svg>All tasks</span>
+          <span class="av sm web" style="margin-left:12px">W</span>
+          <div class="grow"><div class="t2">Add a footer to the home page</div><div class="faint">Web app</div></div>
+          <span class="pill p-blue"><span class="spin" style="width:10px;height:10px"></span>Working on it · 0:18</span>
+          <button class="btn"><svg class="i"><use href="#i-stop"/></svg>Stop</button>
+          <button class="btn ghost" aria-label="More"><svg class="i"><use href="#i-dots"/></svg></button>
+        </header>
+        <div style="flex:1;overflow:hidden;padding:24px 0">
+          <div class="col" style="max-width:820px;margin:0 auto;gap:16px;padding:0 24px">
+            <div class="bubble">Add a small footer to the home page that says "Made with care". Then check that app.js has no mistakes.</div>
+            <div>I'll add the footer and then check app.js.</div>
+            <div class="card" style="padding:6px 16px">
+              <div class="row" style="padding:8px 0;font-weight:600"><svg class="i"><use href="#i-down"/></svg><span class="grow">3 steps so far</span><span class="faint">Show everything</span></div>
+              <div class="hr"></div>
+              <div class="step"><svg class="i ok"><use href="#i-check"/></svg><span class="grow">Looked through the project's files</span></div>
+              <div class="step"><svg class="i ok"><use href="#i-check"/></svg><span class="grow">Read <strong>index.html</strong></span></div>
+              <div class="step"><svg class="i ok"><use href="#i-check"/></svg><span class="grow">Changed <strong>index.html</strong> <span class="diff-add">+3 lines</span></span><span class="btn sm">See the change</span></div>
+              <div class="step"><span class="spin" style="color:var(--m-blue);margin:0 2px"></span><span class="grow">Checking <strong>app.js</strong> for mistakes…</span><span class="faint">4s</span></div>
+            </div>
+          </div>
+        </div>
+        <footer style="border-top:1px solid var(--m-line);background:var(--m-surface);padding:12px 24px 16px">
+          <div class="col" style="max-width:820px;margin:0 auto;gap:10px">
+            <div class="row" style="gap:8px;flex-wrap:wrap"><span class="faint" style="margin-right:4px">Shortcuts</span><span class="chip"><svg class="i"><use href="#i-play"/></svg>Run the tests</span><span class="chip">Review my changes</span><span class="chip">Explain…</span><span class="chip">Commit my work</span><span class="chip">Continue</span><span class="chip sub">More…</span></div>
+            <div class="row" style="border:1px solid var(--m-line);border-radius:14px;padding:8px 8px 8px 16px"><span class="grow faint" style="font-size:15px">Ask Claude to do something else… it will start when this finishes</span><button class="btn ghost" aria-label="Hold to talk"><svg class="i"><use href="#i-mic"/></svg></button><button class="btn primary" aria-label="Send" style="width:40px;padding:0"><svg class="i"><use href="#i-send"/></svg></button></div>
+          </div>
+        </footer>
+      </div></div>
+
+      <!-- A · Approval -->
+      <div class="frame" data-screen="ask" data-w="1280" data-h="800" hidden><div class="m" style="width:1280px;height:800px;display:flex;flex-direction:column;position:relative">
+        <header class="row" style="padding:14px 24px;border-bottom:1px solid var(--m-line);background:var(--m-surface);gap:14px">
+          <span class="row sub" style="gap:2px"><svg class="i"><use href="#i-back"/></svg>All tasks</span>
+          <span class="av sm web" style="margin-left:12px">W</span>
+          <div class="grow"><div class="t2">Add a footer to the home page</div><div class="faint">Web app</div></div>
+          <span class="pill p-amber">Waiting for your OK</span>
+        </header>
+        <div class="col" style="max-width:820px;margin:24px auto;gap:16px;padding:0 24px;width:100%">
+          <div class="bubble">Add a small footer to the home page that says "Made with care". Then check that app.js has no mistakes.</div>
+          <div>I've added the footer. Now I'll check app.js.</div>
+        </div>
+        <div class="scrim"></div>
+        <div class="card" style="position:absolute;left:50%;bottom:28px;transform:translateX(-50%);width:640px;padding:24px;display:flex;flex-direction:column;gap:16px;border-radius:20px;box-shadow:0 24px 64px -16px rgb(0 0 0 / .45)">
+          <div class="row" style="gap:14px;align-items:flex-start">
+            <span class="av lg" style="background:var(--m-blue-bg);color:var(--m-blue)"><svg class="i" style="width:24px;height:24px"><use href="#i-term"/></svg></span>
+            <div class="grow col" style="gap:4px"><div style="font-size:20px;font-weight:700">Claude wants to check app.js for mistakes</div><div class="sub">It runs a quick check on one file in <strong>Web app</strong>. Nothing is changed.</div></div>
+          </div>
+          <div class="row" style="gap:8px"><span class="pill p-green"><svg class="i" style="width:14px;height:14px"><use href="#i-shield"/></svg>Safe · only reads</span><span class="faint">Touches: app.js</span></div>
+          <div class="row sub" style="gap:6px;font-size:14px"><svg class="i"><use href="#i-right"/></svg>Show details <span class="mono faint">node --check app.js</span></div>
+          <div class="row" style="gap:10px;justify-content:flex-end">
+            <button class="btn">Don't allow <span class="kbd">N</span></button>
+            <button class="btn">Always allow checks in Web app <span class="kbd">A</span></button>
+            <button class="btn primary">Allow <span class="kbd" style="color:inherit;background:transparent;border-color:currentColor">Y</span></button>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- A · New task -->
+      <div class="frame" data-screen="new" data-w="1280" data-h="800" hidden><div class="m" style="width:1280px;height:800px;position:relative">
+        <div style="position:absolute;inset:0;padding:28px 40px 0 290px;opacity:.5"><div class="title">All tasks</div></div>
+        <div class="scrim"></div>
+        <div class="card" style="position:absolute;left:50%;top:70px;transform:translateX(-50%);width:720px;padding:28px;display:flex;flex-direction:column;gap:22px;border-radius:20px">
+          <div class="row"><div class="title grow" style="font-size:22px">New task</div><span class="faint">Esc to cancel</span></div>
+          <div class="col" style="gap:10px">
+            <h4>Which project?</h4>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+              <div class="card col" style="padding:14px;gap:8px;border:2px solid var(--acc);background:var(--acc-soft)"><span class="av web">W</span><strong>Web app</strong><span class="faint">Used 1 hr ago</span></div>
+              <div class="card col" style="padding:14px;gap:8px"><span class="av pay">P</span><strong>Payments API</strong><span class="faint">Used today</span></div>
+              <div class="card col" style="padding:14px;gap:8px"><span class="av docs">D</span><strong>Docs site</strong><span class="faint">Used today</span></div>
+              <div class="card col" style="padding:14px;gap:8px;border-style:dashed"><span class="av more"><svg class="i"><use href="#i-folder"/></svg></span><strong>Another folder…</strong><span class="faint">Browse or paste</span></div>
+            </div>
+          </div>
+          <div class="col" style="gap:10px">
+            <h4>What should Claude do?</h4>
+            <div style="border:2px solid var(--acc);border-radius:14px;padding:14px 16px;min-height:110px;font-size:16px">Make the contact form show a friendly message when the email is missing<span style="border-left:2px solid var(--acc);margin-left:1px"></span></div>
+            <div class="row" style="gap:8px;flex-wrap:wrap"><span class="faint">Or start from</span><span class="chip">Fix a bug…</span><span class="chip">Explain this project</span><span class="chip">Run the tests</span></div>
+          </div>
+          <div class="row"><span class="faint grow">Claude will ask before running commands or changing settings.</span><button class="btn primary">Start task <span class="kbd" style="color:inherit;background:transparent;border-color:currentColor">Enter</span></button></div>
+        </div>
+      </div></div>
+
+      <!-- A · Phone -->
+      <div class="frame phone" data-screen="phone" data-w="390" data-h="844" hidden><div class="m" style="width:390px;height:844px;display:flex;flex-direction:column">
+        <div class="row" style="padding:52px 16px 8px"><div class="title grow">Tasks</div><button class="btn primary" style="border-radius:99px"><svg class="i"><use href="#i-plus"/></svg>New</button></div>
+        <div style="padding:0 16px 10px"><div class="input"><svg class="i"><use href="#i-search"/></svg>Search</div></div>
+        <div class="col" style="padding:6px 16px;gap:8px">
+          <h4>Needs you</h4>
+          <div class="card col" style="padding:14px;gap:10px;box-shadow:inset 4px 0 0 var(--m-amber)"><div class="row"><span class="av web">W</span><div class="grow"><div style="font-weight:600">Add a footer to the home page</div><div class="faint">Web app</div></div></div><div class="sub" style="font-size:14px">Wants to <strong>check app.js for mistakes</strong> · Safe</div><div class="row" style="gap:8px"><button class="btn sm grow">Don't allow</button><button class="btn sm primary grow">Allow</button></div></div>
+          <h4 style="margin-top:8px">Working</h4>
+          <div class="card row" style="padding:14px"><span class="av pay">P</span><div class="grow"><div style="font-weight:600">Explain how a payment…</div><div class="faint">Reading server.js · 0:42</div></div><span class="spin" style="color:var(--m-blue)"></span></div>
+          <h4 style="margin-top:8px">Done</h4>
+          <div class="card row" style="padding:14px"><span class="av docs">D</span><div class="grow"><div style="font-weight:600">Write a Getting Started…</div><div class="faint">Docs site · 3 min ago</div></div><svg class="i" style="color:var(--m-green)"><use href="#i-check"/></svg></div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="tradeoffs">
+      <div><h3>Strong at</h3><ul><li>The first screen answers "what needs me?" without any learning.</li><li>Most familiar shape (Mail, Reminders, Messages), so the least to explain in a demo.</li><li>Scales from 1 task to 20 without changing layout.</li></ul></div>
+      <div><h3>Watch out for</h3><ul><li>Projects are secondary (a sidebar filter), so "what have I done in Payments API?" takes a click.</li><li>The shortcut chips show about six; the rest are one click away in "More…".</li></ul></div>
+    </div>
+  </section>
+
+  <!-- =================================== B =================================== -->
+  <section class="dir dir-b" id="dir-b">
+    <div class="dir-head">
+      <div>
+        <p class="eyebrow">Direction B</p>
+        <h2>Projects <span class="tag">organised by where the work is</span></h2>
+      </div>
+      <ul>
+        <li>Home is a set of project cards, like rooms in the Home app. Each card shows its tasks and their state. A banner on top says what needs you.</li>
+        <li>A task is a split view: the conversation on the left, a live <strong>Activity</strong> panel on the right (steps, files changed, background work).</li>
+        <li>Approvals appear at the top of the Activity panel, and in the banner on every screen.</li>
+        <li>Shortcuts keep a 3×3 grid, now as labelled tiles with icons; the number is a small corner badge.</li>
+      </ul>
+    </div>
+
+    <div class="screen-set">
+      <!-- B · Home -->
+      <div class="frame" data-screen="home" data-w="1280" data-h="800"><div class="m" style="width:1280px;height:800px;display:flex;flex-direction:column">
+        <header class="row" style="padding:18px 32px;gap:16px"><strong style="font-size:17px" class="grow">Claude Command Center</strong><div class="input" style="width:300px;padding:8px 12px"><svg class="i"><use href="#i-search"/></svg><span class="grow">Search</span><span class="kbd">Ctrl K</span></div><button class="btn ghost" aria-label="Keyboard shortcuts"><svg class="i"><use href="#i-kb"/></svg></button><button class="btn primary"><svg class="i"><use href="#i-plus"/></svg>New task</button></header>
+        <div style="padding:0 32px"><div class="row" style="background:var(--m-amber-bg);color:var(--m-amber);border-radius:14px;padding:12px 16px;gap:12px"><svg class="i"><use href="#i-bolt"/></svg><span class="grow"><strong>1 task needs you</strong> · Web app wants to check app.js for mistakes</span><button class="btn sm" style="border-color:currentColor;color:inherit;background:transparent">Review</button></div></div>
+        <div style="padding:22px 32px;display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:start">
+          <div class="card col" style="padding:18px;gap:12px"><div class="row"><span class="av lg web">W</span><div class="grow"><div class="t2">Web app</div><div class="faint">repos\web-app · main</div></div></div>
+            <div class="hr"></div>
+            <div class="row" style="gap:10px"><span class="dot" style="background:var(--m-amber)"></span><span class="grow">Add a footer to the home page</span><span class="pill p-amber" style="font-size:12px">Needs you</span></div>
+            <div class="row" style="gap:10px"><span class="dot" style="background:var(--m-green)"></span><span class="grow sub">Add a dark-mode switch</span><span class="faint">1 hr</span></div>
+            <div class="row" style="gap:10px"><span class="dot" style="background:var(--m-line)"></span><span class="grow sub">Tidy up the stylesheet</span><span class="faint">2 d</span></div>
+            <button class="btn sm" style="align-self:flex-start"><svg class="i"><use href="#i-plus"/></svg>New task here</button></div>
+          <div class="card col" style="padding:18px;gap:12px"><div class="row"><span class="av lg pay">P</span><div class="grow"><div class="t2">Payments API</div><div class="faint">repos\payments-api · main</div></div></div>
+            <div class="hr"></div>
+            <div class="row" style="gap:10px"><span class="spin" style="width:10px;height:10px;color:var(--m-blue)"></span><span class="grow">Explain how a payment is processed</span><span class="pill p-blue" style="font-size:12px">Working · 0:42</span></div>
+            <div class="row" style="gap:10px"><span class="dot" style="background:var(--m-line)"></span><span class="grow sub">Add a refund endpoint</span><span class="faint">3 d</span></div>
+            <button class="btn sm" style="align-self:flex-start"><svg class="i"><use href="#i-plus"/></svg>New task here</button></div>
+          <div class="card col" style="padding:18px;gap:12px"><div class="row"><span class="av lg docs">D</span><div class="grow"><div class="t2">Docs site</div><div class="faint">repos\docs-site · main</div></div></div>
+            <div class="hr"></div>
+            <div class="row" style="gap:10px"><span class="dot" style="background:var(--m-green)"></span><span class="grow">Write a Getting Started section</span><span class="pill p-green" style="font-size:12px">Done</span></div>
+            <div class="row" style="gap:10px"><span class="dot" style="background:var(--m-line)"></span><span class="grow sub">Fix broken links</span><span class="faint">1 wk</span></div>
+            <button class="btn sm" style="align-self:flex-start"><svg class="i"><use href="#i-plus"/></svg>New task here</button></div>
+          <div class="card row" style="padding:18px;gap:12px;border-style:dashed;background:transparent"><span class="av lg more"><svg class="i"><use href="#i-folder"/></svg></span><div><div class="t2">Add a project</div><div class="faint">Pick any folder on this computer</div></div></div>
+          <div class="card row" style="padding:18px;gap:12px;background:transparent"><span class="av lg more"><svg class="i"><use href="#i-clock"/></svg></span><div><div class="t2">Everything else</div><div class="faint">48 tasks in 9 other folders</div></div></div>
+        </div>
+      </div></div>
+
+      <!-- B · Working -->
+      <div class="frame" data-screen="work" data-w="1280" data-h="800" hidden><div class="m" style="width:1280px;height:800px;display:flex;flex-direction:column">
+        <header class="row" style="padding:14px 24px;border-bottom:1px solid var(--m-line);gap:12px;background:var(--m-surface)"><span class="row sub" style="gap:2px"><svg class="i"><use href="#i-back"/></svg></span><span class="av sm web">W</span><span class="sub">Web app</span><svg class="i faint"><use href="#i-right"/></svg><span class="t2 grow">Add a footer to the home page</span><span class="pill p-blue"><span class="spin" style="width:10px;height:10px"></span>Working · 0:18</span><button class="btn"><svg class="i"><use href="#i-stop"/></svg>Stop</button></header>
+        <div style="flex:1;display:flex;min-height:0">
+          <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div class="col" style="flex:1;padding:24px 32px;gap:16px">
+              <div class="card" style="padding:12px 16px;background:var(--acc-soft);border-color:transparent;align-self:flex-end;max-width:80%">Add a small footer to the home page that says "Made with care". Then check that app.js has no mistakes.</div>
+              <div>I'll add the footer and then check app.js.</div>
+              <div class="faint row" style="gap:6px"><svg class="i"><use href="#i-edit"/></svg>Changed index.html · see Activity</div>
+            </div>
+            <div style="padding:12px 32px 18px;border-top:1px solid var(--m-line)"><div class="row" style="border:1px solid var(--m-line);border-radius:14px;padding:8px 8px 8px 16px;background:var(--m-surface)"><span class="grow faint">Message Claude…</span><button class="btn ghost" aria-label="Hold to talk"><svg class="i"><use href="#i-mic"/></svg></button><button class="btn primary" aria-label="Send" style="width:40px;padding:0"><svg class="i"><use href="#i-send"/></svg></button></div></div>
+          </div>
+          <aside style="width:380px;border-left:1px solid var(--m-line);background:var(--m-surface);display:flex;flex-direction:column">
+            <div class="col" style="padding:18px 20px;gap:4px">
+              <h4>Activity</h4>
+              <div class="step"><svg class="i ok"><use href="#i-check"/></svg><span class="grow">Looked through the project</span><span class="faint">2s</span></div>
+              <div class="step"><svg class="i ok"><use href="#i-check"/></svg><span class="grow">Read index.html</span><span class="faint">1s</span></div>
+              <div class="step"><svg class="i ok"><use href="#i-check"/></svg><span class="grow">Changed index.html</span><span class="faint">1s</span></div>
+              <div class="step" style="color:var(--m-blue)"><span class="spin"></span><span class="grow">Checking app.js for mistakes</span><span>4s</span></div>
+              <div class="row" style="gap:8px;margin-top:4px"><span class="btn sm">Send to background <span class="kbd">Ctrl B</span></span></div>
+            </div>
+            <div class="hr"></div>
+            <div class="col" style="padding:16px 20px;gap:8px"><h4>Files changed · 1</h4><div class="row"><svg class="i sub"><use href="#i-file"/></svg><span class="grow">index.html</span><span class="diff-add mono">+3</span><span class="diff-del mono">−0</span></div></div>
+            <div class="hr"></div>
+            <div class="col" style="padding:16px 20px;gap:10px;margin-top:auto">
+              <div class="row"><h4 class="grow">Shortcuts</h4><span class="faint">Web app ▾</span></div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+                <div class="card col" style="padding:10px;gap:4px;min-height:70px;position:relative"><svg class="i" style="color:var(--acc)"><use href="#i-play"/></svg><span style="font-size:13px;font-weight:500">Run the tests</span><span class="faint" style="position:absolute;top:6px;right:8px;font-size:11px">7</span></div>
+                <div class="card col" style="padding:10px;gap:4px;position:relative"><svg class="i" style="color:var(--acc)"><use href="#i-eye"/></svg><span style="font-size:13px;font-weight:500">Review changes</span><span class="faint" style="position:absolute;top:6px;right:8px;font-size:11px">8</span></div>
+                <div class="card col" style="padding:10px;gap:4px;position:relative"><svg class="i" style="color:var(--acc)"><use href="#i-check"/></svg><span style="font-size:13px;font-weight:500">Commit my work</span><span class="faint" style="position:absolute;top:6px;right:8px;font-size:11px">9</span></div>
+                <div class="card col" style="padding:10px;gap:4px;position:relative"><svg class="i" style="color:var(--acc)"><use href="#i-warn"/></svg><span style="font-size:13px;font-weight:500">Fix build errors</span><span class="faint" style="position:absolute;top:6px;right:8px;font-size:11px">4</span></div>
+                <div class="card col" style="padding:10px;gap:4px;position:relative"><svg class="i" style="color:var(--acc)"><use href="#i-search"/></svg><span style="font-size:13px;font-weight:500">Explain…</span><span class="faint" style="position:absolute;top:6px;right:8px;font-size:11px">5</span></div>
+                <div class="card col" style="padding:10px;gap:4px;position:relative"><svg class="i" style="color:var(--acc)"><use href="#i-right"/></svg><span style="font-size:13px;font-weight:500">Continue</span><span class="faint" style="position:absolute;top:6px;right:8px;font-size:11px">6</span></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div></div>
+
+      <!-- B · Approval -->
+      <div class="frame" data-screen="ask" data-w="1280" data-h="800" hidden><div class="m" style="width:1280px;height:800px;display:flex;flex-direction:column">
+        <header class="row" style="padding:14px 24px;border-bottom:1px solid var(--m-line);gap:12px;background:var(--m-surface)"><span class="row sub"><svg class="i"><use href="#i-back"/></svg></span><span class="av sm web">W</span><span class="sub">Web app</span><svg class="i faint"><use href="#i-right"/></svg><span class="t2 grow">Clean up and rebuild the site</span><span class="pill p-amber">Needs your OK</span></header>
+        <div style="flex:1;display:flex;min-height:0">
+          <div class="col" style="flex:1;padding:24px 32px;gap:16px;min-width:0">
+            <div class="card" style="padding:12px 16px;background:var(--acc-soft);border-color:transparent;align-self:flex-end;max-width:80%">The build looks stale. Clean it up and rebuild the site.</div>
+            <div>I'll remove the old build output and build it again from scratch.</div>
+            <div class="row" style="gap:8px;color:var(--m-amber)"><svg class="i"><use href="#i-warn"/></svg><span>Waiting for your answer in the Activity panel →</span></div>
+          </div>
+          <aside style="width:420px;border-left:1px solid var(--m-line);background:var(--m-surface);display:flex;flex-direction:column">
+            <div style="margin:16px;border:2px solid var(--m-red);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;background:color-mix(in srgb,var(--m-red-bg) 60%,var(--m-surface))">
+              <div class="row" style="gap:8px"><span class="pill p-red"><svg class="i" style="width:14px;height:14px"><use href="#i-warn"/></svg>Careful · deletes files</span></div>
+              <div style="font-size:19px;font-weight:700;line-height:1.3">Delete the <span class="mono" style="font-size:17px">dist</span> folder and everything in it</div>
+              <div class="sub" style="font-size:14px">This removes 214 generated files in Web app. They can be rebuilt, but deleted files don't go to the Recycle Bin.</div>
+              <div class="code">rm -rf dist</div>
+              <div class="col" style="gap:8px">
+                <button class="btn primary" style="background:var(--m-red);border-color:var(--m-red);color:#fff">Allow once <span class="kbd" style="color:inherit;background:transparent;border-color:currentColor">Y</span></button>
+                <div class="row" style="gap:8px"><button class="btn grow">Don't allow <span class="kbd">N</span></button><button class="btn grow" style="font-size:14px">Always in Web app <span class="kbd">A</span></button></div>
+              </div>
+            </div>
+            <div class="col" style="padding:4px 20px;gap:2px">
+              <h4>Activity</h4>
+              <div class="step"><svg class="i ok"><use href="#i-check"/></svg><span class="grow">Looked through the project</span></div>
+              <div class="step" style="color:var(--m-amber)"><svg class="i"><use href="#i-clock"/></svg><span class="grow">Waiting for you: delete dist</span></div>
+            </div>
+          </aside>
+        </div>
+      </div></div>
+
+      <!-- B · New task -->
+      <div class="frame" data-screen="new" data-w="1280" data-h="800" hidden><div class="m" style="width:1280px;height:800px;display:flex;flex-direction:column">
+        <header class="row" style="padding:14px 24px;border-bottom:1px solid var(--m-line);gap:12px;background:var(--m-surface)"><span class="row sub" style="gap:2px"><svg class="i"><use href="#i-back"/></svg>Projects</span></header>
+        <div class="col" style="max-width:860px;width:100%;margin:0 auto;padding:36px 24px;gap:26px">
+          <div class="row" style="gap:16px"><span class="av lg web" style="width:64px;height:64px;font-size:26px;border-radius:16px">W</span><div class="grow"><div class="title">Web app</div><div class="faint row" style="gap:6px"><svg class="i" style="width:14px;height:14px"><use href="#i-folder"/></svg>C:\repos\web-app<svg class="i" style="width:14px;height:14px;margin-left:8px"><use href="#i-branch"/></svg>main</div></div><button class="btn ghost">Rename · change icon</button></div>
+          <div style="border:2px solid var(--acc);border-radius:18px;padding:16px 18px;background:var(--m-surface);display:flex;flex-direction:column;gap:14px">
+            <div style="font-size:18px;min-height:64px">What should Claude do in Web app?<span style="border-left:2px solid var(--acc);margin-left:2px"></span></div>
+            <div class="row"><span class="chip">Fix a bug…</span><span class="chip" style="margin-left:8px">Explain this project</span><span class="grow"></span><button class="btn ghost" aria-label="Hold to talk"><svg class="i"><use href="#i-mic"/></svg></button><button class="btn primary">Start task</button></div>
+          </div>
+          <div class="col" style="gap:8px"><h4>Recent in Web app</h4>
+            <div class="card">
+              <div class="row" style="padding:12px 16px"><span class="dot" style="background:var(--m-amber)"></span><span class="grow">Add a footer to the home page</span><span class="pill p-amber">Needs you</span></div><div class="hr"></div>
+              <div class="row" style="padding:12px 16px"><span class="dot" style="background:var(--m-green)"></span><span class="grow">Add a dark-mode switch</span><span class="faint">1 hr ago · Continue →</span></div><div class="hr"></div>
+              <div class="row" style="padding:12px 16px"><span class="dot" style="background:var(--m-line)"></span><span class="grow">Tidy up the stylesheet</span><span class="faint">2 days ago · Continue →</span></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- B · Phone -->
+      <div class="frame phone" data-screen="phone" data-w="390" data-h="844" hidden><div class="m" style="width:390px;height:844px;display:flex;flex-direction:column;gap:12px">
+        <div class="row" style="padding:52px 16px 0"><div class="title grow">Projects</div><button class="btn primary" style="border-radius:99px;width:44px;padding:0" aria-label="New task"><svg class="i"><use href="#i-plus"/></svg></button></div>
+        <div style="padding:0 16px"><div class="row" style="background:var(--m-amber-bg);color:var(--m-amber);border-radius:12px;padding:12px 14px"><svg class="i"><use href="#i-bolt"/></svg><span class="grow"><strong>1 needs you</strong> · Web app</span><svg class="i"><use href="#i-right"/></svg></div></div>
+        <div style="padding:0 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="card col" style="padding:14px;gap:8px"><span class="av web">W</span><strong>Web app</strong><span class="pill p-amber" style="align-self:flex-start;font-size:12px">Needs you</span></div>
+          <div class="card col" style="padding:14px;gap:8px"><span class="av pay">P</span><strong>Payments API</strong><span class="pill p-blue" style="align-self:flex-start;font-size:12px">Working</span></div>
+          <div class="card col" style="padding:14px;gap:8px"><span class="av docs">D</span><strong>Docs site</strong><span class="pill p-green" style="align-self:flex-start;font-size:12px">Done</span></div>
+          <div class="card col" style="padding:14px;gap:8px;border-style:dashed;background:transparent"><span class="av more"><svg class="i"><use href="#i-plus"/></svg></span><strong>Add project</strong><span class="faint">Any folder</span></div>
+        </div>
+        <div style="padding:0 16px" class="row sub"><svg class="i"><use href="#i-clock"/></svg><span class="grow">Everything else · 48 tasks</span><svg class="i"><use href="#i-right"/></svg></div>
+      </div></div>
+    </div>
+
+    <div class="tradeoffs">
+      <div><h3>Strong at</h3><ul><li>Matches how people think about their work ("my web app"), and makes projects feel like named, iconed things.</li><li>The Activity panel gives the most transparency: every step, every changed file, background work.</li><li>Keeps the 3×3 shortcut grid for numpad users, with readable labels.</li></ul></div>
+      <div><h3>Watch out for</h3><ul><li>With many projects, "what needs me" relies on the banner rather than the layout.</li><li>The split view is busier; on a phone the Activity panel becomes a tab.</li></ul></div>
+    </div>
+  </section>
+
+  <!-- =================================== C =================================== -->
+  <section class="dir dir-c" id="dir-c">
+    <div class="dir-head">
+      <div>
+        <p class="eyebrow">Direction C</p>
+        <h2>Focus <span class="tag">organised around one question</span></h2>
+      </div>
+      <ul>
+        <li>Home is a single large box, "What should Claude do?", with a project picker built into it. Tasks sit quietly underneath.</li>
+        <li>A task reads like a document: one centred column, a floating status capsule at the top with Stop.</li>
+        <li>An approval <strong>replaces the message box</strong> until you answer, so there is only ever one thing to do.</li>
+        <li>Shortcuts appear as suggestions under the box, and in full with <span class="kbd" style="font:12px var(--mono)">/</span>.</li>
+      </ul>
+    </div>
+
+    <div class="screen-set">
+      <!-- C · Home -->
+      <div class="frame" data-screen="home" data-w="1280" data-h="800"><div class="m" style="width:1280px;height:800px;display:flex;flex-direction:column">
+        <header class="row" style="padding:18px 32px"><strong class="grow">Claude Command Center</strong><span class="faint row" style="gap:14px"><span>Search <span class="kbd">Ctrl K</span></span><span>Shortcuts <span class="kbd">?</span></span></span></header>
+        <div class="col" style="max-width:760px;width:100%;margin:0 auto;padding:56px 24px 0;gap:30px">
+          <div class="title" style="font-size:34px;text-align:center">What should Claude do?</div>
+          <div style="border:1px solid var(--m-line);border-radius:22px;background:var(--m-surface);padding:18px 20px 14px;box-shadow:0 10px 30px -14px rgb(0 0 0 / .25);display:flex;flex-direction:column;gap:18px">
+            <div class="faint" style="font-size:17px;min-height:48px">Describe a change, a question, or a bug…</div>
+            <div class="row"><span class="chip"><span class="av sm web" style="width:20px;height:20px;font-size:10px">W</span>Web app<svg class="i" style="width:14px;height:14px"><use href="#i-down"/></svg></span><span class="grow"></span><button class="btn ghost" aria-label="Hold to talk"><svg class="i"><use href="#i-mic"/></svg></button><button class="btn primary" style="border-radius:99px">Start</button></div>
+          </div>
+          <div class="row" style="gap:8px;justify-content:center;flex-wrap:wrap"><span class="chip">Run the tests</span><span class="chip">Review my changes</span><span class="chip">Explain this project</span><span class="chip">Fix build errors</span></div>
+          <div class="col" style="gap:6px">
+            <div class="row" style="padding:12px 16px;border-radius:14px;background:var(--m-amber-bg);color:var(--m-amber)"><span class="dot" style="background:currentColor"></span><span class="grow"><strong>Add a footer to the home page</strong> · Web app</span><span>Waiting for your OK →</span></div>
+            <div class="row" style="padding:12px 16px"><span class="spin" style="width:10px;height:10px;color:var(--m-blue)"></span><span class="grow">Explain how a payment is processed <span class="faint">· Payments API</span></span><span class="faint">Reading files · 0:42</span></div>
+            <div class="row" style="padding:12px 16px"><svg class="i" style="color:var(--m-green);width:16px;height:16px"><use href="#i-check"/></svg><span class="grow">Write a Getting Started section <span class="faint">· Docs site</span></span><span class="faint">Done · 3 min ago</span></div>
+            <div class="row faint" style="padding:8px 16px;justify-content:center">All tasks (54) →</div>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- C · Working -->
+      <div class="frame" data-screen="work" data-w="1280" data-h="800" hidden><div class="m" style="width:1280px;height:800px;display:flex;flex-direction:column;position:relative">
+        <header class="row" style="padding:16px 28px;gap:12px"><span class="row sub"><svg class="i"><use href="#i-back"/></svg></span><span class="sub">Web app</span></header>
+        <div class="row" style="position:absolute;top:14px;left:50%;transform:translateX(-50%);background:var(--m-surface);border:1px solid var(--m-line);border-radius:99px;padding:6px 6px 6px 16px;gap:12px;box-shadow:0 8px 24px -10px rgb(0 0 0 / .3)"><span class="spin" style="color:var(--m-blue)"></span><span><strong>Working on it</strong> <span class="sub">· Checking app.js for mistakes</span></span><span class="faint">0:18</span><button class="btn sm" style="border-radius:99px"><svg class="i" style="width:14px;height:14px"><use href="#i-stop"/></svg>Stop <span class="kbd">Esc</span></button></div>
+        <article class="col" style="max-width:700px;width:100%;margin:0 auto;padding:36px 24px;gap:18px;flex:1">
+          <div style="font-size:24px;font-weight:700;letter-spacing:-0.01em">Add a footer to the home page</div>
+          <div class="sub" style="border-left:3px solid var(--m-line);padding-left:14px">Add a small footer to the home page that says "Made with care". Then check that app.js has no mistakes.</div>
+          <div style="font-size:16px;line-height:1.6">I'll add the footer and then check app.js.</div>
+          <div class="faint row" style="gap:6px;font-size:14px"><svg class="i" style="width:16px;height:16px"><use href="#i-right"/></svg>Read 2 files · changed <span style="color:var(--m-text);text-decoration:underline">index.html</span> (+3 lines)</div>
+          <div class="code" style="font-size:13px"><span class="diff-add">+ &lt;footer&gt;</span><br><span class="diff-add">+   &lt;p&gt;Made with care&lt;/p&gt;</span><br><span class="diff-add">+ &lt;/footer&gt;</span></div>
+        </article>
+        <div style="padding:0 24px 22px"><div class="row" style="max-width:700px;margin:0 auto;border:1px solid var(--m-line);border-radius:18px;padding:10px 10px 10px 18px;background:var(--m-surface)"><span class="grow faint">Add to the task…</span><span class="faint" style="margin-right:10px">/ for shortcuts</span><button class="btn ghost" aria-label="Hold to talk"><svg class="i"><use href="#i-mic"/></svg></button><button class="btn primary" style="border-radius:99px;width:40px;padding:0" aria-label="Send"><svg class="i"><use href="#i-send"/></svg></button></div></div>
+      </div></div>
+
+      <!-- C · Approval -->
+      <div class="frame" data-screen="ask" data-w="1280" data-h="800" hidden><div class="m" style="width:1280px;height:800px;display:flex;flex-direction:column;position:relative">
+        <header class="row" style="padding:16px 28px;gap:12px"><span class="row sub"><svg class="i"><use href="#i-back"/></svg></span><span class="sub">Web app</span></header>
+        <div class="row" style="position:absolute;top:14px;left:50%;transform:translateX(-50%);background:var(--m-amber-bg);color:var(--m-amber);border-radius:99px;padding:8px 18px;gap:10px"><span class="dot" style="background:currentColor"></span><strong>Waiting for your OK</strong></div>
+        <article class="col" style="max-width:700px;width:100%;margin:0 auto;padding:36px 24px;gap:18px;flex:1">
+          <div style="font-size:24px;font-weight:700">Add a footer to the home page</div>
+          <div class="sub" style="border-left:3px solid var(--m-line);padding-left:14px">Add a small footer to the home page that says "Made with care". Then check that app.js has no mistakes.</div>
+          <div style="font-size:16px">I've added the footer. Now I'll check app.js.</div>
+        </article>
+        <div style="padding:0 24px 22px"><div style="max-width:760px;margin:0 auto;border:2px solid var(--acc);border-radius:20px;padding:18px 20px;background:var(--m-surface);display:flex;flex-direction:column;gap:12px;box-shadow:0 16px 40px -16px rgb(0 0 0 / .35)">
+          <div class="row" style="gap:12px"><div class="grow"><div style="font-size:18px;font-weight:700">Allow Claude to check app.js for mistakes?</div><div class="sub" style="font-size:14px">Runs one quick check in Web app. Nothing is changed.</div></div><span class="pill p-green"><svg class="i" style="width:14px;height:14px"><use href="#i-shield"/></svg>Safe</span></div>
+          <div class="row" style="gap:10px"><span class="faint row grow" style="gap:4px"><svg class="i" style="width:14px;height:14px"><use href="#i-right"/></svg>Details</span><button class="btn">Don't allow <span class="kbd">N</span></button><button class="btn">Always in Web app <span class="kbd">A</span></button><button class="btn primary">Allow <span class="kbd" style="color:inherit;background:transparent;border-color:currentColor">Y</span></button></div>
+          <div class="faint" style="font-size:13px">Or type a different instruction instead, and Claude won't run it.</div>
+        </div></div>
+      </div></div>
+
+      <!-- C · New task -->
+      <div class="frame" data-screen="new" data-w="1280" data-h="800" hidden><div class="m" style="width:1280px;height:800px;display:flex;flex-direction:column">
+        <header class="row" style="padding:18px 32px"><strong class="grow">Claude Command Center</strong></header>
+        <div class="col" style="max-width:760px;width:100%;margin:0 auto;padding:56px 24px 0;gap:30px;position:relative">
+          <div class="title" style="font-size:34px;text-align:center">What should Claude do?</div>
+          <div style="border:2px solid var(--acc);border-radius:22px;background:var(--m-surface);padding:18px 20px 14px;display:flex;flex-direction:column;gap:18px">
+            <div style="font-size:17px;min-height:48px">Make the contact form show a friendly message when the email is missing</div>
+            <div class="row"><span class="chip focus"><span class="av sm pay" style="width:20px;height:20px;font-size:10px">P</span>Payments API<svg class="i" style="width:14px;height:14px"><use href="#i-down"/></svg></span><span class="grow"></span><button class="btn primary" style="border-radius:99px">Start <span class="kbd" style="color:inherit;background:transparent;border-color:currentColor">Enter</span></button></div>
+          </div>
+          <div class="card" style="position:absolute;top:258px;left:24px;width:340px;padding:8px;box-shadow:0 18px 48px -16px rgb(0 0 0 / .4)">
+            <div class="input" style="margin-bottom:6px;padding:8px 10px"><svg class="i"><use href="#i-search"/></svg>Find a project</div>
+            <div class="row" style="padding:9px 10px;border-radius:9px;background:var(--acc-soft)"><span class="av sm web">W</span><span class="grow">Web app</span><svg class="i" style="color:var(--acc)"><use href="#i-check"/></svg></div>
+            <div class="row" style="padding:9px 10px"><span class="av sm pay">P</span><span class="grow">Payments API</span></div>
+            <div class="row" style="padding:9px 10px"><span class="av sm docs">D</span><span class="grow">Docs site</span></div>
+            <div class="hr" style="margin:6px 0"></div>
+            <div class="row sub" style="padding:9px 10px"><svg class="i"><use href="#i-folder"/></svg>Another folder…</div>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- C · Phone -->
+      <div class="frame phone" data-screen="phone" data-w="390" data-h="844" hidden><div class="m" style="width:390px;height:844px;display:flex;flex-direction:column;gap:16px;padding:52px 16px 16px">
+        <div class="title" style="font-size:26px">What should Claude do?</div>
+        <div style="border:1px solid var(--m-line);border-radius:18px;background:var(--m-surface);padding:14px;display:flex;flex-direction:column;gap:14px">
+          <div class="faint" style="min-height:60px">Describe a change, a question, or a bug…</div>
+          <div class="row"><span class="chip" style="padding:5px 10px"><span class="av sm web" style="width:18px;height:18px;font-size:9px">W</span>Web app</span><span class="grow"></span><button class="btn ghost" aria-label="Hold to talk" style="width:44px;padding:0"><svg class="i"><use href="#i-mic"/></svg></button><button class="btn primary" style="border-radius:99px">Start</button></div>
+        </div>
+        <div class="row" style="padding:12px 14px;border-radius:14px;background:var(--m-amber-bg);color:var(--m-amber)"><span class="dot" style="background:currentColor"></span><span class="grow"><strong>Add a footer…</strong> needs your OK</span><svg class="i"><use href="#i-right"/></svg></div>
+        <div class="row" style="padding:4px 14px"><span class="spin" style="width:10px;height:10px;color:var(--m-blue)"></span><span class="grow">Explain how a payment…</span><span class="faint">0:42</span></div>
+        <div class="row" style="padding:4px 14px"><svg class="i" style="color:var(--m-green);width:16px;height:16px"><use href="#i-check"/></svg><span class="grow">Write a Getting Started…</span><span class="faint">3 min</span></div>
+        <div class="faint" style="text-align:center;margin-top:auto">All tasks →</div>
+      </div></div>
+    </div>
+
+    <div class="tradeoffs">
+      <div><h3>Strong at</h3><ul><li>The calmest and most "Apple" of the three; one obvious action on every screen.</li><li>The docked approval can't be missed or answered by accident, and typing a new instruction instead is natural.</li><li>Best for a live demo: open, type, watch.</li></ul></div>
+      <div><h3>Watch out for</h3><ul><li>With several tasks running, the home list gets short shrift under the big box.</li><li>Least visible power: shortcuts, background work and history are one step further away.</li></ul></div>
+    </div>
+  </section>
+
+  <!-- =================================== Shared =================================== -->
+  <section class="common" id="map">
+    <h2>What all three share</h2>
+    <ul style="margin:0;padding-left:18px;color:var(--sub);display:grid;gap:4px;max-width:80ch">
+      <li><strong>Words:</strong> "Waiting for your OK", "Working on it", "Done", "Stopped". Tools become verbs ("Reading index.html", "Running a check"). One tested module owns every label, plus a safe / careful / risky rating for approvals.</li>
+      <li><strong>Keys:</strong> every current shortcut still works, including numpad, <code>Alt+N</code>, <code>Y</code>/<code>A</code>/<code>N</code> (now without the Tab step), <code>Esc</code> to stop, <code>Ctrl+K</code> and <code>?</code>. Hints show on hover and focus, and a "Show shortcuts" setting brings back the always-on hint bar.</li>
+      <li><strong>Look:</strong> light and dark following the system, 15px body text, AA contrast, visible focus rings, 40px+ targets, labelled icon buttons.</li>
+      <li><strong>Projects:</strong> named after their folder, with a colour and initial; rename and recolour is optional.</li>
+    </ul>
+
+    <h2 style="margin-top:24px">Where every feature lives</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Today</th><th>A · Inbox</th><th>B · Projects</th><th>C · Focus</th></tr></thead>
+      <tbody>
+        <tr><td>Inbox tab, <code>Alt+N</code></td><td>"Needs you" section on top</td><td>Banner on every screen</td><td>Amber rows under the box</td></tr>
+        <tr><td>Live tab</td><td>"Working" section</td><td>Status inside each project card</td><td>Rows under the box</td></tr>
+        <tr><td>History, resume, fork</td><td>"Earlier", with Continue</td><td>"Everything else" and each project's recent list</td><td>"All tasks"</td></tr>
+        <tr><td>Approvals Y / A / N</td><td>Sheet over the task</td><td>Top of the Activity panel</td><td>Replaces the message box</td></tr>
+        <tr><td>Command board, groups, numpad</td><td>Shortcut chips + "More…" sheet with the full grid</td><td>3×3 tile grid in the Activity panel</td><td>Suggestions + <code>/</code> menu</td></tr>
+        <tr><td>Edit tiles, import / export</td><td colspan="3">A "Manage shortcuts" view, reached from the shortcut area, <code>E</code>, or <code>Ctrl+K</code></td></tr>
+        <tr><td>Templates <code>{{blank}}</code></td><td colspan="3">Unchanged: the shortcut asks for the blank first</td></tr>
+        <tr><td>Push-to-talk</td><td colspan="3">Mic button in the message box, hold <code>`</code> or <code>Numpad .</code></td></tr>
+        <tr><td>Activity line, timers</td><td>Status pill + live step in the steps card</td><td>Activity panel</td><td>Status capsule</td></tr>
+        <tr><td>Background tasks, per-task stop, <code>Ctrl+B</code></td><td>Steps card</td><td>Activity panel</td><td>Capsule menu</td></tr>
+        <tr><td>Stop turn (<code>Esc</code>) / End session (<code>X</code>)</td><td>"Stop" button / ⋯ menu "Close task"</td><td>"Stop" / ⋯ menu</td><td>Capsule "Stop" / ⋯ menu</td></tr>
+        <tr><td>Rename, context meter, branch</td><td colspan="3">In the task's ⋯ menu and a small "details" line</td></tr>
+        <tr><td>Palette, <code>?</code>, rebinding, sound</td><td colspan="3">Unchanged, plus a visible search field and a settings entry</td></tr>
+        <tr><td>Phone layout, welcome card</td><td colspan="3">Phone mockups above; the welcome card becomes three task-based steps</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="pick">
+      <h3>Recommendation</h3>
+      <p><strong>A · Inbox</strong>, borrowing two pieces: B's "files changed" list inside the steps card, and C's rule that an approval replaces the message box on phones. A answers "what needs me?" by its very layout, which is the owner's first complaint about lists, and it is the easiest to demo to people who have never seen Claude Code. B is the better fit if most use is one project at a time; C if the demo is one task, start to finish.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const state = { screen: 'home', mt: 'light' };
+  try { const s = JSON.parse(localStorage.getItem('ccdd') || '{}'); Object.assign(state, s); } catch {}
+  const frames = [...document.querySelectorAll('.frame')];
+  function fit() {
+    for (const f of frames) {
+      if (f.hidden) continue;
+      const w = +f.dataset.w, h = +f.dataset.h;
+      const s = Math.min(1, f.clientWidth / w);
+      f.firstElementChild.style.transform = `scale(${s})`;
+      f.style.height = `${Math.round(h * s)}px`;
+    }
+  }
+  function apply() {
+    for (const f of frames) f.hidden = f.dataset.screen !== state.screen;
+    document.querySelectorAll('.m').forEach((m) => { m.dataset.mt = state.mt; });
+    document.querySelectorAll('[data-screen]').forEach((b) => { if (b.tagName === 'BUTTON') b.setAttribute('aria-pressed', String(b.dataset.screen === state.screen)); });
+    document.querySelectorAll('button[data-mt]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mt === state.mt)));
+    try { localStorage.setItem('ccdd', JSON.stringify(state)); } catch {}
+    fit();
+  }
+  document.querySelector('.bar').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.screen) state.screen = b.dataset.screen;
+    if (b.dataset.mt) state.mt = b.dataset.mt;
+    apply();
+  });
+  new ResizeObserver(fit).observe(document.body);
+  apply();
+})();
+</script>
