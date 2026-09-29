@@ -62,6 +62,9 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Enter / Shift+Enter', 'Send / new line (message box)'],
       ['Shift+Tab', 'Switch mode, like Claude Code: asks first → accepts edits → plan first'],
       ['/ (start of a message)', 'Suggests commands and skills as you type, like Claude Code: ↑ ↓ choose, Tab completes, Enter runs, Esc hides'],
+      ['@ (message box)', 'Suggests files in the repos Claude can use; Tab or Enter puts it in'],
+      ['↑ ↓ (empty message box)', 'Your earlier messages, like Claude Code'],
+      ['Ctrl+V / drop (message box)', 'Attach an image; Backspace in an empty box takes the last one off'],
       ['Esc', 'While Claude is working: stop it. Otherwise step out: message box → number pad → home'],
       ['Numpad 0 / Alt+0', 'Back to home, even while Claude is working'],
       ['Tab (message box)', 'Go to the number pad or the approval card without stopping Claude'],
@@ -69,6 +72,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['+ / −', 'Give this session another repo to work in / take one it was given back out (or its × above the conversation)'],
       ['PgUp PgDn  Home End', 'Scroll the conversation'],
       ['T', 'Show or hide every step’s details'],
+      ['L', 'Fold or open Claude’s to-do list'],
       ['C (number pad)', 'Fold the number pad away, or keep it open (folded, it still opens while you use it)'],
       ['R / X', 'Rename / end the session'],
     ],
@@ -537,6 +541,7 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
   switch (e.key.toLowerCase()) {
     case 'i': set({ zone: 'composer' }); return true;
     case 't': set({ expandTools: !s.expandTools }); return true;
+    case 'l': toggleFold('todos'); return true;
     case 'c': toggleFold('pad'); flash(get().folds.pad ? 'Number pad folded: Tab opens it' : 'Number pad stays open'); return true;
     case 'y': return respondPermission('allow');
     case 'a': return respondPermission('always');

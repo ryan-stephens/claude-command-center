@@ -1,7 +1,8 @@
 import { getSessionMessages, query, renameSession, type Query, type SDKMessage, type SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { statSync } from 'node:fs';
-import { MODES, type PermissionMode, type SessionActivity, type SessionStatus, type SessionSummary, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
+import { MODES, type ImageAttachment, type PermissionMode, type SessionActivity, type SessionStatus, type SessionSummary, type Todo, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { applyEvent, backgroundRunning, idleActivity, setApproval, startTurn } from './activity.ts';
+import { applyTodos, NO_TODOS, type TodoState } from './todos.ts';
 import { ACTIVE_ELSEWHERE_MS, HistoryIndex } from './history-index.ts';
 import { InputQueue } from './input-queue.ts';
 import { PermissionBroker } from './permission-broker.ts';
@@ -34,6 +35,8 @@ interface LiveSession {
   dirsStale?: boolean;
   /** Fresh after /clear: the next message names it. */
   untitled?: boolean;
+  /** Claude's to-do list, as it keeps it. */
+  todos: TodoState;
   /** As its CLI reports them (init, and status on a mode change). */
   mode?: PermissionMode;
   model?: string;
@@ -60,6 +63,8 @@ export interface SessionEvents {
   activity(id: string, activity: SessionActivity): void;
   /** A session's whole transcript was replaced (a fresh start after /clear). */
   transcript(id: string, items: TranscriptItem[]): void;
+  /** A live session's to-do list changed. */
+  todos(id: string, todos: Todo[]): void;
 }
 
 export class SessionManager {
@@ -142,7 +147,7 @@ export class SessionManager {
    * own it, it is forked instead so two writers never share one transcript.
    * Returns the id the turn went to.
    */
-  async send(id: string, text: string): Promise<string> {
+  async send(id: string, text: string, images: ImageAttachment[] = []): Promise<string> {
     const target = this.forkedTo.get(id) ?? id;
     let l = this.live.get(target);
     if (!l) {
@@ -153,11 +158,12 @@ export class SessionManager {
       }
       l = await pending;
     }
-    const userItem: TranscriptItem = { kind: 'user', uuid: crypto.randomUUID(), text };
+    // Images show as "[image]", the way they read back from the transcript on disk.
+    const userItem: TranscriptItem = { kind: 'user', uuid: crypto.randomUUID(), text: text + images.map(() => '\n[image]').join('') };
     if (l.untitled && !text.startsWith('/')) { l.title = firstLine(text) || l.title; l.untitled = false; }
     l.items.push(userItem);
     this.events.items(l.id, [userItem]);
-    l.input.push(text);
+    l.input.push(text, images);
     this.setStatus(l, 'running');
     this.setActivity(l, startTurn(l.activity, Date.now()));
     return l.id;
@@ -197,6 +203,12 @@ export class SessionManager {
   workspaceDirsOf(cwd: string): string[] | undefined {
     const out = cwd ? workspaceRepos(cwd, this.workspaces) : [];
     return out.length ? out : undefined;
+  }
+
+  /** The other repos a session can use (its workspaces' and its own additions), for "@" file search. */
+  usableDirs(id: string): string[] {
+    const cwd = this.cwdOf(id);
+    return cwd ? this.launchDirs(id, cwd) : [];
   }
 
   /** What a session's CLI launches with: its workspaces' repos plus its own, the ones that exist today. */
@@ -262,6 +274,7 @@ export class SessionManager {
     const began = l.items.some((i) => i.kind === 'user');
     const next = this.start({ id: l.id, cwd: l.cwd, title: l.title, items: [...l.items], options: began ? { resume: l.id } : { sessionId: l.id } });
     next.ctxPct = l.ctxPct;
+    next.todos = l.todos;
     const notice: TranscriptItem = { kind: 'notice', uuid: crypto.randomUUID(), text: note };
     next.items.push(notice);
     this.events.items(l.id, [notice]);
@@ -394,7 +407,7 @@ export class SessionManager {
     });
     const l: LiveSession = {
       id, cwd: opts.cwd, title: opts.title, input, q,
-      status: 'idle', items: opts.items ?? [], partial: '', lastModified: Date.now(), activity: idleActivity(Date.now()), dirs,
+      status: 'idle', items: opts.items ?? [], partial: '', lastModified: Date.now(), activity: idleActivity(Date.now()), dirs, todos: NO_TODOS,
     };
     self = l;
     this.live.set(id, l);
@@ -420,6 +433,12 @@ export class SessionManager {
 
   private handle(l: LiveSession, msg: SDKMessage): void {
     l.lastModified = Date.now();
+    const todos = applyTodos(l.todos, msg as never);
+    if (todos !== l.todos) {
+      const changed = todos.todos !== l.todos.todos;
+      l.todos = todos;
+      if (changed) this.events.todos(l.id, todos.todos);
+    }
     if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id && msg.session_id !== l.id) this.follow(l, msg.session_id);
     if (msg.type === 'system' && msg.subtype === 'init') {
       l.mode = msg.permissionMode;
@@ -487,6 +506,8 @@ export class SessionManager {
     l.items = [{ kind: 'notice', uuid: crypto.randomUUID(), text: 'Fresh start: Claude no longer sees the earlier conversation. That one stays in the list under Earlier.' }];
     l.title = 'Fresh start';
     l.untitled = true;
+    l.todos = NO_TODOS;
+    this.events.todos(newId, []);
     this.events.forked(old, newId);
     this.events.transcript(newId, l.items);
     this.emitUpsert(newId);
@@ -503,6 +524,8 @@ export class SessionManager {
   private setStatus(l: LiveSession, status: SessionStatus): void {
     if (l.status === status) return;
     l.status = status;
+    // A turn the CLI starts by itself (after a background task, say) is a turn too.
+    if (status === 'running' && l.activity.turnStartedAt === undefined) this.setActivity(l, startTurn(l.activity, Date.now()));
     this.emitUpsert(l.id);
     this.applyWhenIdle(l);
   }
@@ -544,6 +567,11 @@ export class SessionManager {
       mode: l.mode,
       model: l.model,
     };
+  }
+
+  /** Every live session's to-do list, for clients that just connected. */
+  allTodos(): [string, Todo[]][] {
+    return [...this.live.values()].filter((l) => l.todos.todos.length).map((l) => [l.id, l.todos.todos]);
   }
 
   /** Current activity of every live session, for clients that just connected. */

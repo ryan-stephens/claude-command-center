@@ -108,7 +108,7 @@ export function classifyCommand(command: string): { risk: Risk; reason: string }
 
 // ---- Tools ------------------------------------------------------------------------
 
-const READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead', 'WebFetch', 'WebSearch', 'TodoWrite', 'ExitPlanMode', 'BashOutput', 'ListMcpResourcesTool', 'ReadMcpResourceTool']);
+const READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead', 'WebFetch', 'WebSearch', 'TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', 'AskUserQuestion', 'ExitPlanMode', 'BashOutput', 'ListMcpResourcesTool', 'ReadMcpResourceTool']);
 const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
 
@@ -140,7 +140,10 @@ export function toolStep(name: string, fields: ToolFields | undefined, input: st
     case 'WebFetch': return { text: `${pick('Opening', 'Opened')} ${host(fields?.url)}`, icon: 'web' };
     case 'WebSearch': return { text: `${pick('Searching', 'Searched')} the web for “${clip(input, 50)}”`, icon: 'web' };
     case 'Task': case 'Agent': return { text: `${pick('Helper working on', 'Helper worked on')}: ${clip(fields?.description ?? input, 60)}`, icon: 'agent' };
-    case 'TodoWrite': return { text: pick('Updating the to-do list', 'Updated the to-do list'), icon: 'plan' };
+    case 'TodoWrite': case 'TaskUpdate': return { text: pick('Updating the to-do list', 'Updated the to-do list'), icon: 'plan' };
+    case 'TaskCreate': return { text: pick('Adding to the to-do list', 'Added to the to-do list'), icon: 'plan' };
+    case 'TaskList': case 'TaskGet': return { text: pick('Checking the to-do list', 'Checked the to-do list'), icon: 'plan' };
+    case 'AskUserQuestion': return { text: pick('Asking you a question', 'Asked you a question'), icon: 'plan' };
     case 'ExitPlanMode': return { text: pick('Proposing a plan', 'Proposed a plan'), icon: 'plan' };
     case 'Bash': case 'PowerShell': {
       if (fields?.description) return { text: clip(fields.description, 80), icon: 'run' };

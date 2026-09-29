@@ -1,17 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { SlashInfo, TranscriptItem } from '../../shared/protocol.ts';
+import type { FileHit, ImageAttachment, SlashInfo, Todo, TranscriptItem } from '../../shared/protocol.ts';
 import { workspacesFor } from '../../shared/workspaces.ts';
 import { turnClock } from '../activity-label.ts';
-import { exactCommand, matchSlash, runsAlone, slashQuery } from '../slash.ts';
+import { exactCommand, fileQuery, matchSlash, mention, runsAlone, slashQuery } from '../slash.ts';
+import { historyFor, loadPrompts, rememberPrompt } from '../prompt-history.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { statusLabel } from '../home-model.ts';
 import { askStop, backToList, cycleMode, hop } from '../keys.ts';
 import { MODE_LABEL } from '../questions.ts';
 import { startVoice, stopVoice, voiceSupported } from '../voice.ts';
-import { NO_BINDINGS, set, setDraft, toggleFold, useFlags, useStore } from '../store.ts';
-import { send } from '../ws.ts';
+import { flash, NO_BINDINGS, set, setDraft, toggleFold, useFlags, useStore } from '../store.ts';
+import { searchFiles, send } from '../ws.ts';
 import { ActivityBar, useNow } from './ActivityBar.tsx';
 import { ApprovalCard } from './Approval.tsx';
 import { ContextChips } from './Home.tsx';
@@ -89,6 +90,7 @@ export function SessionView() {
               {permission && <ApprovalCard p={permission} cwd={session?.cwd} />}
             </div>
           </div>
+          <TodoPanel id={id} />
           <ActivityBar id={id} />
           <Composer id={id} focused={zone === 'composer'} />
           {/* Phones: the number pad opens as a panel under the composer. */}
@@ -149,6 +151,34 @@ function MemoryMeter({ pct }: { pct: number }) {
   );
 }
 
+/** One row of the suggestion list above the message box: a slash command or an "@" file. */
+interface Suggestion {
+  key: string;
+  title: string;
+  aside?: string;
+  desc?: string;
+  hint?: string;
+  /** What Enter does with it (Tab always completes). */
+  enter: 'run' | 'complete' | 'insert';
+  take: (run: boolean) => void;
+}
+
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+type Pasted = ImageAttachment & { url: string };
+
+/** Read an image file for sending: base64 without the data: prefix, plus a preview URL. */
+function readImage(file: File): Promise<Pasted> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const url = String(r.result);
+      resolve({ mediaType: file.type as ImageAttachment['mediaType'], data: url.slice(url.indexOf(',') + 1), url });
+    };
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
 function Composer({ id, focused }: { id: string; focused: boolean }) {
   const draft = useStore((s) => s.drafts[id] ?? '');
   const voice = useStore((s) => (s.voice?.sessionId === id ? s.voice : null));
@@ -157,24 +187,60 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
   const status = useStore((s) => s.sessions.find((x) => x.id === id)?.status);
   const pending = useStore((s) => Object.values(s.permissions).some((p) => p.sessionId === id));
   const commands = useStore((s) => (s.slash?.sessionId === id ? s.slash.commands : NO_SLASH));
+  const items = useStore((s) => s.transcripts[id] ?? EMPTY);
   const ref = useRef<HTMLTextAreaElement>(null);
-  // Suggestions while a command is typed at the start: /cl → /clear. Esc hides them until the text changes.
+  const [caret, setCaret] = useState(0);
   const [pick, setPick] = useState(0);
+  // Esc hides the suggestions until the text changes.
   const [hiddenFor, setHiddenFor] = useState<string | null>(null);
-  const query = voice ? null : slashQuery(draft);
-  const suggestions = query !== null && hiddenFor !== draft ? matchSlash(commands, query) : [];
+  const [files, setFiles] = useState<FileHit[]>([]);
+  const [images, setImages] = useState<Pasted[]>([]);
+  // ↑ ↓ through earlier messages: where we are (-1: not browsing) and the draft to come back to.
+  const [histAt, setHistAt] = useState(-1);
+  const [saved, setSaved] = useState('');
+
+  const slashQ = voice ? null : slashQuery(draft);
+  const atQ = voice || slashQ !== null ? null : fileQuery(draft, caret);
+  const hidden = hiddenFor === draft;
+
+  // "@" file suggestions come from the server, a moment after typing stops.
+  useEffect(() => {
+    if (!atQ || hidden) { setFiles([]); return; }
+    let live = true;
+    const t = setTimeout(() => { searchFiles(id, atQ.query).then((h) => { if (live) setFiles(h); }, () => {}); }, 120);
+    return () => { live = false; clearTimeout(t); };
+  }, [id, atQ?.query, atQ?.start, hidden]);
+
+  const suggestions: Suggestion[] = hidden ? [] : slashQ !== null
+    ? matchSlash(commands, slashQ).map((c) => ({
+      key: c.name,
+      title: `/${c.name}`,
+      aside: c.aliases?.map((a) => `/${a}`).join(' '),
+      desc: c.description,
+      hint: c.argumentHint,
+      enter: runsAlone(c) ? 'run' : 'complete',
+      take: (run) => {
+        if (run && runsAlone(c)) { sendText(`/${c.name}`); } else setDraft(id, `/${c.name} `);
+      },
+    }))
+    : atQ ? files.map((f) => ({
+      key: f.path,
+      title: f.label,
+      aside: f.repo,
+      enter: 'insert',
+      take: () => {
+        const before = draft.slice(0, atQ.start);
+        const after = draft.slice(caret);
+        const inserted = `${mention(f.path)} `;
+        setDraft(id, before + inserted + after.replace(/^\S*/, ''));
+        const at = before.length + inserted.length;
+        requestAnimationFrame(() => { ref.current?.setSelectionRange(at, at); setCaret(at); });
+      },
+    }))
+    : [];
   const chosen = suggestions[Math.min(pick, suggestions.length - 1)];
   const typedCommand = !suggestions.length && !voice ? exactCommand(draft, commands) : undefined;
-  useEffect(() => { setPick(0); }, [query]);
-
-  /** Take a suggestion: run it when it needs nothing more, else complete it and wait for its arguments. */
-  function accept(c: SlashInfo, run: boolean) {
-    if (run && runsAlone(c)) {
-      send({ type: 'session.send', id, text: `/${c.name}` });
-      setDraft(id, '');
-    } else setDraft(id, `/${c.name} `);
-    ref.current?.focus();
-  }
+  useEffect(() => { setPick(0); }, [slashQ, atQ?.query]);
 
   useEffect(() => {
     const el = ref.current;
@@ -182,18 +248,56 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
     if (focused) {
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length); // after an "insert" workflow, keep typing at the end
+      setCaret(el.value.length);
     } else el.blur();
   }, [focused, id, dialogOpen]); // re-run when a dialog closes, so focus comes back here
 
-  function submit() {
-    if (voice || !draft.trim()) return;
-    send({ type: 'session.send', id, text: draft });
+  function sendText(body: string) {
+    send({ type: 'session.send', id, text: body, ...(images.length ? { images: images.map(({ mediaType, data }) => ({ mediaType, data })) } : {}) });
+    rememberPrompt(body);
     setDraft(id, '');
+    setImages([]);
+    setHistAt(-1);
+    ref.current?.focus();
+  }
+
+  function submit() {
+    if (voice || (!draft.trim() && !images.length)) return;
+    sendText(draft.trim() ? draft : 'What do you see in this image?');
+  }
+
+  async function attach(list: FileList | File[]) {
+    const picked = [...list].filter((f) => IMAGE_TYPES.includes(f.type));
+    if (!picked.length) return false;
+    const room = 5 - images.length;
+    const tooBig = picked.find((f) => f.size > 5 * 1024 * 1024);
+    if (tooBig) { flash(`${tooBig.name || 'That image'} is over 5 MB`); return true; }
+    if (picked.length > room) flash('Up to 5 images per message');
+    const read = await Promise.all(picked.slice(0, room).map(readImage));
+    setImages((x) => [...x, ...read].slice(0, 5));
+    return true;
+  }
+
+  /** ↑ / ↓ on the first / last line of the box walk through earlier messages. */
+  function browseHistory(dir: 1 | -1): boolean {
+    const el = ref.current;
+    if (!el) return false;
+    const onFirstLine = !el.value.slice(0, el.selectionStart).includes('\n');
+    const onLastLine = !el.value.slice(el.selectionEnd).includes('\n');
+    if (dir === 1 && !(onFirstLine && (histAt >= 0 || !draft))) return false;
+    if (dir === -1 && !(onLastLine && histAt >= 0)) return false;
+    const list = historyFor(items, loadPrompts());
+    const next = histAt + dir;
+    if (next >= list.length) return true;
+    if (histAt < 0) setSaved(draft);
+    setHistAt(next);
+    setDraft(id, next < 0 ? saved : list[next]);
+    return true;
   }
 
   const placeholder = pending ? 'Answer Claude above, or type a different instruction'
     : status === 'running' ? 'Claude is working. Type your next message; it waits its turn.'
-    : 'Tell Claude what you want · Enter to send';
+    : 'Tell Claude what you want · / for commands · @ for files · Enter to send';
   return (
     <div className="border-t border-line px-3 py-3 md:px-6">
       {voice && (
@@ -204,26 +308,27 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
       )}
       {suggestions.length > 0 && focused && (
         <div className="relative mx-auto max-w-3xl">
-          <ul className="absolute inset-x-0 bottom-1.5 z-10 max-h-80 overflow-y-auto rounded-2xl border border-line bg-surface p-1.5 shadow-xl" role="listbox" aria-label="Commands">
+          <ul className="absolute inset-x-0 bottom-1.5 z-10 max-h-80 overflow-y-auto rounded-2xl border border-line bg-surface p-1.5 shadow-xl" role="listbox" aria-label={slashQ !== null ? 'Commands' : 'Files'}>
             {suggestions.map((c) => (
               <li
-                key={c.name}
+                key={c.key}
                 role="option"
                 aria-selected={c === chosen}
                 onMouseMove={() => { if (c !== chosen) setPick(suggestions.indexOf(c)); }}
-                onMouseDown={(e) => { e.preventDefault(); accept(c, true); }}
+                onMouseDown={(e) => { e.preventDefault(); c.take(true); ref.current?.focus(); }}
                 className={`flex cursor-pointer items-baseline gap-3 rounded-xl px-3 py-1.5 ${c === chosen ? 'is-focus bg-raise' : ''}`}
               >
-                <span className="shrink-0 font-mono text-[14px] font-semibold">/{c.name}</span>
-                {c.aliases?.length ? <span className="shrink-0 text-xs text-faint">{c.aliases.map((a) => `/${a}`).join(' ')}</span> : null}
-                <span className="min-w-0 grow truncate text-sm text-sub">{c.description}</span>
-                {c.argumentHint && <span className="max-w-[35%] shrink-0 truncate font-mono text-xs text-faint">{c.argumentHint}</span>}
+                {slashQ === null && <Icon name="file" size={14} className="shrink-0 self-center text-faint" />}
+                <span className="min-w-0 shrink truncate font-mono text-[14px] font-semibold">{c.title}</span>
+                {c.aside && <span className="shrink-0 text-xs text-faint">{c.aside}</span>}
+                <span className="min-w-0 grow truncate text-sm text-sub">{c.desc}</span>
+                {c.hint && <span className="max-w-[35%] shrink-0 truncate font-mono text-xs text-faint">{c.hint}</span>}
               </li>
             ))}
             <li className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 pb-0.5 pt-1.5 text-xs text-faint" role="presentation">
               <span className="flex items-center gap-1"><Key k="↑ ↓" size="sm" />choose</span>
-              <span className="flex items-center gap-1"><Key k="Tab" size="sm" />complete</span>
-              <span className="flex items-center gap-1"><Key k="Enter" size="sm" />{chosen && !runsAlone(chosen) ? 'complete' : 'run'}</span>
+              <span className="flex items-center gap-1"><Key k="Tab" size="sm" />{slashQ !== null ? 'complete' : 'insert'}</span>
+              <span className="flex items-center gap-1"><Key k="Enter" size="sm" />{chosen?.enter}</span>
               <span className="flex items-center gap-1"><Key k="Esc" size="sm" />hide</span>
             </li>
           </ul>
@@ -234,33 +339,57 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
           <span className="font-mono font-semibold text-sub">/{typedCommand.name}</span>{typedCommand.argumentHint && <span className="font-mono"> {typedCommand.argumentHint}</span>} · {typedCommand.description}
         </p>
       )}
-      <div className={`mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border-2 bg-surface p-1.5 pl-3 ${voice ? 'border-bad' : focused ? 'border-acc' : 'border-line'}`}>
-        <textarea
-          readOnly={Boolean(voice)}
-          ref={ref}
-          value={text}
-          rows={Math.min(8, Math.max(1, text.split('\n').length))}
-          onChange={(e) => setDraft(id, e.target.value)}
-          onFocus={() => set({ zone: 'composer' })}
-          onKeyDown={(e) => {
-            if (chosen && !e.nativeEvent.isComposing) {
+      <div
+        className={`mx-auto max-w-3xl rounded-2xl border-2 bg-surface p-1.5 pl-3 ${voice ? 'border-bad' : focused ? 'border-acc' : 'border-line'}`}
+        onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
+        onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); void attach(e.dataTransfer.files); } }}
+      >
+        {images.length > 0 && (
+          <div className="flex flex-wrap gap-2 pb-1.5 pt-1" aria-label="Images to send">
+            {images.map((img, i) => (
+              <span key={img.url.slice(-40) + i} className="relative">
+                <img src={img.url} alt={`Image ${i + 1}`} className="h-16 w-16 rounded-lg border border-line object-cover" />
+                <button onClick={() => setImages((x) => x.filter((_, j) => j !== i))} aria-label={`Remove image ${i + 1}`} className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-line bg-surface text-faint hover:text-bad">
+                  <Icon name="x" size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex items-end gap-2">
+          <textarea
+            readOnly={Boolean(voice)}
+            ref={ref}
+            value={text}
+            rows={Math.min(8, Math.max(1, text.split('\n').length))}
+            onChange={(e) => { setDraft(id, e.target.value); setCaret(e.target.selectionStart); setHistAt(-1); }}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+            onFocus={() => set({ zone: 'composer' })}
+            onPaste={(e) => {
+              const pasted = [...e.clipboardData.files];
+              if (pasted.some((f) => IMAGE_TYPES.includes(f.type))) { e.preventDefault(); void attach(pasted); }
+            }}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
               const take = () => { e.preventDefault(); e.stopPropagation(); };
-              if (e.key === 'ArrowDown') { take(); setPick((pick + 1) % suggestions.length); return; }
-              if (e.key === 'ArrowUp') { take(); setPick((pick - 1 + suggestions.length) % suggestions.length); return; }
-              if (e.key === 'Tab' && !e.shiftKey) { take(); accept(chosen, false); return; }
-              if (e.key === 'Enter' && !e.shiftKey) { take(); accept(chosen, true); return; }
-              if (e.key === 'Escape') { take(); setHiddenFor(draft); return; }
-            }
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          placeholder={placeholder}
-          aria-label="Message to Claude"
-          className="min-h-9 w-full resize-none bg-transparent py-1.5 outline-none placeholder:text-faint"
-        />
-        <ComposerButtons id={id} canSend={Boolean(draft.trim()) && !voice} onSend={submit} />
+              if (chosen) {
+                if (e.key === 'ArrowDown') { take(); setPick((pick + 1) % suggestions.length); return; }
+                if (e.key === 'ArrowUp') { take(); setPick((pick - 1 + suggestions.length) % suggestions.length); return; }
+                if (e.key === 'Tab' && !e.shiftKey) { take(); chosen.take(false); return; }
+                if (e.key === 'Enter' && !e.shiftKey) { take(); chosen.take(true); return; }
+                if (e.key === 'Escape') { take(); setHiddenFor(draft); return; }
+              }
+              if (e.key === 'ArrowUp' && !e.altKey && !e.shiftKey && browseHistory(1)) { take(); return; }
+              if (e.key === 'ArrowDown' && !e.altKey && !e.shiftKey && browseHistory(-1)) { take(); return; }
+              if (e.key === 'Backspace' && !draft && images.length) { take(); setImages((x) => x.slice(0, -1)); return; }
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+            }}
+            placeholder={placeholder}
+            aria-label="Message to Claude"
+            className="min-h-9 w-full resize-none bg-transparent py-1.5 outline-none placeholder:text-faint"
+          />
+          <ComposerButtons id={id} canSend={(Boolean(draft.trim()) || images.length > 0) && !voice} onSend={submit} />
+        </div>
       </div>
       <ModeLine id={id} />
     </div>
@@ -268,6 +397,40 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
 }
 
 /** Touch and mouse controls: hold-to-talk, the phone number pad toggle, send. */
+const NO_TODOS: Todo[] = [];
+
+/** Claude's to-do list while it works, as Claude Code shows it. Folds to one line (L). */
+function TodoPanel({ id }: { id: string }) {
+  const todos = useStore((s) => s.todos[id] ?? NO_TODOS);
+  const folded = useStore((s) => s.folds.todos);
+  if (!todos.length) return null;
+  const done = todos.filter((t) => t.status === 'completed').length;
+  const now = todos.find((t) => t.status === 'in_progress');
+  return (
+    <div className="border-t border-line px-3 py-2 md:px-6">
+      <div className="mx-auto max-w-3xl">
+        <button onClick={() => toggleFold('todos')} aria-expanded={!folded} className="flex w-full items-center gap-2 text-left text-sm" title="Fold or open (L)">
+          <Icon name={folded ? 'right' : 'down'} size={14} className="text-faint" />
+          <span className="font-semibold">To-do</span>
+          <span className="text-faint">{done} of {todos.length} done</span>
+          {folded && now && <span className="min-w-0 truncate text-busy">· {now.activeForm ?? now.content}</span>}
+          <Key k="L" size="sm" className="ml-auto" />
+        </button>
+        {!folded && (
+          <ul className="mt-1.5 max-h-40 space-y-0.5 overflow-y-auto pl-6 text-sm" aria-label="Claude’s to-do list">
+            {todos.map((t) => (
+              <li key={t.id} className={`flex items-start gap-2 ${t.status === 'completed' ? 'text-faint line-through' : t.status === 'in_progress' ? 'font-semibold text-busy' : 'text-sub'}`}>
+                <span className="mt-0.5 shrink-0">{t.status === 'completed' ? <Icon name="check" size={14} className="text-ok" /> : t.status === 'in_progress' ? <span className="spinner" /> : <span className="inline-block h-3.5 w-3.5 rounded-full border border-line" />}</span>
+                <span className="min-w-0">{t.status === 'in_progress' ? t.activeForm ?? t.content : t.content}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const MODE_TONE: Record<string, string> = { default: 'bg-raise text-sub', acceptEdits: 'bg-busy-bg text-busy', plan: 'bg-calm-bg text-calm' };
 
 /** Under the message box: the mode (Shift+Tab switches it, as in Claude Code) and the model. */

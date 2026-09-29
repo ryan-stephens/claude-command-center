@@ -1,4 +1,4 @@
-import { PROTOCOL, type ClientMsg, type CommandPack, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
+import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import { onStatusChange } from './attention.ts';
 import { flash, get, groupKeyOf, set, setScope } from './store.ts';
 
@@ -93,6 +93,12 @@ export async function listFolder(path?: string): Promise<FolderListing> {
   return (reply as Extract<ServerMsg, { type: 'fs.list' }>).listing;
 }
 
+/** Files in a session's repos for "@" suggestions (names only). */
+export async function searchFiles(sessionId: string, query: string): Promise<FileHit[]> {
+  const reply = await request((reqId) => ({ type: 'fs.files', reqId, sessionId, query }));
+  return (reply as Extract<ServerMsg, { type: 'fs.files' }>).hits;
+}
+
 /** Replace the repo library's folders; rejects with the server's reason (a missing folder, say). */
 export async function setSources(sources: string[]): Promise<void> {
   await request((reqId) => ({ type: 'library.setSources', reqId, sources }));
@@ -181,6 +187,9 @@ function receive(msg: ServerMsg): void {
     case 'session.activity':
       set({ activity: { ...get().activity, [msg.id]: msg.activity } });
       return;
+    case 'session.todos':
+      set({ todos: { ...get().todos, [msg.id]: msg.todos } });
+      return;
     case 'session.partial':
       set({ partials: { ...get().partials, [msg.id]: msg.text } });
       return;
@@ -238,6 +247,7 @@ function receive(msg: ServerMsg): void {
       return;
     case 'ok':
     case 'fs.list':
+    case 'fs.files':
       return; // answers to requests nobody is waiting for any more
     case 'pack':
       pendingExports.get(msg.reqId)?.(msg.pack);

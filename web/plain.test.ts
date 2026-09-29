@@ -82,3 +82,9 @@ test('approvals explain what, how risky, and what Always means', () => {
   const edit = explainPermission({ tool: 'Edit', input: 'C:\\demo\\web-app\\index.html', fields: { filePath: 'C:\\demo\\web-app\\index.html' } }, 'C:\\demo\\web-app');
   assert.deepEqual([edit.want, edit.touches, edit.risk], ['change index.html', 'index.html', 'changes']);
 });
+
+test('to-do and question tools read as plain steps', () => {
+  assert.equal(toolStep('TaskCreate', undefined, '', false).text, 'Added to the to-do list');
+  assert.equal(toolStep('TaskUpdate', undefined, '', true).text, 'Updating the to-do list');
+  assert.equal(toolStep('AskUserQuestion', undefined, '', false).text, 'Asked you a question');
+});

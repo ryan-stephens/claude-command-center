@@ -5,11 +5,12 @@ import type { IncomingMessage } from 'node:http';
 import { existsSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { PROTOCOL, type ClientMsg, type RepoInfo, type ServerMsg, type Settings, type Workspace } from '../shared/protocol.ts';
+import { PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { CommandService } from './commands.ts';
 import { PermissionBroker } from './permission-broker.ts';
 import { COOKIE, cookieToken, findRemoteIp, remoteHostAllowed, remoteToken, remoteUpgradeAllowed, tokenMatches } from './remote.ts';
+import { searchFiles } from './file-search.ts';
 import { listFolder, listRoots, normalizeFolder, notAFullPath } from './fs-browse.ts';
 import { cleanSources, scanSources } from './repo-library.ts';
 import { workspaceFromFile, workspaceToFile } from './workspace-file.ts';
@@ -55,6 +56,7 @@ const manager: SessionManager = new SessionManager({
   commandsChanged: () => broadcast({ type: 'commands.changed' }),
   activity: (id, activity) => broadcast({ type: 'session.activity', id, activity }),
   transcript: (id, items) => broadcast({ type: 'session.transcript', id, items }),
+  todos: (id, todos) => broadcast({ type: 'session.todos', id, todos }),
 }, broker, store);
 
 /** Only known keys with sane shapes reach the database. */
@@ -87,6 +89,18 @@ function cleanWorkspace(raw: unknown): Workspace {
   repos = repos.slice(0, 50);
   const home = typeof w.home === 'string' && repos.some((r) => samePath(r, w.home!)) ? w.home : undefined;
   return { id, name, color, repos, home };
+}
+
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+/** Pasted images from the client: at most 5, known types, base64 up to about 5 MB each. */
+function cleanImages(raw: unknown): ImageAttachment[] {
+  if (!Array.isArray(raw)) return [];
+  const out = raw.filter((i): i is ImageAttachment => Boolean(i) && IMAGE_TYPES.has(i.mediaType) && typeof i.data === 'string'
+    && i.data.length <= 7_000_000 && /^[A-Za-z0-9+/=]+$/.test(i.data));
+  if (out.length !== raw.length) throw new Error('Images must be PNG, JPEG, GIF or WebP, up to 5 MB each.');
+  if (out.length > 5) throw new Error('Up to 5 images per message.');
+  return out;
 }
 
 /** A folder path from the client, made canonical (quotes, `~`, slashes, `D:`), or an error saying what is wrong. */
@@ -160,8 +174,15 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       send(ws, { type: 'session.transcript', id: msg.id, items: await manager.transcript(msg.id) });
       return;
     case 'session.send':
-      await manager.send(msg.id, msg.text);
+      await manager.send(msg.id, String(msg.text ?? ''), cleanImages(msg.images));
       return;
+    case 'fs.files': {
+      const cwd = manager.cwdOf(msg.sessionId);
+      if (!cwd) throw new Error('That session has no folder to search.');
+      const hits = await searchFiles(cwd, manager.usableDirs(msg.sessionId), String(msg.query ?? '').slice(0, 200));
+      send(ws, { type: 'fs.files', reqId: msg.reqId, hits });
+      return;
+    }
     case 'session.interrupt':
       await manager.interrupt(msg.id);
       return;
@@ -345,6 +366,7 @@ wss.on('connection', (ws) => {
   send(ws, library());
   for (const request of broker.list()) send(ws, { type: 'permission.request', request });
   for (const [id, activity] of manager.activities()) send(ws, { type: 'session.activity', id, activity });
+  for (const [id, todos] of manager.allTodos()) send(ws, { type: 'session.todos', id, todos });
 });
 
 manager.setWorkspaces(store.loadWorkspaces());

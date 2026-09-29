@@ -42,3 +42,15 @@ export function matchSlash(commands: SlashInfo[], query: string, max = 8): Slash
   }
   return scored.sort((a, b) => b.score - a.score || a.c.name.localeCompare(b.c.name)).slice(0, max).map((x) => x.c);
 }
+
+/** An "@file" being typed at the caret: the text after "@" and where the "@" is. */
+export function fileQuery(text: string, caret: number): { query: string; start: number } | null {
+  const m = /(^|\s)@([^\s@"]*)$/.exec(text.slice(0, caret));
+  return m ? { query: m[2], start: caret - m[2].length - 1 } : null;
+}
+
+/** How a file goes into a message: @path, quoted when it has spaces. */
+export function mention(path: string): string {
+  const p = path.replace(/\\/g, '/');
+  return /\s/.test(p) ? `@"${p}"` : `@${p}`;
+}

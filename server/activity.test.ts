@@ -81,3 +81,12 @@ test('compacting, API retries and approvals', () => {
   a = setApproval(a, false, 17_000);
   assert.deepEqual([a.phase, a.phaseSince], ['tool', 17_000]);
 });
+
+test('between turns, the CLI streaming its own chores is not Claude thinking', () => {
+  const done = applyEvent(startTurn(idleActivity(0), 1), { type: 'result', subtype: 'success' }, 2);
+  const after = applyEvent(done, { type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'thinking' } } }, 3);
+  assert.equal(after.phase, 'idle');
+  assert.equal(applyEvent(done, { type: 'system', subtype: 'thinking_tokens', estimated_tokens: 129 }, 3).thinkingTokens, undefined);
+  const turn = applyEvent(startTurn(done, 4), { type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'thinking' } } }, 5);
+  assert.equal(turn.phase, 'thinking');
+});

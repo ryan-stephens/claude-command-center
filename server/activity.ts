@@ -50,6 +50,8 @@ export function applyEvent(a: SessionActivity, m: Msg, now: number): SessionActi
   const sub = Boolean(m.parent_tool_use_id); // subagent traffic: reported through its task, not the main phase
 
   if (m.type === 'stream_event' && !sub) {
+    // Between turns the CLI still streams its own chores (naming the session, say): not Claude working.
+    if (a.turnStartedAt === undefined) return a;
     const ev = m.event as { type: string; content_block?: { type: string; name?: string } };
     if (ev.type !== 'content_block_start' || !ev.content_block) return a;
     switch (ev.content_block.type) {
@@ -109,7 +111,7 @@ export function applyEvent(a: SessionActivity, m: Msg, now: number): SessionActi
         },
       });
     case 'thinking_tokens':
-      return { ...a, thinkingTokens: Number(m.estimated_tokens) };
+      return a.turnStartedAt === undefined ? a : { ...a, thinkingTokens: Number(m.estimated_tokens) };
     case 'task_started': {
       const task: ActivityTask = {
         id: String(m.task_id),

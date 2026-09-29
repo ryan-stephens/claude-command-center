@@ -484,3 +484,33 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 - No console errors. `pnpm typecheck`, `pnpm test` (85) and `pnpm build` pass.
 
 **Not done:** `@` file suggestions (Claude Code's other popup). They would need a server-side file listing like `fs.list`.
+
+## 22. Claude Code parity: questions, modes and plans, to-do list, @ files, history, images
+
+2026-09-29. The owner's goal: people using the app shouldn't miss anything Claude Code does natively, and should get it with better flow. A gap check against the code found these missing, two of them broken:
+
+| Claude Code | Before | Now |
+|---|---|---|
+| Claude asks a multiple-choice question (AskUserQuestion) | **Broken:** a generic "Allow AskUserQuestion?" card; allowing it returned no answer | A **question card**: `1–4` pick (multi-select toggles), `O` your own answer, `↑ ↓` between questions, `Enter` sends, `N` skips. Answers go back as `updatedInput.answers` (question → labels, comma-joined), as the SDK expects |
+| `Shift+Tab` modes: default / accept edits / plan | Fixed at default | `Shift+Tab` cycles *Asks first → Accepts edits → Plan first* (`Query.setPermissionMode`; never bypass). A pill under the message box shows the mode and the model, both mirrored from the CLI's `init` and `status` messages. Modes chosen for past sessions apply when they resume |
+| Plan approval (ExitPlanMode) | **Broken:** a raw tool approval | A **plan card** showing the plan as markdown: `Y` start asking first, `A` start accepting edits, `N` keep planning (a deny that tells Claude to revise) |
+| The to-do list while Claude works | "Updated the to-do list" only | A foldable **To-do** panel above the message box ("2 of 5 done", the current item as it runs; `L` folds it). `server/todos.ts` (tested) follows both `TodoWrite` and the newer `TaskCreate`/`TaskUpdate` tools, whose ids arrive in the tool result, for the main agent only. It is sent as `session.todos`, also on connect |
+| `@` file mentions | None | Type `@` and files from the session's repos and its workspace's repos pop up (`server/file-search.ts`, tested: `git ls-files -co --exclude-standard`, or a capped walk, cached 20 s; names only). Own-repo files insert relative, the others by full path. **Verified with the SDK** that the CLI expands both into the prompt (Claude answered from the file with tools disabled) |
+| `↑` for earlier prompts | None | `↑`/`↓` on the first/last line walk this session's messages, then ones sent elsewhere (`web/prompt-history.ts`, tested; per browser) |
+| Paste / drop images | None | `Ctrl+V` or drop adds thumbnails (up to 5, 5 MB, PNG/JPEG/GIF/WebP; validated again on the server). They are sent as base64 image blocks; `Backspace` in an empty box takes the last one off |
+
+**Also:** the legend and the live status line now speak to what is waiting ("Claude has a question for you" / "has a plan" instead of "Waiting for your OK to use AskUserQuestion"). The to-do and question tools read as plain steps. `PROTOCOL` is 3, so a server from before this shows the out-of-date banner.
+
+**Bug found on the way:** after a turn ended, the status line could say "Thinking… ~129 tokens" indefinitely. The CLI streams its own chores between turns (naming the session), and activity treated them as Claude thinking. Stream events and thinking counts are now ignored between turns, and a turn the CLI starts by itself (after a background task) still counts, because "running" starts the turn clock. Tested.
+
+**Verified** (headless Chromium, isolated server, Demo workspace, Haiku):
+- **Question:** answered with `Tab` `2` `Enter`, and Claude replied "Blue".
+- **Modes:** `Shift+Tab` → Accepts edits → Plan first. A plan card appeared, and `Y` started the plan with the mode back on Asks first.
+- **Edit after the plan:** it went through without a card. That was correct: the owner's global settings allow Edit and Write, and the default mode honours them as the CLI does. The demo change was reverted.
+- **To-do:** a 3-item list ticked to "3 of 3 done".
+- **`@`:** `@READ` offered docs-site's README (web-app has none), and `Tab` inserted `@C:/…/docs-site/README.md`.
+- **History:** `↑` recalled the last message and `↓` came back.
+- **Image:** a pasted red square was sent, and Claude answered "Red".
+- No console errors. `pnpm typecheck`, `pnpm test` (101) and `pnpm build` pass.
+
+**Not yet:** rewinding files to an earlier message (Claude Code's `Esc Esc`; the SDK has `rewindFiles` with `enableFileCheckpointing`); `!` shell commands; a model picker beyond `/model`.

@@ -5,7 +5,7 @@
  * says `hello` first; a page that hears anything else first is talking to a server from before
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
-export const PROTOCOL = 2;
+export const PROTOCOL = 3;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -13,6 +13,32 @@ export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'dontAsk' | 'auto';
 /** The modes Shift+Tab cycles through, in order (bypassing permissions is never offered). */
 export const MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan'];
+
+/** A file offered as you type "@" in the message box. */
+export interface FileHit {
+  /** What goes after "@": relative in the session's own repo, full for its other repos. */
+  path: string;
+  /** Relative to its repo, for display. */
+  label: string;
+  /** Set for files in the session's other repos. */
+  repo?: string;
+}
+
+/** An image pasted or dropped into a message. */
+export interface ImageAttachment {
+  mediaType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+  /** Base64, no data: prefix. */
+  data: string;
+}
+
+/** One line of Claude's to-do list (TodoWrite, or the TaskCreate / TaskUpdate tools). */
+export interface Todo {
+  id: string;
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  /** "Running the tests": shown while it is in progress. */
+  activeForm?: string;
+}
 
 /** One multiple-choice question Claude asks (the AskUserQuestion tool). */
 export interface Question {
@@ -244,7 +270,9 @@ export interface SlotRef {
 export type ClientMsg =
   | { type: 'session.create'; reqId: string; cwd: string; prompt?: string; extraDirs?: string[] }
   | { type: 'session.open'; id: string }
-  | { type: 'session.send'; id: string; text: string }
+  | { type: 'session.send'; id: string; text: string; images?: ImageAttachment[] }
+  /** Files in a session's repos matching what follows "@". Names only. */
+  | { type: 'fs.files'; reqId: string; sessionId: string; query: string }
   | { type: 'session.interrupt'; id: string }
   | { type: 'session.stop'; id: string }
   /** Stop one subagent / background shell (a task id from the session's activity). */
@@ -297,6 +325,8 @@ export type ServerMsg =
   /** Streaming text of the assistant message in progress; '' clears it. */
   | { type: 'session.partial'; id: string; text: string }
   | { type: 'session.activity'; id: string; activity: SessionActivity }
+  /** A live session's to-do list changed. */
+  | { type: 'session.todos'; id: string; todos: Todo[] }
   | { type: 'permission.request'; request: PermissionRequest }
   | { type: 'permission.resolved'; reqId: string }
   | { type: 'board'; sessionId: string; groups: CommandGroup[]; /** Its slash commands, for suggestions in the message box. */ slash?: SlashInfo[] }
@@ -309,6 +339,7 @@ export type ServerMsg =
   | { type: 'library'; sources: string[]; repos: RepoInfo[]; suggested: string[] }
   | { type: 'workspace.file'; reqId: string; file: WorkspaceFile }
   | { type: 'fs.list'; reqId: string; listing: FolderListing }
+  | { type: 'fs.files'; reqId: string; hits: FileHit[] }
   /** A request with a `reqId` and nothing else to return worked. */
   | { type: 'ok'; reqId: string }
   /** Something worth a line in the status area, e.g. what an import could not match. */
