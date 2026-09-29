@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { SessionSummary, TranscriptItem } from '../../shared/protocol.ts';
 import { openSession, respondPermission } from '../keys.ts';
 import { attention, set, TABS, useStore, visibleSessions } from '../store.ts';
-import { relativeTime, shortPath, StatusBadge } from './StatusBadge.tsx';
+import { CtxMeter, relativeTime, shortPath, StatusBadge } from './StatusBadge.tsx';
 
 export function SessionList() {
   const sessions = useStore((s) => s.sessions);
@@ -32,7 +32,7 @@ export function SessionList() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
+      <div className="flex items-center gap-2 border-b border-zinc-800 px-2 py-2 md:gap-3 md:px-4">
         <div className="flex gap-1" role="tablist">
           {TABS.map((t) => (
             <button
@@ -47,7 +47,7 @@ export function SessionList() {
               {t} {counts[t]}
             </button>
           ))}
-          <span className="self-center pl-1 text-xs text-zinc-600"><kbd>Tab</kbd></span>
+          <span className="hidden self-center pl-1 text-xs text-zinc-600 md:inline"><kbd>Tab</kbd></span>
         </div>
         <input
           ref={filterRef}
@@ -56,7 +56,7 @@ export function SessionList() {
           onFocus={() => set({ filterFocused: true })}
           onBlur={() => set({ filterFocused: false })}
           placeholder="Filter  ( / )"
-          className="ml-auto w-72 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm outline-none focus:border-sky-600"
+          className="ml-auto w-28 min-w-0 rounded border md:w-72 border-zinc-800 bg-zinc-900 px-2 py-1 text-sm outline-none focus:border-sky-600"
         />
       </div>
 
@@ -68,21 +68,22 @@ export function SessionList() {
             id={`row-${s.id}`}
             role="option"
             aria-selected={s.id === selectedId}
-            onClick={() => set({ selectedId: s.id })}
+            // Mouse: click selects, double-click opens. Touch/pen: a tap opens straight away.
+            onPointerUp={(e) => (e.pointerType === 'mouse' ? set({ selectedId: s.id }) : openSession(s.id))}
             onDoubleClick={() => openSession(s.id)}
-            className={`cursor-default border-l-2 px-4 py-2 text-sm ${
+            className={`cursor-default border-l-2 px-2 py-2 text-sm md:px-4 ${
               s.id === selectedId ? 'border-sky-500 bg-zinc-800/70' : 'border-transparent hover:bg-zinc-900'
             } ${s.status === 'requires_action' ? 'bg-amber-950/40' : ''}`}
           >
-            <div className="grid grid-cols-[7.5rem_1fr_14rem_3rem] items-center gap-3">
+            <div className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-2 md:grid-cols-[7.5rem_1fr_16rem_3rem] md:gap-3">
               <StatusBadge s={s} />
               <span className="flex min-w-0 items-center gap-2">
                 {unread[s.id] && <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" title="Finished while you were away" />}
                 <span className={`truncate ${unread[s.id] ? 'font-medium text-white' : 'text-zinc-100'}`} title={s.title}>{s.title}</span>
               </span>
-              <span className="truncate text-zinc-500" title={s.cwd}>
-                {shortPath(s.cwd)}{s.branch && <span className="text-zinc-600"> · {s.branch}</span>}
-                {s.ctxPct !== undefined && <span className="text-zinc-600"> · {Math.round(s.ctxPct)}%</span>}
+              <span className="hidden min-w-0 items-center gap-2 text-zinc-500 md:flex" title={s.cwd}>
+                <span className="truncate">{shortPath(s.cwd)}{s.branch && <span className="text-zinc-600"> · {s.branch}</span>}</span>
+                <CtxMeter pct={s.ctxPct} />
               </span>
               <span className="text-right text-zinc-600">{relativeTime(s.lastModified)}</span>
             </div>
@@ -109,7 +110,7 @@ function InboxDetail({ s, selected }: { s: SessionSummary; selected: boolean }) 
   const items = useStore((st) => st.transcripts[s.id] ?? EMPTY);
   if (request) {
     return (
-      <div className="mt-1.5 ml-[8.25rem] flex items-center gap-3 text-xs">
+      <div className="mt-1.5 flex md:ml-[8.25rem] items-center gap-3 text-xs">
         <span className="shrink-0 text-amber-200">Allow <span className="font-mono">{request.tool}</span>?</span>
         <span className="truncate font-mono text-zinc-400">{request.input}</span>
         <span className={`ml-auto flex shrink-0 gap-1.5 ${selected ? '' : 'opacity-50'}`}>
@@ -122,7 +123,7 @@ function InboxDetail({ s, selected }: { s: SessionSummary; selected: boolean }) 
   }
   const last = [...items].reverse().find((i) => i.kind === 'assistant');
   return (
-    <div className="mt-1 ml-[8.25rem] truncate text-xs text-zinc-500">
+    <div className="mt-1 truncate md:ml-[8.25rem] text-xs text-zinc-500">
       {last?.kind === 'assistant' ? last.text.replace(/\s+/g, ' ').slice(0, 200) : 'Finished its turn.'}
     </div>
   );

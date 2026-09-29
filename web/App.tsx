@@ -3,27 +3,32 @@ import { Dialogs } from './components/Dialogs.tsx';
 import { SessionList } from './components/SessionList.tsx';
 import { SessionView } from './components/SessionView.tsx';
 import { armOnFirstGesture, setNotificationHandler } from './attention.ts';
+import { bindingsFor, displayCombo, type ActionId } from './bindings.ts';
 import { onKeyDown, onKeyUp, openSession } from './keys.ts';
 import { stopVoice } from './voice.ts';
-import { attention, set, toggleSound, useStore } from './store.ts';
+import { attention, NO_BINDINGS, set, toggleSound, useStore } from './store.ts';
 
 /** Context-sensitive key hints, so the current keys are always on screen. */
 function HintBar() {
   const screen = useStore((s) => s.screen);
   const zone = useStore((s) => s.zone);
   const tab = useStore((s) => s.tab);
+  const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
+  // Rebindable keys show their current binding (first one if several).
+  const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
+  const talk = `Hold ${k('pushToTalk')}`;
   const hints: [string, string][] =
     screen === 'list'
       ? tab === 'inbox'
-        ? [['↑↓', 'move'], ['Y/A/N', 'approve'], ['Enter', 'open'], ['Alt+N', 'next'], ['Tab', 'tabs'], ['Alt+Shift+N', 'new']]
-        : [['↑↓', 'move'], ['Enter', 'open'], ['/', 'filter'], ['Tab', 'tabs'], ['Alt+N', 'needs you'], ['N', 'new'], ['R', 'rename'], ['X', 'stop']]
+        ? [['↑↓', 'move'], ['Y/A/N', 'approve'], ['Enter', 'open'], [k('nextAttention'), 'next'], ['Tab', 'tabs'], [k('newSession'), 'new']]
+        : [['↑↓', 'move'], ['Enter', 'open'], ['/', 'filter'], ['Tab', 'tabs'], [k('nextAttention'), 'needs you'], ['N', 'new'], ['R', 'rename'], ['X', 'stop']]
       : zone === 'composer'
-        ? [['Enter', 'send'], ['Hold `', 'talk (while empty)'], ['Numpad 1–9', 'fire (while empty)'], ['Alt+1–9', 'fire'], ['Esc', 'board'], ['Ctrl+.', 'interrupt']]
-        : [['Hold `', 'talk'], ['Numpad 1–9', 'fire'], ['Numpad ±', 'group'], ['←↑↓→ Enter', 'pick'], ['E', 'edit'], ['i', 'compose'], ['Y/A/N', 'approve'], ['PgUp/Dn', 'scroll'], ['Esc', 'list']];
+        ? [['Enter', 'send'], [talk, 'talk (while empty)'], ['Numpad 1–9', 'fire (while empty)'], ['Alt+1–9', 'fire'], ['Esc', 'board'], [k('interrupt'), 'interrupt']]
+        : [[talk, 'talk'], ['Numpad 1–9', 'fire'], ['Numpad ±', 'group'], ['←↑↓→ Enter', 'pick'], ['E', 'edit'], ['i', 'compose'], ['Y/A/N', 'approve'], ['PgUp/Dn', 'scroll'], ['Esc', 'list']];
   return (
-    <footer className="flex flex-wrap gap-x-4 gap-y-1 border-t border-zinc-800 px-4 py-1.5 text-xs text-zinc-500">
-      {hints.map(([k, d]) => <span key={k}><kbd>{k}</kbd> {d}</span>)}
-      <span className="ml-auto"><kbd>?</kbd> all keys</span>
+    <footer className="hidden flex-wrap gap-x-4 gap-y-1 border-t border-zinc-800 px-4 py-1.5 text-xs text-zinc-500 md:flex">
+      {hints.map(([key, d]) => <span key={key}><kbd>{key}</kbd> {d}</span>)}
+      <span className="ml-auto"><kbd>{k('palette')}</kbd> palette · <kbd>{k('help')}</kbd> all keys</span>
     </footer>
   );
 }

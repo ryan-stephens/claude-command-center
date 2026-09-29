@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { KEYMAP, openSession } from '../keys.ts';
-import { get, sessionById, set, useStore } from '../store.ts';
+import { keymap, openSession } from '../keys.ts';
+import { get, NO_BINDINGS, sessionById, set, useStore } from '../store.ts';
 import { createSession, send } from '../ws.ts';
+import { BindingsDialog } from './BindingsDialog.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
+import { Palette } from './Palette.tsx';
 import { close, Overlay } from './Overlay.tsx';
 
 export function Dialogs() {
@@ -17,18 +19,21 @@ export function Dialogs() {
     case 'edit': return <EditDialog group={modal.group} slot={modal.slot} />;
     case 'delete': return <DeleteDialog group={modal.group} slot={modal.slot} />;
     case 'voiceMatch': return <VoiceMatchDialog sessionId={modal.sessionId} text={modal.text} command={modal.command} />;
+    case 'palette': return <Palette />;
+    case 'bindings': return <BindingsDialog />;
   }
 }
 
 function HelpOverlay() {
+  const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
   return (
     <Overlay label="Keyboard help">
       <div className="mb-3 flex items-baseline justify-between">
         <h2 className="text-base font-medium text-zinc-100">Keyboard</h2>
-        <span className="text-xs text-zinc-500"><kbd>Esc</kbd> or <kbd>?</kbd> to close</span>
+        <span className="text-xs text-zinc-500"><kbd>B</kbd> change shortcuts · <kbd>Esc</kbd> close</span>
       </div>
       <div className="max-h-[65vh] space-y-4 overflow-y-auto">
-        {KEYMAP.map((section) => (
+        {keymap(bindings).map((section) => (
           <section key={section.title}>
             <h3 className="mb-1 text-xs uppercase tracking-wide text-zinc-500">{section.title}</h3>
             <table className="w-full text-sm">

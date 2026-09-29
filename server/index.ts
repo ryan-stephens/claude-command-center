@@ -1,13 +1,14 @@
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import type { IncomingMessage } from 'node:http';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { ClientMsg, ServerMsg } from '../shared/protocol.ts';
+import type { ClientMsg, ServerMsg, Settings } from '../shared/protocol.ts';
 import { CommandService } from './commands.ts';
 import { PermissionBroker } from './permission-broker.ts';
+import { COOKIE, cookieToken, findRemoteIp, remoteHostAllowed, remoteToken, remoteUpgradeAllowed, tokenMatches } from './remote.ts';
 import { SessionManager } from './session-manager.ts';
 import { Store } from './store.ts';
 
@@ -45,7 +46,23 @@ const manager: SessionManager = new SessionManager({
   forked: (oldId, newId) => broadcast({ type: 'session.forked', oldId, newId }),
   commandsChanged: () => broadcast({ type: 'commands.changed' }),
 }, broker);
-const commands = new CommandService(new Store());
+const store = new Store();
+const commands = new CommandService(store);
+
+/** Only known keys with sane shapes reach the database. */
+function cleanSettings(raw: unknown): Settings {
+  const out: Settings = {};
+  const b = (raw as Settings)?.bindings;
+  if (b && typeof b === 'object') {
+    out.bindings = {};
+    for (const [action, combos] of Object.entries(b)) {
+      if (/^[a-zA-Z]{1,40}$/.test(action) && Array.isArray(combos)) {
+        out.bindings[action] = combos.filter((c) => typeof c === 'string' && c.length <= 40).slice(0, 4);
+      }
+    }
+  }
+  return out;
+}
 
 function snapshot(): ServerMsg {
   return { type: 'sessions', sessions: manager.summaries(), repos: manager.history.repos() };
@@ -101,6 +118,10 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'pack.export':
       send(ws, { type: 'pack', reqId: msg.reqId, pack: commands.exportPack() });
       return;
+    case 'settings.set':
+      store.saveSettings(cleanSettings(msg.settings));
+      broadcast({ type: 'settings', settings: store.loadSettings() });
+      return;
   }
 }
 
@@ -114,17 +135,23 @@ function isTrusted(req: IncomingMessage): boolean {
   return allowedHosts.has(req.headers.host ?? '') && allowedOrigins.has(req.headers.origin ?? '');
 }
 
-const app = new Hono();
-app.use('*', async (c, next) => {
+/** The web app behind a guard: host checks locally, host + token remotely. */
+function buildApp(guard: MiddlewareHandler): Hono {
+  const app = new Hono();
+  app.use('*', guard);
+  if (existsSync(WEB_DIST)) {
+    app.use('*', serveStatic({ root: WEB_DIST }));
+    app.get('*', serveStatic({ root: WEB_DIST, path: 'index.html' }));
+  } else {
+    app.get('/', (c) => c.text('Web app not built. Run `pnpm build`, or use `pnpm dev` and open http://localhost:5173.'));
+  }
+  return app;
+}
+
+const localApp = buildApp(async (c, next) => {
   if (!allowedHosts.has(c.req.header('host') ?? '')) return c.text('Forbidden host', 403);
   await next();
 });
-if (existsSync(WEB_DIST)) {
-  app.use('*', serveStatic({ root: WEB_DIST }));
-  app.get('*', serveStatic({ root: WEB_DIST, path: 'index.html' }));
-} else {
-  app.get('/', (c) => c.text('Web app not built. Run `pnpm build`, or use `pnpm dev` and open http://localhost:5173.'));
-}
 
 const wss = new WebSocketServer({ noServer: true });
 wss.on('connection', (ws) => {
@@ -138,31 +165,65 @@ wss.on('connection', (ws) => {
     });
   });
   send(ws, snapshot());
+  send(ws, { type: 'settings', settings: store.loadSettings() });
   for (const request of broker.list()) send(ws, { type: 'permission.request', request });
 });
 
 await manager.history.start();
-const server = serve({ fetch: app.fetch, hostname: HOST, port: PORT }, () => {
-  console.log(`cc-control: http://localhost:${PORT}`);
-});
-server.on('error', (e: NodeJS.ErrnoException) => {
-  if (e.code !== 'EADDRINUSE') throw e;
-  console.error(`cc-control: port ${PORT} is already in use (another cc-control running?). Set CC_CONTROL_PORT to use another.`);
-  process.exit(1);
-});
-server.on('upgrade', (req, socket, head) => {
-  if (req.url !== '/ws' || !isTrusted(req)) {
-    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-    socket.destroy();
-    return;
+
+function listen(hostname: string, app: Hono, trusted: (req: IncomingMessage) => boolean, onReady: () => void) {
+  const server = serve({ fetch: app.fetch, hostname, port: PORT }, onReady);
+  server.on('error', (e: NodeJS.ErrnoException) => {
+    if (e.code !== 'EADDRINUSE') throw e;
+    console.error(`cc-control: ${hostname}:${PORT} is already in use (another cc-control running?). Set CC_CONTROL_PORT to use another.`);
+    process.exit(1);
+  });
+  server.on('upgrade', (req, socket, head) => {
+    if (req.url !== '/ws' || !trusted(req)) {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  });
+  return server;
+}
+
+const servers = [listen(HOST, localApp, isTrusted, () => console.log(`cc-control: http://localhost:${PORT}`))];
+
+// Remote (phone) access over Tailscale: opt-in, token-guarded. See server/remote.ts.
+if (process.argv.includes('--remote') || process.env.CC_CONTROL_REMOTE === '1') {
+  let ip: string;
+  try {
+    ip = findRemoteIp();
+  } catch (e) {
+    console.error(`cc-control: ${(e as Error).message}`);
+    process.exit(1);
   }
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
-});
+  const token = remoteToken(store, process.argv.includes('--rotate-token'));
+  const remoteApp = buildApp(async (c, next) => {
+    if (!remoteHostAllowed(c.req.header('host'), ip, PORT)) return c.text('Forbidden host', 403);
+    if (c.req.path === '/auth') {
+      if (!tokenMatches(c.req.query('token'), token)) return c.text('Invalid token.', 401);
+      c.header('Set-Cookie', `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${60 * 60 * 24 * 30}`);
+      return c.redirect('/');
+    }
+    if (!tokenMatches(cookieToken(c.req.header('cookie')), token)) {
+      return c.text('cc-control: open the sign-in link printed in the terminal where cc-control is running.', 401);
+    }
+    await next();
+  });
+  servers.push(listen(ip, remoteApp, (req) => remoteUpgradeAllowed(req, ip, PORT, token), () => {
+    console.log(`cc-control remote (Tailscale): http://${ip}:${PORT}`);
+    console.log(`  Sign in once on your phone: http://${ip}:${PORT}/auth?token=${token}`);
+    console.log('  Treat that link like a password. Restart with --rotate-token to revoke it.');
+  }));
+}
 
 function shutdown(): void {
   manager.stopAll();
   manager.history.stop();
-  server.close();
+  for (const server of servers) server.close();
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

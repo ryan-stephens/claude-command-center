@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite';
-import type { CommandPack } from '../shared/protocol.ts';
+import type { CommandPack, Settings } from '../shared/protocol.ts';
 import { emptyPack, STARTER_PACK, validatePack } from './packs.ts';
 
 // node:sqlite prints an ExperimentalWarning on load. It's built in and works; keep the console clean.
@@ -25,6 +25,7 @@ export class Store {
     this.db = new DatabaseSync(path);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS command_groups (name TEXT PRIMARY KEY, position INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS commands (
         group_name TEXT NOT NULL REFERENCES command_groups(name) ON DELETE CASCADE,
@@ -40,6 +41,27 @@ export class Store {
       this.saveGlobalPack(STARTER_PACK);
       this.db.prepare("INSERT INTO meta (key, value) VALUES ('seeded', ?)").run(new Date().toISOString());
     }
+  }
+
+  getMeta(key: string): string | undefined {
+    return (this.db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined)?.value;
+  }
+
+  setMeta(key: string, value: string): void {
+    this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+  }
+
+  loadSettings(): Settings {
+    const settings: Record<string, unknown> = {};
+    for (const row of this.db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[]) {
+      try { settings[row.key] = JSON.parse(row.value); } catch { /* skip a corrupt row */ }
+    }
+    return settings as Settings;
+  }
+
+  saveSettings(settings: Settings): void {
+    const upsert = this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+    for (const [key, value] of Object.entries(settings)) upsert.run(key, JSON.stringify(value));
   }
 
   loadGlobalPack(): CommandPack {

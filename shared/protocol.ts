@@ -39,6 +39,12 @@ export interface PermissionRequest {
 
 export type PermissionDecision = 'allow' | 'always' | 'deny';
 
+/** Per-install preferences, stored in SQLite and shared by every browser. */
+export interface Settings {
+  /** Key binding overrides: action id → combos (see web/bindings.ts). */
+  bindings?: Record<string, string[]>;
+}
+
 // ---- Command board ---------------------------------------------------------
 
 /** send: fire immediately · insert: drop into the composer · template: fill {{placeholders}} first */
@@ -90,7 +96,8 @@ export type ClientMsg =
   /** Swap two slots in the same group (Ctrl+arrows). */
   | { type: 'command.swap'; ref: SlotRef; otherSlot: number }
   | { type: 'pack.import'; pack: CommandPack }
-  | { type: 'pack.export'; reqId: string };
+  | { type: 'pack.export'; reqId: string }
+  | { type: 'settings.set'; settings: Settings };
 
 export type ServerMsg =
   | { type: 'sessions'; sessions: SessionSummary[]; repos: string[] }
@@ -108,4 +115,5 @@ export type ServerMsg =
   /** Some commands changed: clients refetch the board of the open session. */
   | { type: 'commands.changed' }
   | { type: 'pack'; reqId: string; pack: CommandPack }
+  | { type: 'settings'; settings: Settings }
   | { type: 'error'; message: string; reqId?: string };

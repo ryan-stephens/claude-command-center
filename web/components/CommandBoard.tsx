@@ -11,7 +11,7 @@ const MODE_ICON: Record<CommandMode, [string, string]> = {
 };
 const SCOPE_TAG = { global: 'mine', repo: 'repo', auto: 'slash' } as const;
 
-export function CommandBoard({ focused }: { focused: boolean }) {
+export function CommandBoard({ focused, compact = false }: { focused: boolean; compact?: boolean }) {
   const board = useStore((s) => s.board);
   const groupKey = useStore((s) => s.groupKey);
   const boardSlot = useStore((s) => s.boardSlot);
@@ -23,7 +23,7 @@ export function CommandBoard({ focused }: { focused: boolean }) {
     <aside
       aria-label="Command board"
       onClick={() => set({ zone: 'board' })}
-      className={`flex w-80 shrink-0 flex-col border-l border-zinc-800 bg-zinc-950/40 ${focused ? 'ring-1 ring-inset ring-sky-800' : ''}`}
+      className={`flex shrink-0 flex-col bg-zinc-950/40 ${compact ? 'w-full' : 'w-80 border-l border-zinc-800'} ${focused ? 'ring-1 ring-inset ring-sky-800' : ''}`}
     >
       <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2 text-xs text-zinc-500">
         <button onClick={() => cycleGroup(-1)} title="Previous group (Numpad − or [)"><kbd>−</kbd></button>
@@ -63,7 +63,7 @@ export function CommandBoard({ focused }: { focused: boolean }) {
         ))}
       </div>
 
-      <div className="mt-auto space-y-1 border-t border-zinc-800 px-3 py-2 text-[11px] text-zinc-500">
+      <div className={`mt-auto space-y-1 border-t border-zinc-800 px-3 py-2 text-[11px] text-zinc-500 ${compact ? 'hidden' : ''}`}>
         <div><kbd>Numpad 1–9</kbd> fire · <kbd>Alt+1–9</kbd> fire anywhere</div>
         <div><kbd>E</kbd> edit · <kbd>Del</kbd> remove · <kbd>Ctrl+←→</kbd> move</div>
         <div>

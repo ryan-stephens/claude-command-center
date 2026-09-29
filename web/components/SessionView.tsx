@@ -2,11 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { PermissionRequest, TranscriptItem } from '../../shared/protocol.ts';
-import { respondPermission } from '../keys.ts';
+import { backToList, respondPermission } from '../keys.ts';
+import { startVoice, stopVoice, voiceSupported } from '../voice.ts';
 import { set, setDraft, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { CommandBoard } from './CommandBoard.tsx';
-import { shortPath, StatusBadge } from './StatusBadge.tsx';
+import { CtxMeter, shortPath, StatusBadge } from './StatusBadge.tsx';
 
 const EMPTY: TranscriptItem[] = [];
 
@@ -32,13 +33,14 @@ export function SessionView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2 text-sm">
+      <div className="flex items-center gap-2 border-b border-zinc-800 px-2 py-2 text-sm md:gap-3 md:px-4">
+        <button onClick={backToList} className="text-zinc-400 hover:text-zinc-100" title="Back to the list (Esc)">←</button>
         {session && <StatusBadge s={session} />}
         <span className="truncate font-medium text-zinc-100">{session?.title ?? id}</span>
-        <span className="truncate text-zinc-500">
+        <span className="hidden truncate text-zinc-500 md:inline">
           {session && shortPath(session.cwd)}{session?.branch && ` · ${session.branch}`}
-          {session?.ctxPct !== undefined && ` · ctx ${Math.round(session.ctxPct)}%`}
         </span>
+        <CtxMeter pct={session?.ctxPct} />
         {session?.activeElsewhere && !session.live && (
           <span className="ml-auto rounded bg-orange-950 px-2 py-0.5 text-xs text-orange-300">
             Active in another window: sending will fork a new session
@@ -65,8 +67,12 @@ export function SessionView() {
             {permission && <ApprovalCard p={permission} />}
           </div>
           <Composer id={id} focused={zone === 'composer'} />
+          {/* Phones: the board opens as a panel under the composer. */}
+          <MobileBoard />
         </div>
-        <CommandBoard focused={zone === 'board'} />
+        <div className="hidden md:flex">
+          <CommandBoard focused={zone === 'board'} />
+        </div>
       </div>
     </div>
   );
@@ -157,22 +163,58 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
           {voice.state === 'listening' ? <>Listening… release to send · <kbd>Esc</kbd> cancel</> : 'Finishing…'}
         </div>
       )}
-      <textarea
-        readOnly={Boolean(voice)}
-        ref={ref}
-        value={text}
-        rows={Math.min(8, Math.max(2, text.split('\n').length))}
-        onChange={(e) => setDraft(id, e.target.value)}
-        onFocus={() => set({ zone: 'composer' })}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-        placeholder={running ? 'Running… you can queue the next message  (Ctrl+. to interrupt)' : 'Message  (Enter to send · Numpad fires commands while empty · Esc for the board)'}
-        className={`w-full resize-none rounded border bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-600 ${voice ? 'border-red-800' : 'border-zinc-800'}`}
-      />
+      <div className="flex items-end gap-2">
+        <textarea
+          readOnly={Boolean(voice)}
+          ref={ref}
+          value={text}
+          rows={Math.min(8, Math.max(2, text.split('\n').length))}
+          onChange={(e) => setDraft(id, e.target.value)}
+          onFocus={() => set({ zone: 'composer' })}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder={running ? 'Running… queue the next message' : 'Message · Enter to send'}
+          className={`w-full resize-none rounded border bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-600 ${voice ? 'border-red-800' : 'border-zinc-800'}`}
+        />
+        <ComposerButtons id={id} canSend={Boolean(draft.trim()) && !voice} onSend={submit} />
+      </div>
+    </div>
+  );
+}
+
+/** Touch controls: hold-to-talk mic, send, and the board toggle on phones. Keyboard users never need them. */
+function ComposerButtons({ id, canSend, onSend }: { id: string; canSend: boolean; onSend: () => void }) {
+  const listening = useStore((s) => s.voice?.sessionId === id && s.voice.state === 'listening');
+  const boardOpen = useStore((s) => s.mobileBoard);
+  const btn = 'flex h-10 w-10 shrink-0 items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-base';
+  return (
+    <div className="flex gap-1.5">
+      {voiceSupported() && (
+        <button
+          className={`${btn} touch-none select-none ${listening ? 'border-red-600 bg-red-950 text-red-300' : 'text-zinc-300'}`}
+          title="Hold to talk"
+          onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); startVoice(id); }}
+          onPointerUp={stopVoice}
+          onPointerCancel={stopVoice}
+          onContextMenu={(e) => e.preventDefault()}
+        >🎙</button>
+      )}
+      <button className={`${btn} md:hidden ${boardOpen ? 'border-sky-600 text-sky-300' : 'text-zinc-300'}`} title="Commands" onClick={() => set({ mobileBoard: !boardOpen })}>⌗</button>
+      <button className={`${btn} ${canSend ? 'text-sky-300' : 'text-zinc-600'}`} title="Send (Enter)" disabled={!canSend} onClick={onSend}>➤</button>
+    </div>
+  );
+}
+
+function MobileBoard() {
+  const open = useStore((s) => s.mobileBoard);
+  if (!open) return null;
+  return (
+    <div className="max-h-[45vh] overflow-y-auto border-t border-zinc-800 md:hidden">
+      <CommandBoard focused={false} compact />
     </div>
   );
 }

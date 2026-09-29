@@ -3,6 +3,7 @@ import { onStatusChange } from './attention.ts';
 import { get, set } from './store.ts';
 
 let socket: WebSocket | null = null;
+let retryMs = 1000;
 const pendingCreates = new Map<string, { resolve: (id: string) => void; reject: (e: Error) => void }>();
 const pendingExports = new Map<string, (pack: CommandPack) => void>();
 
@@ -10,6 +11,7 @@ export function connect(): void {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   socket = new WebSocket(`${proto}://${location.host}/ws`);
   socket.onopen = () => {
+    retryMs = 1000;
     set({ connected: true, lastError: null });
     const { openId } = get();
     if (openId) {
@@ -19,7 +21,9 @@ export function connect(): void {
   };
   socket.onclose = () => {
     set({ connected: false });
-    setTimeout(connect, 1000);
+    setTimeout(connect, retryMs);
+    retryMs = Math.min(retryMs * 2, 10_000); // back off while the server is down
+
   };
   socket.onmessage = (e) => receive(JSON.parse(e.data) as ServerMsg);
 }
@@ -124,6 +128,9 @@ function receive(msg: ServerMsg): void {
       if (openId) send({ type: 'board.get', sessionId: openId });
       return;
     }
+    case 'settings':
+      set({ settings: msg.settings });
+      return;
     case 'pack':
       pendingExports.get(msg.reqId)?.(msg.pack);
       pendingExports.delete(msg.reqId);

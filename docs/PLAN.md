@@ -3,7 +3,7 @@
 A slim, local, **keyboard-first** command center for Claude Code sessions.
 Pick a session with the arrow keys, press Enter, fire commands from the number pad, talk to it with a hotkey.
 
-Status: **Phase 4 done** (voice, 2026-09-28) · Started 2026-09-28
+Status: **Phase 5 done** (polish, 2026-09-28). All planned phases complete; see "Later". · Started 2026-09-28
 
 ---
 
@@ -136,7 +136,7 @@ permission.respond {reqId, decision}
 
 ### Security
 - Binds to `127.0.0.1` only by default. It is effectively a remote shell, so never expose it publicly.
-- Remote/phone access (phase 5) goes over **Tailscale** with a random bearer token that the server prints on start. It is never deployed on Coolify.
+- Remote/phone access goes over **Tailscale** only (`--remote`), guarded by a secret token that the server prints on start (see §14). It is never deployed on Coolify.
 
 ## 6. Phases
 
@@ -147,7 +147,7 @@ permission.respond {reqId, decision}
 | **2. Attention** ✅ | Approval cards (Y/A/N), inbox, `Alt+N`, notifications and sound, tab-title count, interrupt | A blocked session is cleared in ≤ 3 keys from anywhere |
 | **3. Command board** ✅ | Groups, numpad slots, send/insert/template modes, editor, per-repo packs, auto slash-commands, import/export | A starter pack is fired entirely from the numpad |
 | **4. Voice** ✅ | Push-to-talk, transcript to composer, voice-triggered commands | Hold the key, speak, release, and it's sent |
-| **5. Polish** | `Ctrl+K` palette, `?` overlay, rebinding, phone layout, Tailscale + token, context-usage meter | Daily-driver quality |
+| **5. Polish** ✅ | `Ctrl+K` palette, `?` overlay, rebinding, phone layout, Tailscale + token, context-usage meter | Daily-driver quality |
 | Later | Local Whisper, diff viewer for edits, per-session cost, multi-machine, session templates ("new session in rc-hub with /card-author") | — |
 
 ## 7. Starter command pack (rc-hub, example)
@@ -261,3 +261,15 @@ Built 2026-09-28. **Done-when met in automation**: hold the key, speak, release,
 - **Surprise**: current Chromium exposes an unprefixed `SpeechRecognition`, and the code prefers it over `webkitSpeechRecognition`. Test fakes must replace both.
 
 Verified: dictation was sent as text; "continue" fired Continue; "summary" asked "Run Summarise?" and `N` sent the words; hold then `Esc` sent nothing and stayed in the session; typing a message with backticks still works; `Numpad .` + "slot two" fired slot 2.
+
+## 14. Phase 5 notes
+
+Built 2026-09-28.
+
+- **`Ctrl+K` palette** (`web/components/Palette.tsx`, `web/fuzzy.ts` + tests): fuzzy search over actions (new session, go to Inbox/Live/History, sound, help, shortcuts, export/import, and rename/interrupt/stop for the open session), the open session's commands, and every session.
+- **Rebinding** (`web/bindings.ts` + tests, `BindingsDialog.tsx`): the global shortcuts (palette, help, next-needs-you, previous/next session, new session, interrupt, sound, push-to-talk) can be rebound. Open `?`, press `B`, pick a row, press `Enter`, then press the new keys. `Backspace` resets a row. Combos are built from physical keys (`e.code`), so they don't depend on the keyboard layout. Conflicts and the app's own keys are refused, and actions that work while typing must use Ctrl, Alt or Meta. Overrides are stored in the SQLite `settings` table and broadcast to every connected browser. The `?` overlay and the hint bar show the current bindings. Screen-local keys (arrows, Enter, Esc, numpad board, Y/A/N) stay fixed on purpose.
+- **Context meter** (`CtxMeter`): a bar in list rows and the session header; amber from 70%, red from 85% (time to `/compact`).
+- **Phone layout**: below Tailwind's `md` breakpoint, list rows drop the path column and a tap opens the session. The session view gets a back button; the board becomes a panel under the composer (⌗ button); the composer gains touch buttons for **hold-to-talk 🎙** and send. The hint bar hides. Checked at 390×844 with no horizontal scroll.
+- **Remote access over Tailscale** (`server/remote.ts` + tests): `pnpm start -- --remote` (or `CC_CONTROL_REMOTE=1`) adds a second listener on the machine's Tailscale address, and only there. It refuses to start without one, and never binds 0.0.0.0 or the LAN. It prints a one-time sign-in link, `http://<tailscale-ip>:7777/auth?token=…`, which sets an HttpOnly, SameSite=Strict cookie. Every remote HTTP request and WebSocket upgrade then needs that cookie (compared in constant time), a Tailscale-IP or `*.ts.net` Host header, and a same-origin `Origin` header. The token persists in SQLite; `--rotate-token` revokes it. The loopback listener is unchanged and needs no token. Verified with a loopback alias standing in for the Tailscale IP (`CC_CONTROL_REMOTE_IP=127.0.0.2`, which only accepts Tailscale or loopback-alias addresses): 10/10 checks for no cookie, wrong token, sign-in redirect, wrong Host, and WebSocket without cookie / wrong origin / wrong token. **Not yet tried on a real tailnet**, because Tailscale isn't installed on this machine.
+- The reconnect loop now backs off from 1 s to 10 s while the server is down.
+- `pnpm test` runs 16 `node:test` tests (voice matcher, fuzzy, bindings, remote auth helpers).

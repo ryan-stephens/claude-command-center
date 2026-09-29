@@ -1,24 +1,15 @@
 // One keydown handler routes every key by modal → screen → focus zone, so behaviour is deterministic.
-// KEYMAP is the single source for the `?` overlay and the hint bar; add a row whenever you add a key.
+// keymap() is the single source for the `?` overlay; add a row whenever you add a key. Global shortcuts
+// come from bindings.ts so they can be rebound.
 
 import type { PermissionDecision } from '../shared/protocol.ts';
+import { ACTIONS, actionFor, bindingsFor, comboOf, displayCombo, type ActionId, type Bindings } from './bindings.ts';
 import { cycleGroup, exportPack, fireSlot, importPack } from './commands.ts';
 import { cancelVoice, isListening, startVoice, stopVoice } from './voice.ts';
 import { attention, currentGroup, flash, get, markRead, pendingFor, sessionById, set, TABS, toggleSound, visibleSessions } from './store.ts';
 import { send } from './ws.ts';
 
-export const KEYMAP: { title: string; keys: [string, string][] }[] = [
-  {
-    title: 'Global',
-    keys: [
-      ['?', 'Keyboard help'],
-      ['Alt+N', 'Jump to the next session that needs you (approvals first, then finished)'],
-      ['Alt+↑ / Alt+↓', 'Previous / next session, from anywhere'],
-      ['Alt+Shift+N', 'New session'],
-      ['Ctrl+.', 'Interrupt the open session'],
-      ['M', 'Sound on / off (outside text fields)'],
-    ],
-  },
+const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
     title: 'Session list',
     keys: [
@@ -61,12 +52,31 @@ export const KEYMAP: { title: string; keys: [string, string][] }[] = [
   {
     title: 'Voice (Chrome / Edge)',
     keys: [
-      ['Hold ` or Numpad .', 'Push-to-talk: speak, release to send (not while you are mid-message)'],
       ['Esc (while holding)', 'Cancel without sending'],
       ['Say a command label', 'Fires it instead of sending text, e.g. "code review"; "slot 3" fires slot 3'],
     ],
   },
 ];
+
+const ACTION_HELP: Partial<Record<ActionId, string>> = {
+  nextAttention: 'Jump to the next session that needs you (approvals first, then finished)',
+  sound: 'Sound on / off (outside text fields)',
+  pushToTalk: 'Push-to-talk: hold, speak, release to send (not while you are mid-message)',
+};
+
+/** Help sections with the current bindings filled in. */
+export function keymap(overrides: Bindings): { title: string; keys: [string, string][] }[] {
+  const row = (id: ActionId): [string, string] => [
+    bindingsFor(id, overrides).map(displayCombo).join(' / '),
+    ACTION_HELP[id] ?? ACTIONS.find((a) => a.id === id)!.label,
+  ];
+  const global = ACTIONS.filter((a) => a.id !== 'pushToTalk').map((a) => row(a.id));
+  global.push(['B (in this overlay)', 'Change these shortcuts']);
+  const sections = [{ title: 'Global', keys: global }, ...FIXED_SECTIONS];
+  const voice = sections.find((x) => x.title.startsWith('Voice'))!;
+  voice.keys = [row('pushToTalk'), ...voice.keys];
+  return sections;
+}
 
 function isTextTarget(t: EventTarget | null): boolean {
   return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement;
@@ -109,6 +119,8 @@ function hop(delta: number): void {
   if (s.screen === 'session') openSession(next.id);
   else moveSelection(delta);
 }
+
+export { jumpToAttention, hop, askStop };
 
 /** Alt+N: open the next session that needs you, cycling past the one already open. */
 function jumpToAttention(): void {
@@ -163,7 +175,6 @@ function listKeys(e: KeyboardEvent, typing: boolean): boolean {
     if (decision) return respondPermission(decision, selected);
   }
   switch (e.key.toLowerCase()) {
-    case 'm': toggleSound(); return true;
     case 'n': if (s.tab !== 'inbox') set({ modal: { kind: 'new' } }); return true;
     case 'r': if (selected) set({ modal: { kind: 'rename', id: selected } }); return true;
     case 'x': askStop(selected); return true;
@@ -236,7 +247,6 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
   switch (e.key.toLowerCase()) {
     case 'i': set({ zone: 'composer' }); return true;
     case 't': set({ expandTools: !s.expandTools }); return true;
-    case 'm': toggleSound(); return true;
     case 'y': return respondPermission('allow');
     case 'a': return respondPermission('always');
     case 'n': return respondPermission('deny');
@@ -246,7 +256,12 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
   return false;
 }
 
-const isPushToTalk = (e: KeyboardEvent) => (e.code === 'Backquote' || e.code === 'NumpadDecimal') && !e.ctrlKey && !e.altKey && !e.metaKey;
+const isPushToTalk = (e: KeyboardEvent) => {
+  const combo = comboOf(e);
+  return combo !== null && actionFor(combo, get().settings.bindings ?? {}) === 'pushToTalk';
+};
+/** Physical key that started push-to-talk; its keyup ends it even if modifiers were released first. */
+let pttCode: string | null = null;
 
 /** Push-to-talk keydown. Same rule as the numpad: voice keys type normally once you've started a message. */
 function voiceKeys(e: KeyboardEvent): boolean {
@@ -257,12 +272,14 @@ function voiceKeys(e: KeyboardEvent): boolean {
   const s = get();
   if (!isPushToTalk(e) || s.screen !== 'session' || !s.openId || e.repeat) return false;
   if (s.zone === 'composer' && (s.drafts[s.openId] ?? '').length > 0) return false;
+  pttCode = e.code;
   startVoice(s.openId);
   return true;
 }
 
 export function onKeyUp(e: KeyboardEvent): void {
-  if (isListening() && isPushToTalk(e)) {
+  if (isListening() && e.code === pttCode) {
+    pttCode = null;
     stopVoice();
     e.preventDefault();
   }
@@ -300,6 +317,26 @@ function commandKeys(e: KeyboardEvent): boolean {
   return false;
 }
 
+/** Rebindable shortcuts (see bindings.ts). Actions without a modifier don't fire inside text fields. */
+function globalAction(e: KeyboardEvent, typing: boolean): boolean {
+  const combo = comboOf(e);
+  const id = combo ? actionFor(combo, get().settings.bindings ?? {}) : null;
+  if (!id || id === 'pushToTalk') return false;
+  if (typing && !ACTIONS.find((a) => a.id === id)!.inText) return false;
+  const { openId } = get();
+  switch (id) {
+    case 'palette': set({ modal: { kind: 'palette' } }); break;
+    case 'help': set({ modal: { kind: 'help' } }); break;
+    case 'nextAttention': jumpToAttention(); break;
+    case 'prevSession': hop(-1); break;
+    case 'nextSession': hop(1); break;
+    case 'newSession': set({ modal: { kind: 'new' } }); break;
+    case 'interrupt': if (openId) send({ type: 'session.interrupt', id: openId }); break;
+    case 'sound': toggleSound(); break;
+  }
+  return true;
+}
+
 export function onKeyDown(e: KeyboardEvent): void {
   if (e.isComposing) return;
   // A dialog that handles a key may close itself before the event bubbles here; never let that
@@ -308,17 +345,19 @@ export function onKeyDown(e: KeyboardEvent): void {
   const s = get();
   if (s.modal) {
     // Dialogs own their keys; help closes on Esc or ?.
-    if (s.modal.kind === 'help' && (e.key === 'Escape' || e.key === '?')) { set({ modal: null }); e.preventDefault(); }
+    if (s.modal.kind === 'help') {
+      const combo = comboOf(e);
+      if (e.key === 'Escape' || (combo && actionFor(combo, s.settings.bindings ?? {}) === 'help')) set({ modal: null });
+      else if (e.code === 'KeyB' && !e.ctrlKey && !e.altKey) set({ modal: { kind: 'bindings' } });
+      else return;
+      e.preventDefault();
+    }
     return;
   }
   const typing = isTextTarget(e.target);
   let handled = false;
   if (voiceKeys(e)) handled = true;
-  else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { hop(e.key === 'ArrowUp' ? -1 : 1); handled = true; }
-  else if (e.altKey && !e.shiftKey && e.code === 'KeyN') { jumpToAttention(); handled = true; }
-  else if (e.altKey && e.shiftKey && e.code === 'KeyN') { set({ modal: { kind: 'new' } }); handled = true; }
-  else if (e.ctrlKey && e.key === '.') { if (s.openId) send({ type: 'session.interrupt', id: s.openId }); handled = true; }
-  else if (!typing && e.key === '?') { set({ modal: { kind: 'help' } }); handled = true; }
+  else if (globalAction(e, typing)) handled = true;
   else if (commandKeys(e)) handled = true;
   else if (s.screen === 'session') handled = sessionKeys(e, typing);
   else if (e.ctrlKey || e.metaKey || e.altKey) return;

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Command, CommandGroup, PermissionRequest, SessionSummary, TranscriptItem } from '../shared/protocol.ts';
+import type { Command, CommandGroup, PermissionRequest, SessionSummary, Settings, TranscriptItem } from '../shared/protocol.ts';
 
 export type Tab = 'inbox' | 'live' | 'history';
 export const TABS: Tab[] = ['inbox', 'live', 'history'];
@@ -14,6 +14,8 @@ export type Modal =
   | { kind: 'edit'; group: CommandGroup | null; slot: number }
   | { kind: 'delete'; group: CommandGroup; slot: number }
   | { kind: 'voiceMatch'; sessionId: string; text: string; command: Command }
+  | { kind: 'palette' }
+  | { kind: 'bindings' }
   | null;
 
 interface State {
@@ -50,6 +52,9 @@ interface State {
   drafts: Record<string, string>;
   /** Push-to-talk in progress: the live transcript, shown in the composer. */
   voice: { sessionId: string; state: 'listening' | 'finishing'; text: string } | null;
+  settings: Settings;
+  /** Phones: command board panel shown under the composer. */
+  mobileBoard: boolean;
 }
 
 export const useStore = create<State>(() => ({
@@ -79,6 +84,8 @@ export const useStore = create<State>(() => ({
   boardSlot: 5,
   drafts: {},
   voice: null,
+  settings: {},
+  mobileBoard: false,
 }));
 
 export const set = useStore.setState;
@@ -157,3 +164,6 @@ export function currentGroup(s: Pick<State, 'board' | 'groupKey'>): { group: Com
 export function setDraft(id: string, text: string): void {
   set({ drafts: { ...get().drafts, [id]: text } });
 }
+
+/** Stable empty value for selectors (a fresh {} per call would re-render forever). */
+export const NO_BINDINGS: Record<string, string[]> = {};
