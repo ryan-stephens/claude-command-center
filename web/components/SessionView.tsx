@@ -386,10 +386,11 @@ function Composer({ id, focused, docked = false }: { id: string; focused: boolea
                 className={`flex cursor-pointer items-baseline gap-3 rounded-xl px-3 py-1.5 ${c === chosen ? 'is-focus bg-raise' : ''}`}
               >
                 {slashQ === null && !argChoices && <Icon name="file" size={14} className="shrink-0 self-center text-faint" />}
-                <span className="min-w-0 shrink truncate font-mono text-[14px] font-semibold">{c.title}</span>
-                {c.aside && <span className="shrink-0 text-xs text-faint">{c.aside}</span>}
-                <span className="min-w-0 grow truncate text-sm text-sub">{c.desc}</span>
-                {c.hint && <span className="max-w-[35%] shrink-0 truncate font-mono text-xs text-faint">{c.hint}</span>}
+                {/* The name always shows in full (up to most of the row); the description and hint give way. */}
+                <span className="max-w-[70%] shrink-0 truncate font-mono text-[14px] font-semibold">{c.title}</span>
+                {c.aside && <span className="min-w-0 max-w-[25%] shrink truncate text-xs text-faint">{c.aside}</span>}
+                <span className="min-w-0 flex-1 truncate text-sm text-sub" title={c.desc}>{c.desc}</span>
+                {c.hint && <span className="min-w-0 max-w-[30%] shrink truncate font-mono text-xs text-faint">{c.hint}</span>}
               </li>
             ))}
             <li className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 pb-0.5 pt-1.5 text-xs text-faint" role="presentation">

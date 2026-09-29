@@ -42,7 +42,7 @@ Target: going from "a session needs me" to "handled" should take **3 keystrokes 
 | Key | Action |
 |---|---|
 | `← →` | Move between columns: **workspaces → sessions → the selected session** (docked beside the list, §24) |
-| `↑ ↓` `Home` `End` | Choose in the focused column |
+| `↑ ↓` `Home` `End` | Choose in the focused column (`Ctrl+↑ ↓`: 5 rows at a time, here and in every picker and the palette) |
 | `1–9` / `0` | Jump to workspace 1–9 / everything outside your workspaces (number row or numpad) |
 | `Enter` / `→` | Step into the selected session beside the list (§24); under 1024 px, open it full screen (in the workspace column, `Enter` goes to its sessions) |
 | `Ctrl+Enter` | The selected session full screen; again, back beside the list |
@@ -576,3 +576,11 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 - No console errors. `pnpm typecheck`, `pnpm test` (107) and `pnpm build` pass.
 
 **Found on the way:** the docked header first truncated the title to "Re…", and `Tab` onto a card opened the full 24 rem pad beside the list, squeezing the card. The header now shows the full-screen control as icon and key below 1536 px, and a waiting card keeps the pad a rail.
+
+## 25. Faster lists, and suggestions that keep the command's name
+
+2026-09-29, from the owner.
+- **`Ctrl+↑ ↓` moves 5 rows at a time** in every vertical list: the sessions and workspace columns (and the filter box), the folder picker, the new-session and add-a-repo pickers, the remove-a-repo list, the folders dialog and `Ctrl+K`. One rule, `web/list-step.ts` (tested); `Cmd` works too. Ctrl+arrows still move a key on the session's number pad, where they always did. It is in `?` and the README.
+- **The `/` suggestion list no longer cuts off command names** to fit descriptions. The name is kept whole (up to 70% of the row), and the description, aliases and argument hint give way. Hovering a description shows all of it.
+
+**Verified** (headless Chromium, isolated server, Demo workspace, 1280×800): `Ctrl+↓` went from row 0 to 5, `↓` to 6, and `Ctrl+↑` back to 1. In the docked pane at its narrowest, no command name in the `/` list overflowed (measured `scrollWidth`). `Ctrl+↓` in `Ctrl+K` raised no errors, and there were no console errors. `pnpm typecheck`, `pnpm test` (109) and `pnpm build` pass.

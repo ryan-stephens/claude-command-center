@@ -1,3 +1,4 @@
+import { listStep } from '../list-step.ts';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { addPath, homeRepo, isInside, removePath, repoName, samePath, WORKSPACE_COLORS, workspaceRepos, workspacesFor } from '../../shared/workspaces.ts';
 import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
@@ -154,8 +155,8 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
             onChange={(e) => { setQuery(e.target.value); setIndex(0); }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') close();
-              else if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(anotherRow, index + 1)); }
-              else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - 1)); }
+              else if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(anotherRow, index + listStep(e))); }
+              else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - listStep(e))); }
               else if (e.key.toLowerCase() === 'o' && e.ctrlKey) { e.preventDefault(); browse(typedPath || undefined); }
               else if (e.key === ' ' && !ws && !query.trim() && matches[index]) {
                 // Space (with an empty filter) adds the highlighted repo as extra context.
@@ -344,8 +345,8 @@ function WorkspaceDialog({ id }: { id: string | null }) {
 
   const listKey = (e: ReactKeyboardEvent) => {
     const p = shown[index];
-    if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(shown.length - 1, index + 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - 1)); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(shown.length - 1, index + listStep(e))); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - listStep(e))); }
     else if ((e.key === ' ' || e.key === 'Enter') && p) { e.preventDefault(); e.stopPropagation(); toggle(p); }
     else if (e.key.toLowerCase() === 'h' && p) { e.preventDefault(); if (!picked(p)) toggle(p); setHome(p); }
   };
@@ -522,8 +523,8 @@ function RepoPicker({ target }: { target: RepoTarget }) {
         onChange={(e) => { setQuery(e.target.value); setIndex(0); }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') close();
-          else if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(anotherRow, index + 1)); }
-          else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - 1)); }
+          else if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(anotherRow, index + listStep(e))); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - listStep(e))); }
           else if (e.key.toLowerCase() === 'o' && e.ctrlKey) { e.preventDefault(); setBrowseFrom(typedPath); }
           else if (/^[1-9]$/.test(e.key) && !query.trim() && matches[Number(e.key) - 1]) { e.preventDefault(); add(matches[Number(e.key) - 1]); }
           else if (e.key === 'Enter') {
@@ -580,8 +581,8 @@ function RepoRemover({ target }: { target: RepoTarget }) {
 
   useDialogKeys((e) => {
     if (e.key === 'Escape') close();
-    else if (e.key === 'ArrowDown') setIndex(Math.min(removable.length - 1, index + 1));
-    else if (e.key === 'ArrowUp') setIndex(Math.max(0, index - 1));
+    else if (e.key === 'ArrowDown') setIndex(Math.min(removable.length - 1, index + listStep(e)));
+    else if (e.key === 'ArrowUp') setIndex(Math.max(0, index - listStep(e)));
     else if (e.key === 'Enter' || e.key === 'Delete') remove(removable[index]);
     else if (/^[1-9]$/.test(e.key) && removable[Number(e.key) - 1]) remove(removable[Number(e.key) - 1]);
     else return false;
@@ -663,8 +664,8 @@ function SourcesDialog() {
   const rowKey = (e: ReactKeyboardEvent, i: number) => {
     const go = (el: HTMLElement | null | undefined) => { e.preventDefault(); e.stopPropagation(); el?.focus(); };
     if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); remove(i); }
-    else if (e.key === 'ArrowDown') go(rows.current[Math.min(library.sources.length - 1, i + 1)]);
-    else if (e.key === 'ArrowUp') go(rows.current[Math.max(0, i - 1)]);
+    else if (e.key === 'ArrowDown') go(rows.current[Math.min(library.sources.length - 1, i + listStep(e))]);
+    else if (e.key === 'ArrowUp') go(rows.current[Math.max(0, i - listStep(e))]);
     else if (e.key === 'Tab' || e.key === 'Escape') go(pickerInput.current);
   };
 

@@ -43,7 +43,7 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `?` | Every key (`B` there to rebind) |
 | | `Alt+↑` / `Alt+↓` | Previous / next session |
 | Home | `← →` | Move between columns: workspaces, sessions, the selected session |
-| | `↑ ↓` | Choose; the session shows beside the list |
+| | `↑ ↓` | Choose; the session shows beside the list (`Ctrl+↑ ↓` moves 5 at a time, in every list) |
 | | `Enter` / `→` | Step into it: type, answer Claude, run workflows (`Esc` back out) |
 | | `Ctrl+Enter` | Full screen, and back beside the list |
 | | `1`–`9` / `0` | Pick a workspace / everything outside your workspaces |

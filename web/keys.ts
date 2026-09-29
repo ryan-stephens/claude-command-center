@@ -18,6 +18,7 @@ import {
 import { lastPermissionAt, send } from './ws.ts';
 import { answersFor, enterOnRow, firstOpen, freshQa, goTo, MODE_LABEL, nextMode, pick } from './questions.ts';
 import { explainPermission } from './plain.ts';
+import { listStep } from './list-step.ts';
 
 /** Keys pressed this soon after an approval card appears were aimed at something else. */
 const APPROVAL_GRACE_MS = 400;
@@ -28,6 +29,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ['← →', 'Move between columns: workspaces, sessions, and the selected session beside them'],
       ['↑ ↓  Home End', 'Choose in the current column (the selected session shows beside the list)'],
+      ['Ctrl+↑ ↓', 'Move 5 rows at a time (in every list: home, pickers, search)'],
       ['1–9  /  0', 'Jump to workspace 1–9 / everything outside your workspaces'],
       ['Enter / →', 'Go into the selected session beside the list: type, answer Claude, run workflows (a narrow window opens it full screen; in the workspace column, Enter goes to its sessions)'],
       ['Ctrl+Enter', 'Open the selected session full screen (again: back beside the list)'],
@@ -49,7 +51,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
     title: 'Folder picker',
     keys: [
       ['F (repo library)', 'Choose the folders the repo library lists'],
-      ['↑ ↓  PgUp PgDn', 'Choose a folder'],
+      ['↑ ↓  Ctrl+↑ ↓  PgUp PgDn', 'Choose a folder (Ctrl moves 5 at a time)'],
       ['→ / Enter', 'Open the highlighted folder'],
       ['← / Backspace', 'Up one folder'],
       ['Space / Ctrl+Enter', 'Use the folder you are in (Ctrl+Enter also works while typing)'],
@@ -475,12 +477,19 @@ function homeKeys(e: KeyboardEvent, typing: boolean): boolean {
   if (typing) {
     // The filter box: arrows and Enter still drive the list.
     switch (e.key) {
-      case 'ArrowUp': moveSelection(-1); return true;
-      case 'ArrowDown': moveSelection(1); return true;
+      case 'ArrowUp': moveSelection(-listStep(e)); return true;
+      case 'ArrowDown': moveSelection(listStep(e)); return true;
       case 'Enter': if (selected) dockSession(selected); return true;
       case 'Escape': set({ filter: '', filterFocused: false }); return true;
     }
     return false;
+  }
+  // Ctrl+↑ ↓: several rows at a time, in the sessions or the workspace column.
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && s.homeCol !== 'library') {
+    const by = (e.key === 'ArrowUp' ? -1 : 1) * listStep(e);
+    if (s.homeCol === 'workspaces' && shownCols().includes('workspaces')) moveScope(by);
+    else moveSelection(by);
+    return true;
   }
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
   if (e.key === 'Tab') { set({ homeCol: s.homeCol === 'library' || !libraryShown() ? 'sessions' : 'library' }); return true; }

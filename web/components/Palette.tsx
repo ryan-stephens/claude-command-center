@@ -1,3 +1,4 @@
+import { listStep } from '../list-step.ts';
 import { useMemo, useRef, useState } from 'react';
 import { repoName } from '../../shared/workspaces.ts';
 import { exportPack, exportWorkspace, fireCommand, importPack, importWorkspace } from '../commands.ts';
@@ -137,8 +138,8 @@ export function Palette() {
         onChange={(e) => { setQuery(e.target.value); setIndex(0); }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { e.preventDefault(); close(); }
-          else if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(results.length - 1, index + 1)); }
-          else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - 1)); }
+          else if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(results.length - 1, index + listStep(e))); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - listStep(e))); }
           else if (e.key === 'Enter') { e.preventDefault(); run(results[index]); }
         }}
         placeholder="Search actions, workflows, workspaces and sessions…"

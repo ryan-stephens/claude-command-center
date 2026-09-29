@@ -1,3 +1,4 @@
+import { listStep } from '../list-step.ts';
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 import type { FolderEntry, FolderListing } from '../../shared/protocol.ts';
 import { samePath } from '../../shared/workspaces.ts';
@@ -128,8 +129,8 @@ export function FolderPicker({ onUse, useLabel = 'Use this folder', start, autoF
     const take = () => { e.preventDefault(); e.stopPropagation(); };
     switch (e.key) {
       case 'Escape': take(); if (text) clearText(); else onEscape(); return;
-      case 'ArrowDown': take(); setIndex(Math.min(shown.length - 1, index + 1)); return;
-      case 'ArrowUp': take(); setIndex(Math.max(0, index - 1)); return;
+      case 'ArrowDown': take(); setIndex(Math.min(shown.length - 1, index + listStep(e))); return;
+      case 'ArrowUp': take(); setIndex(Math.max(0, index - listStep(e))); return;
       case 'PageDown': take(); setIndex(Math.min(shown.length - 1, index + 8)); return;
       case 'PageUp': take(); setIndex(Math.max(0, index - 8)); return;
       case 'Enter':
