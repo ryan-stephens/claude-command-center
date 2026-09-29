@@ -31,6 +31,17 @@ test('destructive, publishing and system-wide commands are careful, with a reaso
   assert.equal(risk('cat src/remove-item-button.tsx'), 'safe');
 });
 
+test('chains, substitutions and wrappers are judged by what they really run (review findings)', () => {
+  for (const cmd of ['ls & rm -rf x', 'dir & del /q *', 'echo $(rm -rf ~)', 'cat `rm -rf x`', 'ls | xargs rm -rf', 'bash -c "rm -rf x"', 'cmd /c del x',
+    'npx rimraf dist', 'find . -execdir rm {} +', 'git -C x push --force', 'git reset HEAD~1 --hard', 'git restore .', 'git checkout .', 'ssh host ls', 'rsync -a a b']) {
+    assert.equal(risk(cmd), 'careful', cmd);
+  }
+  for (const cmd of ['env rm x', 'echo hi 1>important.txt', 'sort -o f in.txt', 'git diff --output=f', 'find . -fprint out', 'echo $(date)']) {
+    assert.notEqual(risk(cmd), 'safe', cmd);
+  }
+  assert.equal(risk('echo hi 2>&1'), 'safe');
+});
+
 test('tool risk by kind', () => {
   assert.equal(toolRisk('Read').risk, 'safe');
   assert.equal(toolRisk('Edit').risk, 'changes');

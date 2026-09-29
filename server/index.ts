@@ -2,11 +2,11 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { IncomingMessage } from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { ClientMsg, ServerMsg, Settings, Workspace } from '../shared/protocol.ts';
+import type { ClientMsg, RepoInfo, ServerMsg, Settings, Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { CommandService } from './commands.ts';
 import { PermissionBroker } from './permission-broker.ts';
@@ -86,10 +86,23 @@ function cleanWorkspace(raw: unknown): Workspace {
   return { id, name, color, repos, home };
 }
 
+function isDir(p: string): boolean {
+  try { return statSync(p).isDirectory(); } catch { return false; }
+}
+
+/** New repo paths must be real folders; ones already saved may be offline (an unplugged drive) and stay. */
+function checkNewRepos(w: Workspace, before: string[]): void {
+  for (const r of w.repos) {
+    if (!before.some((b) => samePath(b, r)) && !isDir(r)) throw new Error(`Not a folder: ${r}`);
+  }
+}
+
 function updateWorkspace(id: string, change: (w: Workspace) => Workspace): void {
   const w = store.loadWorkspaces().find((x) => x.id === id);
   if (!w) throw new Error('That workspace no longer exists.');
-  store.saveWorkspace(cleanWorkspace(change(w)));
+  const next = cleanWorkspace(change(w));
+  checkNewRepos(next, w.repos);
+  store.saveWorkspace(next);
   workspacesChanged();
 }
 
@@ -98,10 +111,14 @@ function workspacesChanged(): void {
   broadcast({ type: 'commands.changed' }); // workspace workflows follow the workspace's repos
 }
 
-function library(): ServerMsg {
+/** The last scan; scanning stats every repo, so it runs on request, not on every connection. */
+let libraryRepos: RepoInfo[] | null = null;
+
+function library(rescan = false): ServerMsg {
   const sources = store.librarySources();
+  if (rescan || !libraryRepos) libraryRepos = scanSources(sources);
   const suggested = suggestSources(manager.history.repos()).filter((p) => !sources.some((s) => samePath(s, p)));
-  return { type: 'library', sources, repos: scanSources(sources), suggested };
+  return { type: 'library', sources, repos: libraryRepos, suggested };
 }
 
 /** Repo commands may only be written into folders cc-control already works with. */
@@ -178,7 +195,9 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     case 'workspace.save': {
       const w = cleanWorkspace(msg.workspace);
-      const isNew = !store.loadWorkspaces().some((x) => x.id === w.id);
+      const old = store.loadWorkspaces().find((x) => x.id === w.id);
+      checkNewRepos(w, old?.repos ?? []);
+      const isNew = !old;
       store.saveWorkspace(w);
       if (isNew) commands.seedWorkspace(w, msg.template);
       workspacesChanged();
@@ -203,13 +222,14 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     case 'library.setSources': {
       const sources = cleanSources(msg.sources);
-      if (Array.isArray(msg.sources) && msg.sources.length && !sources.length) throw new Error('That folder does not exist.');
+      const asked = Array.isArray(msg.sources) ? msg.sources.filter((x) => typeof x === 'string' && x.trim()).length : 0;
+      if (sources.length < asked) throw new Error('That folder does not exist (or is not a full path, like C:\\repos).');
       store.setLibrarySources(sources);
-      broadcast(library());
+      broadcast(library(true));
       return;
     }
     case 'library.scan':
-      send(ws, library());
+      send(ws, library(true));
       return;
     case 'workspace.export': {
       const w = store.loadWorkspaces().find((x) => x.id === msg.id);
@@ -218,7 +238,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     }
     case 'workspace.import': {
-      const r = workspaceFromFile(msg.file, scanSources(store.librarySources()));
+      const r = workspaceFromFile(msg.file, (library(true) as Extract<ServerMsg, { type: 'library' }>).repos);
       const w = cleanWorkspace({ ...r.workspace, id: crypto.randomUUID() });
       store.saveWorkspace(w);
       if (r.workflows.groups.length) store.saveWorkspacePack(w.id, r.workflows);

@@ -1,5 +1,5 @@
 import type { SlashCommand } from '@anthropic-ai/claude-agent-sdk';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Command, CommandGroup, CommandMode, CommandPack, CommandScope } from '../shared/protocol.ts';
 
@@ -81,6 +81,8 @@ export function readRepoPack(cwd: string): CommandPack | null {
 }
 
 export function writeRepoPack(cwd: string, pack: CommandPack): void {
+  // Only ever inside an existing folder: never create the repo itself.
+  if (!statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`Not a folder: ${cwd}`);
   mkdirSync(join(cwd, '.cc-control'), { recursive: true });
   writeFileSync(repoPackPath(cwd), `${JSON.stringify(pack, null, 2)}\n`);
 }

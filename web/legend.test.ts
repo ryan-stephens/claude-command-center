@@ -14,6 +14,7 @@ test('home sessions column teaches the column model and new session', () => {
   assert.ok(l.includes('N New session'));
   assert.ok(!l.some((x) => x.includes('Answer')));
   assert.ok(labels({ pending: true }).includes('→ Answer it here'));
+  assert.ok(labels({ pending: true, previewShown: false }).includes('Enter Open to answer'), 'no hidden-column promise');
 });
 
 test('the preview answers approvals; without one it offers open', () => {

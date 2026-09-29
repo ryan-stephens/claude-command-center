@@ -12,6 +12,7 @@ export function loadTheme(): ThemePref {
 }
 
 export function applyTheme(pref: ThemePref): void {
+  if (typeof document === 'undefined') return; // tests run the store under Node
   const root = document.documentElement;
   if (pref === 'system') delete root.dataset.theme;
   else root.dataset.theme = pref;

@@ -25,6 +25,8 @@ export interface LegendInput {
   /** Home: a real workspace is selected (not "everything else"). */
   inWorkspace: boolean;
   bindings: Bindings;
+  /** The preview column fits on screen (otherwise approvals are answered by opening the session). */
+  previewShown?: boolean;
 }
 
 const k = (b: Bindings, id: ActionId) => displayCombo(bindingsFor(id, b)[0] ?? '');
@@ -65,7 +67,7 @@ export function legendFor(x: LegendInput): LegendItem[] {
           { keys: ['←', '→'], label: 'Columns' },
           { keys: ['↑', '↓'], label: 'Choose' },
           ...(x.hasSelection ? [{ keys: ['Enter'], label: 'Open' }] : []),
-          ...(x.pending ? [{ keys: ['→'], label: 'Answer it here', tone: 'attn' as const }] : []),
+          ...(x.pending ? [x.previewShown === false ? { keys: ['Enter'], label: 'Open to answer', tone: 'attn' as const } : { keys: ['→'], label: 'Answer it here', tone: 'attn' as const }] : []),
           { keys: ['N'], label: 'New session', tone: 'acc' },
           { keys: ['/'], label: 'Filter' },
           { keys: ['Tab'], label: 'Repo library' },

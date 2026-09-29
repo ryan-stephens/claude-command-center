@@ -42,11 +42,11 @@ function mcpParts(name: string): { server: string; tool: string } | null {
 
 // Matched against the start of each command in a line (see parts()), so `grep format` is not a disk format.
 const CAREFUL_RULES: [RegExp, string][] = [
-  [/^(rm|rmdir|del|erase|rd|unlink|remove-item|ri)\b|^find\b.*\s-delete\b|shutil\.rmtree/i, 'deletes files'],
-  [/^git\s+(push|reset\s+--hard|clean\b|checkout\s+--\s|rebase|filter-branch|stash\s+(drop|clear))/i, 'can lose or publish work'],
+  [/^(rm|rmdir|del|erase|rd|unlink|remove-item|ri|rimraf|shred)\b|^(npx|pnpm\s+dlx|bunx)\s+(rimraf|del-cli)\b|^find\b.*\s-(delete|exec\w*|ok\w*)\b.*\brm\b|^xargs\b.*\brm\b|shutil\.rmtree/i, 'deletes files'],
+  [/^git\s+(push|reset\b.*--hard|clean\b|checkout\s+(--\s|\.)|restore\b|rebase|filter-branch|stash\s+(drop|clear))/i, 'can lose or publish work'],
   [/^git\s+branch\s+(-D|--delete\s+--force)\b/, 'can lose or publish work'],
   [/^(npm|pnpm|yarn|bun|pip3?|poetry|gem|cargo|go|brew|choco|winget|scoop|apt(-get)?|dnf|yum)\s+(install|i|add|remove|uninstall|rm|update|upgrade|get)\b/i, 'installs or removes software'],
-  [/^(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b/i, 'talks to the internet'],
+  [/^(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod|ssh|scp|sftp|rsync|ftp|nc|ncat)\b/i, 'talks to the internet'],
   [/^(sudo|runas)\b|^start-process\b.*-verb\s+runas/i, 'runs as administrator'],
   [/^(kill|pkill|killall|taskkill|stop-process)\b/i, 'stops programs'],
   [/^(mkfs|format|diskpart|dd)\b/i, 'touches whole disks'],
@@ -59,7 +59,7 @@ const CAREFUL_RULES: [RegExp, string][] = [
 // First words of commands that only look at things.
 const READ_ONLY = new Set([
   'ls', 'dir', 'cat', 'type', 'head', 'tail', 'less', 'more', 'pwd', 'cd', 'echo', 'which', 'where', 'whoami', 'date',
-  'grep', 'rg', 'findstr', 'find', 'wc', 'tree', 'stat', 'file', 'du', 'df', 'env', 'printenv', 'sort', 'uniq', 'diff',
+  'grep', 'rg', 'findstr', 'find', 'wc', 'tree', 'stat', 'file', 'du', 'df', 'printenv', 'sort', 'uniq', 'diff',
   'get-childitem', 'get-content', 'get-location', 'get-item', 'select-string', 'test-path', 'get-command',
 ]);
 const READ_ONLY_GIT = /^git\s+(status|log|diff|show|branch(\s+(-a|-r|--list|-v+))*\s*$|remote(\s+-v)?\s*$|rev-parse|ls-files|blame|describe|tag\s*$|config\s+--get)/i;
@@ -67,21 +67,40 @@ const READ_ONLY_OTHER = /^(node|python3?|npx\s+tsc)\s+(--check|-c\s+['"]?import|
 
 /** Split a shell line into its commands, so `ls && rm -rf x` is judged by its riskiest part. */
 function parts(command: string): string[] {
-  return command.split(/&&|\|\||;|\|(?!\|)|\n/)
-    // "(cd x && …", "FOO=1 cmd": judge the command itself.
-    .map((p) => p.trim().replace(/^[({]\s*/, '').replace(/^(\w+=\S*\s+)+/, ''))
+  // A lone & chains commands too, but not inside redirections like 2>&1 or &>.
+  return command.split(/&&|\|\||;|\||(?<![>&<])&(?![>&])|\n/)
+    // "(cd x && …", "FOO=1 cmd", "git -C dir -c k=v push": judge the command itself.
+    .map((p) => p.trim().replace(/^[({]\s*/, '').replace(/^(\w+=\S*\s+)+/, '')
+      .replace(/^git\s+((-C|-c)\s+\S+\s+)+/i, 'git '))
     .filter(Boolean);
 }
 
+/** Commands run inside another: $(…), backticks, <(…), and `bash -c "…"` / `cmd /c …` / `powershell -Command …`. */
+function nested(command: string): string[] {
+  const out: string[] = [];
+  for (const m of command.matchAll(/\$\(([^)]*)\)|`([^`]*)`|<\(([^)]*)\)/g)) out.push(m[1] ?? m[2] ?? m[3] ?? '');
+  for (const m of command.matchAll(/\b(?:bash|sh|zsh|pwsh|powershell)(?:\.exe)?\s+(?:-\w+\s+)*-(?:c|Command)\s+(["']?)(.+?)\1\s*$/gi)) out.push(m[2]);
+  for (const m of command.matchAll(/\bcmd(?:\.exe)?\s+\/[ck]\s+(.+)$/gi)) out.push(m[1]);
+  return out;
+}
+
 export function classifyCommand(command: string): { risk: Risk; reason: string } {
+  for (const inner of nested(command)) {
+    const r = classifyCommand(inner);
+    if (r.risk === 'careful') return r;
+  }
   for (const p of parts(command)) {
     for (const [re, reason] of CAREFUL_RULES) if (re.test(p)) return { risk: 'careful', reason };
   }
-  // Writing into a file (but not into /dev/null or 2>&1) changes things.
-  if (/(^|[^0-9&])>{1,2}\s*(?!\/dev\/null|&|\$null|nul\b)\S/i.test(command)) return { risk: 'changes', reason: 'writes to a file' };
+  // Writing into a file (but not into /dev/null, nul or another stream like 2>&1) changes things.
+  if (/\d*>{1,2}\s*(?!\/dev\/null|&|\$null|nul\b)\S/i.test(command)) return { risk: 'changes', reason: 'writes to a file' };
+  // Anything that runs a command inside another is not "only looking".
+  if (nested(command).length) return { risk: 'changes', reason: 'runs code in your project' };
   const safe = parts(command).every((p) => {
     const first = p.split(/\s+/)[0].toLowerCase();
-    if (first === 'find' && /\s-(exec|delete)\b/.test(p)) return false;
+    if (first === 'find' && /\s-(exec\w*|ok\w*|delete|fprint\w*|fls)\b/.test(p)) return false;
+    if (first === 'sort' && /\s(-o\b|--output)/.test(p)) return false;
+    if (/\s--output\b/.test(p)) return false;
     return READ_ONLY.has(first) || READ_ONLY_GIT.test(p) || READ_ONLY_OTHER.test(p);
   });
   return safe ? { risk: 'safe', reason: 'only looks' } : { risk: 'changes', reason: 'runs code in your project' };

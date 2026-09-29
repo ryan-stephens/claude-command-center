@@ -47,6 +47,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Tab (message box)', 'Go to the number pad or the approval card without stopping Claude'],
       ['i', 'Back to the message box'],
       ['+', 'Give this session another repo to work in'],
+      ['Ctrl+K  “Stop working in …”', 'Take an added repo back out (or its × in the bar above the conversation)'],
       ['PgUp PgDn  Home End', 'Scroll the conversation'],
       ['T', 'Show or hide every step’s details'],
       ['R / X', 'Rename / end the session'],
@@ -232,10 +233,18 @@ function addRepoToWorkspace(): void {
 
 // ---- Home -------------------------------------------------------------------------------
 
+/** Columns shown at this window width (the preview needs 1024px, workspaces and the library 768px). */
+export function shownCols(): HomeCol[] {
+  const wide = (px: number) => typeof matchMedia === 'undefined' || matchMedia(`(min-width: ${px}px)`).matches;
+  return HOME_COLS.filter((c) => (c === 'preview' ? wide(1024) : c === 'workspaces' ? wide(768) : true));
+}
+const libraryShown = () => typeof matchMedia === 'undefined' || matchMedia('(min-width: 768px)').matches;
+
 function moveCol(delta: number): void {
   const col = get().homeCol;
-  const i = HOME_COLS.indexOf(col === 'library' ? 'sessions' : col);
-  set({ homeCol: HOME_COLS[Math.min(HOME_COLS.length - 1, Math.max(0, i + delta))] });
+  const cols = shownCols();
+  const i = Math.max(0, cols.indexOf(col === 'library' ? 'sessions' : col));
+  set({ homeCol: cols[Math.min(cols.length - 1, Math.max(0, i + delta))] });
 }
 
 function libraryKeys(e: KeyboardEvent): boolean {
@@ -244,7 +253,7 @@ function libraryKeys(e: KeyboardEvent): boolean {
   const repo = repos[Math.min(s.libIndex, repos.length - 1)];
   switch (e.key) {
     case 'ArrowLeft': set({ libIndex: Math.max(0, s.libIndex - 1) }); return true;
-    case 'ArrowRight': set({ libIndex: Math.min(repos.length - 1, s.libIndex + 1) }); return true;
+    case 'ArrowRight': set({ libIndex: Math.max(0, Math.min(repos.length - 1, s.libIndex + 1)) }); return true;
     case 'ArrowUp': case 'Escape': set({ homeCol: 'sessions' }); return true;
     case 'Home': set({ libIndex: 0 }); return true;
     case 'End': set({ libIndex: Math.max(0, repos.length - 1) }); return true;
@@ -278,13 +287,14 @@ function homeKeys(e: KeyboardEvent, typing: boolean): boolean {
     return false;
   }
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
-  if (e.key === 'Tab') { set({ homeCol: s.homeCol === 'library' ? 'sessions' : 'library' }); return true; }
+  if (e.key === 'Tab') { set({ homeCol: s.homeCol === 'library' || !libraryShown() ? 'sessions' : 'library' }); return true; }
   if (s.homeCol === 'library') return libraryKeys(e);
 
   const digit = /^(Digit|Numpad)(\d)$/.exec(e.code);
   if (digit && !e.shiftKey) { scopeByDigit(Number(digit[2])); return true; }
 
-  const col: HomeCol = s.homeCol;
+  // A column hidden at this width (the window shrank) acts as the sessions column.
+  const col: HomeCol = shownCols().includes(s.homeCol) ? s.homeCol : 'sessions';
   switch (e.key) {
     case 'ArrowLeft': moveCol(-1); return true;
     case 'ArrowRight': moveCol(1); return true;
@@ -360,6 +370,9 @@ function boardKeys(e: KeyboardEvent): boolean {
     return true;
   }
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
+  // On the pad nothing is being typed, so the top-row digits run workflows too (laptops without a numpad).
+  const digit = /^Digit([1-9])$/.exec(e.code);
+  if (digit && !e.shiftKey) { set({ boardSlot: Number(digit[1]) }); fireSlot(Number(digit[1])); return true; }
   switch (e.key) {
     case 'Enter': fireSlot(s.boardSlot); return true;
     case '[': cycleGroup(-1); return true;

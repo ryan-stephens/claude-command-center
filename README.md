@@ -1,27 +1,27 @@
-# cc-control
+# Command Center for Claude Code
 
-**A keyboard-first command center for Claude Code.** See every session on your machine in one list, jump straight to whichever one needs you, and drive it with the number pad or your voice.
+**A keyboard-driven cockpit for your Claude Code sessions.** Group your repos into workspaces, see at a glance what needs you, what's working and what's done, and drive every session with the arrow keys, the number pad or your voice. Everything also works with a mouse.
 
-![A session waiting for approval, with the repo's command board beside it](docs/screenshots/session.png)
+![Home: workspaces, their sessions and a preview, over the repo library, with the keys that work right now along the bottom](docs/screenshots/home.png)
 
 ## Why
 
-Running several Claude Code sessions at once means a lot of terminal-tab hunting: which one finished, which one is waiting on a permission prompt, which one needs the same "run the tests and summarise failures" prompt you've typed ten times today. cc-control puts all of them on one screen, and makes the common moves single keystrokes.
+Running several Claude Code sessions across several repos means a lot of terminal-tab hunting: which one finished, which one is waiting on a permission prompt, which repo it was in, and typing the same "run the tests and summarise failures" prompt for the tenth time. Command Center puts all of it on one screen and makes the common moves single keystrokes.
 
-- **Know who needs you.** Sessions waiting for an approval or that just finished land in an Inbox. `Alt+N` jumps to the next one from anywhere; `Y` / `A` / `N` answers. Clearing a blocked session takes two keys.
-- **A hotbar for prompts.** Every session has a 3×3 command board laid out like a numpad. `Numpad 1–9` fires a command; tiles can send immediately, drop text into the composer, or ask for a blank first (`Explain {{what}}`).
-- **Share workflows through git.** Commit `.cc-control/commands.json` to a repo and everyone who opens a session there gets the same commands. The session's own slash commands and skills appear automatically too.
-- **See what it's doing.** A live line shows what each session is doing right now (thinking, running `npm test` for 12s, retrying the API), plus any subagents and background shells, each with a stop button. `Esc` stops Claude, just like in the terminal.
-- **Talk to it.** Hold `` ` `` (or `Numpad .`), speak, release: it's sent. Say a command's name ("code review") to run it.
-- **Everything discoverable.** `Ctrl+K` searches every action, command and session; `?` lists every key (and lets you rebind them); the bottom bar always shows the keys that work right now.
+- **Workspaces.** Group the repos you work on together ("Storefront", "Payments") and pick them with `1`–`9`. Your repo folder becomes a **repo library** you drag from: drop a repo on a workspace to add it, or on a session so Claude can work in both at once.
+- **Know who needs you.** Each workspace's sessions are sorted into *Needs you*, *Working*, *Done* and *Earlier*. `Alt+N` jumps to the next one that needs you from anywhere; `Y` / `A` / `N` answers.
+- **Approvals you can judge.** "Claude wants to check app.js for syntax errors", rated *safe*, *makes changes* or *careful* (deletes files, pushes, installs…), with what it touches. The raw command sits behind `D`.
+- **Follow along in plain words.** Claude's actions fold into readable steps ("Read index.html", "Changed src/app.js +3") with a real diff behind "See change", and a live line says what it's doing right now. `Esc` stops it, just like in the terminal.
+- **Workflows on the number pad.** The pad on screen is drawn like the one under your hand; each key is a saved instruction such as "Run the tests" or "Commit my work". Workspaces come with starter workflows, and share them as a file.
+- **Keys you can see.** Every button shows its key, and a bar along the bottom lists the ones that work right now. `?` lists them all (and lets you rebind them); `Ctrl+K` searches everything.
 
-| Session list | Command palette | On a phone |
+| A session waiting for your OK | Light theme | On a phone |
 |---|---|---|
-| ![Live sessions with status, repo, branch and context usage](docs/screenshots/list.png) | ![Fuzzy command palette](docs/screenshots/palette.png) | ![Phone layout with the command board open](docs/screenshots/phone.png) |
+| ![A plain-language approval card with Y, A and N keys, beside the on-screen number pad](docs/screenshots/approval.png) | ![Home in the light theme](docs/screenshots/home-light.png) | ![Phone layout with workspace chips](docs/screenshots/phone.png) |
 
 ## Quick start
 
-You need **Node 24+**, **pnpm**, and the **Claude Code CLI, logged in**. cc-control runs on your existing Claude login; no API key needed.
+You need **Node 24+**, **pnpm**, and the **Claude Code CLI, logged in**. Command Center runs on your existing Claude login; no API key needed.
 
 ```sh
 git clone https://github.com/ryan-stephens/claude-command-center.git
@@ -30,30 +30,34 @@ pnpm install
 pnpm start          # builds the app and serves http://localhost:7777
 ```
 
-Open **http://localhost:7777** in Chrome or Edge. A short welcome card shows the five keys worth knowing.
+Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four groups of keys, then helps you pick your repo folder and make your first workspace. It follows your Windows light or dark setting (`Alt+T` switches).
 
 ## Keys you'll use
 
 | Where | Key | Does |
 |---|---|---|
 | Anywhere | `Alt+N` | Jump to the next session that needs you |
-| | `Ctrl+K` | Command palette |
-| | `?` | Every key binding (`B` there to rebind) |
+| | `Ctrl+K` | Search actions, workflows, workspaces and sessions |
+| | `?` | Every key (`B` there to rebind) |
 | | `Alt+↑` / `Alt+↓` | Previous / next session |
-| Session list | `↑ ↓` `Enter` | Pick and open a session |
-| | `N` | New session (pick a repo, optional first prompt) |
-| | `Tab` | Inbox → Live → History |
-| Session | `Numpad 1–9` / `Alt+1–9` | Fire a command |
-| | `Numpad ±` | Switch command group |
-| | `Y` / `A` / `N` | Approve once / always / deny |
+| Home | `← →` | Move between columns: workspaces, sessions, preview |
+| | `↑ ↓` `Enter` | Choose and open |
+| | `1`–`9` / `0` | Pick a workspace / everything outside your workspaces |
+| | `N` / `W` | New session here / new workspace |
+| | `+` | Add a repo to this workspace |
+| | `Tab` | The repo library |
+| Session | `Numpad 1–9` / `Alt+1–9` | Run a workflow |
+| | `Y` / `A` / `N` | Allow once / always / don't allow (`Tab` first if you're in the message box) |
 | | Hold `` ` `` | Push-to-talk |
-| | `Esc` (while working) | Stop Claude, like in Claude Code |
-| | `Ctrl+B` | Send the running tool to the background |
-| | `Esc` | Step out: composer → board → list |
+| | `Esc` (while working) | Stop Claude |
+| | `+` | Let this session work in another repo |
+| | `Ctrl+B` | Send the running step to the background |
 
-## Sharing commands with your team
+## Sharing with your team
 
-Put a pack at `.cc-control/commands.json` in any repo; cc-control picks it up for sessions started there:
+**A whole workspace:** on home, select it and press `Shift+E` (or *Export* in its editor). The file lists its repos by folder name and carries its workflows; a teammate imports it with `Shift+I`, and it matches the names against their own repo library.
+
+**Per-repo workflows:** put a pack at `.cc-control/commands.json` in any repo, and everyone who opens a session there gets the same keys:
 
 ```json
 {
@@ -70,7 +74,7 @@ Put a pack at `.cc-control/commands.json` in any repo; cc-control picks it up fo
 }
 ```
 
-Your personal commands live in a local SQLite file and can be exported or imported as the same JSON (`Shift+E` / `Shift+I` on the board). You can also create and edit tiles in the app: focus one and press `E`.
+Your own workflows live in a local SQLite file and export or import as the same JSON (`Shift+E` / `Shift+I` on the number pad). To make or change a key, focus it and press `E`.
 
 ## How it works
 
@@ -79,10 +83,12 @@ Browser (React + Vite)  ⇄  WebSocket  ⇄  Node server on 127.0.0.1:7777
                                            ├─ one Claude Agent SDK session per live conversation
                                            ├─ approvals held until you answer Y / A / N
                                            ├─ history from ~/.claude/projects (resume or fork any session)
-                                           └─ node:sqlite for your commands and settings
+                                           ├─ repo library: git repos under the folders you pick
+                                           └─ node:sqlite for workspaces, workflows and settings
 ```
 
-- Built on [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk). Sessions are real Claude Code sessions stored alongside your terminal ones: every terminal session is listed here and can be resumed, and anything started here can be continued in a terminal with `claude --resume <id>`.
+- Built on [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk). Sessions are real Claude Code sessions stored alongside your terminal ones: every terminal session is listed here and can be continued, and anything started here can be continued in a terminal with `claude --resume <id>`.
+- Extra repos use the SDK's `additionalDirectories`. Adding one to a running session restarts it in place, keeping the conversation.
 - If a session looks open in a terminal, sending to it **forks** a copy instead of writing into the same transcript.
 - Voice uses the browser's Web Speech API (Chrome and Edge send the audio to Google's speech service).
 
@@ -99,9 +105,9 @@ pnpm typecheck
 | Path | What |
 |---|---|
 | `server/` | Node server, run as TypeScript directly (Node 24 type stripping, no build step) |
-| `web/` | React SPA; `web/keys.ts` is the single keyboard router |
-| `shared/protocol.ts` | WebSocket message types shared by both |
-| `docs/PLAN.md` | Design, decisions and per-phase notes |
+| `web/` | React SPA; `web/keys.ts` is the single keyboard router, `web/plain.ts` all the plain-language wording |
+| `shared/` | WebSocket message types and the workspace logic both sides use |
+| `docs/PLAN.md` | Design, decisions and per-phase notes; `docs/UX-AUDIT.md` and `docs/design-*.html` for the redesign |
 
 <details>
 <summary>Advanced: using it from your phone over Tailscale</summary>

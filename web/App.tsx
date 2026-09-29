@@ -5,7 +5,7 @@ import { SessionView } from './components/SessionView.tsx';
 import { Icon, Key, KeyHint, WsBadge } from './components/ui.tsx';
 import { armOnFirstGesture, setNotificationHandler } from './attention.ts';
 import { bindingsFor, displayCombo, type ActionId } from './bindings.ts';
-import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession } from './keys.ts';
+import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession, shownCols } from './keys.ts';
 import { legendFor } from './legend.ts';
 import { stopVoice } from './voice.ts';
 import { maybeShowWelcome } from './components/Welcome.tsx';
@@ -27,7 +27,8 @@ function Legend() {
   const inWorkspace = useStore((s) => s.scope.kind === 'workspace');
   const modal = useStore((s) => s.modal);
   if (modal) return null;
-  const items = legendFor({ screen, homeCol, zone, pending, busy, drafting, hasSelection: Boolean(focusId), inWorkspace, bindings });
+  const col = shownCols().includes(homeCol) || homeCol === 'library' ? homeCol : 'sessions';
+  const items = legendFor({ screen, homeCol: col, zone, pending, busy, drafting, hasSelection: Boolean(focusId), inWorkspace, bindings, previewShown: shownCols().includes('preview') });
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
     <footer className="hidden items-center gap-x-6 gap-y-2 border-t border-line bg-col px-4 py-2.5 text-[13.5px] text-sub md:flex md:flex-wrap" aria-label="Keys you can press now">

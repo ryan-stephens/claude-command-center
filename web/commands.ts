@@ -1,7 +1,7 @@
 // Firing commands from the board: send, insert into the composer, or fill a {{template}} first.
 
 import type { Command, CommandPack } from '../shared/protocol.ts';
-import { currentGroup, flash, get, set, setDraft } from './store.ts';
+import { currentGroup, flash, get, groupKeyOf, set, setDraft } from './store.ts';
 import { requestExport, requestWorkspaceFile, send } from './ws.ts';
 
 const PLACEHOLDER = /\{\{\s*([\w .-]+?)\s*\}\}/g;
@@ -51,7 +51,7 @@ export function cycleGroup(delta: number): void {
   if (!groups.length) return;
   const { index } = currentGroup(s);
   const g = groups[(index + delta + groups.length) % groups.length];
-  set({ groupKey: `${g.scope}:${g.name}` });
+  set({ groupKey: groupKeyOf(g) });
 }
 
 function download(name: string, data: unknown): void {

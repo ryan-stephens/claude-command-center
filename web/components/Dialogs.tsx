@@ -348,7 +348,7 @@ function WorkspaceDialog({ id }: { id: string | null }) {
               {library.sources.length ? `From ${library.sources.map(repoName).join(', ')} · add a folder` : 'Pick the folder your repos are in'}
             </button>
           </div>
-          {(editSources || (library.sources.length === 0 && !repos.length)) && <div className="mb-3"><SourcePrompt autoFocus={editSources} /></div>}
+          {(editSources || (library.sources.length === 0 && !repos.length)) && <div className="mb-3"><SourcePrompt autoFocus={editSources} onEscape={() => setEditSources(false)} /></div>}
           {(library.sources.length > 0 || repos.length > 0) && (
             <>
               <input value={filter} onChange={(e) => { setFilter(e.target.value); setIndex(0); }} placeholder="Filter repos" className="field mb-2 py-1.5 text-sm" aria-label="Filter repos" />
@@ -517,7 +517,7 @@ function SourcesDialog() {
 }
 
 /** Type or pick a source folder; used by the sources dialog and inline in the workspace editor. */
-function SourcePrompt({ autoFocus = false }: { autoFocus?: boolean }) {
+function SourcePrompt({ autoFocus = false, onEscape = close }: { autoFocus?: boolean; onEscape?: () => void }) {
   const library = useStore((s) => s.library);
   const [path, setPath] = useState('');
   const addSource = (p: string) => {
@@ -532,7 +532,7 @@ function SourcePrompt({ autoFocus = false }: { autoFocus?: boolean }) {
         value={path}
         onChange={(e) => setPath(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') { e.stopPropagation(); close(); }
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onEscape(); }
           else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); addSource(path); }
           else if (/^[1-3]$/.test(e.key) && !path && library.suggested[Number(e.key) - 1]) { e.preventDefault(); addSource(library.suggested[Number(e.key) - 1]); }
         }}

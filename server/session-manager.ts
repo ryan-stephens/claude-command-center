@@ -206,7 +206,7 @@ export class SessionManager {
     l.input.close();
     l.q.close();
     const began = l.items.some((i) => i.kind === 'user');
-    const next = this.start({ id: l.id, cwd: l.cwd, title: l.title, items: l.items, options: began ? { resume: l.id } : { sessionId: l.id } });
+    const next = this.start({ id: l.id, cwd: l.cwd, title: l.title, items: [...l.items], options: began ? { resume: l.id } : { sessionId: l.id } });
     next.ctxPct = l.ctxPct;
     const notice: TranscriptItem = { kind: 'notice', uuid: crypto.randomUUID(), text: note };
     next.items.push(notice);
@@ -308,7 +308,10 @@ export class SessionManager {
 
   private async pump(l: LiveSession): Promise<void> {
     try {
-      for await (const msg of l.q) this.handle(l, msg);
+      for await (const msg of l.q) {
+        if (l.replaced) break; // restarted: the new query owns the session now
+        this.handle(l, msg);
+      }
     } catch (e) {
       if (l.replaced) return;
       const notice: TranscriptItem = { kind: 'notice', uuid: crypto.randomUUID(), text: `Session ended with an error: ${(e as Error).message}` };

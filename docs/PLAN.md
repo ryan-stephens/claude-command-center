@@ -369,6 +369,16 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 
 **Verified** (headless Chromium on an isolated server and database, Haiku, throwaway repos under `%TEMP%\cc-demo`): welcome → workspace created from the folder picker → second workspace from the keyboard → `N` → prompt → approval answered with `Tab` `Y` → done → home with preview → drag a repo onto a workspace → `+` added a repo to a live session, which then answered from it → `?`, `Ctrl+K`, light and dark themes, phone 390×844 (workspace chips, session, number pad panel). No console errors. `pnpm typecheck`, `pnpm test` (59 tests) and `pnpm build` pass.
 
+**Independent review** (a separate agent read both commits): 11 findings, all fixed.
+1. **Cycling number-pad groups broke every workflow key.** `cycleGroup` wrote the old key format, so no group matched exactly and `fireSlot` refused silently. Now it uses `groupKeyOf`, with a test (`web/commands.test.ts`).
+2. **Some dangerous commands were rated Safe:** `ls & rm -rf x` (a lone `&`), `echo $(rm -rf ~)`, `env rm …`, `find -execdir rm`, and `1>file` redirects. The classifier now splits on `&` (not inside `2>&1`), checks `$(…)`, backticks, `<(…)` and `bash -c` / `cmd /c` / `powershell -Command` strings, drops `env` from the read-only list, and treats any `N>` redirect or `--output` as a write.
+3. Home keys could move focus into columns hidden at the window width (answering an approval you couldn't see). Keys and the legend now skip hidden columns.
+4. After a restart, the old query's loop could still write into the shared transcript. It stops at once now, and the new session gets its own copy.
+5. Workspace repos weren't checked, so the repo-pack write guard accepted any path. New repo paths must be existing folders, and `writeRepoPack` never creates the repo folder itself.
+6. The top-row digits now run workflows on the number pad, as the legend says.
+7. More careful rules: `git -C x push`, `reset … --hard`, `restore`, `checkout .`, `xargs rm`, `rimraf`, `ssh`/`scp`/`rsync`.
+8–11. The library index can't go negative. A bad source folder is reported, not dropped. Esc in the embedded folder field no longer closes the workspace editor. The library scan is cached and runs on request, not on every connection.
+
 **Known gaps**
 - Home loads the preview's transcript on selection (after 200 ms); very long histories make that first read slow, as before.
 - Drag and drop needs a mouse; the keyboard path (`+`, `Enter` in the library) covers the same moves.
