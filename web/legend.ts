@@ -41,6 +41,7 @@ export function legendFor(x: LegendInput): LegendItem[] {
           ...(x.inWorkspace ? [{ keys: ['Enter'], label: 'Add to this workspace' }] : []),
           { keys: ['N'], label: 'New session in it' },
           { keys: ['F'], label: 'Folders to scan' },
+          { keys: ['C'], label: 'Fold / unfold' },
           { keys: ['Tab'], label: 'Back to sessions' },
         ];
       case 'workspaces':
@@ -49,6 +50,7 @@ export function legendFor(x: LegendInput): LegendItem[] {
           { keys: ['1–9'], label: 'Jump to a workspace' },
           { keys: ['→'], label: 'Its sessions' },
           { keys: ['W'], label: 'New workspace' },
+          { keys: ['C'], label: 'Fold column' },
           ...(x.inWorkspace ? [{ keys: ['E'], label: 'Edit' }, { keys: ['+'], label: 'Add a repo' }, { keys: ['−'], label: 'Remove one' }, { keys: ['⇧E'], label: 'Share' }] : []),
           { keys: ['⇧I'], label: 'Import' },
         ];
@@ -70,6 +72,7 @@ export function legendFor(x: LegendInput): LegendItem[] {
           ...(x.pending ? [x.previewShown === false ? { keys: ['Enter'], label: 'Open to answer', tone: 'attn' as const } : { keys: ['→'], label: 'Answer it here', tone: 'attn' as const }] : []),
           { keys: ['N'], label: 'New session', tone: 'acc' },
           { keys: ['/'], label: 'Filter' },
+          { keys: ['C'], label: 'Fold group' },
           { keys: ['Tab'], label: 'Repo library' },
         ];
     }
@@ -96,6 +99,6 @@ export function legendFor(x: LegendInput): LegendItem[] {
     x.busy ? stop : { keys: ['Esc'], label: 'Home' },
     { keys: ['i'], label: 'Type a message' },
     { keys: ['+', '−'], label: 'Add / remove a repo' },
-    ...(!x.pending ? [{ keys: ['E'], label: 'Edit key' }] : []),
+    ...(!x.pending ? [{ keys: ['E'], label: 'Edit key' }, { keys: ['C'], label: 'Fold pad' }] : []),
   ];
 }

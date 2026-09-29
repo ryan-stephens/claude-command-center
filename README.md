@@ -46,6 +46,7 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `N` / `W` | New session here / new workspace |
 | | `+` / `−` | Add a repo to this workspace / remove one |
 | | `Tab` | The repo library |
+| | `C` / `Shift+C` | Fold what you're in (workspace column, a group of sessions, the repo library) / open every group |
 | | `F` (in the library) | Pick the folders it lists: walk the disk with `↑ ↓ → ←`, `Space` uses the folder you're in |
 | Pickers | `Ctrl+O` | Browse to any folder (new session, add a repo) |
 | Session | `Numpad 1–9` / `Alt+1–9` | Run a workflow |
@@ -54,6 +55,7 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `Esc` (while working) | Stop Claude |
 | | `+` / `−` | Give this session another repo / take one back out |
 | | `Ctrl+B` | Send the running step to the background |
+| | `C` (number pad) | Fold the number pad away; `Tab` still opens it |
 
 ## Sharing with your team
 

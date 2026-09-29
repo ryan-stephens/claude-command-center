@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Command, CommandGroup, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, TranscriptItem, Workspace } from '../shared/protocol.ts';
-import { groupSessions, sessionsIn, type Flags, type Scope } from './home-model.ts';
+import { bucketToggled, loadFolds, saveFolds, toggled, unfolded, type FoldKey, type Folds } from './folds.ts';
+import { bucketOf, groupSessions, sessionsIn, type Bucket, type Flags, type Scope } from './home-model.ts';
 import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
 
 /** Home is three columns you walk with ← →, plus the repo library (Tab). */
@@ -89,6 +90,8 @@ interface State {
   mobileBoard: boolean;
   /** A repo card is being dragged: drop targets light up. */
   dragging: string | null;
+  /** Collapsible sections the viewer folded away (remembered per browser). */
+  folds: Folds;
 }
 
 const theme = loadTheme();
@@ -132,6 +135,7 @@ export const useStore = create<State>(() => ({
   settings: {},
   mobileBoard: false,
   dragging: null,
+  folds: loadFolds(),
 }));
 
 export const set = useStore.setState;
@@ -173,9 +177,38 @@ export function sessionGroups(s: ListState) {
   return groupSessions(list, (x) => flagsFor(s, x.id), attention(s).map((x) => x.id));
 }
 
-/** The sessions column in display order: what ↑ ↓ walk through. */
-export function visibleSessions(s: ListState): SessionSummary[] {
-  return sessionGroups(s).flatMap((g) => g.sessions);
+/** The sessions column in display order, minus folded groups: what ↑ ↓ walk through. */
+export function visibleSessions(s: ListState & Pick<State, 'folds'>): SessionSummary[] {
+  return unfolded(sessionGroups(s), s.folds);
+}
+
+function setFolds(folds: Folds): void {
+  set({ folds });
+  saveFolds(folds);
+}
+
+/** Fold or unfold a whole section: the workspace column, the repo library, the number pad. */
+export function toggleFold(key: FoldKey): void {
+  setFolds(toggled(get().folds, key));
+}
+
+/** Fold or unfold one group of sessions; the selection moves off a group as it folds. */
+export function toggleBucket(bucket: Bucket): void {
+  setFolds(bucketToggled(get().folds, bucket));
+  const s = get();
+  const list = visibleSessions(s);
+  if (s.selectedId && !list.some((x) => x.id === s.selectedId)) set({ selectedId: list[0]?.id ?? s.selectedId });
+}
+
+export function unfoldAllBuckets(): void {
+  setFolds({ ...get().folds, buckets: {} });
+}
+
+/** The group the selected session sits in (what C folds in the sessions column). */
+export function bucketOfSelected(): Bucket | null {
+  const s = get();
+  const x = s.sessions.find((y) => y.id === s.selectedId);
+  return x ? bucketOf(x, flagsFor(s, x.id)) : null;
 }
 
 /** The workspace column's entries in key order: workspaces 1–9…, then "everything else" (0). */

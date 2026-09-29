@@ -8,7 +8,7 @@ import { bindingsFor, displayCombo } from '../bindings.ts';
 import { statusLabel } from '../home-model.ts';
 import { askStop, backToList, hop } from '../keys.ts';
 import { startVoice, stopVoice, voiceSupported } from '../voice.ts';
-import { NO_BINDINGS, set, setDraft, useFlags, useStore } from '../store.ts';
+import { NO_BINDINGS, set, setDraft, toggleFold, useFlags, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { ActivityBar, useNow } from './ActivityBar.tsx';
 import { ApprovalCard } from './Approval.tsx';
@@ -19,6 +19,21 @@ import { Icon, Key, Pill, WsBadge } from './ui.tsx';
 
 const EMPTY: TranscriptItem[] = [];
 
+/** The number pad, folded away: the conversation gets the width; Tab (or a click) still opens it. */
+function PadRail() {
+  return (
+    <aside aria-label="Number pad (folded)" className="flex w-14 shrink-0 flex-col items-center gap-4 border-l border-line bg-col py-3">
+      <button onClick={() => toggleFold('pad')} aria-label="Keep the number pad open" title="Keep the number pad open" className="grid h-8 w-8 place-items-center rounded-lg text-faint hover:bg-raise hover:text-ink">
+        <Icon name="back" size={16} />
+      </button>
+      <button onClick={() => set({ zone: 'board' })} title="Use the number pad (Tab from the message box)" className="flex flex-col items-center gap-1.5 text-faint hover:text-ink">
+        <Icon name="grid" size={20} />
+        <Key k="Tab" size="sm" />
+      </button>
+    </aside>
+  );
+}
+
 export function SessionView() {
   const id = useStore((s) => s.openId)!;
   const session = useStore((s) => s.sessions.find((x) => x.id === id));
@@ -27,6 +42,7 @@ export function SessionView() {
   const permission = useStore((s) => Object.values(s.permissions).find((p) => p.sessionId === id));
   const zone = useStore((s) => s.zone);
   const expandTools = useStore((s) => s.expandTools);
+  const padFolded = useStore((s) => s.folds.pad);
   const ws = useStore((s) => (session ? workspacesFor(session.cwd, s.workspaces)[0] ?? null : null));
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -76,7 +92,7 @@ export function SessionView() {
           <MobilePad />
         </div>
         <div className="hidden md:flex">
-          <NumPad focused={zone === 'board'} />
+          {padFolded && zone !== 'board' ? <PadRail /> : <NumPad focused={zone === 'board'} />}
         </div>
       </div>
     </div>

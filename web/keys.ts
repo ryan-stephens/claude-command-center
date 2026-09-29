@@ -10,9 +10,10 @@ import { cycleGroup, exportPack, exportWorkspace, fireSlot, importPack, importWo
 import { sessionsIn } from './home-model.ts';
 import { nextTheme, applyTheme, THEME_LABEL } from './theme.ts';
 import { cancelVoice, isListening, startVoice, stopVoice } from './voice.ts';
+import { BUCKET_TITLE } from './home-model.ts';
 import {
-  attention, currentGroup, currentWorkspace, flash, get, HOME_COLS, markRead, pendingFor, sameScope, scopes, sessionById, set, setScope,
-  toggleSound, visibleSessions, type HomeCol,
+  attention, bucketOfSelected, currentGroup, currentWorkspace, flash, get, HOME_COLS, markRead, pendingFor, sameScope, scopes, sessionById, set, setScope,
+  toggleBucket, toggleFold, toggleSound, unfoldAllBuckets, visibleSessions, type HomeCol,
 } from './store.ts';
 import { lastPermissionAt, send } from './ws.ts';
 
@@ -34,6 +35,8 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['+ / −', 'Add a repo to this workspace / remove one (every session in it can use them all)'],
       ['Tab', 'Go to the repo library (Enter adds the repo here, N starts a session in it, F picks the folders it lists)'],
       ['/', 'Filter sessions'],
+      ['C', 'Collapse or expand what you are in: the workspace column, the selected session’s group, the repo library'],
+      ['Shift+C', 'Expand every group of sessions'],
       ['Y / A / N (preview column)', 'Answer the selected session’s approval without opening it'],
       ['R / X', 'Rename / end the selected session'],
     ],
@@ -63,6 +66,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['+ / −', 'Give this session another repo to work in / take one it was given back out (or its × above the conversation)'],
       ['PgUp PgDn  Home End', 'Scroll the conversation'],
       ['T', 'Show or hide every step’s details'],
+      ['C (number pad)', 'Fold the number pad away, or keep it open (folded, it still opens while you use it)'],
       ['R / X', 'Rename / end the session'],
     ],
   },
@@ -288,6 +292,7 @@ function libraryKeys(e: KeyboardEvent): boolean {
   switch (e.key.toLowerCase()) {
     case 'n': if (repo) newSession(repo.path); return true;
     case 'f': set({ modal: { kind: 'sources' } }); return true;
+    case 'c': toggleFold('library'); flash(get().folds.library ? 'Repo library folded: Tab opens it' : 'Repo library stays open'); return true;
   }
   return false;
 }
@@ -344,6 +349,16 @@ function homeKeys(e: KeyboardEvent, typing: boolean): boolean {
   if (col === 'workspaces' && e.shiftKey) {
     if (e.key === 'E' && s.scope.kind === 'workspace') { exportWorkspace(s.scope.id); return true; }
     if (e.key === 'I') { importWorkspace(); return true; }
+  }
+  if (e.key === 'C') { unfoldAllBuckets(); return true; }
+  if (e.key === 'c') {
+    if (col === 'workspaces') toggleFold('workspaces');
+    else if (col === 'sessions') {
+      const bucket = bucketOfSelected();
+      if (bucket && selected) { toggleBucket(bucket); flash(`${BUCKET_TITLE[bucket]} folded: Shift+C opens every group`); }
+      else flash('Shift+C opens every group');
+    }
+    return true;
   }
   switch (e.key.toLowerCase()) {
     case 'n': newSession(); return true;
@@ -445,6 +460,7 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
   switch (e.key.toLowerCase()) {
     case 'i': set({ zone: 'composer' }); return true;
     case 't': set({ expandTools: !s.expandTools }); return true;
+    case 'c': toggleFold('pad'); flash(get().folds.pad ? 'Number pad folded: Tab opens it' : 'Number pad stays open'); return true;
     case 'y': return respondPermission('allow');
     case 'a': return respondPermission('always');
     case 'n': return respondPermission('deny');

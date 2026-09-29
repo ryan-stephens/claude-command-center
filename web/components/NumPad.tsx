@@ -3,7 +3,7 @@ import type { Command, CommandGroup, CommandScope } from '../../shared/protocol.
 import { cycleGroup, exportPack, fireSlot, importPack } from '../commands.ts';
 import { backToList } from '../keys.ts';
 import { startVoice, stopVoice, voiceSupported } from '../voice.ts';
-import { currentGroup, groupKeyOf, set, useStore } from '../store.ts';
+import { currentGroup, groupKeyOf, set, toggleFold, useStore } from '../store.ts';
 import { Icon, Key } from './ui.tsx';
 
 /** What each kind of group is, in words. */
@@ -35,6 +35,11 @@ export function NumPad({ focused, compact = false }: { focused: boolean; compact
         <h2 className={`eyebrow ${focused ? '!text-ink' : ''}`}>Number pad</h2>
         <span className="ml-auto truncate text-sm text-sub">{group ? group.name : board ? 'No workflows' : 'Loading…'}</span>
         {group && <span className="shrink-0 rounded bg-raise px-1.5 text-[11px] text-faint">{SCOPE_WORD[group.scope]}</span>}
+        {!compact && (
+          <button onClick={(e) => { e.stopPropagation(); toggleFold('pad'); set({ zone: 'composer' }); }} aria-label="Fold the number pad away" title="Fold the number pad away (C on the pad)" className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-faint hover:bg-raise hover:text-ink">
+            <Icon name="right" size={15} />
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-4 gap-2" style={{ gridTemplateRows: `repeat(5, ${compact ? 70 : 68}px)` }}>

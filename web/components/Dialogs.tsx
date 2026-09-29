@@ -40,13 +40,13 @@ export function Dialogs() {
 function HelpOverlay() {
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
   return (
-    <Overlay label="Every key" wide>
+    <Overlay label="Every key" wide="xl">
       <div className="mb-4 flex items-center gap-3">
         <h2 className="grow text-[19px] font-bold tracking-tight">Every key</h2>
         <span className="flex items-center gap-1.5 text-sm text-faint"><Key k="B" size="sm" />change shortcuts</span>
         <span className="flex items-center gap-1.5 text-sm text-faint"><Key k="Esc" size="sm" />close</span>
       </div>
-      <div className="max-h-[68vh] columns-1 gap-8 overflow-y-auto md:columns-2">
+      <div className="max-h-[72vh] columns-1 gap-8 overflow-y-auto md:columns-2 xl:columns-3">
         {keymap(bindings).map((section) => (
           <section key={section.title} className="mb-5 break-inside-avoid">
             <h3 className="eyebrow mb-2">{section.title}</h3>
@@ -55,7 +55,7 @@ function HelpOverlay() {
                 // "E / Delete (workspace column)": the keys go on the keycap, where they work goes with the text.
                 const m = /^(.*?) \((.+)\)$/.exec(k);
                 return (
-                  <div key={k + d} className="grid grid-cols-[minmax(0,9.5rem)_1fr] items-baseline gap-3">
+                  <div key={k + d} className="grid grid-cols-[minmax(0,7.5rem)_1fr] items-baseline gap-3">
                     <dt><Key k={m ? m[1] : k} size="sm" className="!h-auto min-h-5 whitespace-normal py-0.5 text-left" /></dt>
                     <dd className="text-sub">{m && <span className="text-faint">{m[2]}: </span>}{d}</dd>
                   </div>

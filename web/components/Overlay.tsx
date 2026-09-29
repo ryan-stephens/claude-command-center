@@ -2,10 +2,10 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { set } from '../store.ts';
 import { Key } from './ui.tsx';
 
-export function Overlay({ children, label, wide = false }: { children: ReactNode; label: string; wide?: boolean }) {
+export function Overlay({ children, label, wide = false }: { children: ReactNode; label: string; wide?: boolean | 'xl' }) {
   return (
     <div className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-3 pt-[8vh] md:p-4 md:pt-[10vh]" role="dialog" aria-modal="true" aria-label={label}>
-      <div className={`w-full ${wide ? 'max-w-3xl' : 'max-w-xl'} rounded-2xl border border-line bg-surface p-5 shadow-2xl md:p-6`}>{children}</div>
+      <div className={`w-full ${wide === 'xl' ? 'max-w-6xl' : wide ? 'max-w-3xl' : 'max-w-xl'} rounded-2xl border border-line bg-surface p-5 shadow-2xl md:p-6`}>{children}</div>
     </div>
   );
 }

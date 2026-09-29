@@ -50,6 +50,7 @@ Target: going from "a session needs me" to "handled" should take **3 keystrokes 
 | `+` / `−` | Add a repo to the current workspace / remove one (every session in it can use them all) |
 | `Tab` | Go to the repo library (`← →` choose, `Enter` add to this workspace, `N` new session in it, `F` source folders); `Tab` or `Esc` back |
 | `/` | Filter sessions (title, repo, branch) |
+| `C` / `Shift+C` | Fold what you're in: the workspace column (to a rail), the selected session's group, the repo library / open every group |
 | `Y` / `A` / `N` | In the preview column: answer the selected session's approval without opening it |
 | `R` | Rename session |
 | `X` | End session (with confirmation) |
@@ -436,3 +437,24 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 **Known gaps**
 - A busy session picks up a workspace change only after its turn. Until then its chips already show the new set.
 - One session can't opt out of one of its workspace's repos. Take the repo out of the workspace, or run the session outside it.
+
+## 20. Easier to read: collapsible sections, repos where the workspace is, a real preview
+
+2026-09-29. The owner asked for the UI to be as easy to use and understand as possible, with collapsible sections. A screenshot tour (1440×900 light, 1280×720 dark, phone) found space used badly: an empty preview, a number pad that is always open, the library always taking about 120 px, and the workspace's repo strip wrapping. It also found noise: an empty circle on every past session, a "·" badge, and a cramped `?`.
+
+**Collapsible sections** (`web/folds.ts`, tested; remembered per browser in `localStorage`, and the page still works without it). `C` folds whatever you are in, and each section has a chevron to click:
+- **Workspace column → a rail** of badges with their digit and a needs-you or working dot. Arrows and `1–9` still work on it.
+- **Groups of sessions** (Needs you / Working / Done / Earlier): `C` folds the selected session's group, clicking a header folds that group, and `Shift+C` opens them all. `↑ ↓` skip folded groups, and the selection moves off a group as it folds (`visibleSessions` → `unfolded`).
+- **Repo library → one line** ("10 repos from cc-demo, repos · Tab opens it"). It opens while you are in it (`Tab`) and folds again when you leave.
+- **Number pad → a slim rail** in the session view, giving the conversation the width. It opens while you use it (`Tab` or `Esc` from the message box, or clicking the rail), and a chevron in its header folds it.
+
+**Clearer home**
+- **The selected workspace lists its repos** under its row in the workspace column: "Sessions here can use" with the home repo marked, × on hover, and `+ Add` / `Remove −`. Repo cards can be dropped there. The strip in the sessions column is now phone-only, where the workspace column is hidden.
+- **The preview shows the recent conversation**: the last three exchanges (your message, then Claude's reply, with the newest shown in full). It has a primary **Open / Open and continue** button (`Enter`) next to Rename and End session, replacing a lone "Last from Claude" paragraph.
+- Past sessions no longer carry an empty status circle. "Everything else" has a grid badge instead of "·". The library header names its folders instead of printing full paths (the paths are in the tooltip).
+- `?` is wider (three columns on wide screens) with a narrower key column, so descriptions stop wrapping into slivers.
+- Phones: one "New" button instead of two.
+
+**Verified** (headless Chromium, isolated server, Demo workspace only): 11 checks. `C` folds the workspace column to a rail, and the arrows still pick workspaces. `C` folds the selected session's group and hides its rows, and `Shift+C` opens it. The library folds to one line and `Tab` opens it. All folds survive a reload. `C` on the pad folds it to a rail and `Tab` opens it. No console errors. Phone 390×844 and dark 1280×800 have no horizontal scroll. `pnpm typecheck`, `pnpm test` (79) and `pnpm build` pass.
+
+**Process note:** one failure screenshot in this run caught "Everything else" (the owner's real sessions) because `1` was pressed before workspaces loaded. It was deleted at once, and the scripts now wait for the Demo workspace before any key or screenshot, and never screenshot on failure.

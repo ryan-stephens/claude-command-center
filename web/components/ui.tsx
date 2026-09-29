@@ -79,7 +79,7 @@ export function WsBadge({ ws, size = 30 }: { ws: Pick<Workspace, 'name' | 'color
       style={{ width: size, height: size, borderRadius: Math.round(size * 0.27), background: bg, fontSize: Math.round(size * 0.44), color: ws ? '#fff' : 'var(--c-sub)' }}
       aria-hidden="true"
     >
-      {ws ? ws.name.trim().charAt(0).toUpperCase() : '·'}
+      {ws ? ws.name.trim().charAt(0).toUpperCase() : <Icon name="grid" size={Math.round(size * 0.5)} />}
     </span>
   );
 }
