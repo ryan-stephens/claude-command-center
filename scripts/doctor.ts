@@ -1,4 +1,4 @@
-// pnpm doctor: is this machine ready for cc-control? Checks what it needs (Node, Claude Code,
+// pnpm run doctor: is this machine ready for cc-control? Checks what it needs (Node, Claude Code,
 // Windows Terminal, git, the built page), reads the settings file, and tries each connection for
 // real: Jira, and the pull-request host of every repo in your workspaces (gh for GitHub, the REST
 // API for Azure DevOps / TFS). Prints one line per check with what to do about it; exits 1 if
@@ -88,7 +88,7 @@ section('Workspaces: pull requests and run recipes');
 let store: Store | undefined;
 try { store = new Store(); } catch (e) { line('warn', 'Workspaces', `couldn't open ${DB_PATH}: ${(e as Error).message}`); }
 const workspaces = store?.loadWorkspaces() ?? [];
-if (!workspaces.length) line('info', 'Workspaces', 'none yet', 'Make one on the Ticket Line (W), then run pnpm doctor again to check its repos.');
+if (!workspaces.length) line('info', 'Workspaces', 'none yet', 'Make one on the Ticket Line (W), then run pnpm run doctor again to check its repos.');
 let ghChecked = false;
 for (const w of workspaces) {
   console.log(`  ${w.name}`);

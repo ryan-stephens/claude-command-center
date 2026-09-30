@@ -221,7 +221,7 @@ export class AzureDevOpsHost implements CodeHost {
     throw new Error(`Azure DevOps said ${last}`);
   }
 
-  /** Reach the repo through the API (pnpm doctor): which API version answered. */
+  /** Reach the repo through the API (pnpm run doctor): which API version answered. */
   async ping(): Promise<string> {
     const r = await this.api<{ name?: string }>('GET', this.base());
     return `reached ${this.repo.project}/${r.name ?? this.repo.repo} (API ${accepted.get(this.repo.collection) ?? this.pinned ?? '?'})`;

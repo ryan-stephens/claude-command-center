@@ -623,7 +623,7 @@ function TicketsDialog() {
     <Overlay label="Tickets" wide>
       <DialogTitle>Tickets</DialogTitle>
       <div className="grid gap-2">
-        <SourceLine name="Jira" state={sources?.jira} setup="In ~/.cc-control/config.env: CC_CONTROL_JIRA_SITE and CC_CONTROL_JIRA_TOKEN (Data Center: a personal access token; Cloud: an API token, plus CC_CONTROL_JIRA_EMAIL). Restart the server; pnpm doctor checks it." />
+        <SourceLine name="Jira" state={sources?.jira} setup="In ~/.cc-control/config.env: CC_CONTROL_JIRA_SITE and CC_CONTROL_JIRA_TOKEN (Data Center: a personal access token; Cloud: an API token, plus CC_CONTROL_JIRA_EMAIL). Restart the server; pnpm run doctor checks it." />
         <SourceLine name="Trello" state={sources?.trello} setup="Set CC_CONTROL_TRELLO_KEY, CC_CONTROL_TRELLO_TOKEN and CC_CONTROL_TRELLO_BOARDS (board ids) where the server starts, and restart it." />
         <button onClick={() => send({ type: 'tickets.demo', on: !sources?.demo })} className="flex items-center gap-3 rounded-xl border border-line px-3 py-2 text-left hover:bg-raise">
           <span className={`grid h-5 w-5 shrink-0 place-items-center rounded border-[1.5px] border-line font-mono text-xs font-bold text-ok`}>{sources?.demo ? '✓' : ''}</span>

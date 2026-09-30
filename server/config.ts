@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { getCACertificates, setDefaultCACertificates } from 'node:tls';
+import * as tls from 'node:tls';
 import { parseEnv } from 'node:util';
 
 export interface ConfigState {
@@ -55,8 +55,12 @@ export function loadConfig(file = CONFIG_FILE, env: NodeJS.ProcessEnv = process.
 export function trustCertificates(env: NodeJS.ProcessEnv = process.env): Pick<ConfigState, 'systemCerts' | 'caFile' | 'problem'> {
   const extra: string[] = [];
   let problem: string | undefined;
+  // Node 24 has these; on anything older, say so rather than fail while loading.
+  if (typeof tls.getCACertificates !== 'function' || typeof tls.setDefaultCACertificates !== 'function') {
+    return { systemCerts: 0, problem: `Node ${process.versions.node} can't add certificates; cc-control needs Node 24.` };
+  }
   if (env.CC_CONTROL_SYSTEM_CA !== '0') {
-    try { extra.push(...getCACertificates('system')); } catch (e) { problem = `Couldn't read the system certificates: ${(e as Error).message}`; }
+    try { extra.push(...tls.getCACertificates('system')); } catch (e) { problem = `Couldn't read the system certificates: ${(e as Error).message}`; }
   }
   const caFile = env.CC_CONTROL_CA_FILE;
   if (caFile) {
@@ -68,13 +72,13 @@ export function trustCertificates(env: NodeJS.ProcessEnv = process.env): Pick<Co
     }
   }
   if (extra.length) {
-    const defaults = getCACertificates('default');
-    setDefaultCACertificates([...new Set([...defaults, ...extra])]);
+    const defaults = tls.getCACertificates('default');
+    tls.setDefaultCACertificates([...new Set([...defaults, ...extra])]);
   }
   return { systemCerts: extra.length, ...(caFile ? { caFile } : {}), ...(problem ? { problem } : {}) };
 }
 
-/** Load the settings file and trust the certificates; what the server and pnpm doctor call first. */
+/** Load the settings file and trust the certificates; what the server and pnpm run doctor call first. */
 export function applyConfig(): ConfigState {
   Object.assign(config, loadConfig());
   const certs = trustCertificates();

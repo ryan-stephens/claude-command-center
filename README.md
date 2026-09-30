@@ -33,11 +33,11 @@ You need **Node 24+**, **pnpm**, **git**, **Windows Terminal** and the **Claude 
 git clone https://github.com/ryan-stephens/claude-command-center.git
 cd claude-command-center
 pnpm install
-pnpm doctor         # checks this machine: Claude Code, Windows Terminal, git, settings, Jira, PR hosts
+pnpm run doctor     # checks this machine (plain `pnpm doctor` is pnpm's own check): Claude Code, Windows Terminal, git, settings, Jira, PR hosts
 pnpm start          # builds the app and serves http://localhost:7777
 ```
 
-**Settings and tokens** go in `%USERPROFILE%\.cc-control\config.env`, one `NAME=value` per line; [`docs/config.env.example`](docs/config.env.example) lists them all. The certificates Windows trusts are trusted too, so company servers with an internal certificate authority (an on-prem Jira or TFS) work without extra setup. Run `pnpm doctor` after changing settings: it signs in to Jira and reaches each workspace repo's PR host for real, and says what to fix.
+**Settings and tokens** go in `%USERPROFILE%\.cc-control\config.env`, one `NAME=value` per line; [`docs/config.env.example`](docs/config.env.example) lists them all. The certificates Windows trusts are trusted too, so company servers with an internal certificate authority (an on-prem Jira or TFS) work without extra setup. Run `pnpm run doctor` after changing settings: it signs in to Jira and reaches each workspace repo's PR host for real, and says what to fix.
 
 Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four groups of keys, then helps you pick your repo folder and make your first workspace. It follows your Windows light or dark setting (`Alt+T` switches).
 

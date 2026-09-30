@@ -26,7 +26,7 @@ The owner likes the mock a lot. Keep its look, its words and its keys, including
 
 **Before adding any tracker, environment tool or code host, read PLAN §35:** teams differ (GitHub and Azure DevOps / TFS, Okteto backends with a UI proxy change, multi-repo workspaces), so each step stays one swappable module with workspace-level configuration.
 
-- **VU readiness (§36):** `~/.cc-control/config.env` for settings and tokens, Windows' certificates trusted, `pnpm doctor`; Jira Data Center (PAT, wiki markup, a criteria field); Ship to Azure DevOps Server / TFS through its REST API (the version probed), with GitHub kept on `gh` and other hosts pushed-only. Tested against a stand-in VU (`fake-vu.mjs` in the session scratchpad; the walkthrough is described in §36), not the real servers.
+- **VU readiness (§36):** `~/.cc-control/config.env` for settings and tokens, Windows' certificates trusted, `pnpm run doctor`; Jira Data Center (PAT, wiki markup, a criteria field); Ship to Azure DevOps Server / TFS through its REST API (the version probed), with GitHub kept on `gh` and other hosts pushed-only. Tested against a stand-in VU (`fake-vu.mjs` in the session scratchpad; the walkthrough is described in §36), not the real servers.
 
 - **Workspace run recipes (§37):** a workspace can have its own recipe across its repos: `@repo` per step, `NAME=value` per step, `! by hand`, `stop:` teardown; `Alt+W` in the recipe editor; shared in the workspace file (imports marked to check first).
 
