@@ -172,6 +172,15 @@ export class CardService {
     return this.store.loadCards().find((c) => c.id === id);
   }
 
+  /** Change a card and tell the page (Ship's steps and PR). Returns the card as saved. */
+  update(id: string, change: (c: Card) => Card): Card | undefined {
+    const card = this.get(id);
+    if (!card) return undefined;
+    const next = change(card);
+    this.save(next);
+    return next;
+  }
+
   private save(card: Card): void {
     this.store.saveCard(card);
     this.opts.changed();

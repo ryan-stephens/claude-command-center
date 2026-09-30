@@ -2,6 +2,7 @@
 
 import type { Card, CardDraft, PacketItem } from './cards.ts';
 import type { CardRun, RunRecipe } from './recipes.ts';
+import type { ShipPlan, ShipRequest } from './ship.ts';
 import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 
 /**
@@ -9,7 +10,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  * says `hello` first; a page that hears anything else first is talking to a server from before
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
-export const PROTOCOL = 7;
+export const PROTOCOL = 8;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -338,6 +339,11 @@ export type ClientMsg =
   | { type: 'card.stopRun'; id: string }
   /** Save the run recipe you wrote for a repo; no steps goes back to the detected one. Answered with ok or an error. */
   | { type: 'recipe.save'; reqId: string; repo: string; steps: string[]; url?: string }
+  /** Ship: what shipping the card will do (answered with ship.plan), do it (ok or an error), look at its PR again, merge it. */
+  | { type: 'card.shipPlan'; reqId: string; id: string }
+  | { type: 'card.ship'; reqId: string; id: string; request: ShipRequest }
+  | { type: 'card.prRefresh'; reqId: string; id: string }
+  | { type: 'card.merge'; reqId: string; id: string }
   /** Tickets: show the demo set, map a project (Jira key / Trello board) to a workspace, fetch again. */
   | { type: 'tickets.demo'; on: boolean }
   | { type: 'tickets.map'; project: string; workspaceId: string | null }
@@ -377,6 +383,7 @@ export type ServerMsg =
   | { type: 'info'; message: string }
   | { type: 'error'; message: string; reqId?: string }
   /** Every card on the Ticket Line, on connect and whenever one changes. */
+  | { type: 'ship.plan'; reqId: string; plan: ShipPlan }
   /** Run recipes by repo path: the library's, the workspaces' and the cards' repos. */
   | { type: 'recipes'; recipes: Record<string, RunRecipe> }
   /** Cards' runs of their recipes (Try it). */

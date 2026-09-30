@@ -14,8 +14,9 @@ import { openSession } from '../keys.ts';
 import { SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, ticketFocus } from '../line-model.ts';
-import { boardOf, editRecipe, openAddComposer, openApp, openCard, openComposer, tryIt, workspaceKey } from '../line-keys.ts';
+import { boardOf, editRecipe, openAddComposer, openApp, openCard, openComposer, shipKey, tryIt, workspaceKey } from '../line-keys.ts';
 import { recipeFor, type CardRun, type RunStep } from '../../shared/recipes.ts';
+import { prLine } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
@@ -255,6 +256,11 @@ function CardTile({ card, focused, color }: { card: Card; focused: boolean; colo
       <span className="text-[14px] font-semibold leading-snug">{card.title}</span>
       <ActLine card={card} />
       <RunLine id={card.id} />
+      {card.ship?.pr && (
+        <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold ${card.ship.pr.state === 'MERGED' ? 'text-ok' : card.ship.pr.checks === 'fail' ? 'text-bad' : 'text-busy'}`}>
+          <span className="rounded border border-current px-1 font-mono text-[10px]">PR</span><span className="truncate">{prLine(card.ship.pr)}</span>
+        </span>
+      )}
       {prog && (
         <span className="flex items-center gap-1.5 font-mono text-[11px] font-semibold tabular-nums text-faint">
           <span className="h-[5px] flex-1 overflow-hidden rounded-full bg-raise"><i className="block h-full bg-ok transition-[width]" style={{ width: `${(100 * prog.done) / prog.total}%` }} /></span>
@@ -324,6 +330,11 @@ function DrawerActions({ card }: { card: Card }) {
         </button>
       )}
       <TryButtons card={card} />
+      {card.stage !== 'done' && (card.sessionId || card.ship?.pr) && (
+        <button className={`btn py-1 ${card.stage === 'try' || card.ship?.pr ? 'btn-primary' : ''}`} onClick={() => shipKey(card.id)}>
+          <Key k="s" size="sm" tone={card.stage === 'try' || card.ship?.pr ? 'ghost' : undefined} />{card.ship?.pr?.state === 'OPEN' ? `Merge #${card.ship.pr.number}` : 'Ship'}
+        </button>
+      )}
       {card.stage !== 'done' && <button className="btn py-1" onClick={() => openAddComposer(card.id)}><Key k="c" size="sm" />Add context</button>}
       <button className="btn py-1" onClick={() => set({ modal: { kind: 'deleteCard', id: card.id } })}><Key k="Delete" size="sm" />Remove card</button>
     </div>
@@ -394,6 +405,7 @@ function Overview({ card }: { card: Card }) {
           <div className="md max-h-64 overflow-y-auto text-sm"><Markdown remarkPlugins={[remarkGfm]}>{card.live.lastMessage}</Markdown></div>
         </Sec>
       )}
+      {card.ship && <Shipped card={card} />}
       {!booting(card) && <TryIt card={card} />}
       <Sec title="Where it runs">
         <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1.5 text-sm">
@@ -413,6 +425,30 @@ function Overview({ card }: { card: Card }) {
         </div>
       </Sec>
     </>
+  );
+}
+
+/** The card's pull request and how shipping went. */
+function Shipped({ card }: { card: Card }) {
+  const pr = card.ship!.pr;
+  return (
+    <Sec title="Ship" right={pr && <span className="text-sm text-faint">{pr.checkedAt ? `looked at ${clock(pr.checkedAt)}` : ''}</span>}>
+      {pr && (
+        <div className="flex items-center gap-2.5 rounded-lg bg-busy-bg px-3 py-2 text-sm font-semibold text-busy">
+          <a className="grow underline" href={pr.url} target="_blank" rel="noreferrer">{prLine(pr)}</a>
+          {pr.state === 'OPEN' && <button className="flex items-center gap-1.5" onClick={() => shipKey(card.id)}><Key k="s" size="sm" />merge</button>}
+        </div>
+      )}
+      <ol className="grid gap-1 text-[13px]">
+        {card.ship!.steps.map((st, i) => (
+          <li key={i} className="flex items-start gap-2.5">
+            <time className="w-[68px] shrink-0 font-mono text-xs tabular-nums text-faint">{clock(st.at)}</time>
+            <span className={`w-4 shrink-0 text-center font-mono text-xs font-bold ${st.state === 'ok' ? 'text-ok' : st.state === 'bad' ? 'text-bad' : 'text-busy'}`}>{st.state === 'go' ? <span className="spinner inline-block" /> : st.state === 'ok' ? '✓' : '✗'}</span>
+            <span className={st.state === 'bad' ? 'text-bad' : ''}>{st.text}</span>
+          </li>
+        ))}
+      </ol>
+    </Sec>
   );
 }
 

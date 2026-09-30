@@ -2,6 +2,7 @@
 // Pure and erasable TS, shared by the server (what the hook returns, what gets launched) and the
 // web app (the new-card screen's preview and command), so both always say the same thing.
 
+import type { PullRequest } from './ship.ts';
 import { ticketText, type Ticket } from './tickets.ts';
 import { repoName, samePath } from './workspaces.ts';
 
@@ -156,6 +157,8 @@ export interface Card extends CardDraft {
   round?: number;
   /** Context added since it started: it waits on the card until a hook hands it to Claude. */
   later?: LaterItem[];
+  /** Shipping it: each step (branch, commit, push, PR, merge) and the pull request it opened. */
+  ship?: { steps: BootStep[]; pr?: PullRequest };
 }
 
 /**

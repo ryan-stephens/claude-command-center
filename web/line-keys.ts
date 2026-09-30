@@ -35,6 +35,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app'],
       ['o (a card)', 'Open the app its run is serving'],
       ['e (card open)', 'Write or edit the run recipe for the card’s repo'],
+      ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket; on a card in Ship, merge it'],
       ['Delete', 'Take the card off the line (its terminal session keeps running)'],
       ['Esc', 'Close the card, or clear the filter'],
     ],
@@ -240,6 +241,15 @@ export function openApp(id: string): void {
   else flash(run?.state === 'running' ? 'The app is still starting' : 'Nothing running yet: t tries it');
 }
 
+/** s: the Ship sheet (commit, push, PR), or once it has a PR, the merge sheet. */
+export function shipKey(id: string): void {
+  const card = get().cards.find((c) => c.id === id);
+  if (!card) return;
+  if (card.stage === 'done' && card.ship?.pr?.state === 'MERGED') { flash(`${card.key} is merged`); return; }
+  if (!card.sessionId && !card.ship?.pr) { flash(`${card.key} hasn’t started yet`); return; }
+  set({ modal: { kind: 'ship', id } });
+}
+
 /** e in a card's drawer: write or edit the run recipe of the repo it starts in. */
 export function editRecipe(id: string): void {
   const card = get().cards.find((c) => c.id === id);
@@ -391,6 +401,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
     case 't': if (s.line.drawer) tryIt(s.line.drawer); return true;
     case 'o': if (s.line.drawer) openApp(s.line.drawer); return true;
     case 'e': if (s.line.drawer) editRecipe(s.line.drawer); return true;
+    case 's': if (s.line.drawer) shipKey(s.line.drawer); return true;
   }
   return false;
 }
@@ -444,6 +455,7 @@ function boardKeys(e: KeyboardEvent): boolean {
     case 'Enter': if (focused) openCard(focused); return true;
     case 't': if (focused) tryIt(focused); else flash('Pick a card first'); return true;
     case 'o': if (focused) openApp(focused); return true;
+    case 's': if (focused) shipKey(focused); return true;
     case 'c': openComposer(); return true;
     case 'n': flash('n starts work on a ticket in the Inbox; c makes a card without one'); return true;
     case 'Delete': if (focused) set({ modal: { kind: 'deleteCard', id: focused } }); return true;

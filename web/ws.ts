@@ -1,4 +1,5 @@
 import type { CardDraft, PacketItem } from '../shared/cards.ts';
+import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
 import { activeSession, flash, get, groupKeyOf, set, setFilter } from './store.ts';
@@ -119,6 +120,25 @@ export async function tryCard(id: string): Promise<void> {
 /** Save the run recipe you wrote for a repo (no steps: back to the detected one). */
 export async function saveRecipe(repo: string, steps: string[], url?: string): Promise<void> {
   await request((reqId) => ({ type: 'recipe.save', reqId, repo, steps, ...(url ? { url } : {}) }));
+}
+
+/** Ship: what it will do for the card. */
+export async function shipPlan(id: string): Promise<ShipPlan> {
+  const reply = await request((reqId) => ({ type: 'card.shipPlan', reqId, id }), 30_000);
+  return (reply as Extract<ServerMsg, { type: 'ship.plan' }>).plan;
+}
+
+/** Ship: commit, push and open the PR. Its steps show on the card as they happen. */
+export async function shipCard(id: string, req: ShipRequest): Promise<void> {
+  await request((reqId) => ({ type: 'card.ship', reqId, id, request: req }), 180_000);
+}
+
+export async function refreshPr(id: string): Promise<void> {
+  await request((reqId) => ({ type: 'card.prRefresh', reqId, id }), 30_000);
+}
+
+export async function mergeCard(id: string): Promise<void> {
+  await request((reqId) => ({ type: 'card.merge', reqId, id }), 120_000);
 }
 
 /** Replace the repo library's folders; rejects with the server's reason (a missing folder, say). */
@@ -271,7 +291,8 @@ function receive(msg: ServerMsg): void {
       set({ runs: Object.fromEntries(msg.runs.map((r) => [r.cardId, r])) });
       return;
     case 'card.started':
-      return; // answered to the new-card screen, which waits on it
+    case 'ship.plan':
+      return; // answered to the screen that asked, which waits on it
     case 'workspace.file':
       pendingWorkspaceFiles.get(msg.reqId)?.(msg.file);
       pendingWorkspaceFiles.delete(msg.reqId);

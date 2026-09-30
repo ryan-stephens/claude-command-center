@@ -97,6 +97,8 @@ export interface LineLegendInput {
   canTry?: boolean;
   appRunning?: boolean;
   appUp?: boolean;
+  /** A card (focused or open) can ship (s), or has an open PR (s merges it). */
+  ship?: 'ship' | 'merge';
   /** Drawer: the card can take more context (c), and has some still waiting (x takes it back). */
   canAdd?: boolean;
   hasWaiting?: boolean;
@@ -121,6 +123,7 @@ function tryKeys(x: LineLegendInput): LegendItem[] {
   return [
     ...(x.appRunning ? [{ keys: ['t'], label: 'Stop the app' }] : x.canTry ? [{ keys: ['t'], label: 'Try it', tone: 'acc' as const }] : []),
     ...(x.appUp ? [{ keys: ['o'], label: 'Open the app' }] : []),
+    ...(x.ship ? [{ keys: ['s'], label: x.ship === 'merge' ? 'Merge' : 'Ship' }] : []),
   ];
 }
 

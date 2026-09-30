@@ -832,3 +832,32 @@ Not planned: more Claude Code parity for its own sake (`!` shell, model pickers)
 - `f` (feedback / fix from Try it) needs the channel to reach the session (§26); for now, type the fix in the card's tab. Recipes for repos other than the home repo, several apps at once, and a narrow browser window for `o` are not built. The run's output isn't kept after a server restart.
 
 **Next:** Ship (`s`: commit, push, `gh pr create`; Slack later).
+
+## 34. Ticket Line, milestone 7: Ship
+
+2026-09-30. A card that works can leave the line as a pull request: `s` opens the mock's Ship sheet, `Enter` commits, pushes and opens the PR, and the card moves to Ship. `s` on a card in Ship merges it, and it moves to Done. Slack posts come later, as the owner asked.
+
+**The sheet** (`web/components/ShipSheet.tsx`; the plan from `ShipService.plan`):
+- **Commit** (`m` to edit): `feat: <title> (<KEY>)`, a conventional commit naming the card.
+- **Branch:** the card's branch → the base (origin's default branch, else main / master). **A card on the default branch** (started with "Current branch") gets a new branch named after it first (`shop-160-cart-badge-shows-wrong`), and the sheet says so.
+- **Files to commit:** `git status` of the card's repo. The files the card's session wrote are ticked; anything else (a lockfile Try it made, your own scratch files) is listed as "not from this card" and left out unless you tick it (`↑ ↓ Space`). Only ticked files are staged, **by name** (`git add -- <paths>`), never `git add -A`. Commits already on the branch count too, so a card whose Claude committed its own work can still ship.
+- **Pull request, written from the ticket** (title and body editable, `b` for the body): `SHOP-160: <title>` (the card's title when it has no ticket), then the ticket's description, what Claude said it changed (the first paragraph of its last message), the acceptance criteria as an unticked **Done when** checklist for the reviewer, the files, "Tried locally: `npm install && npm run dev`" when Try it got the app up (or "Not tried locally yet"), and the ticket's link. `shared/ship.ts` builds it, so the sheet shows exactly what is sent.
+- **Said up front:** no remote, no `gh`, a detached HEAD, or a branch name already taken stop it with a reason; files it changed in other repos, and files left out, are noted.
+
+**Shipping** (`server/ship.ts`): in the card's folder, without a shell: `git switch -c` (when on the default branch) → `git add -- <ticked>` → `git commit -F -` → `git push -u origin <branch>` → `gh pr create --title … --body-file … --head <branch> --base <base>`. Each step lands on the card (`card.ship.steps`) as it happens, shown in the sheet and on the drawer's new **Ship** section; a failing step stops there with git's or gh's first line. The PR's number and link are saved, the card moves to **Ship**, and its tile shows "PR #41 · waiting for review".
+
+**Following and merging:** every 3 minutes (and when the merge sheet opens) `gh pr view --json state,reviewDecision,statusCheckRollup` updates the card: "PR #41 · approved · checks passing" (or changes asked for, checks failing / running). A PR merged elsewhere moves the card to Done. `s` on a card with an open PR opens **Merge PR #41**; `Enter` runs `gh pr merge --squash`, deletes the branch on the remote, and moves the card to Done. **The local checkout is left as it is** (no `--delete-branch`, which would also switch the card's folder, possibly under a running session). `o` in the merge sheet opens the PR.
+
+Keys: `s` on the board and in the drawer (Ship, or Merge once there is a PR), with rows in `?` and the legend; the drawer has a **Ship** / **Merge #41** button. In the sheet: `Enter` (or `Ctrl+Enter` while typing), `↑ ↓ Space`, `m`, `b`, `Esc` (leave the field, then cancel). `PROTOCOL` 8 (`card.shipPlan` → `ship.plan`, `card.ship`, `card.prRefresh`, `card.merge`). `CC_CONTROL_GH` points at another `gh` (a `.js` / `.mjs` runs with node), for tests.
+
+**Verified** (isolated server; a new demo repo `shop-site` with a local bare repo as `origin`; a stand-in `gh` that logs its arguments; 23 scripted checks, clean run):
+- A seeded SHOP-160 card on `main` in Try it: `t` detected `npm install`, `npm run dev` from package.json and brought the app up at localhost:5197.
+- `s`: branch `shop-160-cart-badge-shows-wrong → main`, made from main first; files `cart.js` (this card, ticked), `package-lock.json` (made by Try it's `npm install`) and `scratch.txt` (not from this card); the commit message, PR title and a body with the description, what Claude said, Done when, the file, "Tried locally: `npm install && npm run dev`" and the demo ticket. `↓ Space` ticked a file and `Space` unticked it.
+- `Enter`: git really made the branch, **committed only cart.js**, left `scratch.txt` alone, and pushed to the bare origin; `gh pr create` got the title, `--head` and `--base main`; the drawer listed the four steps with the commit's hash; the card went to Ship with "PR #41 · waiting for review".
+- `s` again: the merge sheet asked gh (approved, checks passing); `Enter` merged, the branch was gone from the remote, the local checkout was still on it, and the tile said "PR #41 · merged". `t` then stopped the app. `?` has `s`. No console errors.
+- Found by the checks and fixed: the steps selector returned a new empty list on every render (React's "maximum update depth", the sheet never opened); the sheet turned into the merge sheet the moment the PR existed and asked GitHub again.
+- Unit tests (4, against real git with a bare remote and the stub gh): the words, `git status -z` with renames, paths relative to the repo, checks summed up, shipping only ticked files off main then refresh and merge, and what stops it (no remote, nothing ticked). `pnpm typecheck`, `pnpm test` (175) and the Vite build pass.
+
+**Not verified:** a real `gh pr create` on GitHub. That publishes a PR, so it waits for the owner to say which repo to try it on.
+
+**Not yet:** posting to Slack; moving the ticket to Done in Jira or Trello (the import is read-only); shipping from more than one repo per card; `f` (feedback / fix, needs the channel).

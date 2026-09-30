@@ -14,6 +14,7 @@ import { BindingsDialog } from './BindingsDialog.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
 import { FolderPicker } from './FolderPicker.tsx';
 import { Palette } from './Palette.tsx';
+import { ShipSheet } from './ShipSheet.tsx';
 import { Welcome } from './Welcome.tsx';
 import { close, DialogKeys, DialogTitle, Overlay, useDialogKeys } from './Overlay.tsx';
 import { Icon, Key, SWATCH, WsBadge } from './ui.tsx';
@@ -40,6 +41,7 @@ export function Dialogs() {
     case 'sources': return <SourcesDialog />;
     case 'deleteCard': return <DeleteCardDialog id={modal.id} />;
     case 'recipe': return <RecipeDialog repo={modal.repo} />;
+    case 'ship': return <ShipSheet id={modal.id} />;
     case 'pickWorkspace': return <PickWorkspaceDialog then={modal.then} />;
     case 'tickets': return <TicketsDialog />;
   }

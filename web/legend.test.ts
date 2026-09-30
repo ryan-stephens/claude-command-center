@@ -50,6 +50,8 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.deepEqual(labels({ view: 'drawer', canTry: true, bindings: {} }).slice(2, 4), ['Try it', 'Run recipe']);
   assert.deepEqual(labels({ view: 'drawer', canTry: true, appRunning: true, appUp: true, bindings: {} }).slice(2, 4), ['Stop the app', 'Open the app']);
   assert.ok(labels({ view: 'board', hasFocus: true, canTry: true, bindings: {} }).includes('Try it'));
+  assert.ok(labels({ view: 'board', hasFocus: true, ship: 'ship', bindings: {} }).includes('Ship'));
+  assert.ok(labels({ view: 'drawer', ship: 'merge', bindings: {} }).includes('Merge'));
   const adding = labels({ view: 'composer', pane: 'pkt', addingTo: 'SHOP-155', cardRepo: true, bindings: {} });
   assert.ok(adding.includes('Add to SHOP-155') && !adding.includes('Model') && !adding.includes('Keep for the workspace'), 'adding to a running card');
   assert.deepEqual(lineLegendFor({ view: 'board', hasSession: true, hasFocus: true, bindings: { expand: ['Alt+Enter'] } }).find((i) => i.label === 'Full screen')!.keys, ['Alt+Enter']);

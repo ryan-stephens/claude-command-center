@@ -36,6 +36,8 @@ export type Modal =
   | { kind: 'deleteCard'; id: string }
   /** Write or edit a repo's run recipe (e in a card's drawer). */
   | { kind: 'recipe'; repo: string }
+  /** Ship a card (s), or merge its PR once it has one. */
+  | { kind: 'ship'; id: string }
   /** Where tickets come from, and which workspace each project goes to. */
   | { kind: 'tickets' }
   /** "All" is showing: which workspace a workspace key (+ − E ⇧E ⇧Delete) is for. */

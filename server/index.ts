@@ -10,8 +10,10 @@ import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLO
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { cardRepos } from '../shared/cards.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
+import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, cleanDraft, userModel, writeHookSettings } from './cards.ts';
 import { recipeOf, RunService, saveRecipe } from './recipes.ts';
+import { ShipService } from './ship.ts';
 import { CommandService } from './commands.ts';
 import { TicketService } from './tickets.ts';
 import { PermissionBroker } from './permission-broker.ts';
@@ -64,6 +66,7 @@ function ticketsMsg(): ServerMsg {
 }
 
 const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env);
+const ship = new ShipService(cards, runs, { gh: process.env.CC_CONTROL_GH });
 
 /** Recipes for every repo the page may show one for: the library's, the workspaces' and the cards'. */
 function recipesMsg(): ServerMsg {
@@ -390,6 +393,29 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'card.stopRun':
       runs.stop(String(msg.id));
       return;
+    case 'card.shipPlan': {
+      const card = cards.get(String(msg.id));
+      if (!card) throw new Error('That card is no longer on the line.');
+      send(ws, { type: 'ship.plan', reqId: msg.reqId, plan: await ship.plan(card) });
+      return;
+    }
+    case 'card.ship': {
+      const r = (msg.request ?? {}) as Partial<ShipRequest>;
+      await ship.ship(String(msg.id), {
+        commit: String(r.commit ?? '').slice(0, 4000), title: String(r.title ?? '').slice(0, 300), body: String(r.body ?? '').slice(0, 60_000),
+        paths: Array.isArray(r.paths) ? r.paths.map(String).slice(0, 2000) : [],
+      });
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    }
+    case 'card.prRefresh':
+      await ship.refresh(String(msg.id));
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    case 'card.merge':
+      await ship.merge(String(msg.id));
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
     case 'recipe.save': {
       const repo = normalizeFolder(msg.repo);
       if (!repo || !existsSync(repo)) throw new Error('That repo isn’t there any more.');
@@ -572,6 +598,7 @@ process.on('unhandledRejection', (reason) => {
 function shutdown(): void {
   manager.stopAll();
   runs.stopAll();
+  ship.stop();
   cards.stop();
   tickets.stop();
   manager.history.stop();
