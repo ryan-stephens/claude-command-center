@@ -16,6 +16,8 @@ export function workspaceToFile(w: Workspace, workflows: CommandPack | null, rec
     repos: w.repos.map((p) => ({ name: repoName(p), ...(home && samePath(home, p) ? { home: true } : {}) })),
     workflows: workflows ?? { version: 1, groups: [] },
     ...(recipe ? { recipe: { steps: recipe.steps, ...(recipe.url ? { url: recipe.url } : {}) } } : {}),
+    ...(w.notes ? { notes: w.notes } : {}),
+    ...(w.testing ? { testing: w.testing } : {}),
   };
 }
 
@@ -50,5 +52,9 @@ export function workspaceFromFile(raw: unknown, library: RepoInfo[]): ImportResu
   const rawRecipe = (f.recipe ?? {}) as { steps?: unknown; url?: unknown };
   const steps = Array.isArray(rawRecipe.steps) ? rawRecipe.steps.filter((s): s is string => typeof s === 'string').map((s) => s.slice(0, 500)).slice(0, 20) : [];
   const recipe = steps.length ? { steps, ...(typeof rawRecipe.url === 'string' && /^https?:\/\/\S+$/.test(rawRecipe.url) ? { url: rawRecipe.url } : {}) } : undefined;
-  return { workspace: { name, color, repos, home }, workflows, missing, ...(recipe ? { recipe } : {}) };
+  // Notes are text for Claude, bounded like the rest; cleanWorkspace trims them again on save.
+  const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, 8000) : undefined);
+  const notes = text(f.notes);
+  const testing = text(f.testing);
+  return { workspace: { name, color, repos, home, ...(notes ? { notes } : {}), ...(testing ? { testing } : {}) }, workflows, missing, ...(recipe ? { recipe } : {}) };
 }

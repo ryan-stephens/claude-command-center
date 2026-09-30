@@ -6,12 +6,12 @@
 import { cardRepos, waiting } from '../shared/cards.ts';
 import { cardRecipe } from '../shared/recipes.ts';
 import { repoName } from '../shared/workspaces.ts';
-import { inbox, type Ticket } from '../shared/tickets.ts';
+import { inbox, INBOX_VIEWS, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
 import { openSession } from './keys.ts';
-import { currentWorkspace, flash, get, set, setFilter, type WorkspaceAction } from './store.ts';
+import { currentWorkspace, flash, get, set, setFilter, setInboxView, type WorkspaceAction } from './store.ts';
 import {
-  addComposer, additionOf, cardHasRepo, composerKey, cycleModel, draftOf, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
+  addComposer, additionOf, cardFolders, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
@@ -24,6 +24,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['← → ↑ ↓', 'Move between cards'],
       ['Enter', 'Open the card: Overview, Context (how it started, what Claude was given), Transcript'],
       ['n / Enter (a ticket in the Inbox)', 'Start work on it: the new-card screen, with the ticket as its context'],
+      ['v', 'Inbox: your tickets, or every ticket Ready for QA in your projects'],
       ['Delete (a ticket in the Inbox)', 'Hide it from the Inbox (nothing changes in Jira or Trello; Shift+T shows it again)'],
       ['Shift+T', 'Tickets: demo tickets, Jira and Trello, and which workspace each project goes to'],
       ['Ctrl+Enter', 'The card’s session full screen, to read and type there (Esc comes back)'],
@@ -36,7 +37,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app'],
       ['o (a card)', 'Open the app its run is serving'],
       ['e (card open)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo or the whole workspace)'],
-      ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket; on a card in Ship, merge it'],
+      ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket; on a card in Ship, merge it. On a QA or review card: its report, to copy'],
       ['Delete', 'Take the card off the line (its terminal session keeps running)'],
       ['Esc', 'Close the card, or clear the filter'],
     ],
@@ -57,9 +58,11 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ['Tab / Shift+Tab', 'Next / previous panel: add context → what Claude will know → how it starts'],
       ['↑ ↓', 'Move in the panel'],
-      ['← → (add context)', 'Tickets or Repos'],
+      ['← → (add context)', 'Tickets, Repos or Folders'],
+      ['Enter (Folders)', 'Add any folder on disk as context (it goes in with --add-dir); Space on one takes it out'],
       ['Space', 'Pick a ticket (the first is the card’s, later ones are related) or a repo; include or leave out a line of the context'],
-      ['/', 'Search the tickets (by key or words) or the repo library'],
+      ['/', 'Search the tickets (by key or words; Jira is searched too, for anyone’s ticket) or the repo library'],
+      ['k', 'Kind of work: Develop, QA (test someone’s change) or Code review'],
       ['x', 'Remove something you added to this card (on the card’s ticket: take it off)'],
       ['w (what Claude will know)', 'Keep a repo you added to this card for the whole workspace'],
       ['e', 'Write your own note for Claude'],
@@ -74,7 +77,17 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
 
 /** The Inbox: tickets no card has started, in the workspace shown. */
 export function inboxOf(s: ReturnType<typeof get>): Ticket[] {
-  return inbox(s.tickets, new Set(s.cards.map((c) => c.key)), s.line.filter);
+  return inbox(s.tickets, new Set(s.cards.map((c) => c.key)), s.line.filter, s.line.view);
+}
+
+/** v: the Inbox's other view. The focus moves to the first card or ticket it shows. */
+export function switchInbox(): void {
+  const s = get();
+  const at = INBOX_VIEWS.findIndex((v) => v.id === s.line.view);
+  const next = INBOX_VIEWS[(at + 1) % INBOX_VIEWS.length];
+  setInboxView(next.id);
+  set({ line: { ...get().line, focus: moveFocus(boardOf(get()), null, 1, 0) } });
+  flash(`Inbox: ${next.name}`);
 }
 
 /** The board's columns, with the Inbox's tickets. */
@@ -253,10 +266,15 @@ export function openApp(id: string): void {
   else flash(run?.state === 'running' ? 'The app is still starting' : 'Nothing running yet: t tries it');
 }
 
-/** s: the Ship sheet (commit, push, PR), or once it has a PR, the merge sheet. */
+/** s: the Ship sheet (commit, push, PR), or once it has a PR, the merge sheet. A QA or review card: its report. */
 export function shipKey(id: string): void {
   const card = get().cards.find((c) => c.id === id);
   if (!card) return;
+  if (card.kind === 'qa' || card.kind === 'review') {
+    if (!card.report && !card.live?.lastMessage) { flash(`${card.key} has no report yet: Claude writes it at the end`); return; }
+    set({ modal: { kind: 'report', id } });
+    return;
+  }
   if (card.stage === 'done' && card.ship?.pr?.state === 'MERGED') { flash(`${card.key} is merged`); return; }
   if (!card.sessionId && !card.ship?.pr) { flash(`${card.key} hasn’t started yet`); return; }
   set({ modal: { kind: 'ship', id } });
@@ -295,7 +313,7 @@ function composerTyping(e: KeyboardEvent, c: Composer): boolean {
     if (el.id === 'cp-q') {
       const s = get();
       if (c.tab === 'tickets') {
-        const first = ticketSources(c, s.tickets, started(s))[0];
+        const first = ticketSources(c, s.tickets, started(s), foundFor(s, c.q))[0];
         if (first) updateComposer((x) => { const r = pickTicket(x, first, s.workspaces, started(s), s.recipes); return typeof r === 'string' ? r : { ...r, q: '', si: 0 }; });
       } else {
         const first = sources(c, s.library.repos)[0];
@@ -326,14 +344,30 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
     else updateComposer(cycleModel);
     return true;
   }
+  if (e.key === 'k') {
+    if (c.addTo) flash('The kind of work was set when the card started');
+    else updateComposer((x) => cycleKind(x, composerKey(x, s.nextKey), s.workspaces, s.recipes));
+    return true;
+  }
   const up = e.key === 'ArrowUp';
   const down = e.key === 'ArrowDown';
   const step = up ? -1 : down ? 1 : 0;
   if (c.pane === 'src') {
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { updateComposer((x) => ({ ...x, tab: x.tab === 'tickets' ? 'repos' : 'tickets', si: 0 })); return true; }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { updateComposer((x) => ({ ...x, tab: nextTab(x.tab, e.key === 'ArrowRight' ? 1 : -1), si: 0, q: '' })); return true; }
+    if (c.tab === 'folders') {
+      const list = cardFolders(c, s.library.repos);
+      if (step) { updateComposer((x) => ({ ...x, si: Math.max(0, Math.min(list.length, x.si + step)) })); return true; }
+      if (e.key === ' ' || e.key === 'Enter' || e.key === 'a') {
+        const f = c.si > 0 ? list[c.si - 1] : undefined;
+        if (f && e.key !== 'a') updateComposer((x) => ({ ...toggleSource(x, f.id), si: Math.max(0, x.si - 1) }));
+        else set({ modal: { kind: 'addFolder' } });
+        return true;
+      }
+      return false;
+    }
     if (e.key === '/') { focusField('cp-q'); return true; }
     if (c.tab === 'tickets') {
-      const list = ticketSources(c, s.tickets, started(s));
+      const list = ticketSources(c, s.tickets, started(s), foundFor(s, c.q));
       const t = list[Math.min(c.si, list.length - 1)];
       if (step) { updateComposer((x) => ({ ...x, si: Math.max(0, Math.min(list.length - 1, x.si + step)) })); return true; }
       if (e.key === ' ' || e.key === 'Enter') {
@@ -390,6 +424,11 @@ export function keepRepo(index: number): void {
   set({ composer: { ...r.composer, error: null } });
   const ws = get().workspaces.find((w) => w.id === c.workspaceId);
   flash(`Kept for ${ws?.name ?? 'the workspace'}: every card there gets it`);
+}
+
+/** What the tracker's search found for this text (nothing while it answers an older search). */
+export function foundFor(s: ReturnType<typeof get>, q: string): Ticket[] {
+  return s.found.q === q.trim() ? s.found.tickets : [];
 }
 
 /** The keys of cards already on the line: a ticket gets one card. */
@@ -450,6 +489,7 @@ function boardKeys(e: KeyboardEvent): boolean {
   if (workspaceKeys(e)) return true;
   if (e.key === '/' && !e.shiftKey) { set({ line: { ...s.line, searching: true } }); focusField('line-q'); return true; }
   if (e.key === 'T') { set({ modal: { kind: 'tickets' } }); return true; }
+  if (e.key === 'v') { switchInbox(); return true; }
   const cols = boardOf(s);
   const focused = cols.some((l) => l.cards.some((c) => c.id === s.line.focus) || l.tickets.some((t) => ticketFocus(t.key) === s.line.focus)) ? s.line.focus : null;
   const ticket = cols[0].tickets.find((t) => ticketFocus(t.key) === focused);

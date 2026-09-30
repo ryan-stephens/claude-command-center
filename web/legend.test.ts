@@ -32,12 +32,12 @@ test('a question or a plan changes the answer keys', () => {
 
 test('the Ticket Line bar follows the view and the new-card panel', () => {
   const labels = (x: Parameters<typeof lineLegendFor>[0]) => lineLegendFor(x).map((i) => i.label);
-  assert.deepEqual(labels({ view: 'board', bindings: {} }), ['Move', 'New card', 'Tickets', 'Workspace / all', 'Filter', 'Repos', 'Workspace', 'Share / import', 'Folders']);
+  assert.deepEqual(labels({ view: 'board', bindings: {} }), ['Move', 'New card', 'Tickets', 'Inbox: mine / QA', 'Workspace / all', 'Filter', 'Repos', 'Workspace', 'Share / import', 'Folders']);
   const focused = labels({ view: 'board', hasFocus: true, hasSession: true, filtered: true, bindings: {} });
   assert.ok(focused.includes('Open') && focused.includes('Full screen') && focused.includes('Clear filter') && focused.includes('Remove'));
   assert.ok(!labels({ view: 'board', hasFocus: true, bindings: {} }).includes('Full screen'), 'no session linked yet: nothing to open');
   assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Add or remove'));
-  assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Tickets / Repos'));
+  assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Tickets / Repos / Folders'));
   assert.equal(labels({ view: 'board', onTicket: true, bindings: {} })[1], 'Start work', 'a ticket in the Inbox: n starts work');
   assert.equal(labels({ view: 'board', onTicket: true, bindings: {} })[2], 'Hide', 'and Delete hides it');
   assert.ok(labels({ view: 'composer', pane: 'pkt', bindings: {} }).includes('Include or leave out'));

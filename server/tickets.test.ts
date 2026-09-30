@@ -102,10 +102,10 @@ test('the service: demo tickets on request, projects mapped to workspaces, nothi
   assert.equal(all.length, demoTickets().length);
   assert.ok(all.every((t) => t.demo && t.workspaceId === null), 'unmapped');
   svc.setMapping('SHOP', 'w1');
-  assert.deepEqual(svc.list(['w1']).filter((t) => t.workspaceId === 'w1').map((t) => t.key), ['SHOP-155', 'SHOP-160', 'SHOP-98']);
+  assert.deepEqual(svc.list(['w1']).filter((t) => t.workspaceId === 'w1').map((t) => t.key), ['SHOP-155', 'SHOP-160', 'SHOP-98', 'SHOP-149']);
   assert.ok(svc.list([]).every((t) => t.workspaceId === null), 'a deleted workspace maps nothing');
   const shop = svc.projects(['w1']).find((p) => p.id === 'SHOP')!;
-  assert.deepEqual(shop, { id: 'SHOP', name: 'Storefront', source: 'jira', count: 3, workspaceId: 'w1' });
+  assert.deepEqual(shop, { id: 'SHOP', name: 'Storefront', source: 'jira', count: 4, workspaceId: 'w1' });
   svc.setMapping('SHOP', null);
   assert.equal(svc.get('SHOP-155', ['w1'])!.workspaceId, null);
   assert.ok(changes >= 4);

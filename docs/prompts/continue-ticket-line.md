@@ -30,7 +30,15 @@ The owner likes the mock a lot. Keep its look, its words and its keys, including
 
 - **Workspace run recipes (§37):** a workspace can have its own recipe across its repos: `@repo` per step, `NAME=value` per step, `! by hand`, `stop:` teardown; `Alt+W` in the recipe editor; shared in the workspace file (imports marked to check first).
 
-**Next: ask the owner.** Everything planned for VU is built and tested against stand-ins; what's left needs the real VU servers (Jira Data Center, TFS, Okteto) or the owner's say. Candidates, none started: a real PR on a repo they choose; connecting their Jira (credentials pending); Slack posts from Ship; `f` feedback through the channel (a preview flag); the open questions below; polish from using it.
+- **QA and code review cards (§40):**
+  - A card has a kind: Develop, QA or Code review (`k`).
+  - A QA card writes a test plan, sets up data from the workspace's *How this team tests* notes, walks the user through each check, and ends with a report.
+  - A review card finds the ticket's PR (GitHub or Azure DevOps, read-only), starts on its branch in a detached worktree, and ends with findings.
+  - Reports go on the card (`s` copies, `d` moves it to Done). Nothing is posted.
+  - The Inbox has *Mine* and *Ready for QA* (`v`), `/` on the new-card screen searches Jira for anyone's ticket, and the *Folders* tab adds any folder.
+  - **First things to try at VU:** does the Ready for QA view fill, does search find a teammate's ticket, and does a review find its TFS PR?
+
+**Next: ask the owner.** Everything planned for VU is built and tested against stand-ins; what's left needs the real VU servers (Jira Data Center, TFS, Okteto) or the owner's say. Candidates, none started: bringing VU's test tools into QA cards (the scenario generator as a recipe step or MCP tool, the hosted field tools as links or MCP servers per workspace, §40); posting review findings to the PR (asked first each time); builds and pipelines from TFS (§35); a real PR on a repo they choose; connecting their Jira (credentials pending); Slack posts from Ship; `f` feedback through the channel (a preview flag); the open questions below; polish from using it.
 
 **Open questions for the owner** (asked at the end of milestones 3 and 5, not yet answered; they do not block run recipes or Ship): whether the drag-and-drop repo library strip should come back on the line, and whether the in-app new-session dialog (`Alt+Shift+N`) is still wanted. Jira credentials (site URL, email, API token) will come from the owner; when they do, try the live site and adjust `fromJira` / `splitAcceptance`.
 

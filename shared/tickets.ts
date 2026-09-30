@@ -43,11 +43,32 @@ export interface Ticket {
   demo?: boolean;
   /** Hidden from the Inbox by you (Delete on it); Shift+T shows it again. Nothing changes in the tracker. */
   hidden?: boolean;
+  /** Who it is assigned to, as the tracker names them. */
+  assignee?: string;
+  /** The Inbox views it came in through: assigned to you, and waiting for QA. Unset: yours. */
+  views?: InboxView[];
+  /** Found by a search on the new-card screen rather than fetched for the Inbox. */
+  found?: boolean;
   /** The workspace its project maps to, filled in by the server. */
   workspaceId?: string | null;
 }
 
 export const SOURCE_NAME: Record<TicketSource, string> = { jira: 'Jira', trello: 'Trello' };
+
+/**
+ * What the Inbox shows (v switches): tickets assigned to you, or every ticket waiting for QA in
+ * your projects, whoever built it. Tickets to review are found with the search on the new-card
+ * screen instead, since boards rarely have a column for them.
+ */
+export type InboxView = 'mine' | 'qa';
+export const INBOX_VIEWS: { id: InboxView; name: string }[] = [
+  { id: 'mine', name: 'Mine' },
+  { id: 'qa', name: 'Ready for QA' },
+];
+
+export function inView(t: Pick<Ticket, 'views'>, view: InboxView): boolean {
+  return (t.views ?? ['mine']).includes(view);
+}
 
 /** A project (Jira) or board (Trello) the tickets came from, and the workspace it maps to. */
 export interface TicketProject {
@@ -115,17 +136,17 @@ export function ticketText(t: Pick<Ticket, 'key' | 'source'>, items: PacketItem[
   return L;
 }
 
-/** "Jira · Storefront · To Do": the line under a ticket's title. */
+/** "Jira · Storefront · To Do · Priya": the line under a ticket's title. */
 export function ticketSub(t: Ticket): string {
-  return `${SOURCE_NAME[t.source]} · ${t.projectName} · ${t.status}`;
+  return `${SOURCE_NAME[t.source]} · ${t.projectName} · ${t.status}${t.assignee && !inView(t, 'mine') ? ` · ${t.assignee}` : ''}`;
 }
 
 /**
  * The Inbox: open tickets that no card has started yet, in the workspace shown (tickets whose
  * project isn't mapped show only under All), newest first.
  */
-export function inbox(tickets: Ticket[], started: Set<string>, filter: 'all' | string): Ticket[] {
+export function inbox(tickets: Ticket[], started: Set<string>, filter: 'all' | string, view: InboxView = 'mine'): Ticket[] {
   return tickets
-    .filter((t) => !t.done && !t.hidden && !started.has(t.key) && (filter === 'all' || t.workspaceId === filter))
+    .filter((t) => !t.done && !t.hidden && !t.found && inView(t, view) && !started.has(t.key) && (filter === 'all' || t.workspaceId === filter))
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }

@@ -969,3 +969,125 @@ Keys: `s` on the board and in the drawer (Ship, or Merge once there is a PR), wi
 - `Esc`, `Numpad 0`, `Alt+0` and the expand key still step back to the line as it was, drawer kept. That keeps the round trip from a card to its session and back. Home is for "take me to the board".
 - The keycap shows next to the logo; `?` says "Home: the Ticket Line board, from anywhere (or click the logo)".
 - **Verified** (isolated server; 10 scripted checks): the logo from an open card; `Alt+L` from the new-card screen while typing in its title, from the `Shift+T` dialog, and from a session opened full screen with `Ctrl+Enter`; the logo from a session; the `?` row. No console errors. `pnpm test` (192) passes.
+
+## 40. QA and code review cards, the Inbox's Ready for QA, Jira search, any folder as context
+
+2026-09-30, from the owner: not every ticket is development. Some are someone else's change to QA (at VU, often with a loan set up in a given state), and some are a pull request to review for a teammate. Those tickets aren't assigned to you, so they need finding. Also asked mid-way: any folder as context, not only tickets and library repos.
+
+**The owner's answers:**
+- **Statuses:** VU's Jira statuses are To Do, Blocked, In Progress, Ready for PO, Ready for QA and Done. So *Ready for QA* is an Inbox view, and reviews are found by search (there is no board column for them).
+- **Review findings** stay local until the owner chooses to post them. PRs may be on TFS or GitHub.
+- **Test data** comes from VU's own tools:
+  - a scenario generator installed from a repo and run locally (Claude already makes scenarios with it, given the context)
+  - hosted tools for viewing loan fields and checking field setup across environments
+
+  Those tools come later (see the end). For now the team writes how to use them in the workspace's testing notes.
+
+**A card has a kind** (`shared/cards.ts` `CardKind`): *Develop* (as before), *QA* or *Code review*.
+- `k` on the new-card screen cycles it, and a *Kind of work* row heads panel 3.
+- It follows the ticket until you choose (`kindForTicket`): a ticket that came in through Ready for QA, or has a QA or testing status, makes a QA card; a review status makes a review.
+
+The kind sets three things:
+- **What Claude is told** (`jobText`, a *Your job* section of the packet).
+  - QA:
+    - write a test plan from the ticket: a check for each "Done when" item, plus the edge cases
+    - set up the test data the way *How this team tests* says, and say what was created
+    - walk the user through each check and record pass or fail
+    - don't change the code under test
+    - end with a report under `# QA report: KEY`, with `Result: Passed/Failed/Blocked`
+  - Review:
+    - read, don't change, and post nothing
+    - compare the change with the ticket; look for bugs, edge cases, security and missing tests
+    - end with `# Code review: KEY`, a `Verdict:` line, and findings as `path:line` with how serious each is
+- **How it starts:**
+  - Both kinds start in plan mode. QA plans its checks first. For a review, plan mode keeps the session read-only, and Claude is told to reply with findings instead of presenting a plan.
+  - QA stays on the current branch. A review starts on the **PR's branch, in a copy**.
+- **How it ends:**
+  - When a Stop hook's message has the report heading, the report goes on the card (`card.report`, with its result) and the card moves to **Ship**. The development rule "files changed → Try it" doesn't apply.
+  - The tile says "Report: Failed" or "Findings: Changes requested", and the drawer shows the report rendered.
+  - `s` opens the report sheet: `Enter` copies it, `o` opens the PR, `d` moves the card to **Done** (`card.done`).
+  - Nothing is posted to Jira or the PR host.
+
+**The ticket's pull request** (`findPr` on the `CodeHost` interface in `server/hosts.ts`, and `findPrIn` over the card's repos). Read-only.
+- **Hosts:** GitHub through `gh pr list --search KEY`; Azure DevOps through `GET …/pullrequests?searchCriteria.status=active`.
+- **Matching:** the newest open PR whose title or branch names the key. The key must match whole: WSS-12 doesn't match WSS-123.
+- **When it asks:** the new-card screen asks once per ticket, for QA and review cards. When nothing is found, it says why for each repo: no remote, no token, or no PR.
+- **When a PR is found:**
+  - The Branch row offers *PR #57's branch, in a copy*, and a review picks it.
+  - Starting runs `git fetch origin <branch> <target>`, then `git worktree add --detach <repo>-<key> origin/<branch>` in the PR's repo, so your own checkout is untouched.
+  - Claude is told which diff to read (`git diff origin/<target>...HEAD`).
+- **When none is found:** Claude is told to look for the branch itself.
+
+**The Inbox's views** (`v`, remembered per browser):
+- *Mine*: `CC_CONTROL_JIRA_JQL`, as before.
+- *Ready for QA*: `status = "Ready for QA"` in the projects your own tickets come from, plus any project mapped to a workspace, so it needs no setting. `CC_CONTROL_JIRA_QA_JQL` replaces the query, and `off` turns the view off.
+- Both views come in one refresh, merged by key, and each ticket records the views it came through (`Ticket.views`). A failing QA query never loses your own tickets.
+- Tiles in the QA view show who the ticket is assigned to (`Ticket.assignee`, now fetched).
+
+**Search anyone's ticket** (`tickets.search`, `TicketService.search`):
+- On the new-card screen's Tickets tab, `/` also asks Jira after a short pause:
+  - a key searches `key = "WSS-12"`
+  - words search `text ~ "…"` over tickets that aren't done, with quotes and backslashes stripped
+- Results come after your own tickets, marked *found in Jira*. A key that doesn't exist counts as "nothing found", not as an error.
+- Found tickets are kept on the server (the latest 300), so a card can start from one. They don't join the Inbox.
+- With demo tickets on, the demo set answers, including tickets only a search finds (SHOP-162, PAY-93).
+
+**Any folder as context:** panel 1 has a third tab, **Folders** (`← →`).
+- `Enter` opens the folder picker, the same walker as `F`; typing or pasting a path jumps there.
+- The folder goes on the card like an extra repo: with `--add-dir` at start, or as its path when adding to a running card.
+- The tab lists the folders the library doesn't have, and `Space` takes one out. Panel 2 marks them *dir*.
+
+**Workspace notes:** the workspace editor has two new fields.
+- *Notes for Claude*: every card starts with them, under `## Notes`.
+- *How this team tests*: only QA cards get it, under `## How this team tests`.
+- Both travel in the workspace file (`Shift+E` / `Shift+I`), bounded to 8000 characters each, so a team shares how it tests.
+- `Ctrl+Enter` saves from a note field, where `Enter` is a new line.
+
+**Keys:** `k`, `v`, `/` (now also Jira), the Folders tab's `Enter` and `Space`, and `s` on QA and review cards (*Report* in the legend), each with a row in `?`. `PROTOCOL` 10 adds `tickets.search` → `tickets.found`, `card.findPr` → `pr.found`, and `card.done`.
+
+**Verified** on an isolated server, with Haiku and this setup:
+- the Demo workspace, with notes
+- demo tickets
+- a `wishlist-app` demo repo whose local bare origin has a `feature/SHOP-162-heart` branch
+- a stand-in `gh` that lists PR #57 for that branch
+
+What passed:
+- **QA from the Inbox:** `v` switched the Inbox from Mine (SHOP-155, SHOP-160) to Ready for QA (SHOP-149 with "Priya", PAY-84). `n` on SHOP-149 opened a **QA** card with:
+  - the current branch
+  - "QA SHOP-149: start with the test plan." as the opening message
+  - *How this team tests* in the workspace layer
+  - the QA job and the report heading in `p`
+- **Review from a search:**
+  - `c`, then `/ wishlist`: SHOP-162 (Sam's, *found in Jira*) appeared after a pause, and `Enter` made it the card's ticket.
+  - `k` `k` made it a **Code review**. The PR lookup found PR #57, and the Branch row and the launch lines showed the copy on its branch.
+- **Folders:** `→ →`, `Enter`, a typed path, then `Ctrl+Enter` put the folder on the card as *dir* with `--add-dir`, and `Space` took it out. `?` has the `k`, `v` and Folders rows.
+- **Started for real:**
+  - The review made `wishlist-app-shop-162`, a detached worktree at the PR's commit, while `wishlist-app` stayed on main. Its tab then stopped at the trust prompt for the new folder, as in §28.
+  - The QA card's real session linked, and moved to Needs you on its first permission prompt.
+- **The ends of both sessions**, played through the real hook route with each card's token:
+  - The QA card went to Ship with "Report: Failed", and the review with "Findings: Changes requested".
+  - The drawers rendered them, and the review's drawer also showed its PR.
+  - `s` then `Enter` put the report on the clipboard, and `d` moved SHOP-149 to Done.
+- No console errors.
+- **Found by the walkthrough and fixed:** the *Code review* pill wrapped on a narrow tile and pushed "terminal" off it. It now says "Review", on one line.
+- **Unit tests** (18 new) cover:
+  - the QA JQL and the search JQL
+  - both views from a stand-in Jira, merged by key
+  - a search finding a ticket that a card can then start from, and a key that doesn't exist
+  - demo search
+  - PR matching, and the lookup on a stand-in TFS: reads only, a note per repo, and a missing token
+  - reports picked out of Stop messages and moving the card, and never for development cards
+  - kinds from tickets, the job text, and the review's launch lines
+  - the new-card screen's kind, PR, search results and folders
+  - notes in the workspace file
+- `pnpm typecheck`, `pnpm test` (210) and the Vite build pass.
+
+**Not verified:**
+- VU's Jira (the Ready for QA query, text search) and TFS (the PR list). This is the first thing to try there.
+- A real `gh pr list`: the stand-in answered.
+- The PR copy of a repo that Claude Code hasn't been told to trust stops at the trust prompt in its tab. Answer it once.
+
+**Not yet:**
+- Posting findings to the PR, or the report to Jira. The owner wants this later, asked first each time.
+- QA against the PR's build or a deployed environment, rather than locally.
+- Bringing VU's tools into the app: the scenario generator as a recipe step or an MCP tool, and the hosted field tools as links or MCP servers per workspace. This fits §35's rule: a workspace-level, swappable module.

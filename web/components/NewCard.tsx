@@ -5,13 +5,14 @@
 // you are adding (and what it already has), panel 3 is when it reaches Claude.
 
 import { useEffect, type ReactNode } from 'react';
-import { fmtK, HOOK_CONTEXT_LIMIT, homeOf, itemTokens, laterText, launchLines, memoryPct, modelFor, modelName, packetText, STAGES, tokens, type Card } from '../../shared/cards.ts';
+import { CARD_KINDS, fmtK, HOOK_CONTEXT_LIMIT, homeOf, includedRepos, itemTokens, kindName, laterText, launchLines, memoryPct, modelFor, modelName, packetText, STAGES, tokens, type Card } from '../../shared/cards.ts';
 import type { Workspace } from '../../shared/protocol.ts';
 import { SOURCE_NAME, ticketSub } from '../../shared/tickets.ts';
 import { samePath } from '../../shared/workspaces.ts';
-import { cardHasRepo, cardHasTicket, composerKey, goRows, packetRows, pickOption, pickTicket, repoOrigin, sources, ticketSources, toggleSource, togglePacketRow, type Composer, type Pane } from '../line-model.ts';
-import { keepRepo, startWork, updateComposer } from '../line-keys.ts';
-import { get, set, useStore } from '../store.ts';
+import { cardFolders, cardHasRepo, cardHasTicket, composerKey, gotPr, goRows, packetRows, pickOption, pickTicket, repoOrigin, sources, ticketSources, toggleSource, togglePacketRow, wantsPr, type Composer, type Pane } from '../line-model.ts';
+import { foundFor, keepRepo, startWork, updateComposer } from '../line-keys.ts';
+import { get, NO_FOUND, set, useStore } from '../store.ts';
+import { findPr, searchTickets } from '../ws.ts';
 import { Key, TicketKey, WsBadge } from './ui.tsx';
 
 /** The small kind badge on a packet row. */
@@ -29,6 +30,8 @@ export function NewCard() {
   const t = c.ticket;
   const model = modelFor(c.launch, pinned ?? undefined, user ?? undefined);
   const size = tokens(text);
+  useTicketSearch(c);
+  usePrLookup(c);
   if (c.addTo && target) return <AddScreen c={c} card={target} ws={ws} text={text} />;
   return (
     <div className="absolute inset-0 z-20 flex flex-col bg-bg" role="region" aria-label="New card">
@@ -37,6 +40,10 @@ export function NewCard() {
         <div className="flex min-w-0 grow flex-col gap-1">
           <div className="flex items-center gap-1.5 text-sm text-faint">
             New card · {key} · {ws?.name ?? 'no workspace'} · {t ? `from ${SOURCE_NAME[t.source]}${t.demo ? ' (demo)' : ''}` : 'no ticket yet'} ·
+            <button className="flex items-center gap-1.5 rounded-md border border-line bg-raise px-1.5 font-semibold text-ink hover:border-ring" onClick={() => updateComposer((x) => ({ ...x, pane: 'go', gi: 0 }))}
+              title="The kind of work: Develop, QA or Code review. k changes it.">
+              {kindName(c.kind)}<Key k="k" size="sm" />
+            </button> ·
             <button className="flex items-center gap-1.5 rounded-md border border-line bg-raise px-1.5 font-semibold text-ink hover:border-ring" onClick={() => updateComposer((x) => ({ ...x, pane: 'go' }))}
               title="The model Claude runs in this card. m changes it; so does Model under How it starts.">
               {modelName(model)}{!c.launch.model && <span className="font-normal text-faint">default</span>}<Key k="m" size="sm" />
@@ -67,6 +74,39 @@ export function NewCard() {
       </div>
     </div>
   );
+}
+
+/**
+ * The search box on Tickets also asks the tracker, so anyone's ticket can be found (one to review,
+ * one someone asked you to test). A short pause after typing; only the latest text's answer counts.
+ */
+function useTicketSearch(c: Composer) {
+  const q = c.tab === 'tickets' ? c.q.trim() : '';
+  useEffect(() => {
+    if (q.length < 2) { if (get().found !== NO_FOUND) set({ found: NO_FOUND }); return; }
+    set({ found: { q, tickets: get().found.q === q ? get().found.tickets : [], looking: true } });
+    const t = setTimeout(() => {
+      searchTickets(q).then(
+        (r) => { if (get().found.q === q) set({ found: { q, tickets: r.tickets, looking: false, ...(r.problem ? { problem: r.problem } : {}) } }); },
+        (e: Error) => { if (get().found.q === q) set({ found: { q, tickets: [], looking: false, problem: e.message } }); },
+      );
+    }, 350);
+    return () => clearTimeout(t);
+  }, [q]);
+}
+
+/** QA and review cards: ask the ticket's code hosts for its pull request, once per ticket. */
+function usePrLookup(c: Composer) {
+  const key = wantsPr(c);
+  useEffect(() => {
+    if (!key) return;
+    const repos = includedRepos(get().composer!.packet);
+    updateComposer((x) => ({ ...x, prLooking: true }));
+    findPr(key, repos).then(
+      (r) => updateComposer((x) => gotPr(x, key, r.pr, r.notes)),
+      (e: Error) => updateComposer((x) => gotPr(x, key, undefined, [e.message])),
+    );
+  }, [key]);
 }
 
 /** Exactly what the hook will hand Claude for what is being added: the items switched on, and your note. */
@@ -127,11 +167,13 @@ function Sources({ c }: { c: Composer }) {
   const repos = useStore((s) => s.library.repos);
   const tickets = useStore((s) => s.tickets);
   const cards = useStore((s) => s.cards);
+  const found = useStore((s) => s.found);
   const onTickets = c.tab === 'tickets';
   const list = sources(c, repos);
   const started = new Set(cards.map((x) => x.key));
-  const tlist = ticketSources(c, tickets, started);
-  const si = Math.min(c.si, (onTickets ? tlist.length : list.length) - 1);
+  const tlist = ticketSources(c, tickets, started, foundFor(get(), c.q));
+  const folders = cardFolders(c, repos);
+  const si = c.tab === 'folders' ? Math.min(c.si, folders.length) : Math.min(c.si, (onTickets ? tlist.length : list.length) - 1);
   const focused = c.pane === 'src';
   useEffect(() => {
     if (focused && si >= 0) document.getElementById(`src-${si}`)?.scrollIntoView({ block: 'nearest' });
@@ -143,18 +185,37 @@ function Sources({ c }: { c: Composer }) {
   return (
     <PaneBox pane="src" n={1} title="Add context" c={c} right={<><span className="text-xs text-faint">click, or</span><Key k="Space" size="sm" /></>}>
       <div className="flex items-center gap-1 px-3 pb-2">
-        {tab('tickets', 'Tickets')}{tab('repos', 'Repos')}
+        {tab('tickets', 'Tickets')}{tab('repos', 'Repos')}{tab('folders', 'Folders')}
         <span className="grow" />
         <Key k="←" size="sm" /><Key k="→" size="sm" />
       </div>
-      <label className="mx-3 mb-2 flex items-center gap-2 rounded-lg border border-line bg-surface py-1 pl-2.5 pr-1.5">
+      {c.tab !== 'folders' && <label className="mx-3 mb-2 flex items-center gap-2 rounded-lg border border-line bg-surface py-1 pl-2.5 pr-1.5">
         <Key k="/" size="sm" />
         <input id="cp-q" type="text" autoComplete="off" value={c.q} placeholder={onTickets ? 'Search tickets, or type a key, e.g. SHOP-160' : 'Search the repo library'}
           onChange={(e) => updateComposer((x) => ({ ...x, q: e.target.value, si: 0 }))}
           className="w-full bg-transparent text-sm outline-none placeholder:text-faint" />
-      </label>
+      </label>}
+      {onTickets && c.q.trim().length >= 2 && (found.looking || found.problem) && (
+        <div className={`mx-3 mb-2 text-[12.5px] ${found.problem ? 'text-attn' : 'text-faint'}`}>{found.problem ?? 'Searching Jira for anyone’s tickets…'}</div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
-        {onTickets ? (tlist.length ? tlist.map((tk, i) => {
+        {c.tab === 'folders' ? <>
+          <button id="src-0" onClick={() => { updateComposer((x) => ({ ...x, pane: 'src', si: 0 })); set({ modal: { kind: 'addFolder' } }); }}
+            className={`flex items-center gap-2.5 rounded-lg border border-dashed border-line px-2.5 py-2 text-left text-[13.5px] ${focused && si === 0 ? 'is-focus bg-raise' : 'hover:bg-raise'}`}>
+            <span className="w-4 text-center font-mono text-[17px] font-bold text-faint">+</span>
+            <span className="grow">Add a folder from anywhere on disk…</span>
+            <Key k="Enter" size="sm" />
+          </button>
+          {folders.map((d, i) => (
+            <button key={d.id} id={`src-${i + 1}`} onClick={() => updateComposer((x) => ({ ...toggleSource(x, d.id), pane: 'src', si: i }))}
+              className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${focused && si === i + 1 ? 'is-focus bg-raise' : 'hover:bg-raise'}`}>
+              <span className="rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">dir</span>
+              <span className="min-w-0 grow"><span className="block truncate">{d.label}</span><span className="block truncate text-xs text-faint">{d.id}</span></span>
+              <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">added</span>
+            </button>
+          ))}
+        </>
+        : onTickets ? (tlist.length ? tlist.map((tk, i) => {
           const own = c.ticket?.key === tk.key || c.addTo?.ticketKey === tk.key;
           const related = c.packet.card.some((x) => x.id === `ticket:${tk.key}`);
           const had = !own && cardHasTicket(c, tk.key);
@@ -165,7 +226,7 @@ function Sources({ c }: { c: Composer }) {
               <TicketKey k={tk.key} source={tk.source} />
               <span className="min-w-0 grow">
                 <span className="block truncate">{tk.title}</span>
-                <span className="block truncate text-xs text-faint">{ticketSub(tk)}{taken ? ' · has a card' : ''}{tk.hidden ? ' · hidden from the Inbox' : ''}{tk.demo ? ' · demo' : ''}</span>
+                <span className="block truncate text-xs text-faint">{ticketSub(tk)}{taken ? ' · has a card' : ''}{tk.hidden ? ' · hidden from the Inbox' : ''}{tk.found ? ' · found in Jira' : ''}{tk.demo ? ' · demo' : ''}</span>
               </span>
               {own ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">this card’s</span>
                 : related ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">{c.addTo ? 'adding' : 'related'}</span>
@@ -173,7 +234,7 @@ function Sources({ c }: { c: Composer }) {
                 : <span className="w-4 text-center font-mono text-[17px] font-bold text-faint">+</span>}
             </button>
           );
-        }) : <div className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{tickets.length ? `Nothing matches “${c.q}”` : <>No tickets yet. <Key k="⇧T" size="sm" /> on the board connects Jira or Trello, or shows demo tickets.</>}</div>)
+        }) : <div className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{c.q.trim() ? (found.looking ? 'Searching…' : `Nothing matches “${c.q}”`) : tickets.length ? 'No tickets' : <>No tickets yet. <Key k="⇧T" size="sm" /> on the board connects Jira or Trello, or shows demo tickets.</>}</div>)
         : list.length ? list.map((r, i) => {
           const where = repoOrigin(c, r.path);
           const had = cardHasRepo(c, r.path);
@@ -191,10 +252,12 @@ function Sources({ c }: { c: Composer }) {
           );
         }) : <div className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{repos.length ? `Nothing matches “${c.q}”` : 'The repo library is empty. F on the board picks the folders it scans.'}</div>}
       </div>
-      <div className="border-t border-line px-4 pb-3 pt-2 text-[12.5px] leading-snug text-faint">{c.addTo
+      <div className="border-t border-line px-4 pb-3 pt-2 text-[12.5px] leading-snug text-faint">{c.tab === 'folders'
+        ? (c.addTo ? 'Any folder on disk. Added now, it reaches Claude as its path; the session may ask once before reading outside its folder.' : 'Any folder on disk, git repo or not: docs, specs, a tool’s folder. It starts with --add-dir, so Claude can read and edit it.')
+        : c.addTo
         ? (onTickets ? 'Jira and Trello tickets, read-only. What you pick goes in as a related ticket.' : 'The repo library. A repo added now reaches Claude as its path; the session may ask once before working outside its folder.')
         : onTickets
-          ? 'Jira and Trello tickets, read-only. The first you pick becomes the card’s ticket; later ones go in as related.'
+          ? 'Your tickets, and anyone’s through / (Jira is searched too), read-only. The first you pick becomes the card’s ticket; later ones go in as related.'
           : 'The repo library. Extra repos start with --add-dir, so Claude can read and edit them.'}</div>
     </PaneBox>
   );
@@ -207,6 +270,7 @@ function PacketPane({ c, text, card }: { c: Composer; text: string; card?: Card 
   const home = homeOf(c.packet, c.launch);
   const over = text.length > HOOK_CONTEXT_LIMIT;
   const wsName = useStore((s) => s.workspaces.find((w) => w.id === c.workspaceId)?.name);
+  const library = useStore((s) => s.library.repos);
   let idx = -1;
   const row = (layer: 'workspace' | 'ticket' | 'card', item: (typeof c.packet.card)[number]) => {
     idx += 1;
@@ -216,7 +280,7 @@ function PacketPane({ c, text, card }: { c: Composer; text: string; card?: Card 
       <div key={layer + item.id} onClick={() => updateComposer((x) => { const r = togglePacketRow({ ...x, pi: at }, at); return typeof r === 'string' ? r : { ...r, pi: at }; })}
         className={`flex min-w-0 cursor-pointer items-center gap-2.5 px-3 py-1.5 text-[13.5px] [&+&]:border-t [&+&]:border-line/60 ${item.on ? '' : 'text-faint'} ${focused && at === pi ? 'is-focus' : ''}`}>
         <span className="grid h-4 w-4 shrink-0 place-items-center rounded border-[1.5px] border-line font-mono text-[11px] font-bold text-ok">{item.on ? '✓' : ''}</span>
-        <span className="whitespace-nowrap rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">{KIND[item.kind] ?? item.kind}</span>
+        <span className="whitespace-nowrap rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">{item.kind === 'repo' && !library.some((r) => samePath(r.path, item.id)) && !(c.packet.workspace.some((w) => w.id === item.id)) ? 'dir' : KIND[item.kind] ?? item.kind}</span>
         <span className="min-w-0 grow truncate">{item.label}</span>
         {isHome && <span className="rounded-full bg-busy-bg px-2 text-[11px] font-semibold text-busy">starts here</span>}
         {item.kind === 'repo' && item.on && !isHome && !card && <span className="text-xs text-faint">--add-dir</span>}
@@ -301,6 +365,12 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
                       className={`rounded-lg border px-2.5 py-1 text-[13px] ${j === r.at ? 'border-ring bg-surface font-semibold text-ink shadow-[0_0_0_2px_color-mix(in_srgb,var(--c-ring)_22%,transparent)]' : 'border-line bg-raise text-sub'} disabled:cursor-default disabled:opacity-50`}>{o}</button>
                   ))}
                 </div>}
+            {r.id === 'kind' && <div className="text-[12.5px] text-faint">{CARD_KINDS.find((k) => k.id === c.kind)!.blurb} <Key k="k" size="sm" /> changes it from anywhere on this screen.</div>}
+            {r.id === 'branch' && c.kind !== 'build' && <div className="text-[12.5px] text-faint">{c.pr
+              ? <>Found <a className="underline hover:text-ink" href={c.pr.url} target="_blank" rel="noreferrer">PR #{c.pr.number} {c.pr.title}</a>: {c.pr.source} → {c.pr.target}. The copy is a detached worktree, so your own checkout stays as it is.</>
+              : c.prLooking ? 'Looking for the ticket’s pull request…'
+              : c.ticket ? <>No open pull request names {c.ticket.key}{c.prNotes?.length ? `: ${c.prNotes.join('; ')}` : '.'} {c.kind === 'review' ? 'Claude will look for its branch.' : ''}</>
+              : 'Pick the ticket first: its pull request is looked up by its key.'}</div>}
             {r.id === 'where' && <div className="text-[12.5px] text-faint">A new Windows Terminal tab runs claude. A SessionStart hook hands it the packet and links the session to the card. Running cards in the app comes later.</div>}
             {r.id === 'mode' && c.launch.mode === 'auto' && <div className="text-[12.5px] text-faint">Auto isn’t offered on every model{c.launch.model === 'haiku' ? ' (Haiku refuses it)' : ''}.</div>}
             {r.id === 'model' && <div className="text-[12.5px] text-faint">{c.launch.model ? `Starts with --model ${c.launch.model}.` : model ? `The default is ${model}, pinned by this server (CC_CONTROL_MODEL).` : user ? `The default is ${user}, from your Claude Code settings.` : 'Claude Code picks, as in a plain terminal.'} <Key k="m" size="sm" /> changes it from anywhere on this screen.</div>}
@@ -317,7 +387,9 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
         <button className="btn btn-primary justify-center py-2 text-[15px]" disabled={c.starting} onClick={startWork}>
           <Key k="Ctrl Enter" size="sm" tone="ghost" />{c.starting ? 'Starting…' : 'Start work'}
         </button>
-        <span className="text-[12.5px] text-faint">{c.launch.mode === 'plan' ? 'The card goes to Plan. Nothing changes until you approve the plan.' : 'The card goes straight to Build.'}</span>
+        <span className="text-[12.5px] text-faint">{c.kind === 'qa' ? 'The card goes to Plan with its test plan; approve it in the tab, and Claude sets up the data and walks you through. The report lands on the card.'
+          : c.kind === 'review' ? 'Claude reviews read-only. Its findings land on the card, to copy into the PR when you are ready.'
+          : c.launch.mode === 'plan' ? 'The card goes to Plan. Nothing changes until you approve the plan.' : 'The card goes straight to Build.'}</span>
       </div>
     </PaneBox>
   );

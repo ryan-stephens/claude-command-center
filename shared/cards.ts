@@ -48,8 +48,47 @@ export function modelName(id: string | undefined): string {
   return CARD_MODELS.find((m) => m.id === id)?.name ?? id ?? 'Claude Code’s default';
 }
 
-/** new: a branch named after the card · current: stay where the repo is · worktree: a new folder on a new branch. */
-export type BranchChoice = 'new' | 'current' | 'worktree';
+/**
+ * What the card is for. Not every ticket is code to write: some are someone else's change to test
+ * (QA), some are a pull request to review. The kind sets what Claude is told its job is, the
+ * branch and mode it starts with, and how the card ends: a PR (Develop) or a report (QA, Review).
+ */
+export type CardKind = 'build' | 'qa' | 'review';
+export const CARD_KINDS: { id: CardKind; name: string; blurb: string }[] = [
+  { id: 'build', name: 'Develop', blurb: 'Plan and make the change, try it, ship a PR.' },
+  { id: 'qa', name: 'QA', blurb: 'Test someone’s change: a test plan from the ticket, the test data set up, a walk through each check, a report.' },
+  { id: 'review', name: 'Code review', blurb: 'Review the ticket’s pull request against the ticket, read-only. Findings stay here until you post them.' },
+];
+
+export const kindName = (k: CardKind | undefined) => CARD_KINDS.find((x) => x.id === (k ?? 'build'))!.name;
+
+/** A ticket waiting for QA is a QA card; one in review is a review; the rest are development. */
+export function kindForTicket(t: Pick<Ticket, 'status' | 'views'> | null | undefined): CardKind {
+  if (!t) return 'build';
+  if (t.views?.includes('qa') && !t.views.includes('mine')) return 'qa';
+  if (/\b(qa|testing|in test)\b/i.test(t.status)) return 'qa';
+  if (/review/i.test(t.status)) return 'review';
+  return 'build';
+}
+
+/** The pull request a QA or review card looks at, as the host found it by the ticket's key. */
+export interface PrTarget {
+  number: number;
+  title: string;
+  url: string;
+  host: 'github' | 'azure';
+  /** Its branch, and the branch it goes into. */
+  source: string;
+  target: string;
+  /** The repo it was found in (one of the card's). */
+  repo: string;
+}
+
+/** Git-safe branch names only: they go on a git command line. */
+export const BRANCH_NAME = /^(?!-)[\w./-]{1,200}$/;
+
+/** new: a branch named after the card · current: stay where the repo is · worktree: a new folder on a new branch · pr: a new folder on the PR's branch (QA and review). */
+export type BranchChoice = 'new' | 'current' | 'worktree' | 'pr';
 
 /**
  * One thing in the packet. Repos carry their absolute path as the id. The ticket layer holds the
@@ -96,6 +135,10 @@ export interface CardDraft {
   launch: CardLaunch;
   /** The card's ticket, when it has one: the page sends its key, the server fills in the ticket. */
   ticketKey?: string;
+  /** Develop (unset), QA or Code review. */
+  kind?: CardKind;
+  /** QA and review: the ticket's pull request, when the host found one. */
+  pr?: PrTarget;
 }
 
 /** One line of "How it started" on the card's Context tab. */
@@ -159,6 +202,31 @@ export interface Card extends CardDraft {
   later?: LaterItem[];
   /** Shipping it: each step (branch, commit, push, PR, merge) and the pull request it opened. */
   ship?: { steps: BootStep[]; pr?: PullRequest };
+  /** QA and review: the report Claude ended with (its QA report or review findings). */
+  report?: CardReport;
+}
+
+/** A QA report or review findings, from the message Claude wrote it in. */
+export interface CardReport {
+  text: string;
+  at: number;
+  /** "Passed", "Failed", "Blocked"; "Approve", "Changes requested"… when the report says. */
+  result?: string;
+}
+
+/** The heading a report starts with (Claude is told to use it, see jobText). */
+const REPORT_HEADING = /^#{1,3}\s*(QA report|Code review)\b.*$/im;
+
+/**
+ * The report in a message, if it has one: from its heading to the end, with the result it states.
+ * Only QA and review cards write reports.
+ */
+export function reportIn(message: string, at: number): CardReport | undefined {
+  const m = REPORT_HEADING.exec(message);
+  if (!m) return undefined;
+  const text = message.slice(m.index).trim();
+  const result = /^\W*(?:result|verdict)\W*[:\-–]\W*([A-Za-z][A-Za-z ]{1,30}?)\W*$/im.exec(text)?.[1]?.trim();
+  return { text, at, ...(result ? { result } : {}) };
 }
 
 /**
@@ -235,32 +303,89 @@ export function worktreeFor(home: string, key: string): string {
 }
 
 /** What Claude is told first when the card doesn't say otherwise. */
-export function defaultMessage(key: string, mode: LaunchMode): string {
+export function defaultMessage(key: string, mode: LaunchMode, kind: CardKind = 'build'): string {
+  if (kind === 'qa') return `QA ${key}: start with the test plan.`;
+  if (kind === 'review') return `Review ${key}.`;
   return mode === 'plan' ? `Plan ${key}.` : `Work on ${key}.`;
+}
+
+/** The mode and branch each kind starts with: QA and review don't make a branch of their own. */
+export function kindDefaults(kind: CardKind, pr?: PrTarget | null): Pick<CardLaunch, 'mode' | 'branch'> {
+  if (kind === 'build') return { mode: 'plan', branch: 'new' };
+  // A review stays read-only in plan mode; QA plans its checks first, then sets up data and tests.
+  return { mode: 'plan', branch: kind === 'review' && pr ? 'pr' : 'current' };
+}
+
+const prLine = (pr: PrTarget) => `PR #${pr.number} “${pr.title}”, ${pr.source} → ${pr.target} (${pr.url})`;
+
+/**
+ * What a QA or review card is for, in Claude's words: the "Your job" section of the packet. A
+ * development card needs none (the ticket is the job). The report heading is what cc-control
+ * looks for to put the report on the card.
+ */
+export function jobText(kind: CardKind | undefined, key: string, pr?: PrTarget, onPrBranch = false): string[] {
+  if (kind === 'qa') {
+    return [
+      '', '## Your job: QA this ticket',
+      'Someone else built this change. You are testing it, not changing it.',
+      ...(pr ? [`The change: ${prLine(pr)}.${onPrBranch ? ' You start in a copy of the repo on its branch.' : ''}`] : []),
+      '1. Write a test plan from the ticket: numbered checks, at least one for each "Done when" item, plus the edge cases it implies. For each: the data it needs, the steps, and what should happen.',
+      '2. Set up the test data the checks need, the way "How this team tests" below says (for example a loan in the state the ticket describes). Say what you created (ids, links) so it can be found again.',
+      '3. Walk me through the checks one at a time: what to do and what to look for. Check what you can yourself (APIs, queries, logs); for the rest, wait for what I saw. Record each as pass or fail.',
+      '4. Don’t change the code under test. For a bug, give the steps to reproduce it, what should happen and what did.',
+      '5. End with the report, starting with this heading so cc-control picks it up:',
+      `   # QA report: ${key}`,
+      '   Result: Passed, Failed or Blocked',
+      '   Then a table of the checks (pass / fail / notes), the bugs found, the test data used, and where it was tested.',
+    ];
+  }
+  if (kind === 'review') {
+    return [
+      '', '## Your job: review this change',
+      'You are reviewing someone else’s work. Read, don’t change: no edits, commits or pushes, and nothing posted anywhere.',
+      ...(pr
+        ? [`The change: ${prLine(pr)}.`, onPrBranch
+          ? `You start in a copy of the repo on its branch: the change is \`git diff origin/${pr.target}...HEAD\`.`
+          : `Its branch is ${pr.source}: fetch it and compare it with origin/${pr.target}.`]
+        : [`No pull request was found for ${key}. Find its branch (git fetch, then git branch -r and git log --all --grep=${key}) and review it against the branch it goes into.`]),
+      '1. Check it against the ticket: does it do each "Done when" item? Is anything missing, or anything done that the ticket didn’t ask for?',
+      '2. Look for bugs, edge cases, security, error handling, missing tests, and anything that breaks the repo’s own patterns.',
+      '3. End with your findings, starting with this heading so cc-control picks it up:',
+      `   # Code review: ${key}`,
+      '   Verdict: Approve, Approve with suggestions, or Changes requested',
+      '   Then each finding as `path:line`, how serious (blocking, should fix, nit), what is wrong and what to do instead.',
+    ];
+  }
+  return [];
 }
 
 /**
  * Exactly what Claude receives: the SessionStart hook returns this as additionalContext.
  * `key` and `branch` are known once the card exists; the preview passes what they will be.
  */
-export function packetText(d: Pick<CardDraft, 'title' | 'packet' | 'launch'> & { ticket?: Pick<Ticket, 'key' | 'source'> | null }, key: string, branch?: string): string {
+export function packetText(d: Pick<CardDraft, 'title' | 'packet' | 'launch' | 'kind' | 'pr'> & { ticket?: Pick<Ticket, 'key' | 'source'> | null }, key: string, branch?: string): string {
   const L: string[] = [];
   const title = d.title.trim() || 'New card';
+  const kind = d.kind ?? 'build';
   L.push(`# Context from cc-control · ${key} ${title}`);
   if (d.ticket) L.push(...ticketText(d.ticket, d.packet.ticket));
   else L.push('', '## The task', title);
+  L.push(...jobText(kind, key, d.pr, d.launch.branch === 'pr'));
   const repos = includedRepos(d.packet);
   const home = homeOf(d.packet, d.launch);
   if (repos.length) {
     L.push('', '## Repos');
-    for (const r of repos) L.push(`- ${repoName(r)} (${r === home ? 'you start here' : 'also yours to read and edit'}): ${r}`);
+    for (const r of repos) L.push(`- ${repoName(r)} (${r === home ? 'you start here' : kind === 'review' ? 'also yours to read' : 'also yours to read and edit'}): ${r}`);
   }
-  if (branch) L.push('', `Work on the branch ${branch}.`);
-  const notes = [...d.packet.workspace, ...d.packet.ticket, ...d.packet.card].filter((i) => i.kind === 'note' && i.on);
+  if (branch) L.push('', kind === 'build' ? `Work on the branch ${branch}.` : `You are on ${branch}.`);
+  const all = [...d.packet.workspace, ...d.packet.ticket, ...d.packet.card].filter((i) => i.kind === 'note' && i.on);
+  const testing = all.filter((i) => i.id === TESTING_NOTES);
+  const notes = all.filter((i) => i.id !== TESTING_NOTES);
   if (notes.length) {
     L.push('', '## Notes');
-    for (const n of notes) L.push(`- ${n.label}`);
+    for (const n of notes) L.push(n.text ? `${n.label}:\n${n.text.trim()}` : `- ${n.label}`);
   }
+  for (const n of testing) L.push('', '## How this team tests', (n.text ?? n.label).trim());
   const recipes = d.packet.workspace.filter((i) => i.on && i.kind === 'recipe');
   if (recipes.length) {
     L.push('', '## Running the app');
@@ -272,9 +397,17 @@ export function packetText(d: Pick<CardDraft, 'title' | 'packet' | 'launch'> & {
     for (const i of extra) L.push(`- ${(i.text ?? i.label).replace(/\n/g, '\n  ')}`);
   }
   if (d.packet.note.trim()) L.push('', '## From you', d.packet.note.trim());
-  if (d.launch.mode === 'plan') L.push('', 'Start with a plan. Don’t change any files until the plan is approved.');
+  if (d.launch.mode === 'plan') {
+    L.push('', kind === 'qa' ? 'Start with the test plan. Don’t set up data or change anything until it is approved.'
+      : kind === 'review' ? 'Plan mode keeps this read-only. There is nothing to build, so reply with your findings instead of presenting a plan.'
+      : 'Start with a plan. Don’t change any files until the plan is approved.');
+  }
   return L.join('\n');
 }
+
+/** The ids of the workspace's notes in the packet: for every card, and how the team tests (QA cards). */
+export const WORKSPACE_NOTES = 'ws:notes';
+export const TESTING_NOTES = 'ws:testing';
 
 /** A rough token count (about 4 characters each), as the new-card screen shows it: "1.2k". */
 export function tokens(text: string): number {
@@ -320,7 +453,7 @@ export function wtArg(s: string): string {
  * The steps Start work takes, as shown under "What happens" (and run by the server). `pinned` is
  * the server's CC_CONTROL_MODEL; the card's own choice wins over it.
  */
-export function launchLines(d: Pick<CardDraft, 'title' | 'packet' | 'launch'>, key: string, pinned?: string): string[] {
+export function launchLines(d: Pick<CardDraft, 'title' | 'packet' | 'launch' | 'pr'>, key: string, pinned?: string): string[] {
   const model = d.launch.model ?? pinned;
   const home = homeOf(d.packet, d.launch) ?? '(no repo)';
   const others = includedRepos(d.packet).filter((r) => !samePath(r, home));
@@ -331,6 +464,11 @@ export function launchLines(d: Pick<CardDraft, 'title' | 'packet' | 'launch'>, k
   if (d.launch.branch === 'worktree') {
     dir = worktreeFor(home, key);
     L.push(`git -C ${home} worktree add ${dir} -b ${branch}`);
+  }
+  if (d.launch.branch === 'pr' && d.pr) {
+    dir = worktreeFor(home, key);
+    L.push(`git -C ${home} fetch origin ${d.pr.source} ${d.pr.target}`);
+    L.push(`git -C ${home} worktree add --detach ${dir} origin/${d.pr.source}`);
   }
   L.push(`set CC_CONTROL_CARD=${key}`);
   L.push(`wt -w 0 nt --title ${key} -d ${dir} claude --settings <cc-control hook> --permission-mode ${d.launch.mode}`

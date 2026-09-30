@@ -6,15 +6,15 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { cardRepos, fmtK, itemTokens, memoryPct, modelName, packetText, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
+import { cardRepos, fmtK, itemTokens, kindName, memoryPct, modelName, packetText, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
 import { homeRepo, repoName, samePath } from '../../shared/workspaces.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { importWorkspace } from '../commands.ts';
 import { openSession } from '../keys.ts';
-import { SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
+import { INBOX_VIEWS, inView, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, ticketFocus } from '../line-model.ts';
-import { boardOf, editRecipe, openAddComposer, openApp, openCard, openComposer, shipKey, tryIt, workspaceKey } from '../line-keys.ts';
+import { boardOf, editRecipe, openAddComposer, openApp, openCard, openComposer, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
 import { cardRecipe, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
 import { prLine } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
@@ -146,6 +146,7 @@ function Board() {
   useStore((s) => s.tickets);
   useStore((s) => s.line.filter);
   useStore((s) => s.line.q);
+  const view = useStore((s) => s.line.view);
   const focus = useStore((s) => s.line.focus);
   const workspaces = useStore((s) => s.workspaces);
   const cols = boardOf(get());
@@ -161,12 +162,20 @@ function Board() {
             <h4 className={`text-[13px] font-bold ${l.stage === 'needs' && l.cards.length ? 'text-attn' : ''}`}>{l.name}</h4>
             <span className="font-mono text-xs font-bold text-faint">{l.cards.length + l.tickets.length}</span>
           </div>
-          <div className="min-h-[30px] border-b border-line px-3 pb-2 text-xs text-faint">{GATE[l.stage]}</div>
+          {l.stage === 'inbox'
+            ? <div className="flex min-h-[30px] flex-wrap items-center gap-1 border-b border-line px-2.5 pb-2 text-xs">
+              {INBOX_VIEWS.map((v) => (
+                <button key={v.id} onClick={() => { if (v.id !== view) switchInbox(); }}
+                  className={`rounded-md border px-1.5 py-0.5 ${v.id === view ? 'border-line bg-surface font-semibold text-ink' : 'border-transparent text-faint hover:text-ink'}`}>{v.name}</button>
+              ))}
+              <Key k="v" size="sm" />
+            </div>
+            : <div className="min-h-[30px] border-b border-line px-3 pb-2 text-xs text-faint">{GATE[l.stage]}</div>}
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
             {l.tickets.map((tk) => <TicketTile key={tk.key} t={tk} focused={ticketFocus(tk.key) === focus} color={color(tk.workspaceId)} />)}
             {l.cards.length || l.tickets.length
               ? l.cards.map((c) => <CardTile key={c.id} card={c} focused={c.id === focus} color={color(c.workspaceId)} />)
-              : <div className="rounded-xl border border-dashed border-line px-1.5 py-3 text-center text-[12.5px] text-faint">{EMPTY[l.stage]}</div>}
+              : <div className="rounded-xl border border-dashed border-line px-1.5 py-3 text-center text-[12.5px] text-faint">{l.stage === 'inbox' && view === 'qa' ? <>Nothing Ready for QA in your projects. <Key k="c" size="sm" /> then <Key k="/" size="sm" /> searches Jira for any ticket.</> : EMPTY[l.stage]}</div>}
           </div>
         </section>
       ))}
@@ -192,7 +201,7 @@ function TicketTile({ t, focused, color }: { t: Ticket; focused: boolean; color:
       </span>
       <span className="text-[14px] font-semibold leading-snug">{t.title}</span>
       <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-faint">
-        <span>{ws?.name ?? `${t.projectName} · no workspace`}</span><span>·</span><span>{t.status}</span><span>·</span><span>{age(t.updatedAt)}</span>
+        <span>{ws?.name ?? `${t.projectName} · no workspace`}</span><span>·</span><span>{t.status}</span>{t.assignee && !inView(t, 'mine') && <><span>·</span><span>{t.assignee}</span></>}<span>·</span><span>{age(t.updatedAt)}</span>
       </span>
     </button>
   );
@@ -250,11 +259,17 @@ function CardTile({ card, focused, color }: { card: Card; focused: boolean; colo
     >
       <span className="flex items-center gap-1.5">
         <TicketKey k={card.key} source={card.ticket?.source} />
+        {card.kind && card.kind !== 'build' && <KindPill card={card} />}
         <span className="grow" />
         <Pill tone="grey">terminal</Pill>
       </span>
       <span className="text-[14px] font-semibold leading-snug">{card.title}</span>
       <ActLine card={card} />
+      {card.report && (
+        <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold ${/fail|change|block/i.test(card.report.result ?? '') ? 'text-bad' : 'text-ok'}`}>
+          <span className="rounded border border-current px-1 font-mono text-[10px]">{card.kind === 'qa' ? 'QA' : 'CR'}</span><span className="truncate">{card.kind === 'qa' ? 'Report' : 'Findings'}{card.report.result ? `: ${card.report.result}` : ' ready'}</span>
+        </span>
+      )}
       <RunLine id={card.id} />
       {card.ship?.pr && (
         <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold ${card.ship.pr.state === 'MERGED' ? 'text-ok' : card.ship.pr.checks === 'fail' ? 'text-bad' : 'text-busy'}`}>
@@ -279,6 +294,11 @@ function CardTile({ card, focused, color }: { card: Card; focused: boolean; colo
   );
 }
 
+/** QA or Code review, on a card's tile and in its drawer. */
+function KindPill({ card }: { card: Card }) {
+  return <span className="whitespace-nowrap rounded-full border border-acc/50 bg-acc-soft px-2 text-[11px] font-semibold text-acc" title={kindName(card.kind)}>{card.kind === 'review' ? 'Review' : kindName(card.kind)}</span>;
+}
+
 const TABS = [['over', 'Overview'], ['ctx', 'Context'], ['tx', 'Transcript']] as const;
 
 function Drawer({ id }: { id: string }) {
@@ -296,6 +316,7 @@ function Drawer({ id }: { id: string }) {
             <div className="flex flex-wrap items-center gap-1.5 text-sm">
               <TicketKey k={card.key} source={card.ticket?.source} />
               <Pill tone={needsYou(card) ? 'amber' : 'grey'}>{stage}</Pill>
+              {card.kind && card.kind !== 'build' && <KindPill card={card} />}
               <Pill tone="grey">terminal · tab {card.key}</Pill>
               <span className="text-faint">{ws?.name ?? 'No workspace'}</span>
             </div>
@@ -330,7 +351,11 @@ function DrawerActions({ card }: { card: Card }) {
         </button>
       )}
       <TryButtons card={card} />
-      {card.stage !== 'done' && (card.sessionId || card.ship?.pr) && (
+      {(card.kind === 'qa' || card.kind === 'review') ? (card.report || card.live?.lastMessage) && (
+        <button className={`btn py-1 ${card.report ? 'btn-primary' : ''}`} onClick={() => shipKey(card.id)}>
+          <Key k="s" size="sm" tone={card.report ? 'ghost' : undefined} />{card.kind === 'qa' ? 'QA report' : 'Findings'}
+        </button>
+      ) : card.stage !== 'done' && (card.sessionId || card.ship?.pr) && (
         <button className={`btn py-1 ${card.stage === 'try' || card.ship?.pr ? 'btn-primary' : ''}`} onClick={() => shipKey(card.id)}>
           <Key k="s" size="sm" tone={card.stage === 'try' || card.ship?.pr ? 'ghost' : undefined} />{card.ship?.pr?.state === 'OPEN' ? `Merge #${card.ship.pr.number}` : 'Ship'}
         </button>
@@ -400,7 +425,17 @@ function Overview({ card }: { card: Card }) {
           </ul>
         </Sec>
       ) : null}
-      {card.live?.lastMessage && card.live.phase !== 'working' && !card.live.ask && (
+      {card.report && (
+        <Sec title={card.kind === 'qa' ? 'QA report' : 'Review findings'} right={<button className="flex items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={() => shipKey(card.id)}>copy <Key k="s" size="sm" /></button>}>
+          <div className="md max-h-80 overflow-y-auto text-sm"><Markdown remarkPlugins={[remarkGfm]}>{card.report.text}</Markdown></div>
+        </Sec>
+      )}
+      {card.pr && (
+        <Sec title="Pull request">
+          <p className="text-sm"><a className="underline hover:text-acc" href={card.pr.url} target="_blank" rel="noreferrer">PR #{card.pr.number} {card.pr.title}</a> · <span className="font-mono text-[12.5px]">{card.pr.source} → {card.pr.target}</span></p>
+        </Sec>
+      )}
+      {card.live?.lastMessage && card.live.phase !== 'working' && !card.live.ask && !(card.report && card.live.lastMessage.includes(card.report.text.slice(0, 200))) && (
         <Sec title="Claude said">
           <div className="md max-h-64 overflow-y-auto text-sm"><Markdown remarkPlugins={[remarkGfm]}>{card.live.lastMessage}</Markdown></div>
         </Sec>

@@ -10,6 +10,8 @@ Running several Claude Code sessions across several repos means a lot of termina
 
 - **Tickets in the Inbox.** Jira and Trello tickets (read-only; tokens stay on the server) land in the Inbox, each project mapped to a workspace. `n` on one opens the new-card screen with its description and acceptance criteria as the card's context, and the card is named after the ticket. Demo tickets let you try it before connecting a site.
 - **The Ticket Line.** `c` makes a card: pick repos from your library, write a note, choose the model (`m`) and how it starts, and `p` previews exactly what Claude will be told. `Ctrl+Enter` makes the branch and opens `claude` in a Windows Terminal tab with that context. From then on the card follows its session: *Plan*, *Build*, amber in *Needs you* when it asks something, *Try it* when its turn ends with changes. `Ctrl+Enter` on a card opens its session full screen.
+- **QA and code review, not only development.** `k` on the new-card screen makes a card *Develop*, *QA* or *Code review*. A QA card has Claude write a test plan from the ticket, set up the test data the way your workspace's testing notes say, walk you through each check and finish with a pass/fail report. A review card finds the ticket's pull request (GitHub or Azure DevOps, read-only), opens a copy of the repo on its branch, and reviews it against the ticket. Reports and findings stay on the card for you to copy (`s`); nothing is posted. `v` switches the Inbox to every ticket *Ready for QA* in your projects, and `/` on the new-card screen searches Jira for anyone's ticket.
+- **Any folder as context.** Besides tickets and library repos, the new-card screen's *Folders* tab adds any folder on disk (specs, docs, a tool's install), given to Claude with `--add-dir`.
 - **Try it.** `t` on a card runs its repo's recipe in the card's folder, detected from `package.json` or `compose.yaml` or written by you (`e`), and shows each step and where the app is; `o` opens it, `t` again stops it. A workspace can have its own recipe across its repos (`Alt+W` in the editor): `@api okteto deploy --wait`, `@web API_URL=https://… npm run dev`, `! something to do by hand`, `stop: @api okteto destroy`.
 - **Ship.** `s` commits the files the card's session wrote (you tick any others, by name), pushes, and opens a PR written from the ticket, with its acceptance criteria as a checklist. The card follows the PR's reviews and checks, and `s` again squash-merges it.
 - **Add context later.** `c` in a card's drawer adds a repo, a related ticket or a note to work already under way. It waits on the card and goes in with the next message you type in its terminal tab, and the card's Context tab shows what went in when.
@@ -51,13 +53,14 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `Alt+↑` / `Alt+↓` | Previous / next session |
 | | `Alt+L` (or click the logo) | Home: the Ticket Line board, from anywhere (a session, a card, the new-card screen, a dialog) |
 | Ticket Line | `n` / `Enter` (a ticket in the Inbox) | Start work on it: the new-card screen with the ticket as context |
+| | `v` | Inbox: your tickets, or every ticket *Ready for QA* in your projects |
 | | `Shift+T` | Tickets: Jira and Trello status, demo tickets, which workspace each project goes to, and tickets you hid |
 | | `Delete` (a ticket in the Inbox) | Hide it from the Inbox (nothing changes in Jira or Trello) |
-| | `c` | New card: pick repos, write a note, `m` the model, `p` previews what Claude gets, `Ctrl+Enter` starts it in a terminal tab |
+| | `c` | New card: pick tickets (`/` searches Jira for anyone's), repos or any folder, write a note, `k` the kind (Develop, QA, Code review), `m` the model, `p` previews what Claude gets, `Ctrl+Enter` starts it in a terminal tab |
 | | `← → ↑ ↓` / `Enter` | Move between cards / open one: Overview, Context (how it started, what Claude was given), Transcript (`Tab`) |
 | | `t` / `o` (a card) | Try it: run its repo's recipe in the card's folder / open the app (`t` again stops it) |
 | | `e` (card open) | Write or edit the run recipe for the card's repo |
-| | `s` (a card) | Ship: commit the ticked files, push, open a PR from the ticket (`gh`); on a card in Ship, merge it |
+| | `s` (a card) | Ship: commit the ticked files, push, open a PR from the ticket (`gh`); on a card in Ship, merge it. On a QA or review card: its report, `Enter` copies it, `d` moves the card to Done |
 | | `c` (card open) | Add context to it: it waits on the card and goes in with your next message in its tab (`x` takes back the last one still waiting) |
 | | `Ctrl+Enter` | The card's session full screen (again, or `Esc`: back to the line) |
 | | `1`–`9` / `0` | One workspace / all of them |
@@ -84,7 +87,7 @@ Put these in `config.env` (or set them where you start the server), then restart
 |---|---|
 | Jira Data Center / Server | `CC_CONTROL_JIRA_SITE` (`https://jira.company.local`, with any context path), `CC_CONTROL_JIRA_TOKEN` (a personal access token) |
 | Jira Cloud | `CC_CONTROL_JIRA_SITE` (`https://you.atlassian.net`), `CC_CONTROL_JIRA_EMAIL`, `CC_CONTROL_JIRA_TOKEN` (an [API token](https://id.atlassian.com/manage-profile/security/api-tokens)) |
-| Jira, both | optional `CC_CONTROL_JIRA_JQL` (default: assigned to you, not done), `CC_CONTROL_JIRA_AC_FIELD` (a custom field holding the acceptance criteria) |
+| Jira, both | optional `CC_CONTROL_JIRA_JQL` (the Inbox's *Mine*; default: assigned to you, not done), `CC_CONTROL_JIRA_QA_JQL` (its *Ready for QA*; default: that status in the projects your tickets are in; `off` for none), `CC_CONTROL_JIRA_AC_FIELD` (a custom field holding the acceptance criteria) |
 | Trello | `CC_CONTROL_TRELLO_KEY`, `CC_CONTROL_TRELLO_TOKEN`, `CC_CONTROL_TRELLO_BOARDS` (board ids, comma-separated) |
 
 Then `Shift+T` on the line shows whether each is connected, and maps each project or board to a workspace. Acceptance criteria come from an "Acceptance criteria" (or "Done when") section in a Jira description (rich text on Cloud, wiki markup such as `h3. Acceptance Criteria` and `# item` on Data Center), the field `CC_CONTROL_JIRA_AC_FIELD` names, or a checklist of that name on a Trello card.
@@ -93,7 +96,7 @@ Then `Shift+T` on the line shows whether each is connected, and maps each projec
 
 ## Sharing with your team
 
-**A whole workspace:** on the Ticket Line, show it (`1`–`9`) and press `Shift+E` (or *Export* in its editor). The file lists its repos by folder name and carries its workflows; a teammate imports it with `Shift+I`, and it matches the names against their own repo library.
+**A whole workspace:** on the Ticket Line, show it (`1`–`9`) and press `Shift+E` (or *Export* in its editor). The file lists its repos by folder name and carries its workflows, its run recipe and its notes (*Notes for Claude*, which every card starts with, and *How this team tests*, which QA cards start with: where test data comes from and how to set it up); a teammate imports it with `Shift+I`, and it matches the names against their own repo library.
 
 **Per-repo workflows:** put a pack at `.cc-control/commands.json` in any repo, and everyone who opens a session there gets the same keys:
 

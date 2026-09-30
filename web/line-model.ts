@@ -3,8 +3,8 @@
 // Tested in line-model.test.ts; the components only draw it.
 
 import {
-  branchFor, CARD_MODELS, cardRepos, defaultMessage, homeOf, includedRepos, LAUNCH_MODES, modelName, STAGES,
-  type Card, type CardDraft, type Packet, type PacketItem, type Stage,
+  branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, homeOf, includedRepos, kindDefaults, kindForTicket, LAUNCH_MODES, modelName, STAGES, TESTING_NOTES, WORKSPACE_NOTES,
+  type BranchChoice, type Card, type CardDraft, type CardKind, type Packet, type PacketItem, type PrTarget, type Stage,
 } from '../shared/cards.ts';
 import type { RepoInfo, Workspace } from '../shared/protocol.ts';
 import { recipeFor, recipeLabel, recipeText, wsRecipeKey, type RunRecipe } from '../shared/recipes.ts';
@@ -106,13 +106,35 @@ export function shortPath(path: string, cwd?: string): string {
 // ---- The new-card screen ------------------------------------------------------------------
 
 export type Pane = 'src' | 'pkt' | 'go';
+export type SourceTab = 'tickets' | 'repos' | 'folders';
+export const SOURCE_TABS: SourceTab[] = ['tickets', 'repos', 'folders'];
+
+/** ← → in panel 1: the next tab, round. */
+export function nextTab(t: SourceTab, delta: number): SourceTab {
+  return SOURCE_TABS[(SOURCE_TABS.indexOf(t) + delta + SOURCE_TABS.length) % SOURCE_TABS.length];
+}
+
+/**
+ * The Folders tab: folders this card has that the repo library doesn't list (any folder on disk:
+ * docs, a spec folder, a tool's install). They go in like extra repos, with --add-dir.
+ */
+export function cardFolders(c: Composer, library: RepoInfo[]): PacketItem[] {
+  return c.packet.card.filter((i) => i.kind === 'repo' && !library.some((r) => samePath(r.path, i.id)));
+}
+
+/** A folder from the picker: added to the card, unless it has it already. */
+export function addFolder(c: Composer, path: string): Composer | string {
+  if (cardHasRepo(c, path)) return `${c.addTo!.key} can already use ${repoName(path)}`;
+  if (hasRepo(c, path) || c.packet.card.some((i) => i.kind === 'repo' && samePath(i.id, path))) return `${repoName(path)} is in the card already`;
+  return withHome({ ...c, packet: { ...c.packet, card: [...c.packet.card, repoItem(path)] } });
+}
 export const PANES: Pane[] = ['src', 'pkt', 'go'];
 
 export interface Composer {
   /** The card's ticket, if it has one: its title is the card's, its parts are the ticket layer. */
   ticket: Ticket | null;
-  /** Panel 1 shows tickets or the repo library (← → switch). */
-  tab: 'tickets' | 'repos';
+  /** Panel 1 shows tickets, the repo library, or folders you added from anywhere on disk (← → switch). */
+  tab: SourceTab;
   title: string;
   workspaceId: string | null;
   packet: Packet;
@@ -132,6 +154,15 @@ export interface Composer {
   error: string | null;
   /** Set when adding context to a card that has started, instead of making a new one. */
   addTo?: AddTarget;
+  /** Develop, QA or Code review (k). Follows the ticket until you pick one yourself. */
+  kind: CardKind;
+  kindTouched: boolean;
+  /** QA and review: the ticket's pull request, once the server has looked (`prFor` is the ticket it looked for). */
+  pr?: PrTarget;
+  prFor?: string;
+  prLooking?: boolean;
+  /** Why no pull request was found, a line per repo. */
+  prNotes?: string[];
 }
 
 /** The running card the new-card screen adds to, and what it already has (so it isn't added twice). */
@@ -151,24 +182,80 @@ const repoItem = (path: string): PacketItem => ({ kind: 'repo', id: path, label:
 /** Run recipes by repo path, as the server sends them. */
 export type Recipes = Record<string, RunRecipe>;
 
-/** The workspace's repos, and the run recipe of the repo cards start in. */
-function workspaceLayer(ws: Workspace | null, recipes: Recipes): PacketItem[] {
+const firstLine = (t: string) => { const l = t.trim().split(/\n/)[0]; return l.length > 60 ? `${l.slice(0, 58)}…` : l; };
+
+/** The workspace's repos, its notes (and for QA, how the team tests), and the run recipe of the repo cards start in. */
+function workspaceLayer(ws: Workspace | null, recipes: Recipes, kind: CardKind = 'build'): PacketItem[] {
   if (!ws) return [];
   const r = recipes[wsRecipeKey(ws.id)] ?? recipeFor(recipes, homeRepo(ws) ?? ws.repos[0]);
-  return [...ws.repos.map(repoItem), ...(r ? [{ kind: 'recipe' as const, id: `recipe:${r.repo}`, label: recipeLabel(r), text: recipeText(r), on: true }] : [])];
+  return [
+    ...ws.repos.map(repoItem),
+    ...(ws.notes ? [{ kind: 'note' as const, id: WORKSPACE_NOTES, label: `Workspace notes: ${firstLine(ws.notes)}`, text: ws.notes, on: true }] : []),
+    ...(ws.testing && kind === 'qa' ? [{ kind: 'note' as const, id: TESTING_NOTES, label: `How this team tests: ${firstLine(ws.testing)}`, text: ws.testing, on: true }] : []),
+    ...(r ? [{ kind: 'recipe' as const, id: `recipe:${r.repo}`, label: recipeLabel(r), text: recipeText(r), on: true }] : []),
+  ];
 }
 
 export function newComposer(ws: Workspace | null, key: string, ticket: Ticket | null = null, recipes: Recipes = {}): Composer {
+  const kind = kindForTicket(ticket);
+  const { mode, branch } = kindDefaults(kind);
   return {
     ticket,
     // From a ticket, the ticket is settled, so panel 1 opens on the repos; otherwise on the tickets.
     tab: ticket ? 'repos' : 'tickets',
     title: ticket?.title ?? '',
     workspaceId: ws?.id ?? null,
-    packet: { workspace: workspaceLayer(ws, recipes), ticket: ticket ? ticketItems(ticket) : [], card: [], note: '' },
-    launch: { home: (ws && homeRepo(ws)) ?? '', branch: 'new', mode: 'plan', message: defaultMessage(ticket?.key ?? key, 'plan') },
+    packet: { workspace: workspaceLayer(ws, recipes, kind), ticket: ticket ? ticketItems(ticket) : [], card: [], note: '' },
+    launch: { home: (ws && homeRepo(ws)) ?? '', branch, mode, message: defaultMessage(ticket?.key ?? key, mode, kind) },
     pane: 'src', si: 0, pi: 0, gi: 0, preview: false, q: '', msgTouched: false, starting: false, error: null,
+    kind, kindTouched: false,
   };
+}
+
+/**
+ * k, or the Kind row: Develop, QA or Code review. The mode and branch follow the kind, the
+ * opening message too unless you typed one, and a QA card gets the workspace's testing notes.
+ */
+export function setKind(c: Composer, kind: CardKind, key: string, workspaces: Workspace[], recipes: Recipes = {}, touched = true): Composer {
+  if (c.addTo) return c;
+  const ws = workspaces.find((w) => w.id === c.workspaceId) ?? null;
+  const { mode, branch } = kindDefaults(kind, c.pr);
+  const workspace = ws ? keepSwitches(c.packet.workspace, workspaceLayer(ws, recipes, kind)) : c.packet.workspace;
+  return {
+    ...c, kind, kindTouched: c.kindTouched || touched,
+    packet: { ...c.packet, workspace },
+    launch: { ...c.launch, mode, branch, ...(branch === 'pr' && c.pr ? { home: c.pr.repo } : {}), message: c.msgTouched ? c.launch.message : defaultMessage(c.ticket?.key ?? key, mode, kind) },
+  };
+}
+
+/** A rebuilt layer keeps what you switched off in the old one. */
+function keepSwitches(old: PacketItem[], next: PacketItem[]): PacketItem[] {
+  return next.map((i) => { const was = old.find((o) => o.id === i.id && o.kind === i.kind); return was ? { ...i, on: was.on } : i; });
+}
+
+/** k: the next kind. */
+export function cycleKind(c: Composer, key: string, workspaces: Workspace[], recipes: Recipes = {}): Composer {
+  const at = CARD_KINDS.findIndex((k) => k.id === c.kind);
+  return setKind(c, CARD_KINDS[(at + 1) % CARD_KINDS.length].id, key, workspaces, recipes);
+}
+
+/** Should the page ask the server for the ticket's pull request? QA and review cards with a ticket, once per ticket. */
+export function wantsPr(c: Composer): string | null {
+  if (c.addTo || c.kind === 'build' || !c.ticket || c.prLooking || c.prFor === c.ticket.key) return null;
+  return c.ticket.key;
+}
+
+/** The server's answer: the PR (a review starts on its branch, in its repo) or why there is none. */
+export function gotPr(c: Composer, key: string, pr: PrTarget | undefined, notes: string[]): Composer {
+  if (c.ticket?.key !== key) return c;
+  const { pr: _old, ...rest } = c;
+  const next: Composer = { ...rest, prFor: key, prLooking: false, prNotes: notes };
+  if (!pr) return { ...next, launch: { ...next.launch, branch: next.launch.branch === 'pr' ? 'current' : next.launch.branch } };
+  // Its repo must be one of the card's; add it when it isn't.
+  const has = includedRepos(next.packet).some((r) => samePath(r, pr.repo));
+  const packet = has ? next.packet : { ...next.packet, card: [...next.packet.card, repoItem(pr.repo)] };
+  const branch = c.kind === 'review' ? 'pr' : next.launch.branch;
+  return { ...next, pr, packet, launch: { ...next.launch, branch, ...(branch === 'pr' ? { home: pr.repo } : {}) } };
 }
 
 /** c in a card's drawer: the same screen, adding to that card. Only the card layer and your note. */
@@ -182,6 +269,7 @@ export function addComposer(card: Card, tickets: Ticket[] = []): Composer {
     packet: { workspace: [], ticket: [], card: [], note: '' },
     launch: card.launch,
     pane: 'src', si: 0, pi: 0, gi: 0, preview: false, q: '', msgTouched: true, starting: false, error: null,
+    kind: card.kind ?? 'build', kindTouched: true,
     addTo: {
       id: card.id, key: card.key, ...(card.ticket ? { ticketKey: card.ticket.key } : {}),
       had: [...card.packet.card, ...(card.later ?? [])].map((i) => i.id), repos: cardRepos(card),
@@ -216,12 +304,15 @@ export function composerKey(c: Composer, nextKey: string): string {
  * Panel 1's Tickets tab: every ticket, filtered by the search. Open ones without a card come first
  * (newest first), then those already on the line, then done ones.
  */
-export function ticketSources(c: Composer, tickets: Ticket[], started: Set<string> = new Set()): Ticket[] {
+export function ticketSources(c: Composer, tickets: Ticket[], started: Set<string> = new Set(), found: Ticket[] = []): Ticket[] {
   const q = c.q.trim().toLowerCase();
   const rank = (t: Ticket) => (t.done ? 3 : t.hidden ? 2 : started.has(t.key) ? 1 : 0);
-  return tickets
+  const local = tickets
     .filter((t) => !q || `${t.key} ${t.title} ${ticketSub(t)}`.toLowerCase().includes(q))
     .sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt);
+  // What the tracker's search found that isn't here already: other people's tickets, after yours.
+  const more = q ? found.filter((t) => !local.some((x) => x.key === t.key)) : [];
+  return [...local, ...more];
 }
 
 /**
@@ -236,10 +327,12 @@ export function pickTicket(c: Composer, t: Ticket, workspaces: Workspace[], star
     if (started.has(t.key)) return `${t.key} already has a card on the line.`;
     const ws = t.workspaceId ? workspaces.find((w) => w.id === t.workspaceId) ?? null : null;
     const base = ws && ws.id !== c.workspaceId ? setWorkspace(c, ws, recipes) : c;
-    return {
+    const picked: Composer = {
       ...base, ticket: t, title: t.title, packet: { ...base.packet, ticket: ticketItems(t) },
-      launch: { ...base.launch, message: c.msgTouched ? c.launch.message : defaultMessage(t.key, c.launch.mode) },
+      launch: { ...base.launch, message: c.msgTouched ? c.launch.message : defaultMessage(t.key, c.launch.mode, c.kind) },
     };
+    // The ticket says what kind of work it is, unless you already chose.
+    return c.kindTouched ? picked : setKind(picked, kindForTicket(t), t.key, workspaces, recipes, false);
   }
   const id = relatedItem(t).id;
   const has = c.packet.card.some((i) => i.id === id);
@@ -249,12 +342,16 @@ export function pickTicket(c: Composer, t: Ticket, workspaces: Workspace[], star
 /** x on the card's ticket in panel 1: a card without a ticket again. */
 export function dropTicket(c: Composer, nextKey: string): Composer {
   if (!c.ticket) return c;
-  return { ...c, ticket: null, title: '', packet: { ...c.packet, ticket: [] }, launch: { ...c.launch, message: c.msgTouched ? c.launch.message : defaultMessage(nextKey, c.launch.mode) } };
+  const { pr: _pr, prFor: _for, prNotes: _notes, ...rest } = c;
+  return {
+    ...rest, ticket: null, title: '', packet: { ...c.packet, ticket: [] },
+    launch: { ...c.launch, branch: c.launch.branch === 'pr' ? 'current' : c.launch.branch, message: c.msgTouched ? c.launch.message : defaultMessage(nextKey, c.launch.mode, c.kind) },
+  };
 }
 
 /** Switch workspace: its repos replace the workspace layer; what you added to the card stays. */
 export function setWorkspace(c: Composer, ws: Workspace | null, recipes: Recipes = {}): Composer {
-  const packet = { ...c.packet, workspace: workspaceLayer(ws, recipes) };
+  const packet = { ...c.packet, workspace: workspaceLayer(ws, recipes, c.kind) };
   const home = (ws && homeRepo(ws)) ?? includedRepos(packet)[0] ?? '';
   return { ...c, workspaceId: ws?.id ?? null, packet, launch: { ...c.launch, home } };
 }
@@ -338,7 +435,7 @@ export function keepForWorkspace(c: Composer, index: number): { composer: Compos
 
 /** Panel 3's rows: each a choice you change with ← →, or the message you type. */
 export interface GoRow {
-  id: 'where' | 'ws' | 'home' | 'branch' | 'mode' | 'model' | 'msg' | 'deliver';
+  id: 'kind' | 'where' | 'ws' | 'home' | 'branch' | 'mode' | 'model' | 'msg' | 'deliver';
   label: string;
   opts: string[];
   at: number;
@@ -360,18 +457,34 @@ export function goRows(c: Composer, workspaces: Workspace[], key: string, models
   if (c.addTo) return [{ id: 'deliver', label: 'When it reaches Claude', opts: ['With your next message', 'Right now, through the channel (later)'], at: 0, off: [1] }];
   const repos = includedRepos(c.packet);
   const home = homeOf(c.packet, c.launch);
+  const branches = branchOpts(c, key);
   return [
+    { id: 'kind', label: 'Kind of work', opts: CARD_KINDS.map((k) => k.name), at: CARD_KINDS.findIndex((k) => k.id === c.kind) },
     { id: 'where', label: 'Where it runs', opts: ['Terminal tab', 'In the app (later)'], at: 0, off: [1] },
     { id: 'ws', label: 'Workspace', opts: [...workspaces.map((w) => w.name), 'None'], at: Math.max(0, c.workspaceId ? workspaces.findIndex((w) => w.id === c.workspaceId) : workspaces.length) },
     { id: 'home', label: 'Starts in', opts: repos.length ? repos.map(repoName) : ['(no repo)'], at: Math.max(0, repos.findIndex((r) => r === home)) },
-    { id: 'branch', label: 'Branch', opts: [`New: ${branchFor(key, c.title || 'new')}`, 'Current branch', 'New worktree'], at: ['new', 'current', 'worktree'].indexOf(c.launch.branch) },
+    {
+      id: 'branch', label: 'Branch', opts: branches.map((b) => b.name), at: Math.max(0, branches.findIndex((b) => b.id === c.launch.branch)),
+      off: branches.flatMap((b, i) => (b.off ? [i] : [])),
+    },
     { id: 'mode', label: 'Mode', opts: LAUNCH_MODES.map((m) => m.name), at: LAUNCH_MODES.findIndex((m) => m.id === c.launch.mode) },
     { id: 'model', label: 'Model', opts: modelOpts(models), at: c.launch.model ? 1 + CARD_MODELS.findIndex((x) => x.id === c.launch.model) : 0 },
     { id: 'msg', label: 'Opening message', opts: [], at: 0 },
   ];
 }
 
-/** ← → on a panel 3 row. */
+/**
+ * The Branch row's choices. Development makes its own branch; QA and review work on what is
+ * there: the current checkout, or a copy of the repo on the pull request's branch once it is found.
+ */
+export function branchOpts(c: Composer, key: string): { id: BranchChoice; name: string; off?: boolean }[] {
+  if (c.kind === 'build') return [{ id: 'new', name: `New: ${branchFor(key, c.title || 'new')}` }, { id: 'current', name: 'Current branch' }, { id: 'worktree', name: 'New worktree' }];
+  return [
+    { id: 'current', name: 'Current branch' },
+    c.pr ? { id: 'pr', name: `PR #${c.pr.number}’s branch, in a copy` } : { id: 'pr', name: c.prLooking ? 'PR’s branch (looking…)' : 'PR’s branch (none found)', off: true },
+  ];
+}
+
 /** m on the new-card screen: the next model (default → Opus → Sonnet → Haiku → default). */
 export function cycleModel(c: Composer): Composer {
   const at = c.launch.model ? 1 + CARD_MODELS.findIndex((x) => x.id === c.launch.model) : 0;
@@ -393,7 +506,12 @@ export function pickOption(c: Composer, id: GoRow['id'], at: number, workspaces:
   switch (id) {
     case 'ws': return setWorkspace(c, workspaces[at] ?? null, recipes);
     case 'home': { const r = includedRepos(c.packet)[at]; return r ? { ...c, launch: { ...c.launch, home: r } } : c; }
-    case 'branch': return { ...c, launch: { ...c.launch, branch: (['new', 'current', 'worktree'] as const)[at] ?? 'new' } };
+    case 'kind': return setKind(c, CARD_KINDS[at]?.id ?? 'build', key, workspaces, recipes);
+    case 'branch': {
+      const b = branchOpts(c, key)[at];
+      if (!b || b.off) return c;
+      return { ...c, launch: { ...c.launch, branch: b.id, ...(b.id === 'pr' && c.pr ? { home: c.pr.repo } : {}) } };
+    }
     case 'model': {
       const { model: _, ...launch } = c.launch;
       const pick = CARD_MODELS[at - 1]?.id;
@@ -401,7 +519,7 @@ export function pickOption(c: Composer, id: GoRow['id'], at: number, workspaces:
     }
     case 'mode': {
       const mode = LAUNCH_MODES[at]?.id ?? 'plan';
-      return { ...c, launch: { ...c.launch, mode, message: c.msgTouched ? c.launch.message : defaultMessage(key, mode) } };
+      return { ...c, launch: { ...c.launch, mode, message: c.msgTouched ? c.launch.message : defaultMessage(key, mode, c.kind) } };
     }
     default: return c;
   }
@@ -412,5 +530,9 @@ export function draftOf(c: Composer): CardDraft | string {
   const title = (c.ticket?.title ?? c.title).trim();
   if (!title) return 'Give the card a title first, or pick a ticket.';
   if (!includedRepos(c.packet).length) return 'A card needs at least one repo.';
-  return { title, workspaceId: c.workspaceId, packet: c.packet, launch: { ...c.launch, home: homeOf(c.packet, c.launch)! }, ...(c.ticket ? { ticketKey: c.ticket.key } : {}) };
+  if (c.launch.branch === 'pr' && !c.pr) return 'No pull request was found for this ticket: pick Current branch.';
+  return {
+    title, workspaceId: c.workspaceId, packet: c.packet, launch: { ...c.launch, home: homeOf(c.packet, c.launch)! }, ...(c.ticket ? { ticketKey: c.ticket.key } : {}),
+    ...(c.kind !== 'build' ? { kind: c.kind } : {}), ...(c.kind !== 'build' && c.pr ? { pr: c.pr } : {}),
+  };
 }

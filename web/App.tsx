@@ -52,11 +52,14 @@ function Legend() {
   const appRunning = run?.state === 'running' || run?.state === 'up';
   const appUp = run?.state === 'up' && Boolean(run.url);
   const pr = shown?.ship?.pr;
-  const ship = shown && shown.stage !== 'done' && (shown.sessionId || pr) ? (pr && pr.state === 'OPEN' ? 'merge' as const : 'ship' as const) : undefined;
+  const testing = shown?.kind === 'qa' || shown?.kind === 'review';
+  const ship = testing ? (shown.report || shown.live?.lastMessage ? 'report' as const : undefined)
+    : shown && shown.stage !== 'done' && (shown.sessionId || pr) ? (pr && pr.state === 'OPEN' ? 'merge' as const : 'ship' as const) : undefined;
+  const tab = useStore((s) => s.composer?.tab);
   const hasWaiting = Boolean(drawerCard && waiting(drawerCard).length);
   if (modal) return null;
   const items = screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, tab, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings });
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (

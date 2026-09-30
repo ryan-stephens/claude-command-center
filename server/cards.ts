@@ -11,8 +11,8 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  branchFor, CARD_MODELS, cardRepos, defaultMessage, PACKET_KINDS, homeOf, includedRepos, LAUNCH_MODES, laterText, modelFor, packetText, tokens, fmtK, waiting, worktreeFor, wtArg,
-  type BranchChoice, type BootStep, type Card, type CardDraft, type LaterItem, type LaunchMode, type Packet, type PacketItem,
+  BRANCH_NAME, branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, PACKET_KINDS, homeOf, includedRepos, LAUNCH_MODES, laterText, modelFor, packetText, tokens, fmtK, waiting, worktreeFor, wtArg,
+  type BranchChoice, type BootStep, type Card, type CardDraft, type CardKind, type LaterItem, type LaunchMode, type Packet, type PacketItem, type PrTarget,
 } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
 import type { Ticket } from '../shared/tickets.ts';
@@ -51,6 +51,17 @@ function cleanItems(raw: unknown): PacketItem[] {
   return out;
 }
 
+/** The PR a QA or review card looks at, from the page: a real number, git-safe branch names, a web address, one of the card's repos. */
+function cleanPr(raw: unknown, packet: Packet): PrTarget | undefined {
+  const p = (raw ?? {}) as Partial<PrTarget>;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const repo = includedRepos(packet).find((r) => samePath(r, str(p.repo, 400)));
+  if (!Number.isInteger(p.number) || p.number! <= 0 || !repo) return undefined;
+  if (!BRANCH_NAME.test(str(p.source, 200)) || !BRANCH_NAME.test(str(p.target, 200))) throw new Error('The pull request’s branch names don’t look like git branches.');
+  if (!/^https?:\/\/\S+$/.test(str(p.url, 1000))) throw new Error('The pull request has no web address.');
+  return { number: p.number!, title: str(p.title, 300), url: str(p.url, 1000), host: p.host === 'azure' ? 'azure' : 'github', source: p.source!, target: p.target!, repo };
+}
+
 export function cleanDraft(raw: unknown, workspaces: Workspace[]): CardDraft {
   const d = (raw ?? {}) as Partial<CardDraft>;
   const title = str(d.title, 160).trim();
@@ -62,11 +73,13 @@ export function cleanDraft(raw: unknown, workspaces: Workspace[]): CardDraft {
   const home = homeOf(packet, { home: normalizeFolder(l.home) ?? '' });
   if (!home) throw new Error('A card needs at least one repo.');
   const mode: LaunchMode = LAUNCH_MODES.some((m) => m.id === l.mode) ? l.mode! : 'plan';
-  const branch: BranchChoice = l.branch === 'current' || l.branch === 'worktree' ? l.branch : 'new';
+  const kind: CardKind = CARD_KINDS.find((k) => k.id === d.kind)?.id ?? 'build';
+  const pr = kind === 'build' ? undefined : cleanPr(d.pr, packet);
+  const branch: BranchChoice = l.branch === 'current' || l.branch === 'worktree' ? l.branch : l.branch === 'pr' && pr ? 'pr' : l.branch === 'pr' ? 'current' : 'new';
   const model = CARD_MODELS.find((m) => m.id === l.model)?.id;
   const ticketKey = str(d.ticketKey, 60).trim();
   return {
-    title, workspaceId, packet, ...(ticketKey ? { ticketKey } : {}),
+    title, workspaceId, packet, ...(ticketKey ? { ticketKey } : {}), ...(kind !== 'build' ? { kind } : {}), ...(pr ? { pr } : {}),
     launch: { home, mode, branch, ...(model ? { model } : {}), message: str(l.message, 1000).replace(/[\r\n]+/g, ' ').trim() },
   };
 }
@@ -200,13 +213,24 @@ export class CardService {
       ...draft, ...(ticket ? { title: ticket.title, ticket } : {}),
       id: crypto.randomUUID(), key, stage: draft.launch.mode === 'plan' ? 'plan' : 'build', createdAt: Date.now(), boot: [],
     };
-    if (!card.launch.message) card.launch.message = defaultMessage(key, card.launch.mode);
+    if (!card.launch.message) card.launch.message = defaultMessage(key, card.launch.mode, card.kind);
+    // The PR's branch is in the PR's repo, so the card starts there.
+    const start = card.launch.branch === 'pr' && card.pr ? card.pr.repo : home;
     const size = tokens(packetText(card, key, branchFor(key, card.title)));
     this.step(card, `Saved the context packet (${fmtK(size)})`);
 
     const branch = branchFor(key, card.title);
-    card.cwd = home;
-    if (card.launch.branch === 'current') {
+    card.cwd = start;
+    if (card.launch.branch === 'pr' && card.pr) {
+      const { source, target, number } = card.pr;
+      const dir = worktreeFor(start, key);
+      if (existsSync(dir)) throw new Error(`${dir} already exists, so the copy on PR #${number}'s branch can't go there.`);
+      await git(start, ['fetch', 'origin', source, target]).catch((e: Error) => { throw new Error(`Couldn't fetch ${source} from origin in ${repoName(start)}: ${e.message}`); });
+      await git(start, ['worktree', 'add', '--detach', dir, `origin/${source}`]).catch((e: Error) => { throw new Error(`Couldn't make a copy of ${repoName(start)} on ${source}: ${e.message}`); });
+      card.cwd = dir;
+      card.branchName = source;
+      this.step(card, `Fetched PR #${number}’s branch and made a copy ${repoName(dir)} on ${source}`);
+    } else if (card.launch.branch === 'current') {
       card.branchName = await git(home, ['branch', '--show-current']).catch(() => undefined) || undefined;
       this.step(card, card.branchName ? `Stayed on ${card.branchName} in ${repoName(home)}` : `Stayed where ${repoName(home)} is`);
     } else if (card.launch.branch === 'new') {
@@ -224,7 +248,7 @@ export class CardService {
 
     card.model = modelFor(card.launch, this.opts.model, this.opts.userModel?.());
     const token = crypto.randomUUID();
-    const others = includedRepos(card.packet).filter((r) => !samePath(r, home));
+    const others = includedRepos(card.packet).filter((r) => !samePath(r, start));
     const args = ['-w', '0', 'nt', '--title', key, '-d', card.cwd, findClaude(), '--settings', writeHookSettings(),
       '--permission-mode', card.launch.mode, ...((card.launch.model ?? this.opts.model) ? ['--model', card.launch.model ?? this.opts.model!] : []),
       ...others.flatMap((r) => ['--add-dir', r]), '--', wtArg(card.launch.message)];
@@ -349,6 +373,14 @@ ${laterText(card.key, later)}`;
     if (!card || !item) return;
     if (item.sent) throw new Error('That has already gone to Claude.');
     this.save({ ...card, later: card.later!.filter((i) => i !== item) });
+  }
+
+  /** A QA or review card you are finished with (its report copied, or posted by hand) goes to Done. */
+  finish(id: string): void {
+    const card = this.get(id);
+    if (!card) throw new Error('That card is no longer on the line.');
+    if (!card.kind || card.kind === 'build') throw new Error(`${card.key} ships with a pull request: s ships it.`);
+    this.save({ ...card, stage: 'done' });
   }
 
   delete(id: string): void {

@@ -113,6 +113,16 @@ export async function addCardContext(id: string, items: PacketItem[], note: stri
   await request((reqId) => ({ type: 'card.addContext', reqId, id, items, note }));
 }
 
+/** Search the tracker for any ticket, by key or words. */
+export async function searchTickets(q: string): Promise<Extract<ServerMsg, { type: 'tickets.found' }>> {
+  return await request((reqId) => ({ type: 'tickets.search', reqId, q }), 30_000) as Extract<ServerMsg, { type: 'tickets.found' }>;
+}
+
+/** The pull request for a ticket in these repos, or why there is none. */
+export async function findPr(key: string, repos: string[]): Promise<Extract<ServerMsg, { type: 'pr.found' }>> {
+  return await request((reqId) => ({ type: 'card.findPr', reqId, key, repos }), 60_000) as Extract<ServerMsg, { type: 'pr.found' }>;
+}
+
 /** Try it: run the card's recipe. Rejects with the server's reason (no recipe, folder gone). */
 export async function tryCard(id: string): Promise<void> {
   await request((reqId) => ({ type: 'card.try', reqId, id }));

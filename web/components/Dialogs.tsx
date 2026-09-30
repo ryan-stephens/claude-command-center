@@ -7,13 +7,15 @@ import { parseSteps, recipeFor, wsRecipeKey } from '../../shared/recipes.ts';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
 import { keymap, openSession } from '../keys.ts';
-import { deleteCard, runWorkspaceAction } from '../line-keys.ts';
+import { deleteCard, runWorkspaceAction, updateComposer } from '../line-keys.ts';
+import { addFolder } from '../line-model.ts';
 import { get, NO_BINDINGS, sessionById, set, setFilter as showWorkspace, useStore, type RepoTarget, type WorkspaceAction } from '../store.ts';
 import { createSession, saveRecipe, send, setSources } from '../ws.ts';
 import { BindingsDialog } from './BindingsDialog.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
 import { FolderPicker } from './FolderPicker.tsx';
 import { Palette } from './Palette.tsx';
+import { ReportSheet } from './ReportSheet.tsx';
 import { ShipSheet } from './ShipSheet.tsx';
 import { Welcome } from './Welcome.tsx';
 import { close, DialogKeys, DialogTitle, Overlay, useDialogKeys } from './Overlay.tsx';
@@ -42,6 +44,8 @@ export function Dialogs() {
     case 'deleteCard': return <DeleteCardDialog id={modal.id} />;
     case 'recipe': return <RecipeDialog repo={modal.repo} workspaceId={modal.workspaceId} />;
     case 'ship': return <ShipSheet id={modal.id} />;
+    case 'report': return <ReportSheet id={modal.id} />;
+    case 'addFolder': return <AddFolderDialog />;
     case 'pickWorkspace': return <PickWorkspaceDialog then={modal.then} />;
     case 'tickets': return <TicketsDialog />;
   }
@@ -318,6 +322,8 @@ function WorkspaceDialog({ id }: { id: string | null }) {
   const [color, setColor] = useState(existing?.color ?? WORKSPACE_COLORS[workspaces.length % WORKSPACE_COLORS.length]);
   const [repos, setRepos] = useState<string[]>(existing?.repos ?? []);
   const [home, setHome] = useState<string | undefined>(existing?.home);
+  const [notes, setNotes] = useState(existing?.notes ?? '');
+  const [testing, setTesting] = useState(existing?.testing ?? '');
   const [template, setTemplate] = useState('web');
   const [filter, setFilter] = useState('');
   const [index, setIndex] = useState(0);
@@ -342,14 +348,14 @@ function WorkspaceDialog({ id }: { id: string | null }) {
     if (!name.trim()) { setError('Give the workspace a name.'); return; }
     const workspaceId = existing?.id ?? crypto.randomUUID();
     const homePath = home && repos.some((r) => samePath(r, home)) ? home : undefined;
-    send({ type: 'workspace.save', workspace: { id: workspaceId, name: name.trim(), color, repos, home: homePath }, template: existing ? undefined : template });
+    send({ type: 'workspace.save', workspace: { id: workspaceId, name: name.trim(), color, repos, home: homePath, notes, testing }, template: existing ? undefined : template });
     showWorkspace(workspaceId);
     set({ modal: null });
   }
 
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); close(); }
-    else if (e.key === 'Enter' && !(e.target instanceof HTMLElement && e.target.dataset.list)) { e.preventDefault(); save(); }
+    else if (e.key === 'Enter' && (e.ctrlKey || !(e.target instanceof HTMLTextAreaElement)) && !(e.target instanceof HTMLElement && e.target.dataset.list)) { e.preventDefault(); save(); }
   };
 
   const listKey = (e: ReactKeyboardEvent) => {
@@ -437,6 +443,19 @@ function WorkspaceDialog({ id }: { id: string | null }) {
           )}
         </div>
 
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <label className="grid gap-1.5">
+            <span className="eyebrow">Notes for Claude · every card</span>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} className="field resize-y text-[13.5px] leading-snug"
+              placeholder="e.g. The UI proxies to your Okteto namespace. Run okteto up in the API repo first." />
+          </label>
+          <label className="grid gap-1.5">
+            <span className="eyebrow">How this team tests · QA cards</span>
+            <textarea value={testing} onChange={(e) => setTesting(e.target.value)} rows={4} className="field resize-y text-[13.5px] leading-snug"
+              placeholder="e.g. Test data comes from our scenario tool (npm start in its repo): make one in the state the ticket needs, then check it in the admin." />
+          </label>
+        </div>
+
         {!existing && (
           <div className="mt-5">
             <span className="eyebrow mb-1.5 block">Start with these workflows (the number-pad keys)</span>
@@ -453,11 +472,30 @@ function WorkspaceDialog({ id }: { id: string | null }) {
 
         {error && <p className="mt-3 text-sm text-bad">{error}</p>}
         <div className="mt-5 flex items-center gap-3">
-          <DialogKeys items={[['Tab', 'next part'], ['↑ ↓', 'choose repo'], ['Space', 'pick'], ['H', 'home repo']]} />
+          <DialogKeys items={[['Tab', 'next part'], ['↑ ↓', 'choose repo'], ['Space', 'pick'], ['H', 'home repo'], ['Ctrl Enter', 'save from a note']]} />
           {existing && <button className="btn btn-ghost ml-auto" onClick={() => exportWorkspace(existing.id)} title="Save this workspace and its workflows as a file to share (Shift+E on the Ticket Line)"><Icon name="file" size={16} />Export</button>}
           <button className={`btn btn-primary ${existing ? '' : 'ml-auto'}`} onClick={save}>{existing ? 'Save' : 'Create workspace'}<Key k="Enter" size="sm" tone="ghost" /></button>
         </div>
       </div>
+    </Overlay>
+  );
+}
+
+/** The new-card screen's Folders tab: any folder on disk, added to the card like an extra repo (--add-dir). */
+function AddFolderDialog() {
+  const add = async (path: string) => {
+    const c = get().composer;
+    if (!c) { close(); return; }
+    const r = addFolder(c, path);
+    if (typeof r === 'string') throw new Error(r);
+    updateComposer(() => ({ ...r, tab: 'folders', pane: 'src' }));
+    close();
+  };
+  return (
+    <Overlay label="Add a folder" wide>
+      <DialogTitle>Add a folder as context</DialogTitle>
+      <p className="mb-3 text-sm text-sub">Any folder, git repo or not: specs, docs, a tool’s folder. Claude gets it with --add-dir, so it can read and edit what is inside.</p>
+      <FolderPicker useLabel="Add this folder" onUse={add} onEscape={close} />
     </Overlay>
   );
 }

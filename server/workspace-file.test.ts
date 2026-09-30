@@ -38,3 +38,13 @@ test('import rejects files that are not workspaces, and cleans odd values', () =
   const r = workspaceFromFile({ kind: 'cc-control.workspace', name: 'X', color: 'neon', repos: [{ name: 42 }, null] }, []);
   assert.deepEqual(r.workspace, { name: 'X', color: 'blue', repos: [], home: undefined });
 });
+
+test('a workspace’s notes and how the team tests travel in the file, bounded on import', () => {
+  const ws: Workspace = { id: 'w', name: 'Team', color: 'blue', repos: [], notes: 'Proxy to Okteto.', testing: 'Use the scenario tool.' };
+  const file = workspaceToFile(ws, null);
+  assert.equal(file.notes, 'Proxy to Okteto.');
+  assert.equal(file.testing, 'Use the scenario tool.');
+  const back = workspaceFromFile({ ...file, testing: 'x'.repeat(9000), notes: 42 }, []);
+  assert.equal(back.workspace.testing!.length, 8000);
+  assert.equal(back.workspace.notes, undefined);
+});

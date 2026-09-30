@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Card } from '../shared/cards.ts';
 import type { CardRun, RunRecipe } from '../shared/recipes.ts';
-import type { Ticket, TicketProject, TicketSources } from '../shared/tickets.ts';
+import type { InboxView, Ticket, TicketProject, TicketSources } from '../shared/tickets.ts';
 import type { Command, CommandGroup, ModelChoice, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, Todo, TranscriptItem, Workspace } from '../shared/protocol.ts';
 import { loadFolds, saveFolds, toggled, type FoldKey, type Folds } from './folds.ts';
 import type { QaState } from './questions.ts';
@@ -38,6 +38,10 @@ export type Modal =
   | { kind: 'recipe'; repo: string; workspaceId?: string }
   /** Ship a card (s), or merge its PR once it has one. */
   | { kind: 'ship'; id: string }
+  /** A QA or review card's report (s): copy it, or finish the card. */
+  | { kind: 'report'; id: string }
+  /** The new-card screen's Folders tab: pick any folder on disk to add as context. */
+  | { kind: 'addFolder' }
   /** Where tickets come from, and which workspace each project goes to. */
   | { kind: 'tickets' }
   /** "All" is showing: which workspace a workspace key (+ − E ⇧E ⇧Delete) is for. */
@@ -94,7 +98,9 @@ interface State {
    * The board: the focused card, the card open in the drawer and its tab, the workspace shown, and
    * the text filter (/).
    */
-  line: { focus: string | null; drawer: string | null; tab: 'over' | 'ctx' | 'tx'; filter: LineFilter; q: string; searching: boolean };
+  line: { focus: string | null; drawer: string | null; tab: 'over' | 'ctx' | 'tx'; filter: LineFilter; q: string; searching: boolean; /** The Inbox's view (v): yours, or ready for QA. */ view: InboxView };
+  /** What the tracker's search found for the new-card screen's search box (other people's tickets too). */
+  found: Found;
   /** The new-card screen, while it is open. */
   composer: Composer | null;
   openId: string | null;
@@ -130,6 +136,11 @@ interface State {
 const theme = loadTheme();
 applyTheme(theme);
 
+/** The search box's results: for which text, what came back, whether it is still asking, and why it couldn't. */
+export interface Found { q: string; tickets: Ticket[]; looking: boolean; problem?: string }
+/** Stable, so a selector returning it doesn't re-render forever. */
+export const NO_FOUND: Found = { q: '', tickets: [], looking: false };
+
 export const useStore = create<State>(() => ({
   connected: false,
   sessions: [],
@@ -158,7 +169,8 @@ export const useStore = create<State>(() => ({
   runs: {},
   ticketProjects: [],
   ticketSources: null,
-  line: { focus: null, drawer: null, tab: 'over', filter: loadFilter(), q: '', searching: false },
+  line: { focus: null, drawer: null, tab: 'over', filter: loadFilter(), q: '', searching: false, view: loadView() },
+  found: NO_FOUND,
   composer: null,
   openId: null,
   zone: 'composer',
@@ -229,6 +241,16 @@ export function setFilter(filter: LineFilter): void {
 
 function loadFilter(): LineFilter {
   try { return localStorage.getItem('cc-control.lineFilter') || 'all'; } catch { return 'all'; }
+}
+
+/** v on the board: the Inbox shows your tickets or the ones ready for QA; remembered per browser. */
+export function setInboxView(view: InboxView): void {
+  set({ line: { ...get().line, view } });
+  try { localStorage.setItem('cc-control.inboxView', view); } catch { /* ignore */ }
+}
+
+function loadView(): InboxView {
+  try { return localStorage.getItem('cc-control.inboxView') === 'qa' ? 'qa' : 'mine'; } catch { return 'mine'; }
 }
 
 /** The session that takes the session keys: the one open full screen. */

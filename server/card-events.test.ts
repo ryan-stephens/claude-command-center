@@ -154,3 +154,20 @@ test('a helper still working in parallel doesn’t hide a prompt another helper 
   assert.equal(after.live!.phase, 'working', 'once it runs, it was allowed');
   assert.equal(after.stage, 'plan');
 });
+
+test('a QA or review card ends with its report: the card moves to Ship with the result; a development card never takes one', () => {
+  const msg = 'All done.\n\n# QA report: SHOP-149\nResult: **Failed**\n\n| # | Check | Result |\n|---|---|---|\n| 1 | Balance shows | pass |';
+  const qa = applyEvent(card({ kind: 'qa', stage: 'build', files: ['D:/r/notes.md'] }), 'Stop', { last_assistant_message: msg }, 5);
+  assert.equal(qa.stage, 'ship', 'not Try it, though a file changed');
+  assert.equal(qa.report!.result, 'Failed');
+  assert.match(qa.report!.text, /^# QA report: SHOP-149/);
+  assert.match(qa.live!.text, /QA report ready: Failed/);
+  const review = applyEvent(card({ kind: 'review', stage: 'plan' }), 'Stop', { last_assistant_message: '## Code review: SHOP-162\nVerdict: Changes requested\n- a.ts:3 blocking' }, 5);
+  assert.equal(review.stage, 'ship');
+  assert.equal(review.report!.result, 'Changes requested');
+  const midway = applyEvent(card({ kind: 'qa', stage: 'build' }), 'Stop', { last_assistant_message: 'Step 2: open the checkout. What do you see?' }, 5);
+  assert.equal(midway.report, undefined);
+  assert.equal(midway.stage, 'needs', 'a walkthrough question waits on you');
+  const build = applyEvent(card({ stage: 'build' }), 'Stop', { last_assistant_message: msg }, 5);
+  assert.equal(build.report, undefined);
+});

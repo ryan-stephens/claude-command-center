@@ -7,14 +7,16 @@
 // Jira Data Center / Server (any other site, or CC_CONTROL_JIRA_KIND=server): CC_CONTROL_JIRA_SITE
 //   (https://jira.company.local, with any context path), CC_CONTROL_JIRA_TOKEN (a personal access
 //   token, sent as Bearer); or CC_CONTROL_JIRA_EMAIL (the username) with a password in the token.
-// Both: optional CC_CONTROL_JIRA_JQL, and CC_CONTROL_JIRA_AC_FIELD (customfield_12345) when the
-//   acceptance criteria live in their own field rather than in the description.
+// Both: optional CC_CONTROL_JIRA_JQL (the Inbox's "Mine"), CC_CONTROL_JIRA_QA_JQL (its "Ready for
+//   QA"; by default that status in the projects your own tickets are in, `off` for none), and
+//   CC_CONTROL_JIRA_AC_FIELD (customfield_12345) when the acceptance criteria live in their own
+//   field rather than in the description. search() finds any ticket by key or words.
 // Trello: CC_CONTROL_TRELLO_KEY, CC_CONTROL_TRELLO_TOKEN, CC_CONTROL_TRELLO_BOARDS (board ids, commas).
 //
 // fromJira / fromTrello turn each API's JSON into a Ticket and are tested against recorded shapes;
 // the HTTP calls themselves haven't met a live site yet (PLAN §31).
 
-import type { Ticket, TicketComment, TicketLink, TicketProject, TicketSources, SourceState } from '../shared/tickets.ts';
+import type { InboxView, Ticket, TicketComment, TicketLink, TicketProject, TicketSources, SourceState } from '../shared/tickets.ts';
 import type { Store } from './store.ts';
 
 // ---- Jira ---------------------------------------------------------------------------------------
@@ -107,6 +109,7 @@ interface JiraIssue {
     description?: unknown;
     status?: { name?: string; statusCategory?: { key?: string } };
     project?: { key?: string; name?: string };
+    assignee?: { displayName?: string } | null;
     updated?: string;
     comment?: { comments?: { author?: { displayName?: string }; body?: unknown; created?: string }[] };
     attachment?: { filename?: string; content?: string }[];
@@ -148,16 +151,46 @@ export function fromJira(issue: JiraIssue, site?: string, acField?: string): Tic
     links,
     status: f.status?.name ?? '',
     done: f.status?.statusCategory?.key === 'done',
+    ...(f.assignee?.displayName ? { assignee: f.assignee.displayName } : {}),
     ...(site ? { url: `${site.replace(/\/+$/, '')}/browse/${issue.key}` } : {}),
     updatedAt: Date.parse(f.updated ?? '') || 0,
   };
 }
 
-const JIRA_FIELDS = ['summary', 'description', 'status', 'project', 'updated', 'comment', 'attachment', 'issuelinks'];
+const JIRA_FIELDS = ['summary', 'description', 'status', 'project', 'assignee', 'updated', 'comment', 'attachment', 'issuelinks'];
 const DEFAULT_JQL = 'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC';
+/** The status the Inbox's "Ready for QA" looks for (VU's workflow: To Do, Blocked, In Progress, Ready for PO, Ready for QA, Done). */
+const QA_STATUS = 'Ready for QA';
 
-/** Jira settings from the environment, or why they aren't enough. */
-export interface JiraConfig { site: string; kind: 'cloud' | 'server'; email?: string; token: string; jql: string; acField?: string }
+/** Jira settings from the environment, or why they aren't enough. `qaJql`: unset uses the default; 'off' turns the view off. */
+export interface JiraConfig { site: string; kind: 'cloud' | 'server'; email?: string; token: string; jql: string; qaJql?: string; acField?: string }
+
+/** A Jira project key, safe to put in JQL. */
+const PROJECT_KEY = /^[A-Z][A-Z0-9_]{0,30}$/;
+
+/**
+ * The "Ready for QA" view's JQL: CC_CONTROL_JIRA_QA_JQL when set, else that status in the projects
+ * your own tickets come from (and any mapped to a workspace), so it needs no setting at all.
+ * Undefined when it is off or there is no project to look in yet.
+ */
+export function qaJql(c: Pick<JiraConfig, 'qaJql'>, projects: string[]): string | undefined {
+  if (c.qaJql?.trim().toLowerCase() === 'off') return undefined;
+  if (c.qaJql?.trim()) return c.qaJql.trim();
+  const keys = [...new Set(projects.filter((p) => PROJECT_KEY.test(p)))].sort();
+  return keys.length ? `status = "${QA_STATUS}" AND project in (${keys.map((k) => `"${k}"`).join(', ')}) ORDER BY updated DESC` : undefined;
+}
+
+/**
+ * What a search box's text means in JQL: a key finds that ticket; words search the text of
+ * tickets that aren't done. Quotes and backslashes are escaped (JQL strings, then text search).
+ */
+export function searchJql(q: string): string | undefined {
+  const t = q.trim();
+  if (t.length < 2) return undefined;
+  if (/^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(t)) return `key = "${t.toUpperCase()}"`;
+  const words = t.replace(/[\\"]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
+  return words ? `text ~ "${words}" AND statusCategory != Done ORDER BY updated DESC` : undefined;
+}
 
 export function jiraConfig(e: NodeJS.ProcessEnv): JiraConfig | undefined {
   const site = e.CC_CONTROL_JIRA_SITE?.trim().replace(/\/+$/, '');
@@ -167,18 +200,22 @@ export function jiraConfig(e: NodeJS.ProcessEnv): JiraConfig | undefined {
     : /\.atlassian\.net$/i.test(new URL(site).hostname) ? 'cloud' : 'server';
   const email = e.CC_CONTROL_JIRA_EMAIL?.trim() || undefined;
   if (kind === 'cloud' && !email) return undefined;
-  return { site, kind, ...(email ? { email } : {}), token, jql: e.CC_CONTROL_JIRA_JQL || DEFAULT_JQL, ...(e.CC_CONTROL_JIRA_AC_FIELD ? { acField: e.CC_CONTROL_JIRA_AC_FIELD.trim() } : {}) };
+  return {
+    site, kind, ...(email ? { email } : {}), token, jql: e.CC_CONTROL_JIRA_JQL || DEFAULT_JQL,
+    ...(e.CC_CONTROL_JIRA_QA_JQL ? { qaJql: e.CC_CONTROL_JIRA_QA_JQL } : {}),
+    ...(e.CC_CONTROL_JIRA_AC_FIELD ? { acField: e.CC_CONTROL_JIRA_AC_FIELD.trim() } : {}),
+  };
 }
 
 /** The search request: Cloud's /rest/api/3/search/jql with email + API token; Data Center's /rest/api/2/search with a PAT (Bearer) or username + password. */
-export function jiraSearch(c: JiraConfig): { url: string; init: RequestInit } {
+export function jiraSearch(c: JiraConfig, jql = c.jql, max = 50): { url: string; init: RequestInit } {
   const auth = c.kind === 'server' && !c.email ? `Bearer ${c.token}` : `Basic ${Buffer.from(`${c.email}:${c.token}`).toString('base64')}`;
   return {
     url: `${c.site}${c.kind === 'cloud' ? '/rest/api/3/search/jql' : '/rest/api/2/search'}`,
     init: {
       method: 'POST',
       headers: { Authorization: auth, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jql: c.jql, fields: [...JIRA_FIELDS, ...(c.acField ? [c.acField] : [])], maxResults: 50 }),
+      body: JSON.stringify({ jql, fields: [...JIRA_FIELDS, ...(c.acField ? [c.acField] : [])], maxResults: max }),
     },
   };
 }
@@ -188,12 +225,12 @@ export function jiraProblem(status: number, c: JiraConfig): string {
   if (status === 401) return c.kind === 'cloud' ? 'check CC_CONTROL_JIRA_EMAIL and the API token' : 'check the personal access token (Profile → Personal Access Tokens in Jira)';
   if (status === 403) return 'the token can’t search (or CAPTCHA is on for the account: sign in once in the browser)';
   if (status === 404) return c.kind === 'server' ? 'check the site address, including any context path such as /jira' : 'check the site address';
-  if (status === 400) return 'check CC_CONTROL_JIRA_JQL';
+  if (status === 400) return 'check CC_CONTROL_JIRA_JQL and CC_CONTROL_JIRA_QA_JQL';
   return '';
 }
 
-export async function fetchJira(c: JiraConfig): Promise<Ticket[]> {
-  const { url, init } = jiraSearch(c);
+export async function fetchJira(c: JiraConfig, jql = c.jql, max = 50): Promise<Ticket[]> {
+  const { url, init } = jiraSearch(c, jql, max);
   let res: Response;
   try {
     res = await fetch(url, { ...init, signal: AbortSignal.timeout(20_000) });
@@ -307,7 +344,36 @@ export function demoTickets(now = Date.now()): Ticket[] {
       description: 'Let people check out without an account.', acceptance: ['Guests can pay without signing up'] }),
     t({ source: 'trello', project: 'demo-trello-web', projectName: 'Web board', key: 'WB-12', title: 'Footer links 404 on /about', status: 'Doing', updatedAt: now - 6 * 3600_000,
       description: 'Three footer links on /about point to old paths.', acceptance: ['Every footer link returns 200'] }),
+    // Someone else's, waiting for QA: the Inbox's "Ready for QA" view.
+    t({ ...shop, key: 'SHOP-149', title: 'Gift card balance shows at checkout', status: 'Ready for QA', assignee: 'Priya', views: ['qa'], updatedAt: now - 5 * 3600_000,
+      description: 'Shoppers paying with a gift card can’t see what is left on it. Show the balance under the gift card field at checkout, and what remains after this order.',
+      acceptance: ['The balance shows once a valid gift card is entered', 'It shows what remains after this order', 'An expired card says so instead of showing a balance'] }),
+    t({ ...pay, key: 'PAY-84', title: 'Refund emails include the order number', status: 'Ready for QA', assignee: 'Dana', views: ['qa'], updatedAt: now - 2 * DAY,
+      description: 'Customers reply to refund emails asking which order it was. Put the order number in the subject and the first line.',
+      acceptance: ['The subject has the order number', 'The first line names the order and the amount'] }),
   ];
+}
+
+/** Tickets only a search finds: other people's work, in progress or in review (the demo's stand-in for the rest of Jira). */
+export function demoOthers(now = Date.now()): Ticket[] {
+  const base = { source: 'jira' as const, comments: [], attachments: [], links: [], done: false, demo: true };
+  return [
+    { ...base, project: 'SHOP', projectName: 'Storefront', key: 'SHOP-162', title: 'Wishlist heart doesn’t stay filled after reload', status: 'In Progress', assignee: 'Sam', updatedAt: now - 3 * 3600_000,
+      description: 'Saving an item to the wishlist fills the heart, but after a reload it shows empty again although the item is saved.',
+      acceptance: ['A saved item shows a filled heart after reload', 'Removing it empties the heart everywhere'] },
+    { ...base, project: 'PAY', projectName: 'Payments', key: 'PAY-93', title: 'Retry failed payouts once after an hour', status: 'In Progress', assignee: 'Dana', updatedAt: now - DAY,
+      description: 'Payouts that fail on a timeout should be retried once, an hour later, before anyone is paged.',
+      acceptance: ['A timed-out payout is retried once after an hour', 'A second failure pages the on-call person'] },
+  ];
+}
+
+/** Does a ticket match a search's text: its key, or every word in its key, title or description? */
+export function ticketMatches(t: Ticket, q: string): boolean {
+  const s = q.trim().toLowerCase();
+  if (!s) return false;
+  if (t.key.toLowerCase() === s) return true;
+  const hay = `${t.key} ${t.title} ${t.description}`.toLowerCase();
+  return s.split(/\s+/).every((w) => hay.includes(w));
 }
 
 // ---- The service ---------------------------------------------------------------------------------
@@ -319,6 +385,8 @@ export class TicketService {
   private changed: () => void;
   private env: NodeJS.ProcessEnv;
   private real: Ticket[] = [];
+  /** Tickets found by searches, so a card can start from one; kept to the latest few hundred. */
+  private found = new Map<string, Ticket>();
   private jira: SourceState = { state: 'off' };
   private trello: SourceState = { state: 'off' };
   private at: number | undefined;
@@ -358,13 +426,68 @@ export class TicketService {
       }
     };
     [this.jira, this.trello] = await Promise.all([
-      run(Boolean(jiraConfig(e)), () => fetchJira(jiraConfig(e)!)),
+      run(Boolean(jiraConfig(e)), () => this.fetchJiraViews(jiraConfig(e)!)),
       run(Boolean(e.CC_CONTROL_TRELLO_KEY && e.CC_CONTROL_TRELLO_TOKEN && e.CC_CONTROL_TRELLO_BOARDS),
         () => fetchTrello(e.CC_CONTROL_TRELLO_KEY!, e.CC_CONTROL_TRELLO_TOKEN!, e.CC_CONTROL_TRELLO_BOARDS!.split(',').map((s) => s.trim()).filter(Boolean))),
     ]);
     this.real = got;
     this.at = Date.now();
     this.changed();
+  }
+
+  /**
+   * Your tickets, then the ones waiting for QA in the same projects (and any mapped to a
+   * workspace), merged by key with the views each came through. A failing QA view doesn't lose
+   * your own tickets.
+   */
+  private async fetchJiraViews(c: JiraConfig): Promise<Ticket[]> {
+    const mine = (await fetchJira(c)).map((t) => ({ ...t, views: ['mine'] as InboxView[] }));
+    const jql = qaJql(c, [...mine.map((t) => t.project), ...Object.keys(this.mapping())]);
+    if (!jql) return mine;
+    const qa = await fetchJira(c, jql).catch(() => [] as Ticket[]);
+    const by = new Map(mine.map((t) => [t.key, t]));
+    for (const t of qa) {
+      const had = by.get(t.key);
+      by.set(t.key, had ? { ...had, views: [...(had.views ?? []), 'qa'] } : { ...t, views: ['qa'] });
+    }
+    return [...by.values()];
+  }
+
+  /**
+   * Any ticket, by key or words: Jira when it is connected, the demo set when it is on. What is
+   * already fetched comes back as it is; the rest is marked `found` and kept, so a card can start
+   * from it. Read-only, like the rest.
+   */
+  async search(q: string, workspaceIds: string[]): Promise<{ tickets: Ticket[]; problem?: string }> {
+    const known = this.list(workspaceIds);
+    const got: Ticket[] = [];
+    let problem: string | undefined;
+    const c = jiraConfig(this.env);
+    const jql = searchJql(q);
+    if (c && jql) {
+      try {
+        got.push(...await fetchJira(c, jql, 20));
+      } catch (err) {
+        // A key that doesn't exist is a 400 from Jira: nothing found, not a failure.
+        if (!/Jira said 400/.test((err as Error).message) || !/^key =/.test(jql)) problem = (err as Error).message;
+      }
+    } else if (!c && !this.demoOn()) {
+      problem = 'Searching needs Jira: set CC_CONTROL_JIRA_SITE and a token in config.env (or turn on demo tickets with Shift+T).';
+    }
+    if (this.demoOn()) got.push(...[...demoTickets(), ...demoOthers()].filter((t) => ticketMatches(t, q)));
+    const m = this.mapping();
+    const out: Ticket[] = [];
+    for (const t of got) {
+      if (out.some((x) => x.key === t.key)) continue;
+      const have = known.find((x) => x.key === t.key);
+      if (have) { out.push(have); continue; }
+      const f: Ticket = { ...t, found: true, workspaceId: m[t.project] && workspaceIds.includes(m[t.project]) ? m[t.project] : null };
+      this.found.delete(t.key);
+      this.found.set(t.key, f);
+      out.push(f);
+    }
+    while (this.found.size > 300) this.found.delete(this.found.keys().next().value!);
+    return { tickets: out, ...(problem ? { problem } : {}) };
   }
 
   demoOn(): boolean {
@@ -411,8 +534,12 @@ export class TicketService {
     this.changed();
   }
 
+  /** A ticket by key: fetched for the Inbox, or found by a search. */
   get(key: string, workspaceIds: string[]): Ticket | undefined {
-    return this.list(workspaceIds).find((t) => t.key === key);
+    const f = this.found.get(key);
+    const m = this.mapping();
+    return this.list(workspaceIds).find((t) => t.key === key)
+      ?? (f && { ...f, workspaceId: m[f.project] && workspaceIds.includes(m[f.project]) ? m[f.project] : null });
   }
 
   projects(workspaceIds: string[]): TicketProject[] {

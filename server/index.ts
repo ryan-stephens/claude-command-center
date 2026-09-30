@@ -15,6 +15,7 @@ import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, cleanDraft, userModel, writeHookSettings } from './cards.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
 import { ShipService } from './ship.ts';
+import { findPrIn } from './hosts.ts';
 import { CommandService } from './commands.ts';
 import { TicketService } from './tickets.ts';
 import { PermissionBroker } from './permission-broker.ts';
@@ -155,7 +156,10 @@ function cleanWorkspace(raw: unknown): Workspace {
   }
   repos = repos.slice(0, 50);
   const home = typeof w.home === 'string' && repos.some((r) => samePath(r, w.home!)) ? w.home : undefined;
-  return { id, name, color, repos, home };
+  const text = (v: unknown) => (typeof v === 'string' ? v.replace(/\r\n/g, '\n').trim().slice(0, 8000) : '');
+  const notes = text(w.notes);
+  const testing = text(w.testing);
+  return { id, name, color, repos, home, ...(notes ? { notes } : {}), ...(testing ? { testing } : {}) };
 }
 
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -467,6 +471,24 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     case 'tickets.refresh':
       await tickets.refresh();
+      return;
+    case 'tickets.search': {
+      const q = String(msg.q ?? '').slice(0, 200);
+      const r = await tickets.search(q, store.loadWorkspaces().map((w) => w.id));
+      send(ws, { type: 'tickets.found', reqId: msg.reqId, q, tickets: r.tickets, ...(r.problem ? { problem: r.problem } : {}) });
+      return;
+    }
+    case 'card.findPr': {
+      const key = String(msg.key ?? '').slice(0, 60);
+      if (!/^[\w-]+$/.test(key)) throw new Error('No ticket key to look for.');
+      // Only real repo folders: each is asked for its remote with git.
+      const repos = (Array.isArray(msg.repos) ? msg.repos : []).slice(0, 10).map((r) => normalizeFolder(r)).filter((r): r is string => Boolean(r) && isDir(r!));
+      const r = await findPrIn(repos, key);
+      send(ws, { type: 'pr.found', reqId: msg.reqId, ...(r.pr ? { pr: r.pr } : {}), notes: r.notes });
+      return;
+    }
+    case 'card.done':
+      cards.finish(String(msg.id));
       return;
     case 'workspace.import': {
       const r = workspaceFromFile(msg.file, (library(true) as Extract<ServerMsg, { type: 'library' }>).repos);

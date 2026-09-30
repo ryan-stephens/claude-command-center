@@ -2,7 +2,7 @@
 // its stage on the board, its to-do list and the files it changed. Pure (tested in
 // card-events.test.ts). Stages the hooks never leave: Ship and Done belong to you.
 
-import { cardRepos, type Card, type CardLive, type Stage } from '../shared/cards.ts';
+import { cardRepos, reportIn, type Card, type CardLive, type CardReport, type Stage } from '../shared/cards.ts';
 import { isInside } from '../shared/workspaces.ts';
 import { applyTodos, NO_TODOS } from './todos.ts';
 
@@ -79,6 +79,8 @@ export function applyEvent(card: Card, event: string, input: HookInput, now: num
   let stage = card.stage;
   let files = card.files ?? [];
   let round = card.round ?? 1;
+  let report: CardReport | undefined = card.report;
+  const testing = card.kind === 'qa' || card.kind === 'review';
   let todoState = { todos: card.todos ?? NO_TODOS.todos, creating: card.creating ?? NO_TODOS.creating };
   const move = (to: Stage) => { if (!locked) stage = to; };
   const tool = s(input.tool_name);
@@ -147,11 +149,17 @@ export function applyEvent(card: Card, event: string, input: HookInput, now: num
       // Its turn ended on a question: that waits on you as much as a permission prompt does. Except
       // after changes, where "Anything else?" is manners and the change is ready to try.
       const asking = (q: string) => { live = { ...live, phase: 'needs', text: `Asking: ${firstLine(q)}`, ask: { kind: 'question', tool: 'reply', detail: q } }; };
-      if (planning) {
+      // A QA or review card ends with its report: the card moves to Ship, where s copies it.
+      const found = testing ? reportIn(said, now) : undefined;
+      if (found) {
+        report = found;
+        live.text = `${card.kind === 'qa' ? 'QA report' : 'Review'} ready${found.result ? `: ${found.result}` : ''}. s copies it`;
+        if (stage !== 'done') stage = 'ship';
+      } else if (planning) {
         if (question) asking(question);
         else live.text = 'Waiting for you in the tab';
         move('plan');
-      } else if (files.length && (stage === 'build' || stage === 'needs')) { live.text = round > 1 ? `Round ${round} done. Ready to try` : 'Done. Ready to try'; move('try'); }
+      } else if (!testing && files.length && (stage === 'build' || stage === 'needs')) { live.text = round > 1 ? `Round ${round} done. Ready to try` : 'Done. Ready to try'; move('try'); }
       else if (question) { asking(question); move('needs'); }
       else { live.text = said ? `Replied: ${firstLine(said, 80)}` : 'Waiting for you in the tab'; if (stage === 'needs') move(workingStage(mode)); }
       break;
@@ -162,5 +170,5 @@ export function applyEvent(card: Card, event: string, input: HookInput, now: num
     default:
       return card;
   }
-  return { ...card, stage, live, files, round, todos: todoState.todos, creating: todoState.creating };
+  return { ...card, stage, live, files, round, todos: todoState.todos, creating: todoState.creating, ...(report ? { report } : {}) };
 }

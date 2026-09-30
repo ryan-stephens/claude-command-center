@@ -97,8 +97,10 @@ export interface LineLegendInput {
   canTry?: boolean;
   appRunning?: boolean;
   appUp?: boolean;
-  /** A card (focused or open) can ship (s), or has an open PR (s merges it). */
-  ship?: 'ship' | 'merge';
+  /** A card (focused or open) can ship (s), or has an open PR (s merges it); a QA or review card shows its report. */
+  ship?: 'ship' | 'merge' | 'report';
+  /** New-card screen, panel 1: which tab (Folders has its own keys). */
+  tab?: 'tickets' | 'repos' | 'folders';
   /** Drawer: the card can take more context (c), and has some still waiting (x takes it back). */
   canAdd?: boolean;
   hasWaiting?: boolean;
@@ -123,7 +125,7 @@ function tryKeys(x: LineLegendInput): LegendItem[] {
   return [
     ...(x.appRunning ? [{ keys: ['t'], label: 'Stop the app' }] : x.canTry ? [{ keys: ['t'], label: 'Try it', tone: 'acc' as const }] : []),
     ...(x.appUp ? [{ keys: ['o'], label: 'Open the app' }] : []),
-    ...(x.ship ? [{ keys: ['s'], label: x.ship === 'merge' ? 'Merge' : 'Ship' }] : []),
+    ...(x.ship ? [{ keys: ['s'], label: x.ship === 'merge' ? 'Merge' : x.ship === 'report' ? 'Report' : 'Ship' }] : []),
   ];
 }
 
@@ -133,7 +135,8 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     return [
       { keys: ['Tab'], label: 'Next panel' },
       ...(x.pane === 'src'
-        ? [{ keys: ['←', '→'], label: 'Tickets / Repos' }, { keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Add or remove' }, { keys: ['/'], label: 'Search' }]
+        ? [{ keys: ['←', '→'], label: 'Tickets / Repos / Folders' }, { keys: ['↑', '↓'], label: 'Move' },
+          ...(x.tab === 'folders' ? [{ keys: ['Enter'], label: 'Add a folder' }, { keys: ['Space'], label: 'Take one out' }] : [{ keys: ['Space'], label: 'Add or remove' }, { keys: ['/'], label: 'Search' }])]
         : x.pane === 'pkt'
           ? (x.preview ? [] : [
             { keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Include or leave out' }, { keys: ['x'], label: 'Remove' },
@@ -141,7 +144,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
             { keys: ['e'], label: 'Your note' },
           ])
           : [{ keys: ['↑', '↓'], label: 'Option' }, { keys: ['←', '→'], label: 'Change' }]),
-      ...(x.addingTo ? [] : [{ keys: ['m'], label: 'Model' }]),
+      ...(x.addingTo ? [] : [{ keys: ['k'], label: 'Kind' }, { keys: ['m'], label: 'Model' }]),
       { keys: ['p'], label: x.preview ? 'Back to the list' : 'Preview' },
       { keys: ['Ctrl Enter'], label: x.addingTo ? `Add to ${x.addingTo}` : 'Start work', tone: 'acc' },
       { keys: ['Esc'], label: 'Cancel' },
@@ -167,6 +170,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     ...(x.hasSession ? [full] : []),
     { keys: ['c'], label: 'New card', tone: 'acc' },
     { keys: ['⇧T'], label: 'Tickets' },
+    { keys: ['v'], label: 'Inbox: mine / QA' },
     { keys: ['1–9', '0'], label: 'Workspace / all' },
     { keys: ['/'], label: 'Filter' },
     ...(x.filtered ? [{ keys: ['Esc'], label: 'Clear filter' }] : []),

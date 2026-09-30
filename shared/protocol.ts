@@ -1,6 +1,6 @@
 // WebSocket protocol shared by server and web. Plain types only (erasable TS, runs under Node type stripping).
 
-import type { Card, CardDraft, PacketItem } from './cards.ts';
+import type { Card, CardDraft, PacketItem, PrTarget } from './cards.ts';
 import type { CardRun, RunRecipe } from './recipes.ts';
 import type { ShipPlan, ShipRequest } from './ship.ts';
 import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
@@ -10,7 +10,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  * says `hello` first; a page that hears anything else first is talking to a server from before
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
-export const PROTOCOL = 9;
+export const PROTOCOL = 10;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -103,6 +103,10 @@ export interface Workspace {
   repos: string[];
   /** Where new sessions start; defaults to the first repo. */
   home?: string;
+  /** Notes for Claude that every card in the workspace starts with. */
+  notes?: string;
+  /** How this team tests (tools, test data, environments): QA cards start with it. */
+  testing?: string;
 }
 
 /** A workspace as a file to share: repos by folder name, since paths differ between machines. */
@@ -115,6 +119,9 @@ export interface WorkspaceFile {
   color: string;
   repos: { name: string; home?: boolean }[];
   workflows: CommandPack;
+  /** The workspace's notes for Claude, and how the team tests: shared team knowledge. */
+  notes?: string;
+  testing?: string;
 }
 
 /** A git repo found under one of the library's source folders. */
@@ -351,7 +358,13 @@ export type ClientMsg =
   | { type: 'tickets.map'; project: string; workspaceId: string | null }
   /** Hide a ticket from the Inbox (Delete on it), or show it again (Shift+T). Read-only towards the tracker. */
   | { type: 'tickets.hide'; key: string; hidden: boolean }
-  | { type: 'tickets.refresh' };
+  | { type: 'tickets.refresh' }
+  /** Search the tracker for any ticket (not only yours): a key or words. Answered with tickets.found. Read-only. */
+  | { type: 'tickets.search'; reqId: string; q: string }
+  /** Find the pull request for a ticket in these repos (QA and review cards). Answered with pr.found. Read-only. */
+  | { type: 'card.findPr'; reqId: string; key: string; repos: string[] }
+  /** A QA or review card is finished with: it goes to Done. */
+  | { type: 'card.done'; id: string };
 
 export type ServerMsg =
   /** Always the first message on a connection. */
@@ -394,4 +407,8 @@ export type ServerMsg =
   | { type: 'runs'; runs: CardRun[] }
   | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string; /** The model in the user's Claude Code settings (a card's default otherwise). */ userModel?: string }
   | { type: 'card.started'; reqId: string; id: string }
-  | { type: 'tickets'; tickets: Ticket[]; projects: TicketProject[]; sources: TicketSources };
+  | { type: 'tickets'; tickets: Ticket[]; projects: TicketProject[]; sources: TicketSources }
+  /** What a search found, or why it couldn't search. */
+  | { type: 'tickets.found'; reqId: string; q: string; tickets: Ticket[]; problem?: string }
+  /** The ticket's pull request, or why none was found (a line per repo). */
+  | { type: 'pr.found'; reqId: string; pr?: PrTarget; notes: string[] };

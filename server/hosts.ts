@@ -13,6 +13,7 @@
 // Another host (GitLab, Bitbucket…) is another class here. PLAN §35.
 
 import { spawn } from 'node:child_process';
+import type { PrTarget } from '../shared/cards.ts';
 import type { PullRequest } from '../shared/ship.ts';
 
 /** What a command printed: `out` trimmed for reading, `raw` as it came (git status's leading spaces matter). */
@@ -47,6 +48,19 @@ export interface CodeHost {
   view(root: string, pr: PullRequest): Promise<Pick<PullRequest, 'state' | 'review' | 'checks'>>;
   /** Squash-merge. `deletesBranch`: the host removes the source branch itself. */
   merge(root: string, pr: PullRequest): Promise<{ deletesBranch: boolean }>;
+  /** The open pull request for a ticket: its key in the title or the branch name. Read-only. */
+  findPr(root: string, key: string): Promise<Omit<PrTarget, 'repo'> | undefined>;
+}
+
+/** Does a PR's title or branch name the ticket? "WSS-12" matches "wss-12-fix" but not "WSS-123". */
+export function namesTicket(key: string, ...texts: string[]): boolean {
+  const k = new RegExp(`(^|[^A-Za-z0-9])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![0-9])`, 'i');
+  return texts.some((t) => k.test(t));
+}
+
+/** Among open PRs, the newest one naming the ticket. */
+export function pickPr<T extends { number: number; title: string; source: string }>(key: string, prs: T[]): T | undefined {
+  return prs.filter((p) => namesTicket(key, p.title, p.source)).sort((a, b) => b.number - a.number)[0];
 }
 
 // ---- GitHub ---------------------------------------------------------------------------------------
@@ -100,6 +114,14 @@ export class GitHubHost implements CodeHost {
     if (o.code !== 0) throw new Error(`gh pr view failed: ${why(o)}`);
     const j = JSON.parse(o.out) as { state?: PullRequest['state']; reviewDecision?: string; statusCheckRollup?: unknown };
     return { state: j.state ?? pr.state, review: j.reviewDecision ?? '', checks: checksOf(j.statusCheckRollup) };
+  }
+
+  async findPr(root: string, key: string): Promise<Omit<PrTarget, 'repo'> | undefined> {
+    const o = await this.ghRun(['pr', 'list', '--state', 'open', '--search', key, '--json', 'number,title,url,headRefName,baseRefName', '--limit', '30'], root);
+    if (o.code !== 0) throw new Error(`gh pr list failed: ${why(o)}`);
+    const list = (JSON.parse(o.out || '[]') as { number: number; title: string; url: string; headRefName: string; baseRefName: string }[])
+      .map((p) => ({ number: p.number, title: p.title, url: p.url, host: 'github' as const, source: p.headRefName, target: p.baseRefName }));
+    return pickPr(key, list);
   }
 
   async merge(root: string, pr: PullRequest): Promise<{ deletesBranch: boolean }> {
@@ -257,6 +279,15 @@ export class AzureDevOpsHost implements CodeHost {
     return { state, review: reviewOf(r.reviewers), checks };
   }
 
+  async findPr(_root: string, key: string): Promise<Omit<PrTarget, 'repo'> | undefined> {
+    const r = await this.api<{ value?: { pullRequestId: number; title?: string; sourceRefName?: string; targetRefName?: string }[] }>('GET', `${this.base()}/pullrequests?searchCriteria.status=active&$top=200`);
+    const branch = (ref?: string) => (ref ?? '').replace(/^refs\/heads\//, '');
+    const list = (r.value ?? []).map((p) => ({
+      number: p.pullRequestId, title: p.title ?? '', url: this.webUrl(p.pullRequestId), host: 'azure' as const, source: branch(p.sourceRefName), target: branch(p.targetRefName),
+    }));
+    return pickPr(key, list);
+  }
+
   async merge(_root: string, pr: PullRequest): Promise<{ deletesBranch: boolean }> {
     const r = await this.api<{ status?: string; lastMergeSourceCommit?: { commitId?: string } }>('GET', `${this.base()}/pullrequests/${pr.number}`);
     if (r.status === 'completed') return { deletesBranch: true };
@@ -279,4 +310,30 @@ export function hostFor(remote: string, env: NodeJS.ProcessEnv = process.env): C
   if (ado) return new AzureDevOpsHost(ado, env);
   if (/github\.com[:/]/i.test(remote) || env.CC_CONTROL_GH) return new GitHubHost(env.CC_CONTROL_GH || 'gh');
   return `cc-control doesn’t know how to open a pull request on ${remote.replace(/\/\/[^@/]+@/, '//')} yet (it knows GitHub and Azure DevOps). Push the branch and open it in the browser.`;
+}
+
+/**
+ * The open pull request for a ticket in any of these repos, looked up on each repo's host (the
+ * remote says which). `notes` says, per repo, why it wasn't there. Read-only.
+ */
+export async function findPrIn(repos: string[], key: string, env: NodeJS.ProcessEnv = process.env): Promise<{ pr?: PrTarget; notes: string[] }> {
+  const notes: string[] = [];
+  const name = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+  for (const repo of repos) {
+    const remotes = (await run('git', ['remote'], repo)).out.split(/\s+/).filter(Boolean);
+    const remote = remotes.includes('origin') ? 'origin' : remotes[0];
+    if (!remote) { notes.push(`${name(repo)}: no remote`); continue; }
+    const host = hostFor((await run('git', ['remote', 'get-url', remote], repo)).out, env);
+    if (typeof host === 'string') { notes.push(`${name(repo)}: not on GitHub or Azure DevOps`); continue; }
+    const blocked = await host.check(repo);
+    if (blocked.length) { notes.push(`${name(repo)}: ${blocked[0]}`); continue; }
+    try {
+      const pr = await host.findPr(repo, key);
+      if (pr) return { pr: { ...pr, repo }, notes };
+      notes.push(`${name(repo)}: no open pull request on ${host.name} names ${key}`);
+    } catch (e) {
+      notes.push(`${name(repo)}: ${(e as Error).message}`);
+    }
+  }
+  return { notes };
 }

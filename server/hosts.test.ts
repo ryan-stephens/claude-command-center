@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import type { Card } from '../shared/cards.ts';
 import { CardService } from './cards.ts';
-import { adoRepo, AzureDevOpsHost, GitHubHost, hostFor, policiesOf, reviewOf } from './hosts.ts';
+import { adoRepo, AzureDevOpsHost, findPrIn, GitHubHost, hostFor, namesTicket, pickPr, policiesOf, reviewOf } from './hosts.ts';
 import { RunService } from './recipes.ts';
 import { ShipService } from './ship.ts';
 import { Store } from './store.ts';
@@ -72,6 +72,13 @@ function fakeTfs() {
       if (req.method === 'POST' && path === '/tfs/DefaultCollection/ss/_apis/git/repositories/Workspaces-UI/pullrequests') { json(201, { pullRequestId: 314, status: 'active' }); return; }
       if (req.method === 'GET' && path === '/tfs/DefaultCollection/ss/_apis/git/repositories/Workspaces-UI/pullrequests/314') {
         json(200, { pullRequestId: 314, status: pr.status, reviewers: pr.votes.map((vote) => ({ vote })), lastMergeSourceCommit: { commitId: 'abc123' }, repository: { project: { id: 'proj-guid' } } });
+        return;
+      }
+      if (req.method === 'GET' && path === '/tfs/DefaultCollection/ss/_apis/git/repositories/Workspaces-UI/pullrequests') {
+        json(200, { value: [
+          { pullRequestId: 300, title: 'WSS-1234: older work', sourceRefName: 'refs/heads/wss-1234-old', targetRefName: 'refs/heads/develop' },
+          { pullRequestId: 318, title: 'Point the proxy at Okteto', sourceRefName: 'refs/heads/feature/WSS-123-proxy', targetRefName: 'refs/heads/develop' },
+        ] });
         return;
       }
       if (req.method === 'GET' && path === '/tfs/DefaultCollection/ss/_apis/policy/evaluations') { json(200, { value: [{ status: 'approved' }] }); return; }
@@ -156,6 +163,46 @@ test('shipping to Azure DevOps Server: push over git, the PR through the REST AP
     await assert.rejects(wrong.view(work, pr!), /401: check CC_CONTROL_ADO_TOKEN/);
   } finally {
     ship.stop();
+    tfs.server.close();
+  }
+});
+
+test('a ticket’s PR: its key in the title or the branch, whole (WSS-12 is not WSS-123), the newest first', () => {
+  assert.equal(namesTicket('WSS-12', 'feature/wss-12-proxy'), true);
+  assert.equal(namesTicket('WSS-12', 'WSS-12: fix it'), true);
+  assert.equal(namesTicket('WSS-12', 'feature/WSS-123-proxy'), false);
+  assert.equal(namesTicket('WSS-12', 'AWSS-12'), false);
+  const prs = [{ number: 1, title: 'WSS-12 first', source: 'a' }, { number: 7, title: 'other', source: 'wss-12-again' }, { number: 9, title: 'WSS-120', source: 'b' }];
+  assert.equal(pickPr('WSS-12', prs)?.number, 7);
+  assert.equal(pickPr('WSS-99', prs), undefined);
+});
+
+test('finding a ticket’s PR on Azure DevOps Server, read-only, from the repo’s remote', async () => {
+  const tfs = fakeTfs();
+  await new Promise<void>((r) => tfs.server.listen(0, '127.0.0.1', r));
+  const port = (tfs.server.address() as { port: number }).port;
+  const work = join(dir, 'find-pr');
+  mkdirSync(work);
+  git(work, 'init', '-b', 'develop');
+  git(work, 'remote', 'add', 'origin', `http://127.0.0.1:${port}/tfs/DefaultCollection/ss/_git/Workspaces-UI`);
+  const bare = join(dir, 'find-pr-none');
+  mkdirSync(bare);
+  git(bare, 'init');
+  try {
+    const env = { ...process.env, CC_CONTROL_ADO_TOKEN: 'pat-123' };
+    const r = await findPrIn([bare, work], 'WSS-123', env);
+    assert.deepEqual(r.pr, {
+      number: 318, title: 'Point the proxy at Okteto', host: 'azure', source: 'feature/WSS-123-proxy', target: 'develop', repo: work,
+      url: `http://127.0.0.1:${port}/tfs/DefaultCollection/ss/_git/Workspaces-UI/pullrequest/318`,
+    });
+    assert.deepEqual(r.notes, ['find-pr-none: no remote']);
+    assert.ok(tfs.seen.every((s) => s.method === 'GET'), 'only reads');
+    const none = await findPrIn([work], 'WSS-77', env);
+    assert.equal(none.pr, undefined);
+    assert.match(none.notes[0], /no open pull request on Azure DevOps names WSS-77/);
+    const noToken = await findPrIn([work], 'WSS-123', { ...process.env, CC_CONTROL_ADO_TOKEN: '' });
+    assert.match(noToken.notes[0], /CC_CONTROL_ADO_TOKEN/);
+  } finally {
     tfs.server.close();
   }
 });
