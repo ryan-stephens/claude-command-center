@@ -1,12 +1,15 @@
 // The new-card screen: 1 add context (the repo library), 2 what Claude will know (three layers and
 // your note, or the exact text with p), 3 how it starts (terminal tab, workspace, home repo,
 // branch, mode, opening message, and the commands it will run). Ctrl+Enter starts work.
+// With c in a card's drawer, the same screen adds to that running card instead: panel 2 is what
+// you are adding (and what it already has), panel 3 is when it reaches Claude.
 
 import { useEffect, type ReactNode } from 'react';
-import { fmtK, HOOK_CONTEXT_LIMIT, homeOf, itemTokens, launchLines, memoryPct, modelFor, modelName, packetText, tokens } from '../../shared/cards.ts';
+import { fmtK, HOOK_CONTEXT_LIMIT, homeOf, itemTokens, laterText, launchLines, memoryPct, modelFor, modelName, packetText, STAGES, tokens, type Card } from '../../shared/cards.ts';
+import type { Workspace } from '../../shared/protocol.ts';
 import { SOURCE_NAME, ticketSub } from '../../shared/tickets.ts';
 import { samePath } from '../../shared/workspaces.ts';
-import { composerKey, goRows, packetRows, pickOption, pickTicket, repoOrigin, sources, ticketSources, toggleSource, togglePacketRow, type Composer, type Pane } from '../line-model.ts';
+import { cardHasRepo, cardHasTicket, composerKey, goRows, packetRows, pickOption, pickTicket, repoOrigin, sources, ticketSources, toggleSource, togglePacketRow, type Composer, type Pane } from '../line-model.ts';
 import { keepRepo, startWork, updateComposer } from '../line-keys.ts';
 import { get, set, useStore } from '../store.ts';
 import { Key, TicketKey, WsBadge } from './ui.tsx';
@@ -21,10 +24,12 @@ export function NewCard() {
   const pinned = useStore((s) => s.cardModel);
   const user = useStore((s) => s.userModel);
   const ws = workspaces.find((w) => w.id === c.workspaceId) ?? null;
-  const text = packetText(c, key);
+  const target = useStore((s) => s.cards.find((x) => x.id === s.composer?.addTo?.id));
+  const text = c.addTo ? addingText(c) : packetText(c, key);
   const t = c.ticket;
   const model = modelFor(c.launch, pinned ?? undefined, user ?? undefined);
   const size = tokens(text);
+  if (c.addTo && target) return <AddScreen c={c} card={target} ws={ws} text={text} />;
   return (
     <div className="absolute inset-0 z-20 flex flex-col bg-bg" role="region" aria-label="New card">
       <div className="flex items-center gap-4 border-b border-line bg-surface px-4 py-3">
@@ -59,6 +64,43 @@ export function NewCard() {
         <Sources c={c} />
         <PacketPane c={c} text={text} />
         <GoPane c={c} keyName={key} />
+      </div>
+    </div>
+  );
+}
+
+/** Exactly what the hook will hand Claude for what is being added: the items switched on, and your note. */
+function addingText(c: Composer): string {
+  const note = c.packet.note.trim();
+  const items = [...c.packet.card.filter((i) => i.on), ...(note ? [{ kind: 'note' as const, id: 'note', label: note, text: note, on: true }] : [])];
+  return items.length ? laterText(c.addTo!.key, items) : '(Nothing added yet.)';
+}
+
+/** The screen when adding to a running card (c in its drawer). */
+function AddScreen({ c, card, ws, text }: { c: Composer; card: Card; ws: Workspace | null; text: string }) {
+  const stage = STAGES.find((s) => s.id === card.stage)?.name ?? card.stage;
+  const has = tokens(packetText(card, card.key, card.branchName) + (card.later?.length ? laterText(card.key, card.later) : ''));
+  const empty = !c.packet.card.some((i) => i.on) && !c.packet.note.trim();
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col bg-bg" role="region" aria-label={`Add context to ${card.key}`}>
+      <div className="flex items-center gap-4 border-b border-line bg-surface px-4 py-3">
+        <WsBadge ws={ws} size={30} />
+        <div className="flex min-w-0 grow flex-col gap-1">
+          <div className="text-sm text-faint">Add context to a running card · {stage} · terminal tab {card.key}</div>
+          <div className="flex min-w-0 items-center gap-2 py-1.5 text-[19px] font-bold"><TicketKey k={card.key} source={card.ticket?.source} /><span className="truncate">{card.title}</span></div>
+        </div>
+        <div className="hidden items-center gap-2 whitespace-nowrap text-[13px] lg:flex" title="About 4 characters per token">
+          <span className="text-faint">Adding</span>
+          <b className="font-mono text-[15px] tabular-nums">{empty ? '0.0k' : fmtK(tokens(text))}</b>
+          <span className="text-faint">on top of {fmtK(has)}</span>
+        </div>
+        <button className="btn whitespace-nowrap py-1" onClick={() => updateComposer((x) => ({ ...x, preview: !x.preview }))}><Key k="p" size="sm" />{c.preview ? 'Back to the list' : 'Preview what Claude gets'}</button>
+        <button className="flex items-center gap-1.5 whitespace-nowrap text-sm text-faint hover:text-ink" onClick={() => set({ composer: null })}>Cancel <Key k="Esc" size="sm" /></button>
+      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[360px_minmax(0,1fr)_420px] lg:overflow-hidden">
+        <Sources c={c} />
+        <PacketPane c={c} text={text} card={card} />
+        <DeliverPane c={c} card={card} />
       </div>
     </div>
   );
@@ -113,47 +155,52 @@ function Sources({ c }: { c: Composer }) {
       </label>
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
         {onTickets ? (tlist.length ? tlist.map((tk, i) => {
-          const own = c.ticket?.key === tk.key;
+          const own = c.ticket?.key === tk.key || c.addTo?.ticketKey === tk.key;
           const related = c.packet.card.some((x) => x.id === `ticket:${tk.key}`);
-          const taken = !own && started.has(tk.key);
+          const had = !own && cardHasTicket(c, tk.key);
+          const taken = !own && !c.addTo && started.has(tk.key);
           return (
             <button key={tk.key} id={`src-${i}`} onClick={() => updateComposer((x) => { const r = pickTicket({ ...x, pane: 'src', si: i }, tk, get().workspaces, started); return typeof r === 'string' ? r : { ...r, pane: 'src', si: i }; })}
-              className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${focused && i === si ? 'is-focus bg-raise' : 'hover:bg-raise'} ${own || related ? 'opacity-70' : ''}`}>
+              className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${focused && i === si ? 'is-focus bg-raise' : 'hover:bg-raise'} ${own || related || had ? 'opacity-70' : ''}`}>
               <TicketKey k={tk.key} source={tk.source} />
               <span className="min-w-0 grow">
                 <span className="block truncate">{tk.title}</span>
                 <span className="block truncate text-xs text-faint">{ticketSub(tk)}{taken ? ' · has a card' : ''}{tk.demo ? ' · demo' : ''}</span>
               </span>
               {own ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">this card’s</span>
-                : related ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">related</span>
+                : related ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">{c.addTo ? 'adding' : 'related'}</span>
+                : had ? <span className="rounded-full bg-raise px-2 text-[11px] font-semibold text-faint">has it</span>
                 : <span className="w-4 text-center font-mono text-[17px] font-bold text-faint">+</span>}
             </button>
           );
         }) : <div className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{tickets.length ? `Nothing matches “${c.q}”` : <>No tickets yet. <Key k="⇧T" size="sm" /> on the board connects Jira or Trello, or shows demo tickets.</>}</div>)
         : list.length ? list.map((r, i) => {
           const where = repoOrigin(c, r.path);
+          const had = cardHasRepo(c, r.path);
           const inPacket = where === 'workspace' ? c.packet.workspace.find((x) => samePath(x.id, r.path))?.on : where === 'card';
           return (
             <button key={r.path} id={`src-${i}`} onClick={() => updateComposer((x) => ({ ...toggleSource(x, r.path), pane: 'src', si: i }))}
-              className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${focused && i === si ? 'is-focus bg-raise' : 'hover:bg-raise'} ${inPacket ? 'opacity-70' : ''}`}>
+              className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${focused && i === si ? 'is-focus bg-raise' : 'hover:bg-raise'} ${inPacket || had ? 'opacity-70' : ''}`}>
               <span className="rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">repo</span>
               <span className="min-w-0 grow">
                 <span className="block truncate">{r.name}</span>
-                <span className="block truncate text-xs text-faint">{where === 'workspace' ? 'in this workspace' : 'from the library'}{r.branch ? ` · ${r.branch}` : ''}</span>
+                <span className="block truncate text-xs text-faint">{had ? `${c.addTo!.key} can use it` : where === 'workspace' ? 'in this workspace' : 'from the library'}{r.branch ? ` · ${r.branch}` : ''}</span>
               </span>
-              {inPacket ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">added</span> : <span className="w-4 text-center font-mono text-[17px] font-bold text-faint">+</span>}
+              {had ? <span className="rounded-full bg-raise px-2 text-[11px] font-semibold text-faint">has it</span> : inPacket ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">added</span> : <span className="w-4 text-center font-mono text-[17px] font-bold text-faint">+</span>}
             </button>
           );
         }) : <div className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{repos.length ? `Nothing matches “${c.q}”` : 'The repo library is empty. F on the board picks the folders it scans.'}</div>}
       </div>
-      <div className="border-t border-line px-4 pb-3 pt-2 text-[12.5px] leading-snug text-faint">{onTickets
-        ? 'Jira and Trello tickets, read-only. The first you pick becomes the card’s ticket; later ones go in as related.'
-        : 'The repo library. Extra repos start with --add-dir, so Claude can read and edit them.'}</div>
+      <div className="border-t border-line px-4 pb-3 pt-2 text-[12.5px] leading-snug text-faint">{c.addTo
+        ? (onTickets ? 'Jira and Trello tickets, read-only. What you pick goes in as a related ticket.' : 'The repo library. A repo added now reaches Claude as its path; the session may ask once before working outside its folder.')
+        : onTickets
+          ? 'Jira and Trello tickets, read-only. The first you pick becomes the card’s ticket; later ones go in as related.'
+          : 'The repo library. Extra repos start with --add-dir, so Claude can read and edit them.'}</div>
     </PaneBox>
   );
 }
 
-function PacketPane({ c, text }: { c: Composer; text: string }) {
+function PacketPane({ c, text, card }: { c: Composer; text: string; card?: Card }) {
   const rows = packetRows(c);
   const focused = c.pane === 'pkt';
   const pi = Math.min(c.pi, rows.length - 1);
@@ -164,7 +211,7 @@ function PacketPane({ c, text }: { c: Composer; text: string }) {
   const row = (layer: 'workspace' | 'ticket' | 'card', item: (typeof c.packet.card)[number]) => {
     idx += 1;
     const at = idx;
-    const isHome = item.kind === 'repo' && item.on && home !== undefined && samePath(item.id, home);
+    const isHome = !card && item.kind === 'repo' && item.on && home !== undefined && samePath(item.id, home);
     return (
       <div key={layer + item.id} onClick={() => updateComposer((x) => { const r = togglePacketRow({ ...x, pi: at }, at); return typeof r === 'string' ? r : { ...r, pi: at }; })}
         className={`flex min-w-0 cursor-pointer items-center gap-2.5 px-3 py-1.5 text-[13.5px] [&+&]:border-t [&+&]:border-line/60 ${item.on ? '' : 'text-faint'} ${focused && at === pi ? 'is-focus' : ''}`}>
@@ -172,9 +219,9 @@ function PacketPane({ c, text }: { c: Composer; text: string }) {
         <span className="whitespace-nowrap rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">{KIND[item.kind] ?? item.kind}</span>
         <span className="min-w-0 grow truncate">{item.label}</span>
         {isHome && <span className="rounded-full bg-busy-bg px-2 text-[11px] font-semibold text-busy">starts here</span>}
-        {item.kind === 'repo' && item.on && !isHome && <span className="text-xs text-faint">--add-dir</span>}
+        {item.kind === 'repo' && item.on && !isHome && !card && <span className="text-xs text-faint">--add-dir</span>}
         <span className={`font-mono text-[11.5px] font-semibold tabular-nums text-faint ${item.on ? '' : 'line-through'}`}>{fmtK(itemTokens(item))}</span>
-        {layer === 'card' && item.kind === 'repo' && c.workspaceId && (
+        {layer === 'card' && item.kind === 'repo' && c.workspaceId && !card && (
           <button className="flex items-center gap-1 whitespace-nowrap text-xs text-faint hover:text-ink" title="Keep this repo for the whole workspace: every card there gets it"
             onClick={(e) => { e.stopPropagation(); keepRepo(at); }}>Keep for {wsName ?? 'workspace'}<Key k="w" size="sm" /></button>
         )}
@@ -197,25 +244,32 @@ function PacketPane({ c, text }: { c: Composer; text: string }) {
     );
   };
   const noteFocused = focused && pi === rows.length - 1;
+  const noteRow = (placeholder: string) => (
+    <div className={`flex items-start gap-2.5 border-t border-line/60 px-3 py-1.5 ${noteFocused ? 'is-focus' : ''}`}>
+      <span className="mt-1.5 rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">you</span>
+      <textarea id="cp-note" value={c.packet.note} placeholder={placeholder}
+        onFocus={() => updateComposer((x) => ({ ...x, pane: 'pkt', pi: rows.length - 1 }))}
+        onChange={(e) => updateComposer((x) => ({ ...x, packet: { ...x.packet, note: e.target.value } }))}
+        className="min-h-[56px] flex-1 resize-none rounded-lg border border-line bg-bg px-2.5 py-1.5 text-[13.5px] leading-snug outline-none focus:border-ring" />
+      <Key k="e" size="sm" className="mt-1.5" />
+    </div>
+  );
   return (
-    <PaneBox pane="pkt" n={2} c={c} title={c.preview ? 'Exactly what Claude receives' : 'What Claude will know'}
-      right={c.preview ? <span className="text-xs text-faint">returned by the SessionStart hook as additionalContext</span> : <><Key k="Space" size="sm" /><span className="text-xs text-faint">include or leave out</span></>}>
+    <PaneBox pane="pkt" n={2} c={c} title={c.preview ? 'Exactly what Claude receives' : card ? 'What you are adding' : 'What Claude will know'}
+      right={c.preview ? <span className="text-xs text-faint">{card ? 'sent by a UserPromptSubmit hook' : 'returned by the SessionStart hook as additionalContext'}</span> : <><Key k="Space" size="sm" /><span className="text-xs text-faint">include or leave out</span></>}>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3.5 pb-3.5 pt-0.5">
         {over && <div className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">Over {HOOK_CONTEXT_LIMIT.toLocaleString()} characters: Claude Code will hand Claude a file with a preview instead of the whole text. Leave something out.</div>}
         {c.preview
           ? <pre className="m-0 whitespace-pre-wrap break-words rounded-xl border border-line bg-bg px-3.5 py-3 font-mono text-[12.5px] leading-relaxed">{text}</pre>
+          : card ? <>
+            {layer('Adding now', `only ${card.key} gets these`, 'card', <>Pick repos or tickets in panel 1 with <Key k="Space" size="sm" />, or write a note with <Key k="e" size="sm" />.</>, noteRow('Anything Claude should know from here on? e.g. The totals must round down, not to nearest.'))}
+            <AlreadyHas card={card} />
+          </>
           : <>
             {layer('Workspace', wsName ? `shared by every ${wsName} card · set once` : 'no workspace', 'workspace', 'Pick a workspace under How it starts, or add repos from the library.')}
             {layer('Ticket', c.ticket ? `from ${SOURCE_NAME[c.ticket.source]} ${c.ticket.key}` : 'none yet', 'ticket', 'No ticket. Pick one under Tickets, or describe the work in the title.')}
             {layer('This card', 'only this card gets these', 'card', <>Add repos from the library with <Key k="Space" size="sm" />. <Key k="w" size="sm" /> on one keeps it for the whole workspace.</>,
-              <div className={`flex items-start gap-2.5 border-t border-line/60 px-3 py-1.5 ${noteFocused ? 'is-focus' : ''}`}>
-                <span className="mt-1.5 rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">you</span>
-                <textarea id="cp-note" value={c.packet.note} placeholder="Anything else Claude should know? e.g. Keep it behind the size_guide flag."
-                  onFocus={() => updateComposer((x) => ({ ...x, pane: 'pkt', pi: rows.length - 1 }))}
-                  onChange={(e) => updateComposer((x) => ({ ...x, packet: { ...x.packet, note: e.target.value } }))}
-                  className="min-h-[56px] flex-1 resize-none rounded-lg border border-line bg-bg px-2.5 py-1.5 text-[13.5px] leading-snug outline-none focus:border-ring" />
-                <Key k="e" size="sm" className="mt-1.5" />
-              </div>)}
+              noteRow('Anything else Claude should know? e.g. Keep it behind the size_guide flag.'))}
           </>}
       </div>
     </PaneBox>
@@ -264,6 +318,64 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
           <Key k="Ctrl Enter" size="sm" tone="ghost" />{c.starting ? 'Starting…' : 'Start work'}
         </button>
         <span className="text-[12.5px] text-faint">{c.launch.mode === 'plan' ? 'The card goes to Plan. Nothing changes until you approve the plan.' : 'The card goes straight to Build.'}</span>
+      </div>
+    </PaneBox>
+  );
+}
+
+/** Adding to a running card: what it already has, dimmed (given when it started, and added since). */
+function AlreadyHas({ card }: { card: Card }) {
+  const given = [...card.packet.workspace, ...card.packet.ticket, ...card.packet.card].filter((i) => i.on);
+  return (
+    <div className="shrink-0 overflow-hidden rounded-xl border border-line bg-surface opacity-75">
+      <div className="flex items-center gap-2 border-b border-line bg-raise px-3 py-1.5 text-[12.5px]">
+        <span className="text-[13.5px] font-bold">Already has</span>
+        <span className="grow text-faint">given when it started, and added since</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5 px-3 py-2.5">
+        {given.map((i) => <span key={i.kind + i.id} className="rounded-full border border-line bg-raise px-2.5 py-0.5 text-[12.5px]">{i.kind === 'repo' ? `repo · ${i.label}` : i.label.length > 40 ? `${i.label.slice(0, 38)}…` : i.label}</span>)}
+        {card.packet.note.trim() && <span className="rounded-full border border-line bg-raise px-2.5 py-0.5 text-[12.5px]">your note</span>}
+        {(card.later ?? []).map((i) => <span key={i.id} className="rounded-full border border-line bg-raise px-2.5 py-0.5 text-[12.5px]">{i.kind === 'repo' ? `repo · ${i.label}` : i.label.slice(0, 40)}{i.sent ? '' : ' · waiting'}</span>)}
+      </div>
+    </div>
+  );
+}
+
+/** Adding to a running card, panel 3: when it reaches Claude, and the button. */
+function DeliverPane({ c, card }: { c: Composer; card: Card }) {
+  const workspaces = useStore((s) => s.workspaces);
+  const rows = goRows(c, workspaces, card.key);
+  const focused = c.pane === 'go';
+  return (
+    <PaneBox pane="go" n={3} c={c} title="Deliver" right={<><Key k="↑" size="sm" /><Key k="↓" size="sm" /><span className="text-xs text-faint">then</span><Key k="←" size="sm" /><Key k="→" size="sm" /></>}>
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3.5 pb-3.5 pt-0.5">
+        {rows.map((r) => (
+          <div key={r.id} className={`grid gap-1.5 rounded-xl border border-transparent px-2.5 py-2 ${focused ? 'is-focus' : ''}`}>
+            <div className="eyebrow">{r.label}</div>
+            <div className="flex flex-wrap gap-1.5">
+              {r.opts.map((o, j) => (
+                <button key={o} disabled={r.off?.includes(j)}
+                  className={`rounded-lg border px-2.5 py-1 text-[13px] ${j === r.at ? 'border-ring bg-surface font-semibold text-ink shadow-[0_0_0_2px_color-mix(in_srgb,var(--c-ring)_22%,transparent)]' : 'border-line bg-raise text-sub'} disabled:cursor-default disabled:opacity-50`}>{o}</button>
+              ))}
+            </div>
+            <div className="text-[12.5px] text-faint">
+              {card.sessionId
+                ? <>Waits on the card. A UserPromptSubmit hook adds it to the next thing you type in the tab <b>{card.key}</b>. No special flags. Pushing it in at once needs the channel, a preview flag, so that comes later.</>
+                : <>The session hasn’t linked yet, so it goes in with the rest of the context when the session starts.</>}
+            </div>
+          </div>
+        ))}
+        <div className="grid gap-1.5 px-2.5 py-2">
+          <div className="eyebrow">Good to know</div>
+          <div className="text-[12.5px] text-faint">A repo added now reaches Claude as its path. The session may ask once before reading outside its folder. If you /clear the session, everything added here goes in again with the packet.</div>
+        </div>
+      </div>
+      <div className="grid gap-2 border-t border-line px-4 py-3">
+        {c.error && <div className="rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{c.error}</div>}
+        <button className="btn btn-primary justify-center py-2 text-[15px]" disabled={c.starting} onClick={startWork}>
+          <Key k="Ctrl Enter" size="sm" tone="ghost" />{c.starting ? 'Adding…' : `Add to ${card.key}`}
+        </button>
+        <span className="text-[12.5px] text-faint">Shows under Added since, on the card’s Context tab.</span>
       </div>
     </PaneBox>
   );

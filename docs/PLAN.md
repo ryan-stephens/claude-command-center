@@ -769,3 +769,33 @@ Not planned: more Claude Code parity for its own sake (`!` shell, model pickers)
 **Not yet:** a live Jira site and Trello board (the owner sends the site, email and token when ready; the mapping and ADF parsing are the likely places to adjust); dragging a ticket onto Plan (mouse); `x` on a ticket to add it to a running card (that is "adding context later", next); the Files, Notes and Findings tabs.
 
 **Next:** adding context later (a UserPromptSubmit hook sends queued extras with the next message), then run recipes (Try it), then Ship.
+
+## 32. Ticket Line, milestone 5: adding context later
+
+2026-09-30. Work already under way can be given more: a repo, a related ticket, or a note. It waits on the card and reaches Claude with the next message typed in the card's terminal tab, through a UserPromptSubmit hook in the same `--settings` file. Nothing new in the user's settings, and no preview flags.
+
+**How it reaches Claude:**
+- **UserPromptSubmit now runs synchronously** (the other tracking hooks stay async). When a message is typed in the card's tab, the server moves the card as before (`applyEvent`) and, if anything waits, answers with it as `hookSpecificOutput.additionalContext` and marks it sent. `laterText` in `shared/cards.ts` is exactly what is sent, and what `p` previews: `# Added to SHOP-155 by cc-control`, then the extra repos by path, related tickets, and your note under `## From you`.
+- **Before the session links**, what waits goes in with the packet at SessionStart instead.
+- **After `/clear` or compaction** the session has lost it, so SessionStart sends everything added since, with the packet, again.
+- Only the card's own session takes it: a `claude -p` run inside the tab, or any other session, gets nothing (the same check as the other hooks).
+- The hook settings file is also rewritten when the server starts, so a card resumed by hand gets the current hooks. Tabs started before this keep the old file's async UserPromptSubmit until they restart.
+- A repo added later reaches Claude as its path (there is no `--add-dir` for a running session), so the session may ask once before working outside its folder. Its edits count toward the card's files (`cardRepos`), and the tile lists it.
+- Answering "right now" would need the channel (a preview flag, §26). The Deliver panel shows that option as later, like "in the app" on the new-card screen.
+
+**What you see (the mock's words and keys):**
+- **`c` in a card's drawer** opens the new-card screen in its add form: "Add context to a running card · stage · terminal tab KEY". Panel 1 is the same Tickets and Repos; what the card already has says *has it*, its own ticket *this card's*, and adding them again is refused with a reason. Panel 2 is **What you are adding** (the items and your note, `e`) above **Already has** (dimmed: what it started with and what was added since). Panel 3 is **Deliver**: "With your next message", "Right now, through the channel (later)", and a Good to know. `p` shows the exact text, "sent by a UserPromptSubmit hook". `Ctrl+Enter` **Add to KEY**. The header meter reads "Adding 0.1k on top of 0.2k".
+- **The Context tab's "Added since it started"**: each item with its time, size, and *goes with your next message* (amber) or *delivered* (green). Opening it after adding scrolls it into view. `x` takes back the last item still waiting.
+- The tile says "N waiting for your next message"; the Overview's Context line counts what was added since; the drawer has an **Add context** button.
+- Keys: `c` and `x` in the drawer, with rows in `?` and the legend (`Add context`, `Take back`). In the add form the legend says `Add to KEY` and drops `m` (the model was set when the card started) and `w`.
+- `PROTOCOL` 6 (`card.addContext`, answered with `ok`; `card.withdraw`). The card gains `later` (items with `at` and, once delivered, `sent`).
+
+**Verified** (isolated server, Demo workspace, Haiku):
+- 17 scripted checks on the SHOP-155 card: `c` from the drawer opened the add form; its own ticket and the related SHOP-160 it already had were refused with reasons; web-app showed *has it*; PAY-91 (by `/` search), cdn-worker and a note went in; `p` showed the exact text; `Ctrl+Enter` left three items waiting on the Context tab and "3 waiting" on the tile; adding nothing says what to do; a fourth note and `x` took it back; `?` has both rows.
+- **Delivered by the real hook:** the card's session resumed with its `--settings` file and variables (a `claude -p --resume` standing in for typing in the tab, which a script can't do) and asked, without tools, for the codeword, the related ticket and the extra repo. Haiku answered "PERIWINKLE-42", "PAY-91", "cdn-worker", none of which were in the message. All three turned *delivered* at the same moment, the session id unchanged, and the tile's "waiting" went away.
+- Found and fixed by the checks: long rows in Added since widened the drawer's section past its edge (grid items needed `min-w-0`), and after adding, the section sat below the fold.
+- Unit tests: adding skips what the card has, only a typed message takes what waits, it is sent once, `/clear` sends it again with the packet, waiting items can be taken back but sent ones can't; the add form's model and legend. No console errors. `pnpm typecheck`, `pnpm test` (162) and the Vite build pass.
+
+**Not yet:** delivering at once through the channel; dragging a ticket onto a card (mouse); notes, files and findings as sources (the Files, Notes and Findings tabs); taking back anything but the last waiting item.
+
+**Next:** run recipes (Try it), then Ship.

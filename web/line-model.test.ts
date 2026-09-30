@@ -4,7 +4,7 @@ import type { Card } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
 import type { Ticket } from '../shared/tickets.ts';
 import {
-  cardActivity, composerKey, ticketSources, cycleModel, draftOf, dropTicket, pickTicket, ticketFocus, elapsed, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin,
+  addComposer, additionOf, cardActivity, composerKey, ticketSources, cycleModel, draftOf, dropTicket, pickTicket, ticketFocus, elapsed, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin,
   setWorkspace, sources, stepOption, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
@@ -202,4 +202,30 @@ test('picking tickets: the first is the card’s (its title, parts and mapped wo
   const fromTicket = newComposer(W2, 'CARD-3', ticket('PAY-9'));
   assert.equal(fromTicket.tab, 'repos', 'from a ticket, panel 1 opens on the repos');
   assert.equal(fromTicket.title, 'Title of PAY-9');
+});
+
+test('c in a card’s drawer adds to it: only new things, and never a second own ticket', () => {
+  const running: Card = {
+    ...card('SHOP-155', 'build'), ticket: ticket('SHOP-155'),
+    packet: { workspace: [{ kind: 'repo', id: 'D:\r\web-app', label: 'web-app', on: true }], ticket: [], card: [], note: '' },
+    later: [{ kind: 'ticket', id: 'ticket:SHOP-98', label: 'Related ticket: SHOP-98', on: true, at: 1, sent: 2 }],
+  };
+  let c = addComposer(running, [ticket('SHOP-160')]);
+  assert.equal(composerKey(c, 'CARD-7'), 'SHOP-155');
+  assert.equal(c.tab, 'tickets');
+  assert.match(additionOf(c) as string, /Add something first/);
+  assert.equal(toggleSource(c, 'D:\r\web-app'), c, 'a repo it has is not added again');
+  c = toggleSource(c, 'D:\r\tokens');
+  assert.match(pickTicket(c, ticket('SHOP-155'), [W1], new Set()) as string, /own ticket/);
+  assert.match(pickTicket(c, ticket('SHOP-98'), [W1], new Set()) as string, /already has SHOP-98/);
+  c = pickTicket(c, ticket('SHOP-160'), [W1], new Set(['SHOP-155'])) as Composer;
+  assert.equal(c.ticket, null, 'a ticket picked here is related, never the card’s own');
+  assert.deepEqual(c.packet.card.map((i) => i.id), ['D:\r\tokens', 'ticket:SHOP-160']);
+  assert.equal(typeof togglePacketRow(c, 0), 'object', 'the only repo here can be left out: the card has others');
+  assert.match(keepForWorkspace(c, 0) as string, /running card/);
+  assert.deepEqual(goRows(c, [W1], 'SHOP-155').map((r) => r.id), ['deliver']);
+  const add = additionOf({ ...c, packet: { ...c.packet, note: ' Round down. ' } });
+  assert.ok(typeof add === 'object');
+  assert.equal(add.items.length, 2);
+  assert.equal(add.note, 'Round down.');
 });

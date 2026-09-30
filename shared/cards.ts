@@ -154,6 +154,53 @@ export interface Card extends CardDraft {
   creating?: Record<string, { content: string; activeForm?: string }>;
   /** 1, then 2 after you send it back from Try it, and so on. */
   round?: number;
+  /** Context added since it started: it waits on the card until a hook hands it to Claude. */
+  later?: LaterItem[];
+}
+
+/**
+ * Something added to a running card. It waits until the next message typed in the card's tab
+ * (the UserPromptSubmit hook sends it along), or until the session starts or is cleared, when
+ * SessionStart sends it with the packet. A note you wrote is a `note` whose text is yours.
+ */
+export interface LaterItem extends PacketItem {
+  /** When you added it. */
+  at: number;
+  /** When a hook handed it to Claude; unset while it waits. */
+  sent?: number;
+}
+
+/** Waiting on the card: not handed to Claude yet. */
+export function waiting(c: Pick<Card, 'later'>): LaterItem[] {
+  return (c.later ?? []).filter((i) => !i.sent);
+}
+
+/** Every repo the card's session can use: what it started with and any added since, home first. */
+export function cardRepos(c: Pick<Card, 'packet' | 'later'>): string[] {
+  const out = includedRepos(c.packet);
+  for (const i of c.later ?? []) if (i.kind === 'repo' && !out.some((r) => samePath(r, i.id))) out.push(i.id);
+  return out;
+}
+
+/**
+ * Exactly what Claude gets when context is added to a running card: the hook returns this as
+ * additionalContext alongside your next message.
+ */
+export function laterText(key: string, items: PacketItem[]): string {
+  const repos = items.filter((i) => i.kind === 'repo');
+  const notes = items.filter((i) => i.kind === 'note');
+  const rest = items.filter((i) => i.kind !== 'repo' && i.kind !== 'note');
+  const L = [`# Added to ${key} by cc-control`, '', 'More context for this card, added since it started. Take it into account from here on.'];
+  if (repos.length) {
+    L.push('', '## More repos you can read and edit');
+    for (const r of repos) L.push(`- ${r.label}: ${r.id}`);
+  }
+  if (rest.length) {
+    L.push('', '## Also look at');
+    for (const i of rest) L.push(`- ${(i.text ?? i.label).replace(/\n/g, '\n  ')}`);
+  }
+  for (const n of notes) L.push('', '## From you', (n.text ?? n.label).trim());
+  return L.join('\n');
 }
 
 /** The repos Claude gets, home first. */

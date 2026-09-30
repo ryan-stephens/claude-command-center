@@ -2,11 +2,11 @@
 // its stage on the board, its to-do list and the files it changed. Pure (tested in
 // card-events.test.ts). Stages the hooks never leave: Ship and Done belong to you.
 
-import { includedRepos, type Card, type CardLive, type Stage } from '../shared/cards.ts';
+import { cardRepos, type Card, type CardLive, type Stage } from '../shared/cards.ts';
 import { isInside } from '../shared/workspaces.ts';
 import { applyTodos, NO_TODOS } from './todos.ts';
 
-/** The hook events a card session sends besides SessionStart (all run async, so they never slow Claude). */
+/** The hook events a card session sends besides SessionStart (all async but UserPromptSubmit, which may carry context added since). */
 export const TRACKED_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PermissionRequest', 'Notification', 'Stop', 'SessionEnd'] as const;
 
 /** What a hook sends on stdin; only the fields used here. */
@@ -117,7 +117,7 @@ export function applyEvent(card: Card, event: string, input: HookInput, now: num
     case 'PostToolUse': {
       const path = s(toolInput.file_path) || s(toolInput.notebook_path);
       // Only the card's own repos count: a plan written to ~/.claude/plans is not a change to try.
-      const ours = [card.cwd, ...includedRepos(card.packet)].some((r) => r && isInside(path, r));
+      const ours = [card.cwd, ...cardRepos(card)].some((r) => r && isInside(path, r));
       if (EDIT_TOOLS.has(tool) && path && ours && !files.includes(path)) files = [...files, path];
       if (!sub) {
         const content = typeof input.tool_response === 'string' ? input.tool_response : JSON.stringify(input.tool_response ?? '');

@@ -3,7 +3,7 @@
 // Tested in line-model.test.ts; the components only draw it.
 
 import {
-  branchFor, CARD_MODELS, defaultMessage, homeOf, includedRepos, LAUNCH_MODES, modelName, STAGES,
+  branchFor, CARD_MODELS, cardRepos, defaultMessage, homeOf, includedRepos, LAUNCH_MODES, modelName, STAGES,
   type Card, type CardDraft, type Packet, type PacketItem, type Stage,
 } from '../shared/cards.ts';
 import type { RepoInfo, Workspace } from '../shared/protocol.ts';
@@ -129,6 +129,20 @@ export interface Composer {
   msgTouched: boolean;
   starting: boolean;
   error: string | null;
+  /** Set when adding context to a card that has started, instead of making a new one. */
+  addTo?: AddTarget;
+}
+
+/** The running card the new-card screen adds to, and what it already has (so it isn't added twice). */
+export interface AddTarget {
+  id: string;
+  key: string;
+  /** The card's own ticket, if any. */
+  ticketKey?: string;
+  /** Ids of the packet items it started with or was given since ("ticket:SHOP-160", "note:…"). */
+  had: string[];
+  /** Every repo its session can use. */
+  repos: string[];
 }
 
 const repoItem = (path: string): PacketItem => ({ kind: 'repo', id: path, label: repoName(path), on: true });
@@ -150,9 +164,45 @@ export function newComposer(ws: Workspace | null, key: string, ticket: Ticket | 
   };
 }
 
+/** c in a card's drawer: the same screen, adding to that card. Only the card layer and your note. */
+export function addComposer(card: Card, tickets: Ticket[] = []): Composer {
+  return {
+    ticket: null,
+    // Opens on the tickets when there are some to relate, else on the repos.
+    tab: tickets.length ? 'tickets' : 'repos',
+    title: card.title,
+    workspaceId: card.workspaceId,
+    packet: { workspace: [], ticket: [], card: [], note: '' },
+    launch: card.launch,
+    pane: 'src', si: 0, pi: 0, gi: 0, preview: false, q: '', msgTouched: true, starting: false, error: null,
+    addTo: {
+      id: card.id, key: card.key, ...(card.ticket ? { ticketKey: card.ticket.key } : {}),
+      had: [...card.packet.card, ...(card.later ?? [])].map((i) => i.id), repos: cardRepos(card),
+    },
+  };
+}
+
+/** Adding to a running card, does it already have this repo? */
+export function cardHasRepo(c: Composer, path: string): boolean {
+  return Boolean(c.addTo?.repos.some((r) => samePath(r, path)));
+}
+
+/** Adding to a running card, does it already have this ticket (its own, or a related one)? */
+export function cardHasTicket(c: Composer, key: string): boolean {
+  return Boolean(c.addTo && (c.addTo.ticketKey === key || c.addTo.had.includes(`ticket:${key}`)));
+}
+
+/** What Ctrl+Enter adds to the running card, or why it can't yet. */
+export function additionOf(c: Composer): { items: PacketItem[]; note: string } | string {
+  const items = c.packet.card.filter((i) => i.on);
+  const note = c.packet.note.trim();
+  if (!items.length && !note) return 'Add something first: a repo, a ticket, or a note (e).';
+  return { items, note };
+}
+
 /** What the card will be called: its ticket's key, or the next CARD-n. */
 export function composerKey(c: Composer, nextKey: string): string {
-  return c.ticket?.key ?? nextKey;
+  return c.addTo?.key ?? c.ticket?.key ?? nextKey;
 }
 
 /**
@@ -174,7 +224,8 @@ export function ticketSources(c: Composer, tickets: Ticket[], started: Set<strin
  */
 export function pickTicket(c: Composer, t: Ticket, workspaces: Workspace[], started: Set<string>): Composer | string {
   if (c.ticket?.key === t.key) return 'That is this card’s ticket. x takes it off.';
-  if (!c.ticket) {
+  if (c.addTo && cardHasTicket(c, t.key)) return c.addTo.ticketKey === t.key ? `${t.key} is this card’s own ticket: it has it already.` : `${c.addTo.key} already has ${t.key}.`;
+  if (!c.ticket && !c.addTo) {
     if (started.has(t.key)) return `${t.key} already has a card on the line.`;
     const ws = t.workspaceId ? workspaces.find((w) => w.id === t.workspaceId) ?? null : null;
     const base = ws && ws.id !== c.workspaceId ? setWorkspace(c, ws) : c;
@@ -221,6 +272,7 @@ export function repoOrigin(c: Composer, path: string): 'workspace' | 'card' | nu
 
 /** Space on a library repo: add it to this card, or take it out again (a workspace repo is switched off, not removed). */
 export function toggleSource(c: Composer, path: string): Composer {
+  if (cardHasRepo(c, path)) return c;
   const flip = (list: PacketItem[]) => list.map((i) => (i.kind === 'repo' && samePath(i.id, path) ? { ...i, on: !i.on } : i));
   const where = repoOrigin(c, path);
   let packet: Packet;
@@ -257,7 +309,7 @@ export function togglePacketRow(c: Composer, index: number, remove = false): Com
   if (!row || row.layer === 'note') return c;
   if (remove && row.layer !== 'card') return 'Only what you added to this card can be removed. Space leaves it out.';
   const { item } = row;
-  if (item.kind === 'repo' && item.on && includedRepos(c.packet).length === 1) return 'A card needs at least one repo.';
+  if (item.kind === 'repo' && item.on && !c.addTo && includedRepos(c.packet).length === 1) return 'A card needs at least one repo.';
   const list = c.packet[row.layer];
   const next = remove ? list.filter((i) => i !== item) : list.map((i) => (i === item ? { ...i, on: !i.on } : i));
   return withHome({ ...c, packet: { ...c.packet, [row.layer]: next } });
@@ -269,6 +321,7 @@ export function togglePacketRow(c: Composer, index: number, remove = false): Com
  */
 export function keepForWorkspace(c: Composer, index: number): { composer: Composer; repo: string } | string {
   const row = packetRows(c)[index];
+  if (c.addTo) return 'Adding to a running card: keep repos for the workspace with + on the board.';
   if (!row || row.layer !== 'card' || row.item.kind !== 'repo') return 'Only a repo you added to this card can be kept for the workspace.';
   if (!c.workspaceId) return 'This card has no workspace. Pick one under How it starts.';
   const { item } = row;
@@ -278,7 +331,7 @@ export function keepForWorkspace(c: Composer, index: number): { composer: Compos
 
 /** Panel 3's rows: each a choice you change with ← →, or the message you type. */
 export interface GoRow {
-  id: 'where' | 'ws' | 'home' | 'branch' | 'mode' | 'model' | 'msg';
+  id: 'where' | 'ws' | 'home' | 'branch' | 'mode' | 'model' | 'msg' | 'deliver';
   label: string;
   opts: string[];
   at: number;
@@ -296,6 +349,8 @@ export function modelOpts(d: ModelDefaults = {}): string[] {
 }
 
 export function goRows(c: Composer, workspaces: Workspace[], key: string, models: ModelDefaults = {}): GoRow[] {
+  // Adding to a running card: only when it reaches Claude. The channel (a preview flag) comes later.
+  if (c.addTo) return [{ id: 'deliver', label: 'When it reaches Claude', opts: ['With your next message', 'Right now, through the channel (later)'], at: 0, off: [1] }];
   const repos = includedRepos(c.packet);
   const home = homeOf(c.packet, c.launch);
   return [

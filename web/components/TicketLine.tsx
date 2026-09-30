@@ -6,7 +6,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fmtK, includedRepos, memoryPct, modelName, packetText, tokens, type Card, type PacketItem } from '../../shared/cards.ts';
+import { cardRepos, fmtK, itemTokens, memoryPct, modelName, packetText, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
 import { homeRepo, repoName, samePath } from '../../shared/workspaces.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { importWorkspace } from '../commands.ts';
@@ -14,7 +14,7 @@ import { openSession } from '../keys.ts';
 import { SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, ticketFocus } from '../line-model.ts';
-import { boardOf, openCard, openComposer, workspaceKey } from '../line-keys.ts';
+import { boardOf, openAddComposer, openCard, openComposer, workspaceKey } from '../line-keys.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
@@ -249,9 +249,10 @@ function CardTile({ card, focused, color }: { card: Card; focused: boolean; colo
       <span className="flex flex-wrap items-center gap-x-2 text-xs tabular-nums text-faint">
         <span>{card.files?.length ?? 0} files</span><span>·</span><span>{elapsed(card.createdAt, now)}</span>
         {(card.round ?? 1) > 1 && <><span>·</span><span>round {card.round}</span></>}
+        {waiting(card).length > 0 && <><span>·</span><span className="font-semibold text-attn">{waiting(card).length} waiting for your next message</span></>}
       </span>
       <span className="flex flex-wrap gap-1">
-        {includedRepos(card.packet).map((r) => <span key={r} className="rounded-md border border-line bg-raise px-1.5 font-mono text-[11.5px] text-sub">{repoName(r)}</span>)}
+        {cardRepos(card).map((r) => <span key={r} className="rounded-md border border-line bg-raise px-1.5 font-mono text-[11.5px] text-sub">{repoName(r)}</span>)}
       </span>
     </button>
   );
@@ -307,14 +308,15 @@ function DrawerActions({ card }: { card: Card }) {
           <Key k={expand} size="sm" />Full screen
         </button>
       )}
+      {card.stage !== 'done' && <button className="btn py-1" onClick={() => openAddComposer(card.id)}><Key k="c" size="sm" />Add context</button>}
       <button className="btn py-1" onClick={() => set({ modal: { kind: 'deleteCard', id: card.id } })}><Key k="Delete" size="sm" />Remove card</button>
     </div>
   );
 }
 
-function Sec({ title, right, children }: { title?: string; right?: ReactNode; children: ReactNode }) {
+function Sec({ id, title, right, children }: { id?: string; title?: string; right?: ReactNode; children: ReactNode }) {
   return (
-    <section className="grid gap-2.5 border-b border-line px-5 py-3.5">
+    <section id={id} className="grid gap-2.5 border-b border-line px-5 py-3.5">
       {(title || right) && <div className="flex items-center gap-2">{title && <h4 className="grow text-sm font-bold">{title}</h4>}{right}</div>}
       {children}
     </section>
@@ -376,7 +378,7 @@ function Overview({ card }: { card: Card }) {
       <Sec>
         <div className="flex items-center gap-2 text-sm">
           <h4 className="grow font-bold">Context</h4>
-          <span className="text-faint">{fmtK(size)} · {includedRepos(card.packet).length} repos · <Key k="Tab" size="sm" /> for all of it</span>
+          <span className="text-faint">{fmtK(size)} · {cardRepos(card).length} repos · {card.later?.length ?? 0} added since · <Key k="Tab" size="sm" /> for all of it</span>
         </div>
       </Sec>
     </>
@@ -462,7 +464,33 @@ function ContextTab({ card, wsName }: { card: Card; wsName?: string }) {
           <pre className="mt-2 whitespace-pre-wrap break-words rounded-lg border border-line bg-bg px-3.5 py-3 font-mono text-[12.5px] leading-relaxed">{text}</pre>
         </details>
       </Sec>
+      <AddedSince card={card} />
     </>
+  );
+}
+
+/** Context added since the card started: what waits for the next message in its tab, and what went in. */
+function AddedSince({ card }: { card: Card }) {
+  const later = card.later ?? [];
+  const left = waiting(card);
+  return (
+    <Sec id="added-since" title="Added since it started" right={card.stage !== 'done' && <button className="btn py-0.5 text-[13px]" onClick={() => openAddComposer(card.id)}><Key k="c" size="sm" />Add context</button>}>
+      {later.length ? (
+        <ol className="grid min-w-0 gap-1.5 text-[13.5px]">
+          {later.map((i) => (
+            <li key={i.id} className="flex min-w-0 items-center gap-2.5">
+              <time className="w-[68px] shrink-0 font-mono text-xs tabular-nums text-faint">{clock(i.sent ?? i.at)}</time>
+              <span className="min-w-0 grow truncate" title={i.text ?? i.label}>{i.kind === 'repo' ? `Repo: ${i.label}` : i.label} <span className="font-mono text-[11.5px] text-faint">{fmtK(itemTokens(i))}</span></span>
+              {i.sent
+                ? <span className="whitespace-nowrap rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">delivered</span>
+                : <span className="whitespace-nowrap rounded-full bg-attn-bg px-2 text-[11px] font-semibold text-attn">{card.sessionId ? 'goes with your next message' : 'goes in when it starts'}</span>}
+            </li>
+          ))}
+        </ol>
+      ) : <p className="text-sm text-faint">Nothing yet. Press <Key k="c" size="sm" /> to add a repo, a related ticket or a note.</p>}
+      {left.length > 0 && <p className="text-sm text-faint"><Key k="x" size="sm" /> takes back the last one still waiting.</p>}
+      <p className="text-sm text-faint">This session runs in a terminal. Things you add wait here and go in with your next message in its tab {card.key}, sent by a UserPromptSubmit hook. After /clear, they go in again with the rest of the context.</p>
+    </Sec>
   );
 }
 

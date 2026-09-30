@@ -3,16 +3,17 @@
 // expanding a session. Every key here has a row in LINE_SECTIONS (the ? overlay) and in
 // lineLegendFor (the bar at the bottom).
 
+import { waiting } from '../shared/cards.ts';
 import { inbox, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
 import { openSession } from './keys.ts';
 import { currentWorkspace, flash, get, set, setFilter, type WorkspaceAction } from './store.ts';
 import {
-  composerKey, cycleModel, draftOf, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
+  addComposer, additionOf, cardHasRepo, composerKey, cycleModel, draftOf, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
-import { send, startCard } from './ws.ts';
+import { addCardContext, send, startCard } from './ws.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
@@ -27,6 +28,8 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['1–9  /  0', 'Show one workspace’s cards / all of them'],
       ['/', 'Filter the cards by words'],
       ['Tab (card open)', 'Overview, Context, Transcript'],
+      ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab'],
+      ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['Delete', 'Take the card off the line (its terminal session keeps running)'],
       ['Esc', 'Close the card, or clear the filter'],
     ],
@@ -56,7 +59,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['← → (how it starts)', 'Change the option: workspace, the repo it starts in, branch, mode, model'],
       ['m', 'Change the model: your default, Opus, Sonnet or Haiku'],
       ['p', 'Preview exactly what Claude gets'],
-      ['Ctrl+Enter', 'Start work (also while typing)'],
+      ['Ctrl+Enter', 'Start work (also while typing); adding to a running card, add it'],
       ['Esc', 'Leave the text field, then cancel'],
     ],
   },
@@ -136,6 +139,15 @@ export function openComposer(ticket: Ticket | null = null): void {
   if (!ticket) setTimeout(() => document.getElementById('cp-title')?.focus(), 0);
 }
 
+/** c in a card's drawer: the new-card screen, adding to that card. Esc goes back to the drawer. */
+export function openAddComposer(id: string): void {
+  const s = get();
+  const card = s.cards.find((c) => c.id === id);
+  if (!card) return;
+  if (card.stage === 'done') { flash(`${card.key} is done`); return; }
+  set({ composer: addComposer(card, s.tickets) });
+}
+
 export function updateComposer(change: (c: Composer) => Composer | string): void {
   const c = get().composer;
   if (!c) return;
@@ -147,6 +159,7 @@ export function updateComposer(change: (c: Composer) => Composer | string): void
 export function startWork(): void {
   const c = get().composer;
   if (!c || c.starting) return;
+  if (c.addTo) { addToCard(c); return; }
   const draft = draftOf(c);
   if (typeof draft === 'string') {
     set({ composer: { ...c, error: draft } });
@@ -164,6 +177,35 @@ export function startWork(): void {
       if (now) set({ composer: { ...now, starting: false, error: e.message } });
     },
   );
+}
+
+/** Ctrl+Enter when adding to a running card: it waits on the card, and the drawer shows it under Added since. */
+function addToCard(c: Composer): void {
+  const add = additionOf(c);
+  if (typeof add === 'string') { set({ composer: { ...c, error: add } }); return; }
+  const { id, key } = c.addTo!;
+  set({ composer: { ...c, starting: true, error: null } });
+  addCardContext(id, add.items, add.note).then(
+    () => {
+      set({ composer: null, line: { ...get().line, focus: id, drawer: id, tab: 'ctx' } });
+      setTimeout(() => document.getElementById('added-since')?.scrollIntoView({ block: 'nearest' }), 0);
+      const card = get().cards.find((x) => x.id === id);
+      flash(card?.sessionId ? `Waiting on ${key}: it goes in with your next message in its tab` : `Waiting on ${key}: it goes in when the session starts`);
+    },
+    (e: Error) => {
+      const now = get().composer;
+      if (now) set({ composer: { ...now, starting: false, error: e.message } });
+    },
+  );
+}
+
+/** x in a card's drawer: take back the latest thing still waiting on it. */
+export function withdrawLast(id: string): void {
+  const card = get().cards.find((c) => c.id === id);
+  const last = card && waiting(card).at(-1);
+  if (!last) { flash('Nothing is waiting on this card'); return; }
+  send({ type: 'card.withdraw', id, itemId: last.id });
+  flash(`Took back: ${last.label}`);
 }
 
 export function openCard(id: string): void {
@@ -218,7 +260,11 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
   if (e.key === 'Tab') { updateComposer((x) => ({ ...x, pane: PANES[(PANES.indexOf(x.pane) + (e.shiftKey ? 2 : 1)) % 3] })); return true; }
   if (e.key === 'p') { updateComposer((x) => ({ ...x, preview: !x.preview })); return true; }
   if (e.key === 'e') { updateComposer((x) => ({ ...x, pane: 'pkt', preview: false })); focusField('cp-note'); return true; }
-  if (e.key === 'm') { updateComposer(cycleModel); return true; }
+  if (e.key === 'm') {
+    if (c.addTo) flash('The model was set when the card started');
+    else updateComposer(cycleModel);
+    return true;
+  }
   const up = e.key === 'ArrowUp';
   const down = e.key === 'ArrowDown';
   const step = up ? -1 : down ? 1 : 0;
@@ -230,7 +276,7 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
       const t = list[Math.min(c.si, list.length - 1)];
       if (step) { updateComposer((x) => ({ ...x, si: Math.max(0, Math.min(list.length - 1, x.si + step)) })); return true; }
       if (e.key === ' ' || e.key === 'Enter') {
-        if (t) updateComposer((x) => pickTicket(x, t, s.workspaces, started(s)));
+        if (t) updateComposer((x) => pickTicket(x, t, s.workspaces, c.addTo ? new Set() : started(s)));
         else if (!s.tickets.length) flash('No tickets yet. Shift+T on the board connects them, or shows demo tickets.');
         return true;
       }
@@ -241,7 +287,8 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
     if (step) { updateComposer((x) => ({ ...x, si: Math.max(0, Math.min(list.length - 1, x.si + step)) })); return true; }
     if (e.key === ' ' || e.key === 'Enter') {
       const repo = list[Math.min(c.si, list.length - 1)];
-      if (repo) updateComposer((x) => toggleSource(x, repo.path));
+      if (repo && cardHasRepo(c, repo.path)) flash(`${c.addTo!.key} can already use ${repo.name}`);
+      else if (repo) updateComposer((x) => toggleSource(x, repo.path));
       else if (!s.library.repos.length) flash('The repo library is empty. On the board, F picks the folders it scans.');
       return true;
     }
@@ -300,6 +347,8 @@ function drawerKeys(e: KeyboardEvent): boolean {
       return true;
     }
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;
+    case 'c': if (s.line.drawer) openAddComposer(s.line.drawer); return true;
+    case 'x': if (s.line.drawer) withdrawLast(s.line.drawer); return true;
   }
   return false;
 }

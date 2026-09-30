@@ -8,7 +8,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
-import { CardService, cleanDraft, userModel } from './cards.ts';
+import { CardService, cleanDraft, userModel, writeHookSettings } from './cards.ts';
 import { CommandService } from './commands.ts';
 import { TicketService } from './tickets.ts';
 import { PermissionBroker } from './permission-broker.ts';
@@ -51,6 +51,7 @@ const broker = new PermissionBroker(
 const store = new Store();
 const commands = new CommandService(store);
 const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, changed: () => broadcast(cardsMsg()) });
+writeHookSettings();
 
 const tickets = new TicketService(store, () => broadcast(ticketsMsg()));
 
@@ -343,6 +344,13 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'card.delete':
       cards.delete(String(msg.id));
       return;
+    case 'card.addContext':
+      cards.addContext(String(msg.id), msg.items, msg.note);
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    case 'card.withdraw':
+      cards.withdraw(String(msg.id), String(msg.itemId));
+      return;
     case 'tickets.demo':
       tickets.setDemo(msg.on === true);
       return;
@@ -411,8 +419,8 @@ function hookRoutes(app: Hono): void {
     const event = c.req.param('event');
     try {
       if (event !== 'SessionStart') {
-        if ((TRACKED_EVENTS as readonly string[]).includes(event)) cards.hookEvent(id, token, event, (input ?? {}) as HookInput);
-        return c.body(null, 204);
+        const out = (TRACKED_EVENTS as readonly string[]).includes(event) ? cards.hookEvent(id, token, event, (input ?? {}) as HookInput) : null;
+        return out ? c.json(out) : c.body(null, 204);
       }
       const out = cards.sessionStart(id, token, (input ?? {}) as HookInput);
       return out ? c.json(out) : c.body(null, 204);

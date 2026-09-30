@@ -111,3 +111,52 @@ test('hook events move the linked card; events from other sessions are ignored',
   assert.equal(cards.get(card.id)!.stage, 'needs');
   assert.throws(() => cards.hookEvent(card.id, 'nope-nope', 'Stop', { session_id: 'tab-session-2' }), /token/);
 });
+
+type HookOut = { hookSpecificOutput: { hookEventName: string; additionalContext: string } } | null;
+
+test('context added later waits on the card and goes with the next message typed in its tab', () => {
+  const card = seed();
+  cards.sessionStart(card.id, 'secret-token', { session_id: 'tab-session-3', source: 'startup' });
+  const other = mkdtempSync(join(tmpdir(), 'cc-cards-more-'));
+  try {
+    const added = cards.addContext(card.id, [
+      { kind: 'repo', id: other, label: 'x', on: true },
+      { kind: 'repo', id: dir, label: 'x', on: true },
+      { kind: 'ticket', id: 'ticket:SHOP-160', label: 'Related ticket: SHOP-160 Tax', text: 'SHOP-160 Tax\nRound it.', on: true },
+    ], '  Use the guest_cart flag.  ');
+    assert.deepEqual(added.map((i) => i.kind), ['repo', 'ticket', 'note'], 'a repo the card already has is skipped');
+    assert.throws(() => cards.addContext(card.id, [{ kind: 'repo', id: other, label: 'x', on: true }], ''), /Nothing new/);
+
+    assert.equal(cards.hookEvent(card.id, 'secret-token', 'PreToolUse', { session_id: 'tab-session-3', tool_name: 'Read' }), null, 'only a typed message takes it');
+    const out = cards.hookEvent(card.id, 'secret-token', 'UserPromptSubmit', { session_id: 'tab-session-3', prompt: 'go on' }) as HookOut;
+    assert.equal(out!.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+    const text = out!.hookSpecificOutput.additionalContext;
+    assert.match(text, /^# Added to CARD-9 by cc-control/);
+    assert.ok(text.includes(`: ${other}`), 'the repo, by path');
+    assert.match(text, /## Also look at\n- SHOP-160 Tax\n {2}Round it\./);
+    assert.match(text, /## From you\nUse the guest_cart flag\.$/);
+    const saved = cards.get(card.id)!;
+    assert.ok(saved.later!.every((i) => i.sent), 'all marked as sent');
+    assert.equal(saved.stage, 'plan', 'the message still moves the card as before');
+    assert.equal(cards.hookEvent(card.id, 'secret-token', 'UserPromptSubmit', { session_id: 'tab-session-3' }), null, 'sent once');
+
+    // /clear loses it, so SessionStart sends it again with the packet.
+    const again = cards.sessionStart(card.id, 'secret-token', { session_id: 'tab-session-4', source: 'clear' }) as HookOut;
+    assert.match(again!.hookSpecificOutput.additionalContext, /## From you\nKeep it small\.[\s\S]*# Added to CARD-9[\s\S]*guest_cart/);
+  } finally {
+    rmSync(other, { recursive: true, force: true });
+  }
+});
+
+test('what waits before the session links goes with the packet; waiting items can be taken back', () => {
+  const card = seed();
+  const [note] = cards.addContext(card.id, [], 'First note');
+  cards.addContext(card.id, [], 'Second note');
+  cards.withdraw(card.id, note.id);
+  assert.deepEqual(cards.get(card.id)!.later!.map((i) => i.text), ['Second note']);
+  const out = cards.sessionStart(card.id, 'secret-token', { session_id: 'tab-session-5', source: 'startup' }) as HookOut;
+  assert.match(out!.hookSpecificOutput.additionalContext, /Second note/);
+  assert.equal(cards.hookEvent(card.id, 'secret-token', 'UserPromptSubmit', { session_id: 'tab-session-5' }), null, 'not sent twice');
+  const sent = cards.get(card.id)!.later![0];
+  assert.throws(() => cards.withdraw(card.id, sent.id), /already gone/);
+});

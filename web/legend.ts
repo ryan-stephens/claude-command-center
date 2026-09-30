@@ -91,6 +91,11 @@ export interface LineLegendInput {
   hasSession?: boolean;
   /** The / filter has text in it. */
   filtered?: boolean;
+  /** New-card screen: adding to a running card (this key), not making one. */
+  addingTo?: string;
+  /** Drawer: the card can take more context (c), and has some still waiting (x takes it back). */
+  canAdd?: boolean;
+  hasWaiting?: boolean;
   /** New-card screen: which panel, and whether panel 2 shows the exact text. */
   pane?: 'src' | 'pkt' | 'go';
   preview?: boolean;
@@ -117,13 +122,13 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
         : x.pane === 'pkt'
           ? (x.preview ? [] : [
             { keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Include or leave out' }, { keys: ['x'], label: 'Remove' },
-            ...(x.cardRepo ? [{ keys: ['w'], label: 'Keep for the workspace' }] : []),
+            ...(x.cardRepo && !x.addingTo ? [{ keys: ['w'], label: 'Keep for the workspace' }] : []),
             { keys: ['e'], label: 'Your note' },
           ])
           : [{ keys: ['↑', '↓'], label: 'Option' }, { keys: ['←', '→'], label: 'Change' }]),
-      { keys: ['m'], label: 'Model' },
+      ...(x.addingTo ? [] : [{ keys: ['m'], label: 'Model' }]),
       { keys: ['p'], label: x.preview ? 'Back to the list' : 'Preview' },
-      { keys: ['Ctrl Enter'], label: 'Start work', tone: 'acc' },
+      { keys: ['Ctrl Enter'], label: x.addingTo ? `Add to ${x.addingTo}` : 'Start work', tone: 'acc' },
       { keys: ['Esc'], label: 'Cancel' },
     ];
   }
@@ -132,6 +137,8 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     return [
       { keys: ['Esc'], label: 'Back to the board' },
       { keys: ['Tab'], label: 'Overview · Context · Transcript' },
+      ...(x.canAdd ? [{ keys: ['c'], label: 'Add context', tone: 'acc' as const }] : []),
+      ...(x.hasWaiting ? [{ keys: ['x'], label: 'Take back' }] : []),
       ...(x.hasSession ? [full] : []),
       { keys: ['Delete'], label: 'Remove card' },
     ];

@@ -11,8 +11,8 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  branchFor, CARD_MODELS, defaultMessage, PACKET_KINDS, homeOf, includedRepos, LAUNCH_MODES, modelFor, packetText, tokens, fmtK, worktreeFor, wtArg,
-  type BranchChoice, type BootStep, type Card, type CardDraft, type LaunchMode, type Packet, type PacketItem,
+  branchFor, CARD_MODELS, cardRepos, defaultMessage, PACKET_KINDS, homeOf, includedRepos, LAUNCH_MODES, laterText, modelFor, packetText, tokens, fmtK, waiting, worktreeFor, wtArg,
+  type BranchChoice, type BootStep, type Card, type CardDraft, type LaterItem, type LaunchMode, type Packet, type PacketItem,
 } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
 import type { Ticket } from '../shared/tickets.ts';
@@ -90,18 +90,21 @@ function findClaude(): string {
   return 'claude';
 }
 
-/** The hook, as a settings file for `claude --settings`. Only card sessions load it. */
-function writeHookSettings(): string {
+/**
+ * The hook, as a settings file for `claude --settings`. Only card sessions load it. Written when a
+ * card starts and when the server starts, so a card resumed by hand gets the current hooks.
+ */
+export function writeHookSettings(): string {
   const file = join(dirname(DB_PATH), 'claude-hooks.json');
   // A bare `node`, not a quoted path to node.exe: that runs in Git Bash and in the PowerShell
   // Claude Code falls back to without it (where a quoted path first is a parse error).
   const hook = (event: string, async = false) => [{
     hooks: [{ type: 'command', command: `node "${HOOK_SCRIPT.replace(/\\/g, '/')}" ${event}`, timeout: 15, ...(async ? { async: true } : {}) }],
   }];
-  // SessionStart answers with the packet, so Claude waits for it. The rest only report, so they
-  // run async and never slow Claude down.
+  // SessionStart answers with the packet and UserPromptSubmit with anything added since, so Claude
+  // waits for those two. The rest only report, so they run async and never slow Claude down.
   const hooks: Record<string, unknown> = { SessionStart: hook('SessionStart') };
-  for (const e of TRACKED_EVENTS) hooks[e] = hook(e, true);
+  for (const e of TRACKED_EVENTS) hooks[e] = hook(e, e !== 'UserPromptSubmit');
   writeFileSync(file, JSON.stringify({ hooks }, null, 2));
   return file;
 }
@@ -264,8 +267,18 @@ export class CardService {
     if (card.sessionId && card.sessionId !== sessionId && source !== 'clear') return null;
     clearTimeout(this.waits.get(id));
     this.waits.delete(id);
-    const text = packetText(card, card.key, card.branchName);
     const giving = source !== 'resume';
+    // Anything added since goes with the packet: waiting items, and on /clear or compaction the
+    // ones already sent, which the session has just lost.
+    const later = card.later ?? [];
+    let text = packetText(card, card.key, card.branchName);
+    if (giving && later.length) {
+      text += `
+
+${laterText(card.key, later)}`;
+      const now = Date.now();
+      card.later = later.map((i) => (i.sent ? i : { ...i, sent: now }));
+    }
     card.boot = card.boot.filter((b) => b.state !== 'go' && !(b.state === 'bad' && !card.sessionId));
     const again = card.sessionId ? (source === 'clear' ? ' after /clear' : source === 'compact' ? ' after compacting' : source === 'resume' ? ' (resumed)' : ' again') : '';
     if (giving) this.step(card, `SessionStart hook fetched the packet${again} (${fmtK(tokens(text))})`);
@@ -277,12 +290,56 @@ export class CardService {
     return giving ? { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text } } : null;
   }
 
-  /** Any other hook event: follow the session on the card. Events from other sessions are ignored. */
-  hookEvent(id: string, token: string, event: string, input: HookInput): void {
+  /**
+   * Any other hook event: follow the session on the card. Events from other sessions are ignored.
+   * A message typed in the tab (UserPromptSubmit) also takes whatever waits on the card, and the
+   * hook prints it as additionalContext, so it reaches Claude with that message.
+   */
+  hookEvent(id: string, token: string, event: string, input: HookInput): object | null {
     const { card, sessionId } = this.checked(id, token, input);
-    if (card.sessionId !== sessionId) return;
-    const next = applyEvent(card, event, input, Date.now());
+    if (card.sessionId !== sessionId) return null;
+    let next = applyEvent(card, event, input, Date.now());
+    const sending = event === 'UserPromptSubmit' ? waiting(next) : [];
+    if (sending.length) {
+      const now = Date.now();
+      next = { ...next, later: next.later!.map((i) => (i.sent ? i : { ...i, sent: now })) };
+    }
     if (next !== card) this.save(next);
+    return sending.length ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: laterText(card.key, sending) } } : null;
+  }
+
+  /**
+   * Add context to a card that has started: repos, related tickets and your note wait on it until
+   * the session takes them (see hookEvent). What it already has is skipped; nothing new is an error.
+   */
+  addContext(id: string, rawItems: unknown, note: unknown): LaterItem[] {
+    const card = this.get(id);
+    if (!card) throw new Error('That card is no longer on the line.');
+    if (card.stage === 'done') throw new Error(`${card.key} is done.`);
+    const repos = cardRepos(card);
+    const had = new Set([...card.packet.card, ...(card.later ?? [])].map((i) => i.id));
+    if (card.ticket) had.add(`ticket:${card.ticket.key}`);
+    const now = Date.now();
+    const add: LaterItem[] = [];
+    for (const i of cleanItems(rawItems)) {
+      if (!i.on || i.kind === 'note' || had.has(i.id) || (i.kind === 'repo' && repos.some((r) => samePath(r, i.id)))) continue;
+      had.add(i.id);
+      add.push({ ...i, at: now });
+    }
+    const text = str(note, 8000).trim();
+    if (text) add.push({ kind: 'note', id: `note:${now}`, label: `Your note: ${text.length > 60 ? `${text.slice(0, 59)}…` : text}`, text, on: true, at: now });
+    if (!add.length) throw new Error(`Nothing new to add: ${card.key} already has all of that.`);
+    this.save({ ...card, later: [...(card.later ?? []), ...add] });
+    return add;
+  }
+
+  /** Take back something that is still waiting on the card. */
+  withdraw(id: string, itemId: string): void {
+    const card = this.get(id);
+    const item = card?.later?.find((i) => i.id === itemId);
+    if (!card || !item) return;
+    if (item.sent) throw new Error('That has already gone to Claude.');
+    this.save({ ...card, later: card.later!.filter((i) => i !== item) });
   }
 
   delete(id: string): void {

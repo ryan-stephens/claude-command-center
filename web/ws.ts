@@ -1,4 +1,4 @@
-import type { CardDraft } from '../shared/cards.ts';
+import type { CardDraft, PacketItem } from '../shared/cards.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
 import { activeSession, flash, get, groupKeyOf, set, setFilter } from './store.ts';
@@ -104,6 +104,11 @@ export async function searchFiles(sessionId: string, query: string): Promise<Fil
 export async function startCard(draft: CardDraft): Promise<string> {
   const reply = await request((reqId) => ({ type: 'card.start', reqId, draft }), 60_000);
   return (reply as Extract<ServerMsg, { type: 'card.started' }>).id;
+}
+
+/** Add context to a running card: it waits there until the next message typed in its tab. */
+export async function addCardContext(id: string, items: PacketItem[], note: string): Promise<void> {
+  await request((reqId) => ({ type: 'card.addContext', reqId, id, items, note }));
 }
 
 /** Replace the repo library's folders; rejects with the server's reason (a missing folder, say). */
