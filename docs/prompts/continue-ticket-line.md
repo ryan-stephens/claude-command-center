@@ -4,14 +4,17 @@ Paste this into a new Claude Code session opened in `D:\repos\cc-control`.
 
 ---
 
-Read `docs/prompts/continue.md` first. It explains what cc-control is, where things are, and how to test without touching the owner's running app. Then read `docs/PLAN.md` §26 and §27.
+Read `docs/prompts/continue.md` first. It explains what cc-control is, where things are, and how to test without touching the owner's running app. Then read `docs/PLAN.md` §26, §27 and §28.
 
 ## The job
 The owner chose a direction: the **Ticket Line** (PLAN §27). The spec is the clickable mock at `docs/futures/path-line.html`. Open it in a browser and drive it with the keys before designing anything. Work becomes cards on a board: Inbox → Plan → Build → Needs you → Try it → Ship → Done. Each card is a ticket (Jira or Trello) or a card with no ticket. A new-card screen builds the card's context, and the card follows a Claude Code session running in a terminal tab.
 
 The owner likes the mock a lot. Keep its look, its words and its keys, including the legend bar and the `?` overlay, unless something can't be built as drawn. If so, say why.
 
-## Start with the part everything depends on: a card that starts a terminal session with its context
+## Milestone 1 is done (PLAN §28)
+A card saves its context, makes its branch and starts `claude` in a Windows Terminal tab. The hook, loaded with `claude --settings`, fetches the packet and links the session. The board, drawer and new-card screen have a first version. Read §28 for the Claude Code facts it established. The `--add-dir` / `--` gotcha, trust prompts and inherited session markers will bite again. Carry on from **Then, in order** below, starting with the board.
+
+## What milestone 1 was: a card that starts a terminal session with its context
 This first milestone proves the mechanism end to end. Leave the board polish, Jira/Trello, run recipes and Ship for later.
 
 1. **Check the Claude Code facts first.** Use the `claude-code-guide` agent or the docs:
@@ -40,11 +43,11 @@ This first milestone proves the mechanism end to end. Leave the board polish, Ji
 
 **Then, in order:** the board and drawer over the existing session list → Jira/Trello import (read-only, tokens kept on the server) with a ticket-to-workspace mapping → adding context later (a UserPromptSubmit hook sends queued extras with the next message) → run recipes (Try it) → Ship (commit, `gh pr create`, Slack post). Add a PLAN section for each piece, in the same commit.
 
-## Questions for the owner, before the part that needs the answer
-- **Jira:** the site URL, how to authenticate (API token plus email?), and which project keys map to which workspace. Trello comes through the same import.
-- **In-app sessions:** should "Run in the app" stay as an option for cards, or should cards be terminal-only at first?
-- **Hooks:** install them in user settings (every session gets them, but they do nothing without `CC_CONTROL_CARD`), or per repo in `.claude/settings.json`?
-- **Slack:** a webhook URL per workspace for "post for review", or leave posting for later?
+## The owner's answers (2026-09-29)
+- **Hooks:** per launch with `claude --settings`. Nothing goes into `~/.claude/settings.json`. The UserPromptSubmit hook for adding context later goes in the same file (`writeHookSettings` in `server/cards.ts`).
+- **In-app sessions:** terminal only at first. "In the app" is shown as later on the new-card screen.
+- **Jira:** email plus API token. The owner doesn't have the site URL, token or project-to-workspace mapping to hand, so **build the import against mock tickets** with the real shape (key, title, description, acceptance criteria, comments, attachments, links) and ask for the credentials when it's time to connect a real site. Trello comes through the same import.
+- **Slack:** later. Ship does commit, push and `gh pr create` first.
 
 ## Rules that matter here
 - Local only (127.0.0.1). The hook routes are part of that too.

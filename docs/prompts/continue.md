@@ -49,13 +49,15 @@ The main concepts:
   - Tested live; see `spike/channel.mjs` and PLAN §26.
   - The server learns its session from `CLAUDE_CODE_SESSION_ID`.
   - The terminal needs `--dangerously-load-development-channels`.
-- **Hooks** are the documented, flag-free way for sessions to report events. Not yet used here.
+- **Hooks** are the documented, flag-free way for sessions to report events. Ticket Line cards use a SessionStart hook loaded with `claude --settings` (PLAN §28), never the user's own settings.
+- **`--add-dir` takes every argument after it:** put `--` before a prompt that follows it.
+- **A server started from inside a Claude Code session** hands that session's `CLAUDE_CODE_*` markers to anything it spawns; a `claude` that inherits them runs as its child and writes no transcript of its own. `tabEnv` in `server/cards.ts` strips them.
 - **Auto mode** isn't available for every model (Haiku refuses it).
 - The `claude-code-guide` agent can look things up in the official docs.
 
 ## State
 - `main` may have commits that are not pushed yet (`git log origin/main..HEAD`). Ask the owner before pushing.
-- Checks: `pnpm typecheck`, `pnpm test` (113 tests, `node:test`) and `pnpm build` all pass.
+- Checks: `pnpm typecheck`, `pnpm test` (135 tests, `node:test`) and `pnpm build` all pass.
 
 ## How to work here
 - Windows 11, Node 24, pnpm; files are CRLF. The Bash tool's heredocs eat backslashes (regexes, Windows paths), so use Write/Edit, or a Python script written with Write.

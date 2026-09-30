@@ -42,6 +42,7 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `Ctrl+K` | Search actions, workflows, workspaces and sessions |
 | | `?` | Every key (`B` there to rebind) |
 | | `Alt+↑` / `Alt+↓` | Previous / next session |
+| | `Alt+L` | The Ticket Line: your work as cards on a board (again: back home) |
 | Home | `← →` | Move between columns: workspaces, sessions, the selected session |
 | | `↑ ↓` | Choose; the session shows beside the list (`Ctrl+↑ ↓` moves 5 at a time, in every list) |
 | | `Enter` / `→` | Step into it: type, answer Claude, run workflows (`Esc` back out) |
@@ -52,6 +53,9 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `Tab` | The repo library |
 | | `C` / `Shift+C` | Fold what you're in (workspace column, a group of sessions, the repo library, the session beside the list) / open every group |
 | | `F` (in the library) | Pick the folders it lists: walk the disk with `↑ ↓ → ←`, `Space` uses the folder you're in |
+| Ticket Line | `c` | New card: pick repos, write a note, `p` previews what Claude gets, `Ctrl+Enter` starts it in a terminal tab |
+| | `← → ↑ ↓` / `Enter` | Move between cards / open one: Overview, Context (how it started, what Claude was given), Transcript (`Tab`) |
+| | `1`–`9` / `0` | One workspace's cards / all |
 | Pickers | `Ctrl+O` | Browse to any folder (new session, add a repo) |
 | Session | `Numpad 1–9` / `Alt+1–9` | Run a workflow |
 | | `Y` / `A` / `N` | Allow once / always / don't allow (`Tab` first if you're in the message box) |
@@ -93,12 +97,14 @@ Browser (React + Vite)  ⇄  WebSocket  ⇄  Node server on 127.0.0.1:7777
                                            ├─ approvals held until you answer Y / A / N
                                            ├─ history from ~/.claude/projects (resume or fork any session)
                                            ├─ repo library: git repos under the folders you pick
-                                           └─ node:sqlite for workspaces, workflows and settings
+                                           ├─ node:sqlite for workspaces, workflows, settings and cards
+                                           └─ /hooks/SessionStart: where a card's terminal session fetches its context
 ```
 
 - Built on [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk). Sessions are real Claude Code sessions stored alongside your terminal ones: every terminal session is listed here and can be continued, and anything started here can be continued in a terminal with `claude --resume <id>`.
 - Extra repos use the SDK's `additionalDirectories`. Adding one to a running session restarts it in place, keeping the conversation.
 - If a session looks open in a terminal, sending to it **forks** a copy instead of writing into the same transcript.
+- **Ticket Line cards** start `claude` in a Windows Terminal tab (`wt`) with `--settings` pointing at cc-control's own hook file, so nothing is added to your Claude Code settings and other sessions never run it. The tab's SessionStart hook (`hooks/cc-control-hook.mjs`) fetches the card's context from `127.0.0.1` with a per-card token, returns it as `additionalContext`, and links the session to the card. Without the card's variables, or with the server down, the hook exits silently.
 - Voice uses the browser's Web Speech API (Chrome and Edge send the audio to Google's speech service).
 
 **Security:** the server only listens on `127.0.0.1` and only accepts pages it served itself (Host and Origin checks). It can run tools on your machine, so treat it like a terminal and don't expose it to a network.

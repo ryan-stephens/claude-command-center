@@ -635,4 +635,37 @@ Not planned: more Claude Code parity for its own sake (`!` shell, model pickers)
 
 **Rough build order:** context packet and Start work in a terminal, including the hooks bridge → board and drawer → new-card screen → Jira/Trello import → adding context later → run recipes (Try it) → Ship (commit, `gh pr create`, Slack post). The handoff for building it is `docs/prompts/continue-ticket-line.md`.
 
-**Not verified yet:** how SessionStart and UserPromptSubmit handle `additionalContext`, and whether hook processes inherit the `claude` process's environment. Check both against the current Claude Code docs before building on them.
+**Verified since** (§28): SessionStart and UserPromptSubmit both deliver `additionalContext`, and hooks inherit the `claude` process's environment, in a Windows Terminal tab too.
+
+## 28. Ticket Line, milestone 1: a card starts a terminal session with its context
+
+2026-09-29. The mechanism everything else on the line depends on, proved end to end. `Alt+L` opens the line; `c` opens the new-card screen; `Ctrl+Enter` saves the card, makes its branch and opens a Windows Terminal tab running `claude`; the tab's SessionStart hook fetches the card's context and links the session to the card.
+
+**Claude Code facts, checked live on CLI 2.1.285 and against the hooks docs:**
+- SessionStart and UserPromptSubmit both deliver `hookSpecificOutput.additionalContext` (Claude repeated a codeword sent each way). Over 10,000 characters, Claude Code saves it to a file and shows Claude a preview, so the new-card screen warns past that.
+- Hooks inherit the `claude` process's environment, including in a `wt -w 0 nt` tab spawned by Node. Their stdin carries `session_id`, `transcript_path`, `cwd` and `source` (startup / resume / clear / compact). On Windows they run in Git Bash.
+- **`--add-dir` takes every argument after it**, so it swallowed the opening message as a second folder. A `--` before the message fixes it.
+- **`claude --settings <file>` loads hooks for one session.** So cards bring their own hook and `~/.claude/settings.json` is never touched: other sessions never run it and there is nothing to install. The owner chose this over a user-settings install. The one cost: resuming a card's session by hand with plain `claude --resume` doesn't bring the hook.
+- **Windows Terminal re-quotes the command's arguments,** so the opening message goes through Windows quoting twice: `;` is escaped for wt, quotes are escaped, and backslashes before a quote or at the end are doubled (`wtArg`, tested; checked live with `;`, `&`, quotes and a trailing backslash).
+- **A folder Claude Code hasn't been told to trust stops the tab at the trust prompt, before any hook runs.** After 45 s without word, the card turns amber and says to answer the prompt in the tab. Answering it lets the hook run and link as usual.
+- **A server started from inside a Claude Code session passes that session's markers on** (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_SESSION_ID`, its messaging socket…). A tab that inherits them runs as that session's child and never writes its own transcript. The tab's environment drops them (`tabEnv`, tested); settings people set themselves (`CLAUDE_CODE_USE_BEDROCK` and the like) stay.
+
+**What was built:**
+- `shared/cards.ts`: the card, its three-layer packet (workspace, ticket, this card) plus your note, `packetText` (exactly what the hook returns and what `p` previews), sizes, branch names, and the launch command, shared so the preview and the server always agree.
+- `server/cards.ts`: checks the draft (real folders, known modes, never a mode the page didn't offer), makes the branch (new, current, or a worktree beside the repo), writes the hook settings file next to the database, and spawns `wt -w 0 nt --title CARD-n -d <repo> claude --settings … --permission-mode … --add-dir … -- "<message>"` with `CC_CONTROL_CARD`, a per-card token and the server URL in its environment. A failed branch or launch saves nothing, so the new-card screen shows the error and can be retried. Cards live in SQLite (`cards` table); the token is a separate column and never reaches the page.
+- `hooks/cc-control-hook.mjs`: reads stdin and the card variables, posts to `127.0.0.1:<port>/hooks/SessionStart`, prints the answer. Without the variables, or when the server is down or slow (5 s), it exits with no output.
+- `/hooks/:event` on the loopback listener only: it needs the card id and token in custom headers, which a web page can't send cross-site without a CORS preflight the server never answers, and the Host check still applies. Startup, `/clear` and compaction get the packet; a resume is only linked.
+- **The board** (`web/components/TicketLine.tsx`): the seven columns from the mock with their gates, workspace chips on `1`–`9` / `0`, card tiles (key, terminal pill, the latest start-up step, repos), arrows between cards, `Enter` opens the drawer, `Delete` takes a card off the line (its tab, session and branch stay).
+- **The drawer:** Overview (where it runs, folder, branch, session, context size), Context (how it started, with times, and what Claude was given by layer, with the exact text), Transcript (the linked session read through the SDK, live through `mirror.ts`). `Tab` switches.
+- **The new-card screen** (`web/components/NewCard.tsx`): the mock's three panels. 1: the repo library with search (`/`), `Space` adds or takes out. 2: the layers with sizes, `Space` includes or leaves out, `x` removes what the card added, `e` your note, `p` the exact text. 3: where it runs (terminal; "in the app" shown as later), workspace, starts in, branch, mode, opening message, and what happens. `Ctrl+Enter` starts work, also while typing.
+- Keys: `line-keys.ts` routes the line before the global shortcuts (its `Ctrl+Enter` starts work), with rows in `?` (Ticket Line, New card) and in the legend (`lineLegendFor`). `Alt+L` is rebindable. `PROTOCOL` 4 (`card.start`, `card.delete`, `cards`).
+
+**Not in this milestone, as planned:** tickets (the Inbox says import comes next), stage tracking (a card stays in Plan or Build as started), the gates (`a` `t` `f` `s`), adding context later, notes / files / findings as sources, run recipes, Ship. The mock's filter (`/` on the board) comes with the board milestone.
+
+**Verified** (isolated server, Demo workspace, Haiku):
+- A card built only with keys (title, a library repo added with `/` and `Enter`, a note with `e`, `p`, Current branch, a typed message, `Ctrl+Enter`) opened a real tab; the hook fetched the packet and linked the session within a second; the Transcript tab showed Claude answering with the codeword that was only in the note.
+- New branch in a fresh repo: the branch was made, the tab stopped at the trust prompt, and after 45 s the card said so in amber.
+- The hook route refuses no headers, a wrong token and a foreign Host (403).
+- No console errors. `pnpm typecheck`, `pnpm test` (135) and the Vite build (to `dist/web-test`) pass. `dist/web`, which the running app serves, was left alone.
+
+**Next:** the board over the existing session list (cards follow their session's state: Needs you from pending approvals, Try it when a turn ends), then Jira/Trello import. The owner doesn't have Jira credentials to hand yet, so the import starts against mock tickets with the same shape, and a real Jira site plugs in later.
