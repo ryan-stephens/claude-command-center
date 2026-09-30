@@ -57,13 +57,13 @@ The main concepts:
 
 ## State
 - `main` may have commits that are not pushed yet (`git log origin/main..HEAD`). Ask the owner before pushing.
-- Checks: `pnpm typecheck`, `pnpm test` (162 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
+- Checks: `pnpm typecheck`, `pnpm test` (171 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
 
 ## How to work here
 - Windows 11, Node 24, pnpm; files are CRLF. The Bash tool's heredocs eat backslashes (regexes, Windows paths), so use Write/Edit, or a Python script written with Write.
 - **The owner's app runs on `:7777`** as a hidden `node server/index.ts`, logging to `~\.cc-control\server.log`.
   - It serves `dist/web`, so `pnpm build` changes their page on its next reload.
-  - Server changes need a restart, which stops sessions running inside the app. **Ask first.** The way it's been restarted:
+  - Server changes need a restart, which stops sessions running inside the app. **Ask first.** `Stop-Process` doesn't let the server stop the apps it started for Try it, so stop those first (`t` on the card). The way it's been restarted:
     ```powershell
     $p = (Get-NetTCPConnection -LocalPort 7777 -State Listen).OwningProcess; Stop-Process -Id $p -Confirm:$false
     Start-Process node -ArgumentList 'server/index.ts' -WorkingDirectory 'D:\repos\cc-control' -WindowStyle Hidden -RedirectStandardOutput "$env:USERPROFILE\.cc-control\server.log" -RedirectStandardError "$env:USERPROFILE\.cc-control\server.err.log"

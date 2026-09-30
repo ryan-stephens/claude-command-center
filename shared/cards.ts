@@ -62,12 +62,12 @@ export interface PacketItem {
   text?: string;
   on: boolean;
 }
-export type PacketKind = 'repo' | 'note' | 'desc' | 'ac' | 'comments' | 'attach' | 'linked' | 'ticket';
-export const PACKET_KINDS: PacketKind[] = ['repo', 'note', 'desc', 'ac', 'comments', 'attach', 'linked', 'ticket'];
+export type PacketKind = 'repo' | 'note' | 'desc' | 'ac' | 'comments' | 'attach' | 'linked' | 'ticket' | 'recipe';
+export const PACKET_KINDS: PacketKind[] = ['repo', 'note', 'desc', 'ac', 'comments', 'attach', 'linked', 'ticket', 'recipe'];
 
 /** What Claude starts with, in three layers, plus your own note. */
 export interface Packet {
-  /** Shared by every card in the workspace: its repos (later: notes, run recipe). */
+  /** Shared by every card in the workspace: its repos and the home repo's run recipe (later: notes). */
   workspace: PacketItem[];
   /** From the card's ticket (Jira / Trello). */
   ticket: PacketItem[];
@@ -257,6 +257,11 @@ export function packetText(d: Pick<CardDraft, 'title' | 'packet' | 'launch'> & {
   if (notes.length) {
     L.push('', '## Notes');
     for (const n of notes) L.push(`- ${n.label}`);
+  }
+  const recipes = d.packet.workspace.filter((i) => i.on && i.kind === 'recipe');
+  if (recipes.length) {
+    L.push('', '## Running the app');
+    for (const r of recipes) L.push(r.text ?? r.label);
   }
   const extra = d.packet.card.filter((i) => i.on && i.kind === 'ticket');
   if (extra.length) {

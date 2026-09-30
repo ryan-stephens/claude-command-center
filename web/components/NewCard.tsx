@@ -15,7 +15,7 @@ import { get, set, useStore } from '../store.ts';
 import { Key, TicketKey, WsBadge } from './ui.tsx';
 
 /** The small kind badge on a packet row. */
-const KIND: Record<string, string> = { repo: 'repo', note: 'note', desc: 'ticket', ac: 'done when', comments: 'talk', attach: 'file', linked: 'link', ticket: 'ticket' };
+const KIND: Record<string, string> = { repo: 'repo', note: 'note', desc: 'ticket', ac: 'done when', comments: 'talk', attach: 'file', linked: 'link', ticket: 'ticket', recipe: 'run' };
 
 export function NewCard() {
   const c = useStore((s) => s.composer)!;
@@ -160,7 +160,7 @@ function Sources({ c }: { c: Composer }) {
           const had = !own && cardHasTicket(c, tk.key);
           const taken = !own && !c.addTo && started.has(tk.key);
           return (
-            <button key={tk.key} id={`src-${i}`} onClick={() => updateComposer((x) => { const r = pickTicket({ ...x, pane: 'src', si: i }, tk, get().workspaces, started); return typeof r === 'string' ? r : { ...r, pane: 'src', si: i }; })}
+            <button key={tk.key} id={`src-${i}`} onClick={() => updateComposer((x) => { const r = pickTicket({ ...x, pane: 'src', si: i }, tk, get().workspaces, started, get().recipes); return typeof r === 'string' ? r : { ...r, pane: 'src', si: i }; })}
               className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${focused && i === si ? 'is-focus bg-raise' : 'hover:bg-raise'} ${own || related || had ? 'opacity-70' : ''}`}>
               <TicketKey k={tk.key} source={tk.source} />
               <span className="min-w-0 grow">
@@ -297,7 +297,7 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
               : <div className="flex flex-wrap gap-1.5">
                   {r.opts.map((o, j) => (
                     <button key={o + j} disabled={r.off?.includes(j)}
-                      onClick={() => updateComposer((x) => ({ ...pickOption(x, r.id, j, workspaces, keyName), gi: i }))}
+                      onClick={() => updateComposer((x) => ({ ...pickOption(x, r.id, j, workspaces, keyName, get().recipes), gi: i }))}
                       className={`rounded-lg border px-2.5 py-1 text-[13px] ${j === r.at ? 'border-ring bg-surface font-semibold text-ink shadow-[0_0_0_2px_color-mix(in_srgb,var(--c-ring)_22%,transparent)]' : 'border-line bg-raise text-sub'} disabled:cursor-default disabled:opacity-50`}>{o}</button>
                   ))}
                 </div>}

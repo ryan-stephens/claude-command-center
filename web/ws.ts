@@ -111,6 +111,16 @@ export async function addCardContext(id: string, items: PacketItem[], note: stri
   await request((reqId) => ({ type: 'card.addContext', reqId, id, items, note }));
 }
 
+/** Try it: run the card's recipe. Rejects with the server's reason (no recipe, folder gone). */
+export async function tryCard(id: string): Promise<void> {
+  await request((reqId) => ({ type: 'card.try', reqId, id }));
+}
+
+/** Save the run recipe you wrote for a repo (no steps: back to the detected one). */
+export async function saveRecipe(repo: string, steps: string[], url?: string): Promise<void> {
+  await request((reqId) => ({ type: 'recipe.save', reqId, repo, steps, ...(url ? { url } : {}) }));
+}
+
 /** Replace the repo library's folders; rejects with the server's reason (a missing folder, say). */
 export async function setSources(sources: string[]): Promise<void> {
   await request((reqId) => ({ type: 'library.setSources', reqId, sources }));
@@ -253,6 +263,12 @@ function receive(msg: ServerMsg): void {
     }
     case 'tickets':
       set({ tickets: msg.tickets, ticketProjects: msg.projects, ticketSources: msg.sources });
+      return;
+    case 'recipes':
+      set({ recipes: msg.recipes });
+      return;
+    case 'runs':
+      set({ runs: Object.fromEntries(msg.runs.map((r) => [r.cardId, r])) });
       return;
     case 'card.started':
       return; // answered to the new-card screen, which waits on it

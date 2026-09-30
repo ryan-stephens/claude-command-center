@@ -7,6 +7,7 @@ import {
   type Card, type CardDraft, type Packet, type PacketItem, type Stage,
 } from '../shared/cards.ts';
 import type { RepoInfo, Workspace } from '../shared/protocol.ts';
+import { recipeFor, recipeLabel, recipeText, type RunRecipe } from '../shared/recipes.ts';
 import { relatedItem, ticketItems, ticketSub, type Ticket } from '../shared/tickets.ts';
 import { homeRepo, repoName, samePath } from '../shared/workspaces.ts';
 
@@ -147,18 +148,24 @@ export interface AddTarget {
 
 const repoItem = (path: string): PacketItem => ({ kind: 'repo', id: path, label: repoName(path), on: true });
 
-function workspaceLayer(ws: Workspace | null): PacketItem[] {
-  return ws ? ws.repos.map(repoItem) : [];
+/** Run recipes by repo path, as the server sends them. */
+export type Recipes = Record<string, RunRecipe>;
+
+/** The workspace's repos, and the run recipe of the repo cards start in. */
+function workspaceLayer(ws: Workspace | null, recipes: Recipes): PacketItem[] {
+  if (!ws) return [];
+  const r = recipeFor(recipes, homeRepo(ws) ?? ws.repos[0]);
+  return [...ws.repos.map(repoItem), ...(r ? [{ kind: 'recipe' as const, id: `recipe:${r.repo}`, label: recipeLabel(r), text: recipeText(r), on: true }] : [])];
 }
 
-export function newComposer(ws: Workspace | null, key: string, ticket: Ticket | null = null): Composer {
+export function newComposer(ws: Workspace | null, key: string, ticket: Ticket | null = null, recipes: Recipes = {}): Composer {
   return {
     ticket,
     // From a ticket, the ticket is settled, so panel 1 opens on the repos; otherwise on the tickets.
     tab: ticket ? 'repos' : 'tickets',
     title: ticket?.title ?? '',
     workspaceId: ws?.id ?? null,
-    packet: { workspace: workspaceLayer(ws), ticket: ticket ? ticketItems(ticket) : [], card: [], note: '' },
+    packet: { workspace: workspaceLayer(ws, recipes), ticket: ticket ? ticketItems(ticket) : [], card: [], note: '' },
     launch: { home: (ws && homeRepo(ws)) ?? '', branch: 'new', mode: 'plan', message: defaultMessage(ticket?.key ?? key, 'plan') },
     pane: 'src', si: 0, pi: 0, gi: 0, preview: false, q: '', msgTouched: false, starting: false, error: null,
   };
@@ -222,13 +229,13 @@ export function ticketSources(c: Composer, tickets: Ticket[], started: Set<strin
  * workspace when the project is mapped); later ones go in as related tickets, and Space again
  * takes a related one back out.
  */
-export function pickTicket(c: Composer, t: Ticket, workspaces: Workspace[], started: Set<string>): Composer | string {
+export function pickTicket(c: Composer, t: Ticket, workspaces: Workspace[], started: Set<string>, recipes: Recipes = {}): Composer | string {
   if (c.ticket?.key === t.key) return 'That is this card’s ticket. x takes it off.';
   if (c.addTo && cardHasTicket(c, t.key)) return c.addTo.ticketKey === t.key ? `${t.key} is this card’s own ticket: it has it already.` : `${c.addTo.key} already has ${t.key}.`;
   if (!c.ticket && !c.addTo) {
     if (started.has(t.key)) return `${t.key} already has a card on the line.`;
     const ws = t.workspaceId ? workspaces.find((w) => w.id === t.workspaceId) ?? null : null;
-    const base = ws && ws.id !== c.workspaceId ? setWorkspace(c, ws) : c;
+    const base = ws && ws.id !== c.workspaceId ? setWorkspace(c, ws, recipes) : c;
     return {
       ...base, ticket: t, title: t.title, packet: { ...base.packet, ticket: ticketItems(t) },
       launch: { ...base.launch, message: c.msgTouched ? c.launch.message : defaultMessage(t.key, c.launch.mode) },
@@ -246,8 +253,8 @@ export function dropTicket(c: Composer, nextKey: string): Composer {
 }
 
 /** Switch workspace: its repos replace the workspace layer; what you added to the card stays. */
-export function setWorkspace(c: Composer, ws: Workspace | null): Composer {
-  const packet = { ...c.packet, workspace: workspaceLayer(ws) };
+export function setWorkspace(c: Composer, ws: Workspace | null, recipes: Recipes = {}): Composer {
+  const packet = { ...c.packet, workspace: workspaceLayer(ws, recipes) };
   const home = (ws && homeRepo(ws)) ?? includedRepos(packet)[0] ?? '';
   return { ...c, workspaceId: ws?.id ?? null, packet, launch: { ...c.launch, home } };
 }
@@ -371,7 +378,7 @@ export function cycleModel(c: Composer): Composer {
   return pickOption(c, 'model', (at + 1) % (CARD_MODELS.length + 1), [], '');
 }
 
-export function stepOption(c: Composer, row: GoRow, delta: number, workspaces: Workspace[], key: string): Composer {
+export function stepOption(c: Composer, row: GoRow, delta: number, workspaces: Workspace[], key: string, recipes: Recipes = {}): Composer {
   const n = row.opts.length;
   if (!n) return c;
   let at = row.at;
@@ -379,12 +386,12 @@ export function stepOption(c: Composer, row: GoRow, delta: number, workspaces: W
     at = (at + delta + n) % n;
     if (!row.off?.includes(at)) break;
   }
-  return pickOption(c, row.id, at, workspaces, key);
+  return pickOption(c, row.id, at, workspaces, key, recipes);
 }
 
-export function pickOption(c: Composer, id: GoRow['id'], at: number, workspaces: Workspace[], key: string): Composer {
+export function pickOption(c: Composer, id: GoRow['id'], at: number, workspaces: Workspace[], key: string, recipes: Recipes = {}): Composer {
   switch (id) {
-    case 'ws': return setWorkspace(c, workspaces[at] ?? null);
+    case 'ws': return setWorkspace(c, workspaces[at] ?? null, recipes);
     case 'home': { const r = includedRepos(c.packet)[at]; return r ? { ...c, launch: { ...c.launch, home: r } } : c; }
     case 'branch': return { ...c, launch: { ...c.launch, branch: (['new', 'current', 'worktree'] as const)[at] ?? 'new' } };
     case 'model': {

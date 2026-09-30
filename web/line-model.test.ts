@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { Card } from '../shared/cards.ts';
+import { packetText, type Card } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
 import type { Ticket } from '../shared/tickets.ts';
 import {
@@ -228,4 +228,15 @@ test('c in a card’s drawer adds to it: only new things, and never a second own
   assert.ok(typeof add === 'object');
   assert.equal(add.items.length, 2);
   assert.equal(add.note, 'Round down.');
+});
+
+test('the workspace layer carries the home repo’s run recipe, and Claude is told how to run the app', () => {
+  const recipes = { 'D:\\r\\tokens': { repo: 'D:\\r\\tokens', steps: ['pnpm install', 'pnpm dev'], url: 'http://localhost:5173', source: 'detected from package.json' } };
+  const c = newComposer(W1, 'CARD-3', null, recipes);
+  const recipe = c.packet.workspace.find((i) => i.kind === 'recipe')!;
+  assert.equal(recipe.label, 'Run recipe: pnpm install, pnpm dev');
+  assert.match(packetText({ ...c, title: 'x' }, 'CARD-3'), /## Running the app\nIn tokens: pnpm install && pnpm dev, then open http:\/\/localhost:5173\./);
+  const off = togglePacketRow(c, c.packet.workspace.indexOf(recipe)) as Composer;
+  assert.doesNotMatch(packetText({ ...off, title: 'x' }, 'CARD-3'), /Running the app/, 'Space leaves it out');
+  assert.equal(setWorkspace(c, W2, recipes).packet.workspace.some((i) => i.kind === 'recipe'), false, 'Payments has no recipe');
 });

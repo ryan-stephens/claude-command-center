@@ -6,9 +6,12 @@ import { existsSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
-import { addPath, removePath, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
+import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
+import { cardRepos } from '../shared/cards.ts';
+import type { RunRecipe } from '../shared/recipes.ts';
 import { CardService, cleanDraft, userModel, writeHookSettings } from './cards.ts';
+import { recipeOf, RunService, saveRecipe } from './recipes.ts';
 import { CommandService } from './commands.ts';
 import { TicketService } from './tickets.ts';
 import { PermissionBroker } from './permission-broker.ts';
@@ -58,6 +61,24 @@ const tickets = new TicketService(store, () => broadcast(ticketsMsg()));
 function ticketsMsg(): ServerMsg {
   const ids = store.loadWorkspaces().map((w) => w.id);
   return { type: 'tickets', tickets: tickets.list(ids), projects: tickets.projects(ids), sources: tickets.sources() };
+}
+
+const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env);
+
+/** Recipes for every repo the page may show one for: the library's, the workspaces' and the cards'. */
+function recipesMsg(): ServerMsg {
+  const paths = [
+    ...(libraryRepos ?? []).map((r) => r.path),
+    ...store.loadWorkspaces().flatMap((w) => w.repos),
+    ...cards.list().flatMap((c) => cardRepos(c)),
+  ];
+  const recipes: Record<string, RunRecipe> = {};
+  for (const p of paths) {
+    if (Object.keys(recipes).some((k) => samePath(k, p))) continue;
+    const r = recipeOf(store, p);
+    if (r) recipes[p] = r;
+  }
+  return { type: 'recipes', recipes };
 }
 
 function cardsMsg(): ServerMsg {
@@ -163,6 +184,7 @@ function workspacesChanged(): void {
   broadcast(snapshot());
   broadcast({ type: 'commands.changed' }); // workspace workflows follow the workspace's repos
   broadcast(ticketsMsg()); // a deleted workspace maps no tickets any more
+  broadcast(recipesMsg());
 }
 
 /** The last scan; scanning stats every repo, so it runs on request, not on every connection. */
@@ -307,6 +329,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       if (problem) throw new Error(problem);
       store.setLibrarySources(sources);
       broadcast(library(true));
+      broadcast(recipesMsg());
       if (msg.reqId) send(ws, { type: 'ok', reqId: msg.reqId });
       return;
     }
@@ -325,6 +348,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     }
     case 'library.scan':
       send(ws, library(true));
+      send(ws, recipesMsg());
       return;
     case 'workspace.export': {
       const w = store.loadWorkspaces().find((x) => x.id === msg.id);
@@ -339,15 +363,41 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       if (draft.ticketKey && !ticket) throw new Error(`${draft.ticketKey} isn’t in the tickets any more. Refresh them and try again.`);
       const card = await cards.start(draft, ticket);
       send(ws, { type: 'card.started', reqId: msg.reqId, id: card.id });
+      broadcast(recipesMsg());
       return;
     }
     case 'card.delete':
+      runs.forget(String(msg.id));
       cards.delete(String(msg.id));
       return;
     case 'card.addContext':
       cards.addContext(String(msg.id), msg.items, msg.note);
       send(ws, { type: 'ok', reqId: msg.reqId });
+      broadcast(recipesMsg());
       return;
+    case 'card.try': {
+      const card = cards.get(String(msg.id));
+      if (!card) throw new Error('That card is no longer on the line.');
+      const home = cardRepos(card)[0];
+      const recipe = home && recipeOf(store, home);
+      if (!recipe) throw new Error(`${card.key} has no run recipe yet. e writes one for ${home ? repoName(home) : 'its repo'}.`);
+      const cwd = card.cwd ?? home;
+      if (!existsSync(cwd)) throw new Error(`${cwd} isn’t there any more.`);
+      runs.start(card.id, recipe, cwd);
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    }
+    case 'card.stopRun':
+      runs.stop(String(msg.id));
+      return;
+    case 'recipe.save': {
+      const repo = normalizeFolder(msg.repo);
+      if (!repo || !existsSync(repo)) throw new Error('That repo isn’t there any more.');
+      saveRecipe(store, repo, Array.isArray(msg.steps) ? msg.steps.map(String) : [], typeof msg.url === 'string' ? msg.url : undefined);
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      broadcast(recipesMsg());
+      return;
+    }
     case 'card.withdraw':
       cards.withdraw(String(msg.id), String(msg.itemId));
       return;
@@ -453,6 +503,8 @@ wss.on('connection', (ws) => {
   send(ws, library());
   send(ws, cardsMsg());
   send(ws, ticketsMsg());
+  send(ws, recipesMsg());
+  send(ws, { type: 'runs', runs: runs.list() });
   for (const request of broker.list()) send(ws, { type: 'permission.request', request });
   for (const [id, activity] of manager.activities()) send(ws, { type: 'session.activity', id, activity });
   for (const [id, todos] of manager.allTodos()) send(ws, { type: 'session.todos', id, todos });
@@ -519,6 +571,7 @@ process.on('unhandledRejection', (reason) => {
 
 function shutdown(): void {
   manager.stopAll();
+  runs.stopAll();
   cards.stop();
   tickets.stop();
   manager.history.stop();

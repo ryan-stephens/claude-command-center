@@ -93,6 +93,10 @@ export interface LineLegendInput {
   filtered?: boolean;
   /** New-card screen: adding to a running card (this key), not making one. */
   addingTo?: string;
+  /** A card (focused or open) has a run recipe (t tries it), its app is running (t stops it), serving (o opens it). */
+  canTry?: boolean;
+  appRunning?: boolean;
+  appUp?: boolean;
   /** Drawer: the card can take more context (c), and has some still waiting (x takes it back). */
   canAdd?: boolean;
   hasWaiting?: boolean;
@@ -111,6 +115,14 @@ const WORKSPACE_KEYS: LegendItem[] = [
   { keys: ['⇧E', '⇧I'], label: 'Share / import' },
   { keys: ['F'], label: 'Folders' },
 ];
+
+/** t and o for a card: try it, stop it, open the app. */
+function tryKeys(x: LineLegendInput): LegendItem[] {
+  return [
+    ...(x.appRunning ? [{ keys: ['t'], label: 'Stop the app' }] : x.canTry ? [{ keys: ['t'], label: 'Try it', tone: 'acc' as const }] : []),
+    ...(x.appUp ? [{ keys: ['o'], label: 'Open the app' }] : []),
+  ];
+}
 
 /** The Ticket Line's bar: the board, a card's drawer, or the new-card screen. */
 export function lineLegendFor(x: LineLegendInput): LegendItem[] {
@@ -137,6 +149,8 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     return [
       { keys: ['Esc'], label: 'Back to the board' },
       { keys: ['Tab'], label: 'Overview · Context · Transcript' },
+      ...tryKeys(x),
+      { keys: ['e'], label: 'Run recipe' },
       ...(x.canAdd ? [{ keys: ['c'], label: 'Add context', tone: 'acc' as const }] : []),
       ...(x.hasWaiting ? [{ keys: ['x'], label: 'Take back' }] : []),
       ...(x.hasSession ? [full] : []),
@@ -146,7 +160,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   return [
     { keys: ['←', '→', '↑', '↓'], label: 'Move' },
     ...(x.onTicket ? [{ keys: ['n', 'Enter'], label: 'Start work', tone: 'acc' as const }] : []),
-    ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open' }] : []),
+    ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open' }, ...tryKeys(x)] : []),
     ...(x.hasSession ? [full] : []),
     { keys: ['c'], label: 'New card', tone: 'acc' },
     { keys: ['⇧T'], label: 'Tickets' },

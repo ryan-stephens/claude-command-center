@@ -14,7 +14,8 @@ import { openSession } from '../keys.ts';
 import { SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, ticketFocus } from '../line-model.ts';
-import { boardOf, openAddComposer, openCard, openComposer, workspaceKey } from '../line-keys.ts';
+import { boardOf, editRecipe, openAddComposer, openApp, openCard, openComposer, tryIt, workspaceKey } from '../line-keys.ts';
+import { recipeFor, type CardRun, type RunStep } from '../../shared/recipes.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
@@ -211,6 +212,19 @@ const EMPTY: Record<Card['stage'], ReactNode> = {
   plan: 'Empty', build: 'Empty', needs: 'Nothing waiting on you', try: 'Empty', ship: 'Empty', done: 'Merged PRs land here',
 };
 
+/** On a tile: the card's app, while it runs or when it failed. */
+function RunLine({ id }: { id: string }) {
+  const run = useStore((s) => s.runs[id]);
+  if (!run || run.state === 'stopped' || run.state === 'done') return null;
+  const tone = run.state === 'failed' ? 'text-bad' : run.state === 'up' ? 'text-ok' : 'text-busy';
+  return (
+    <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold ${tone}`}>
+      {run.state === 'running' ? <span className="spinner" /> : <span className={`h-2 w-2 shrink-0 rounded-full ${run.state === 'up' ? 'bg-ok' : 'bg-bad'}`} />}
+      <span className="truncate">{run.state === 'up' ? `App at ${(run.url ?? 'running').replace(/^https?:\/\//, '')}` : run.state === 'failed' ? `Try it failed · exit ${run.steps.find((s) => s.state === 'bad')?.code ?? '?'}` : 'Starting the app'}</span>
+    </span>
+  );
+}
+
 /** The live line: a spinner while working, amber while it needs you, green while it waits, grey once ended. */
 function ActLine({ card }: { card: Card }) {
   const act = cardActivity(card);
@@ -240,6 +254,7 @@ function CardTile({ card, focused, color }: { card: Card; focused: boolean; colo
       </span>
       <span className="text-[14px] font-semibold leading-snug">{card.title}</span>
       <ActLine card={card} />
+      <RunLine id={card.id} />
       {prog && (
         <span className="flex items-center gap-1.5 font-mono text-[11px] font-semibold tabular-nums text-faint">
           <span className="h-[5px] flex-1 overflow-hidden rounded-full bg-raise"><i className="block h-full bg-ok transition-[width]" style={{ width: `${(100 * prog.done) / prog.total}%` }} /></span>
@@ -308,9 +323,24 @@ function DrawerActions({ card }: { card: Card }) {
           <Key k={expand} size="sm" />Full screen
         </button>
       )}
+      <TryButtons card={card} />
       {card.stage !== 'done' && <button className="btn py-1" onClick={() => openAddComposer(card.id)}><Key k="c" size="sm" />Add context</button>}
       <button className="btn py-1" onClick={() => set({ modal: { kind: 'deleteCard', id: card.id } })}><Key k="Delete" size="sm" />Remove card</button>
     </div>
+  );
+}
+
+/** The drawer's t / o buttons. */
+function TryButtons({ card }: { card: Card }) {
+  const has = useStore((s) => Boolean(recipeFor(s.recipes, cardRepos(card)[0])));
+  const run = useStore((s) => s.runs[card.id]);
+  const live = run?.state === 'running' || run?.state === 'up';
+  if (!has && !live) return null;
+  return (
+    <>
+      <button className={`btn py-1 ${!live && card.stage === 'try' ? 'btn-primary' : ''}`} onClick={() => tryIt(card.id)}><Key k="t" size="sm" tone={!live && card.stage === 'try' ? 'ghost' : undefined} />{live ? 'Stop the app' : 'Try it'}</button>
+      {run?.state === 'up' && run.url && <button className="btn py-1" onClick={() => openApp(card.id)}><Key k="o" size="sm" />Open the app</button>}
+    </>
   );
 }
 
@@ -364,6 +394,7 @@ function Overview({ card }: { card: Card }) {
           <div className="md max-h-64 overflow-y-auto text-sm"><Markdown remarkPlugins={[remarkGfm]}>{card.live.lastMessage}</Markdown></div>
         </Sec>
       )}
+      {!booting(card) && <TryIt card={card} />}
       <Sec title="Where it runs">
         <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1.5 text-sm">
           {card.ticket && <><dt className="text-faint">Ticket</dt><dd>{card.ticket.url ? <a className="underline hover:text-acc" href={card.ticket.url} target="_blank" rel="noreferrer">{card.ticket.key} in {SOURCE_NAME[card.ticket.source]}</a> : `${card.ticket.key}${card.ticket.demo ? ' (a demo ticket)' : ''}`} · {card.ticket.status}</dd></>}
@@ -382,6 +413,59 @@ function Overview({ card }: { card: Card }) {
         </div>
       </Sec>
     </>
+  );
+}
+
+/** A step's mark: $ waiting, a spinner, ✓, ● serving, ✗, – stopped. */
+function StepMark({ s }: { s: RunStep['state'] }) {
+  if (s === 'go') return <span className="spinner inline-block text-busy" />;
+  const [mark, tone] = { wait: ['$', 'text-faint'], ok: ['✓', 'text-ok'], up: ['●', 'text-ok'], bad: ['✗', 'text-bad'], off: ['–', 'text-faint'] }[s];
+  return <span className={`font-bold ${tone}`}>{mark}</span>;
+}
+
+/** Try it: the card's run recipe, each step as it runs, where the app is, and what a failing step said. */
+function TryIt({ card }: { card: Card }) {
+  const home = cardRepos(card)[0];
+  const recipe = useStore((s) => recipeFor(s.recipes, home));
+  const last: CardRun | undefined = useStore((s) => s.runs[card.id]);
+  // A finished run is shown while it is still this recipe's; after an edit, the new steps are.
+  const live = last?.state === 'running' || last?.state === 'up';
+  const run = last && (live || (recipe && last.steps.map((s) => s.cmd).join('\n') === recipe.steps.join('\n'))) ? last : undefined;
+  const name = home ? repoName(home) : card.key;
+  const steps: RunStep[] = run?.steps ?? recipe?.steps.map((cmd) => ({ cmd, state: 'wait' as const, tail: [] })) ?? [];
+  const shown = run?.steps.find((s) => s.state === 'bad') ?? run?.steps.find((s) => s.state === 'go') ?? (run?.state === 'up' ? run.steps.find((s) => s.state === 'up') : undefined);
+  return (
+    <Sec id="try-it" title={`Try it · ${name} run recipe`} right={
+      <button className="flex items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={() => editRecipe(card.id)} title="Write or edit the run recipe">
+        {recipe ? recipe.source : 'no recipe yet'} · edit <Key k="e" size="sm" />
+      </button>}>
+      {steps.length ? (
+        <ol className="grid min-w-0 gap-1 rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[12.5px]">
+          {steps.map((s, i) => (
+            <li key={i} className={`flex min-w-0 items-center gap-2.5 ${s.state === 'wait' || s.state === 'off' ? 'text-sub' : ''}`}>
+              <span className="w-4 shrink-0 text-center"><StepMark s={s.state} /></span>
+              <span className="min-w-0 grow truncate">{s.cmd}</span>
+              {s.state === 'bad' && <span className="shrink-0 text-bad">exit {s.code}</span>}
+              {s.state === 'up' && <span className="shrink-0 text-ok">serving</span>}
+            </li>
+          ))}
+        </ol>
+      ) : <p className="text-sm text-faint">No run recipe for {name}: nothing to go on in its package.json or compose file. Press <Key k="e" size="sm" /> to write one.</p>}
+      {run?.state === 'up' && (
+        <div className="flex items-center gap-2.5 rounded-lg bg-ok-bg px-3 py-2 text-sm font-semibold text-ok">
+          <span className="h-2 w-2 rounded-full bg-ok" />
+          <span className="grow">{run.text}</span>
+          {run.url && <button className="flex items-center gap-1.5 font-semibold" onClick={() => openApp(card.id)}><Key k="o" size="sm" />open</button>}
+        </div>
+      )}
+      {run && run.state !== 'up' && run.state !== 'running' && (
+        <div className={`rounded-lg px-3 py-2 text-sm font-semibold ${run.state === 'failed' ? 'bg-bad-bg text-bad' : 'bg-raise text-sub'}`}>{run.text}. <Key k="t" size="sm" /> runs it again.</div>
+      )}
+      {shown && shown.tail.length > 0 && (
+        <pre className="m-0 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-snug text-sub">{shown.tail.join('\n')}</pre>
+      )}
+      {!run && recipe && <p className="text-sm text-faint">Press <Key k="t" size="sm" /> to start the app in the card’s folder and try the change.</p>}
+    </Sec>
   );
 }
 

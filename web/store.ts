@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Card } from '../shared/cards.ts';
+import type { CardRun, RunRecipe } from '../shared/recipes.ts';
 import type { Ticket, TicketProject, TicketSources } from '../shared/tickets.ts';
 import type { Command, CommandGroup, ModelChoice, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, Todo, TranscriptItem, Workspace } from '../shared/protocol.ts';
 import { loadFolds, saveFolds, toggled, type FoldKey, type Folds } from './folds.ts';
@@ -33,6 +34,8 @@ export type Modal =
   | { kind: 'sources' }
   /** Take a card off the Ticket Line. */
   | { kind: 'deleteCard'; id: string }
+  /** Write or edit a repo's run recipe (e in a card's drawer). */
+  | { kind: 'recipe'; repo: string }
   /** Where tickets come from, and which workspace each project goes to. */
   | { kind: 'tickets' }
   /** "All" is showing: which workspace a workspace key (+ − E ⇧E ⇧Delete) is for. */
@@ -80,6 +83,9 @@ interface State {
   userModel: string | null;
   /** Tickets from Jira and Trello (and the demo set), the projects they come from, and how each source is doing. */
   tickets: Ticket[];
+  /** Run recipes by repo path, and cards' runs of them (Try it). */
+  recipes: Record<string, RunRecipe>;
+  runs: Record<string, CardRun>;
   ticketProjects: TicketProject[];
   ticketSources: TicketSources | null;
   /**
@@ -146,6 +152,8 @@ export const useStore = create<State>(() => ({
   cardModel: null,
   userModel: null,
   tickets: [],
+  recipes: {},
+  runs: {},
   ticketProjects: [],
   ticketSources: null,
   line: { focus: null, drawer: null, tab: 'over', filter: loadFilter(), q: '', searching: false },

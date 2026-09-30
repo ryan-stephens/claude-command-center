@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { waiting } from '../shared/cards.ts';
+import { cardRepos, waiting } from '../shared/cards.ts';
+import { recipeFor } from '../shared/recipes.ts';
 import { Dialogs } from './components/Dialogs.tsx';
 import { SessionView } from './components/SessionView.tsx';
 import { Icon, Key, KeyHint, WsBadge } from './components/ui.tsx';
@@ -45,10 +46,15 @@ function Legend() {
   const addingTo = useStore((s) => s.composer?.addTo?.key);
   const drawerCard = useStore((s) => s.cards.find((c) => c.id === s.line.drawer));
   const canAdd = Boolean(drawerCard && drawerCard.stage !== 'done');
+  const shown = useStore((s) => s.cards.find((c) => c.id === (s.line.drawer ?? s.line.focus)));
+  const canTry = useStore((s) => Boolean(shown && recipeFor(s.recipes, cardRepos(shown)[0])));
+  const run = useStore((s) => (shown ? s.runs[shown.id] : undefined));
+  const appRunning = run?.state === 'running' || run?.state === 'up';
+  const appUp = run?.state === 'up' && Boolean(run.url);
   const hasWaiting = Boolean(drawerCard && waiting(drawerCard).length);
   if (modal) return null;
   const items = screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings });
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (

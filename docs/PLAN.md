@@ -799,3 +799,36 @@ Not planned: more Claude Code parity for its own sake (`!` shell, model pickers)
 **Not yet:** delivering at once through the channel; dragging a ticket onto a card (mouse); notes, files and findings as sources (the Files, Notes and Findings tabs); taking back anything but the last waiting item.
 
 **Next:** run recipes (Try it), then Ship.
+
+## 33. Ticket Line, milestone 6: run recipes (Try it)
+
+2026-09-30. A card's change can be tried from the line: `t` starts the app of the repo the card works in, from the card's own folder (its worktree when it has one), and shows each step, where the app is and what a failing step said. `o` opens the app, `t` again stops it.
+
+**Recipes** (`shared/recipes.ts`, `server/recipes.ts`):
+- **Detected** per repo from its files: `docker compose up -d` for a compose file; for `package.json`, the package manager from `packageManager` or the lockfile (pnpm, yarn, bun, else npm), `install`, the setup scripts that exist (`db:migrate`, `migrate`, `db:seed`, `seed`), then the first of `dev`, `start`, `serve`, `preview`. Where the app will be comes from the script (`--port`, `-p`, `PORT=`, or the tool's default: Vite 5173, Next / Nuxt / Remix 3000, Astro 4321). Without a `package.json`, a plain node server (`server.js`, `app.js`… calling `.listen(3000)`) runs with `node`. Nothing to go on: no recipe, and the drawer says `e` writes one.
+- **Written by you:** `e` in a card's drawer edits the recipe of the repo it starts in: one command per line, and optionally the address. Saved on the server per repo, so every card in that repo uses it. Emptying the commands goes back to the detected one.
+- **In the context:** the workspace layer of a new card has the home repo's recipe ("Run recipe: pnpm install, pnpm dev", kind *run*, `Space` leaves it out), and Claude gets it under `## Running the app`, with a line saying cc-control runs it on Try it.
+- The page gets recipes for the library's, the workspaces' and the cards' repos (`recipes`), sent on connect and when any of those change.
+
+**Running** (`RunService`): the steps run one after another as child processes (a shell, the card's folder, `BROWSER=none` so dev servers don't open their own tab, colours off, Python unbuffered). A step that exits 0 is done; one that fails stops the run there, with its exit code and last lines. **A step that keeps running and serves is the app**: it printed a localhost URL (colour codes stripped, `0.0.0.0` read as localhost), or the recipe's port opened, or, for a step that looks like an app (`dev`, `start`, `serve`, the last step…), it stayed up 20 s without a word. An install is never taken for the app however long it takes, and a port already in use before the step started doesn't count. The app stays up and the next step starts (so tests can run against it). What the app printed wins over the recipe's address unless the port is the same. Stopping kills the whole process tree (`taskkill /T` on Windows). One run per card; `t` on a finished or failed run starts it again. Runs stop when the card is removed or the server shuts down.
+
+**What you see:**
+- The Overview's **Try it · web-app run recipe** section (the mock's words): where the recipe came from with `e` edit, each step with `$`, a spinner, `✓`, `● serving`, `✗ exit 2` or `–`, then "Running at http://localhost:5198" with `o` open, or the failure in red with "`t` runs it again", and the last lines of the step that failed, is running or is serving. After an edit, the new steps show instead of the last run's.
+- The tile says "App at localhost:5198" (green), "Starting the app", or "Try it failed · exit 2" (red).
+- The drawer has **Try it** (primary when the card is in Try it) / **Stop the app** and **Open the app** buttons.
+- Keys: `t` (board and drawer), `o` (board and drawer), `e` (drawer), with rows in `?` and the legend (`Try it`, `Stop the app`, `Open the app`, `Run recipe`). `PROTOCOL` 7 (`card.try`, `card.stopRun`, `recipe.save`; `recipes`, `runs`).
+
+**Verified** (isolated server, Demo workspace; 18 scripted checks, clean run):
+- The SHOP-155 card (web-app, which has nothing to detect) said "No run recipe for web-app", and `t` said `e` writes one. `e`: a bad address was refused; `python -c "print('checking files')"` then `python -m http.server 5198 --bind 127.0.0.1` with `http://localhost:5198` saved as *written by you*.
+- `t`: the first step ticked, the server showed *serving* and "Running at http://localhost:5198"; fetching it returned the page; the tile said "App at localhost:5198"; `o` opened it in a new tab; `t` stopped it and the port was free.
+- A recipe whose first step exits 2: "Cannot find module express", `✗ exit 2`, the server step never ran, the tile said "Try it failed · exit 2".
+- A new card in Demo had "Run recipe: python -m http.server 5198 --bind 127.0.0.1" in its workspace layer, and `p` showed it under "Running the app". `?` has `t`, `o`, `e`. No console errors.
+- Detected for the demo payments-api: `node server.js` at localhost:3000, from server.js.
+- Found by the checks and fixed: the Try it section kept showing the last run's steps after the recipe was edited; the app's printed 127.0.0.1 replaced the recipe's localhost.
+- Unit tests (9): detection from package.json, lockfiles, compose and a node server; dev-script ports; URLs in coloured output; which steps can be the app; saved recipes win and emptying goes back; a real run whose app prints its URL, serves, and is stopped; a failing step. `pnpm typecheck`, `pnpm test` (171) and the Vite build pass.
+
+**Known gaps:**
+- **An app outlives a hard kill of the server.** Stopping the server with `Stop-Process` (as the restart below does) ends it without running its shutdown, so a running app keeps its port. Stop apps with `t` before restarting.
+- `f` (feedback / fix from Try it) needs the channel to reach the session (§26); for now, type the fix in the card's tab. Recipes for repos other than the home repo, several apps at once, and a narrow browser window for `o` are not built. The run's output isn't kept after a server restart.
+
+**Next:** Ship (`s`: commit, push, `gh pr create`; Slack later).

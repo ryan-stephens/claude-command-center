@@ -1,6 +1,7 @@
 // WebSocket protocol shared by server and web. Plain types only (erasable TS, runs under Node type stripping).
 
 import type { Card, CardDraft, PacketItem } from './cards.ts';
+import type { CardRun, RunRecipe } from './recipes.ts';
 import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 
 /**
@@ -8,7 +9,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  * says `hello` first; a page that hears anything else first is talking to a server from before
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
-export const PROTOCOL = 6;
+export const PROTOCOL = 7;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -331,6 +332,12 @@ export type ClientMsg =
   | { type: 'card.addContext'; reqId: string; id: string; items: PacketItem[]; note: string }
   /** Take back something still waiting on a card. */
   | { type: 'card.withdraw'; id: string; itemId: string }
+  /** Try it: run the card's recipe in its folder (again, if it ran before). Answered with ok or an error. */
+  | { type: 'card.try'; reqId: string; id: string }
+  /** Stop the card's run and the app it started. */
+  | { type: 'card.stopRun'; id: string }
+  /** Save the run recipe you wrote for a repo; no steps goes back to the detected one. Answered with ok or an error. */
+  | { type: 'recipe.save'; reqId: string; repo: string; steps: string[]; url?: string }
   /** Tickets: show the demo set, map a project (Jira key / Trello board) to a workspace, fetch again. */
   | { type: 'tickets.demo'; on: boolean }
   | { type: 'tickets.map'; project: string; workspaceId: string | null }
@@ -370,6 +377,10 @@ export type ServerMsg =
   | { type: 'info'; message: string }
   | { type: 'error'; message: string; reqId?: string }
   /** Every card on the Ticket Line, on connect and whenever one changes. */
+  /** Run recipes by repo path: the library's, the workspaces' and the cards' repos. */
+  | { type: 'recipes'; recipes: Record<string, RunRecipe> }
+  /** Cards' runs of their recipes (Try it). */
+  | { type: 'runs'; runs: CardRun[] }
   | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string; /** The model in the user's Claude Code settings (a card's default otherwise). */ userModel?: string }
   | { type: 'card.started'; reqId: string; id: string }
   | { type: 'tickets'; tickets: Ticket[]; projects: TicketProject[]; sources: TicketSources };

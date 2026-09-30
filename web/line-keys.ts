@@ -3,7 +3,9 @@
 // expanding a session. Every key here has a row in LINE_SECTIONS (the ? overlay) and in
 // lineLegendFor (the bar at the bottom).
 
-import { waiting } from '../shared/cards.ts';
+import { cardRepos, waiting } from '../shared/cards.ts';
+import { recipeFor } from '../shared/recipes.ts';
+import { repoName } from '../shared/workspaces.ts';
 import { inbox, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
 import { openSession } from './keys.ts';
@@ -13,7 +15,7 @@ import {
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
-import { addCardContext, send, startCard } from './ws.ts';
+import { addCardContext, send, startCard, tryCard } from './ws.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
@@ -30,6 +32,9 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Tab (card open)', 'Overview, Context, Transcript'],
       ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
+      ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app'],
+      ['o (a card)', 'Open the app its run is serving'],
+      ['e (card open)', 'Write or edit the run recipe for the card’s repo'],
       ['Delete', 'Take the card off the line (its terminal session keeps running)'],
       ['Esc', 'Close the card, or clear the filter'],
     ],
@@ -135,7 +140,7 @@ export function openComposer(ticket: Ticket | null = null): void {
   const s = get();
   const mapped = ticket?.workspaceId ? s.workspaces.find((w) => w.id === ticket.workspaceId) : undefined;
   const ws = mapped ?? (s.line.filter !== 'all' ? s.workspaces.find((w) => w.id === s.line.filter) ?? null : s.workspaces[0] ?? null);
-  set({ composer: newComposer(ws, s.nextKey, ticket), line: { ...s.line, drawer: null } });
+  set({ composer: newComposer(ws, s.nextKey, ticket, s.recipes), line: { ...s.line, drawer: null } });
   if (!ticket) setTimeout(() => document.getElementById('cp-title')?.focus(), 0);
 }
 
@@ -208,6 +213,40 @@ export function withdrawLast(id: string): void {
   flash(`Took back: ${last.label}`);
 }
 
+/** Is the card's app running (or still starting)? Then t stops it. */
+export function running(id: string): boolean {
+  const r = get().runs[id];
+  return r?.state === 'running' || r?.state === 'up';
+}
+
+/** t: run the card's recipe, or stop the app when it is running. The drawer opens on Overview to show it. */
+export function tryIt(id: string): void {
+  const s = get();
+  const card = s.cards.find((c) => c.id === id);
+  if (!card) return;
+  if (running(id)) { send({ type: 'card.stopRun', id }); flash(`Stopped ${card.key}’s app`); return; }
+  const home = cardRepos(card)[0];
+  set({ line: { ...s.line, focus: id, drawer: id, tab: 'over' } });
+  if (!recipeFor(s.recipes, home)) { flash(`No run recipe for ${home ? repoName(home) : card.key} yet: e writes one`); return; }
+  tryCard(id).then(() => {
+    setTimeout(() => document.getElementById('try-it')?.scrollIntoView({ block: 'nearest' }), 0);
+  }, (e: Error) => flash(e.message));
+}
+
+/** o: the app the card's run is serving, in a new browser tab. */
+export function openApp(id: string): void {
+  const run = get().runs[id];
+  if (run?.state === 'up' && run.url) window.open(run.url, '_blank', 'noopener');
+  else flash(run?.state === 'running' ? 'The app is still starting' : 'Nothing running yet: t tries it');
+}
+
+/** e in a card's drawer: write or edit the run recipe of the repo it starts in. */
+export function editRecipe(id: string): void {
+  const card = get().cards.find((c) => c.id === id);
+  const home = card && cardRepos(card)[0];
+  if (home) set({ modal: { kind: 'recipe', repo: home } });
+}
+
 export function openCard(id: string): void {
   set({ line: { ...get().line, focus: id, drawer: id, tab: 'over' } });
 }
@@ -235,7 +274,7 @@ function composerTyping(e: KeyboardEvent, c: Composer): boolean {
       const s = get();
       if (c.tab === 'tickets') {
         const first = ticketSources(c, s.tickets, started(s))[0];
-        if (first) updateComposer((x) => { const r = pickTicket(x, first, s.workspaces, started(s)); return typeof r === 'string' ? r : { ...r, q: '', si: 0 }; });
+        if (first) updateComposer((x) => { const r = pickTicket(x, first, s.workspaces, started(s), s.recipes); return typeof r === 'string' ? r : { ...r, q: '', si: 0 }; });
       } else {
         const first = sources(c, s.library.repos)[0];
         if (first) updateComposer((x) => ({ ...toggleSource(x, first.path), q: '', si: 0 }));
@@ -276,7 +315,7 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
       const t = list[Math.min(c.si, list.length - 1)];
       if (step) { updateComposer((x) => ({ ...x, si: Math.max(0, Math.min(list.length - 1, x.si + step)) })); return true; }
       if (e.key === ' ' || e.key === 'Enter') {
-        if (t) updateComposer((x) => pickTicket(x, t, s.workspaces, c.addTo ? new Set() : started(s)));
+        if (t) updateComposer((x) => pickTicket(x, t, s.workspaces, c.addTo ? new Set() : started(s), s.recipes));
         else if (!s.tickets.length) flash('No tickets yet. Shift+T on the board connects them, or shows demo tickets.');
         return true;
       }
@@ -312,7 +351,7 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
   if (step) { updateComposer((x) => ({ ...x, gi: Math.max(0, Math.min(rows.length - 1, x.gi + step)) })); return true; }
   const row = rows[Math.min(c.gi, rows.length - 1)];
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-    updateComposer((x) => stepOption(x, row, e.key === 'ArrowRight' ? 1 : -1, s.workspaces, key));
+    updateComposer((x) => stepOption(x, row, e.key === 'ArrowRight' ? 1 : -1, s.workspaces, key, s.recipes));
     return true;
   }
   if (e.key === 'Enter' && row.id === 'msg') { focusField('cp-msg'); return true; }
@@ -349,6 +388,9 @@ function drawerKeys(e: KeyboardEvent): boolean {
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;
     case 'c': if (s.line.drawer) openAddComposer(s.line.drawer); return true;
     case 'x': if (s.line.drawer) withdrawLast(s.line.drawer); return true;
+    case 't': if (s.line.drawer) tryIt(s.line.drawer); return true;
+    case 'o': if (s.line.drawer) openApp(s.line.drawer); return true;
+    case 'e': if (s.line.drawer) editRecipe(s.line.drawer); return true;
   }
   return false;
 }
@@ -400,6 +442,8 @@ function boardKeys(e: KeyboardEvent): boolean {
   }
   switch (e.key) {
     case 'Enter': if (focused) openCard(focused); return true;
+    case 't': if (focused) tryIt(focused); else flash('Pick a card first'); return true;
+    case 'o': if (focused) openApp(focused); return true;
     case 'c': openComposer(); return true;
     case 'n': flash('n starts work on a ticket in the Inbox; c makes a card without one'); return true;
     case 'Delete': if (focused) set({ modal: { kind: 'deleteCard', id: focused } }); return true;

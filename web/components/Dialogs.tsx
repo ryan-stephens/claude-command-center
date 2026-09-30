@@ -3,12 +3,13 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { addPath, homeRepo, isInside, removePath, repoName, samePath, WORKSPACE_COLORS, workspaceRepos, workspacesFor } from '../../shared/workspaces.ts';
 import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
 import type { SourceState } from '../../shared/tickets.ts';
+import { parseSteps, recipeFor } from '../../shared/recipes.ts';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
 import { keymap, openSession } from '../keys.ts';
 import { deleteCard, runWorkspaceAction } from '../line-keys.ts';
 import { get, NO_BINDINGS, sessionById, set, setFilter as showWorkspace, useStore, type RepoTarget, type WorkspaceAction } from '../store.ts';
-import { createSession, send, setSources } from '../ws.ts';
+import { createSession, saveRecipe, send, setSources } from '../ws.ts';
 import { BindingsDialog } from './BindingsDialog.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
 import { FolderPicker } from './FolderPicker.tsx';
@@ -38,6 +39,7 @@ export function Dialogs() {
     case 'repoRemove': return <RepoRemover target={modal.target} />;
     case 'sources': return <SourcesDialog />;
     case 'deleteCard': return <DeleteCardDialog id={modal.id} />;
+    case 'recipe': return <RecipeDialog repo={modal.repo} />;
     case 'pickWorkspace': return <PickWorkspaceDialog then={modal.then} />;
     case 'tickets': return <TicketsDialog />;
   }
@@ -497,6 +499,41 @@ function DeleteCardDialog({ id }: { id: string }) {
       <div className="mt-5 flex justify-end gap-2.5">
         <button className="btn" onClick={close}>Keep it<Key k="N" size="sm" /></button>
         <button className="btn btn-primary" onClick={doIt}>Remove<Key k="Y" size="sm" tone="ghost" /></button>
+      </div>
+    </Overlay>
+  );
+}
+
+/** e in a card's drawer: the run recipe for its repo, one command per line, and where the app will be. */
+function RecipeDialog({ repo }: { repo: string }) {
+  const recipe = useStore((s) => recipeFor(s.recipes, repo));
+  const [text, setText] = useState(() => recipe?.steps.join('\n') ?? '');
+  const [url, setUrl] = useState(() => recipe?.url ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const save = () => {
+    saveRecipe(repo, parseSteps(text), url.trim() || undefined).then(close, (e: Error) => setError(e.message));
+  };
+  const keys = (e: ReactKeyboardEvent) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  };
+  return (
+    <Overlay label="Run recipe">
+      <DialogTitle>Run recipe for {repoName(repo)}</DialogTitle>
+      <p className="mb-3 text-sm text-sub">
+        Try it runs these in the card’s folder, one after another. A step that keeps running and serves is the app: it stays up until you stop it, and the next step starts.
+        {recipe ? ` Now: ${recipe.source}.` : ' Nothing was detected for this repo.'}
+      </p>
+      <label className="eyebrow mb-1.5 block" htmlFor="recipe-steps">Commands, one per line</label>
+      <textarea id="recipe-steps" autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={keys} rows={5} spellCheck={false}
+        placeholder={'pnpm install\npnpm dev'} className="field w-full resize-y font-mono text-[13px]" />
+      <label className="eyebrow mb-1.5 mt-3 block" htmlFor="recipe-url">Where the app will be (optional; otherwise read from what it prints)</label>
+      <input id="recipe-url" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={keys} placeholder="http://localhost:5173" className="field w-full font-mono text-[13px]" />
+      {recipe?.edited && <p className="mt-2 text-[13px] text-faint">Empty the commands and save to go back to the detected recipe.</p>}
+      {error && <div className="mt-3 rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
+      <div className="mt-5 flex items-center justify-end gap-2.5">
+        <button className="btn" onClick={close}>Cancel<Key k="Esc" size="sm" /></button>
+        <button className="btn btn-primary" onClick={save}>Save<Key k="Ctrl Enter" size="sm" tone="ghost" /></button>
       </div>
     </Overlay>
   );

@@ -11,7 +11,7 @@ The owner chose a direction: the **Ticket Line** (PLAN §27). The spec is the cl
 
 The owner likes the mock a lot. Keep its look, its words and its keys, including the legend bar and the `?` overlay, unless something can't be built as drawn. If so, say why.
 
-## Where it stands: milestones 1 to 5 are done (PLAN §28–§32)
+## Where it stands: milestones 1 to 6 are done (PLAN §28–§33)
 - **1 (§28):** a card saves its context, makes its branch and starts `claude` in a Windows Terminal tab. The hook, loaded with `claude --settings`, fetches the packet and links the session. Read §28 for the Claude Code facts it established: the `--add-dir` / `--` gotcha, trust prompts and inherited session markers will bite again.
 - **2 (§29):** cards follow their session through async hooks (Plan ready, Needs you, Try it, steps, files changed).
 - **3 (§30):** the line is the home page; Home is gone. Workspace keys (`W` `E` `+` `−` `F` `Shift+E` `Shift+I` `Shift+Delete`) work on the line and ask which workspace when All is showing. (An Unticketed row of sessions without a card was built, then removed at the owner's request: not every session belongs on the line; `Ctrl+K` finds them.) `Ctrl+Enter` opens a card's session full screen. The new-card screen chooses the model (`m`) and can keep a card's repo for the workspace (`w`).
@@ -20,7 +20,9 @@ The owner likes the mock a lot. Keep its look, its words and its keys, including
 
 - **5 (§32):** adding context later. `c` in a card's drawer opens the new-card screen's add form (repos, related tickets, a note; Deliver "with your next message"); it waits on the card, the now-synchronous UserPromptSubmit hook hands it to Claude with the next message typed in the tab, and the Context tab's "Added since it started" shows waiting / delivered. `x` takes back the last waiting item. Delivery was proved with the real hook (a `claude -p --resume` with the card's variables and `--settings`), not by typing in a tab.
 
-**Next: run recipes (Try it)** (the mock's `t` on a card in Try it: a run recipe per repo, detected from `package.json` / `compose.yaml` and editable, run as child processes with their ports shown, and `o` opens the app; the workspace layer of the packet gets a "Running the app" line). Then **Ship** (`s`: commit, push, `gh pr create`; Slack later). Read the mock's `RECIPES`, `try` and `doShip` before designing.
+- **6 (§33):** run recipes. `t` on a card runs its home repo's recipe (detected from `package.json` / `compose.yaml` / a node server, or written with `e`) in the card's folder; a step that keeps running and serves is the app; `o` opens it, `t` again stops it. The recipe is in the workspace layer and under "Running the app" in the packet.
+
+**Next: Ship** (the mock's `s` on a card: a sheet with the commit message, branch, PR title and body from the ticket, then commit, push and `gh pr create` in the card's folder, and the card moves to Ship with the PR; `s` again merges later). Slack comes later (the owner said so). Read the mock's ship sheet (`S.sheet.type === 'ship'`) and `doShip` before designing. `f` (feedback / fix) needs the channel; leave it unless the owner asks.
 
 **Open questions for the owner** (asked at the end of milestones 3 and 5, not yet answered; they do not block run recipes or Ship): whether the drag-and-drop repo library strip should come back on the line, and whether the in-app new-session dialog (`Alt+Shift+N`) is still wanted. Jira credentials (site URL, email, API token) will come from the owner; when they do, try the live site and adjust `fromJira` / `splitAcceptance`.
 
@@ -51,7 +53,7 @@ This first milestone proves the mechanism end to end. Leave the board polish, Ji
    - The Context tab shows the start-up log and what Claude was given.
    - Add a key and a `?` row for every action.
 
-**Then, in order:** ~~the board and drawer over the existing session list~~ (done, §29–§30) → ~~Jira/Trello import~~ (done against demo tickets, §31) (read-only, tokens kept on the server) with a ticket-to-workspace mapping → ~~adding context later~~ (done, §32) → run recipes (Try it) → Ship (commit, `gh pr create`, Slack post). Add a PLAN section for each piece, in the same commit.
+**Then, in order:** ~~the board and drawer over the existing session list~~ (done, §29–§30) → ~~Jira/Trello import~~ (done against demo tickets, §31) (read-only, tokens kept on the server) with a ticket-to-workspace mapping → ~~adding context later~~ (done, §32) → ~~run recipes (Try it)~~ (done, §33) → Ship (commit, `gh pr create`, Slack post). Add a PLAN section for each piece, in the same commit.
 
 ## The owner's answers (2026-09-29)
 - **Hooks:** per launch with `claude --settings`. Nothing goes into `~/.claude/settings.json`. The UserPromptSubmit hook for adding context later goes in the same file (`writeHookSettings` in `server/cards.ts`).
