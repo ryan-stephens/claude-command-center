@@ -22,7 +22,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
     title: 'Ticket Line',
     keys: [
       ['← → ↑ ↓', 'Move between cards'],
-      ['Enter', 'Open the card: Overview, Context (how it started, what Claude was given), Transcript'],
+      ['Enter', 'Open the card full screen: Overview, Context (how it started, what Claude was given), and its live Transcript beside them'],
       ['n / Enter (a ticket in the Inbox)', 'Start work on it: the new-card screen, with the ticket as its context'],
       ['v', 'Inbox: your tickets, or every ticket Ready for QA in your projects'],
       ['Delete (a ticket in the Inbox)', 'Hide it from the Inbox (nothing changes in Jira or Trello; Shift+T shows it again)'],
@@ -31,7 +31,8 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['c', 'New card: build its context and start work in a terminal tab'],
       ['1–9  /  0', 'Show one workspace’s cards / all of them'],
       ['/', 'Filter the cards by words'],
-      ['Tab (card open)', 'Overview, Context, Transcript'],
+      ['Tab (card open)', 'Overview or Context (on a narrow window, Transcript too)'],
+      ['Esc (card open)', 'Back to the board, the card still focused'],
       ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app'],
@@ -442,8 +443,10 @@ function drawerKeys(e: KeyboardEvent): boolean {
   switch (e.key) {
     case 'Escape': set({ line: { ...s.line, drawer: null } }); return true;
     case 'Tab': {
-      const i = TABS.indexOf(s.line.tab);
-      set({ line: { ...s.line, tab: TABS[(i + (e.shiftKey ? 2 : 1)) % 3] } });
+      // Wide screens show the transcript beside the tabs, so Tab only switches Overview and Context.
+      const tabs = window.matchMedia?.('(min-width: 1024px)').matches ? TABS.filter((t) => t !== 'tx') : [...TABS];
+      const i = Math.max(0, tabs.indexOf(s.line.tab));
+      set({ line: { ...s.line, tab: tabs[(i + (e.shiftKey ? tabs.length - 1 : 1)) % tabs.length] } });
       return true;
     }
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;

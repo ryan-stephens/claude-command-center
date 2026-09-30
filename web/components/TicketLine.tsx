@@ -1,9 +1,9 @@
 // The Ticket Line (PLAN §27, spec: docs/futures/path-line.html), the home page: work as cards
-// moving left to right through the loop, a drawer for one card, and the new-card screen over the
-// whole board. Cards run in terminal tabs
+// moving left to right through the loop, one card full screen when you open it (PLAN §41), and the
+// new-card screen over the whole board. Cards run in terminal tabs
 // and follow their session through its hooks (server/card-events.ts).
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cardRepos, fmtK, itemTokens, kindName, memoryPct, modelName, packetText, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
@@ -41,7 +41,7 @@ export function TicketLine() {
       <WorkspaceBar />
       <div className="relative flex min-h-0 flex-1">
         <Board />
-        {drawer && <Drawer id={drawer} />}
+        {drawer && <CardView id={drawer} />}
         {composer && <NewCard />}
       </div>
     </div>
@@ -301,42 +301,91 @@ function KindPill({ card }: { card: Card }) {
 
 const TABS = [['over', 'Overview'], ['ctx', 'Context'], ['tx', 'Transcript']] as const;
 
-function Drawer({ id }: { id: string }) {
+/** Wide enough for the card view's two columns (Tailwind's lg): the transcript then sits beside Overview / Context. */
+function useWide(): boolean {
+  const query = '(min-width: 1024px)';
+  const [wide, setWide] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setWide(m.matches);
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, []);
+  return wide;
+}
+
+/**
+ * One card, full screen: opening a card is giving it your attention, so it takes the whole line
+ * (the board stays underneath, and Esc goes back to it). Wide screens show Overview or Context on
+ * the left and the live transcript on the right; narrow ones show the three as tabs.
+ */
+function CardView({ id }: { id: string }) {
   const card = useStore((s) => s.cards.find((c) => c.id === id));
   const tab = useStore((s) => s.line.tab);
   const ws = useStore((s) => s.workspaces.find((w) => w.id === card?.workspaceId) ?? null);
+  const wide = useWide();
   if (!card) return null;
   const stage = { inbox: 'Inbox', plan: 'Plan', build: 'Build', needs: 'Needs you', try: 'Try it', ship: 'Ship', done: 'Done' }[card.stage];
+  const left = tab === 'tx' && wide ? 'over' : tab;
+  const tabs = wide ? TABS.filter(([t]) => t !== 'tx') : TABS;
   return (
-    <aside className="absolute inset-y-0 right-0 z-10 flex w-full max-w-[620px] flex-col border-l border-line bg-surface shadow-[-24px_0_40px_-24px_rgb(0_0_0/0.45)]" aria-label={`${card.key} ${card.title}`}>
-      <div className="grid gap-2.5 border-b border-line px-5 pt-4">
-        <div className="flex items-start gap-3">
-          <WsBadge ws={ws} size={28} />
-          <div className="flex min-w-0 grow flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-1.5 text-sm">
-              <TicketKey k={card.key} source={card.ticket?.source} />
-              <Pill tone={needsYou(card) ? 'amber' : 'grey'}>{stage}</Pill>
-              {card.kind && card.kind !== 'build' && <KindPill card={card} />}
-              <Pill tone="grey">terminal · tab {card.key}</Pill>
-              <span className="text-faint">{ws?.name ?? 'No workspace'}</span>
-            </div>
-            <h2 className="text-[19px] font-bold leading-snug tracking-tight">{card.title}</h2>
+    <section className="absolute inset-0 z-20 flex flex-col bg-bg" aria-label={`${card.key} ${card.title}`}>
+      <div className="flex items-center gap-4 border-b border-line bg-surface px-4 py-3">
+        <WsBadge ws={ws} size={30} />
+        <div className="flex min-w-0 grow flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-1.5 text-sm">
+            <TicketKey k={card.key} source={card.ticket?.source} />
+            <Pill tone={needsYou(card) ? 'amber' : 'grey'}>{stage}</Pill>
+            {card.kind && card.kind !== 'build' && <KindPill card={card} />}
+            <Pill tone="grey">terminal · tab {card.key}</Pill>
+            <span className="text-faint">{ws?.name ?? 'No workspace'}</span>
           </div>
-          <button className="flex shrink-0 items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={() => set({ line: { ...get().line, drawer: null } })}>Close <Key k="Esc" size="sm" /></button>
+          <h2 className="truncate text-[19px] font-bold leading-snug tracking-tight">{card.title}</h2>
         </div>
-        <div className="flex items-center gap-1">
-          {TABS.map(([t, name]) => (
-            <button key={t} onClick={() => set({ line: { ...get().line, tab: t } })}
-              className={`border-b-2 px-3 py-1.5 text-sm font-semibold ${tab === t ? 'border-acc text-ink' : 'border-transparent text-faint hover:text-sub'}`}>{name}</button>
-          ))}
-          <Key k="Tab" size="sm" />
-        </div>
+        <button className="flex shrink-0 items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={() => set({ line: { ...get().line, drawer: null } })}>Back to the board <Key k="Esc" size="sm" /></button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === 'ctx' ? <ContextTab card={card} wsName={ws?.name} /> : tab === 'tx' ? <TranscriptTab card={card} /> : <Overview card={card} />}
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="flex min-h-0 flex-col border-line bg-surface lg:border-r">
+          <div className="flex items-center gap-1 border-b border-line px-4 pt-1.5">
+            {tabs.map(([t, name]) => (
+              <button key={t} onClick={() => set({ line: { ...get().line, tab: t } })}
+                className={`border-b-2 px-3 py-1.5 text-sm font-semibold ${left === t ? 'border-acc text-ink' : 'border-transparent text-faint hover:text-sub'}`}>{name}</button>
+            ))}
+            <Key k="Tab" size="sm" />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {left === 'ctx' ? <ContextTab card={card} wsName={ws?.name} /> : left === 'tx' ? <TranscriptTab card={card} /> : <Overview card={card} />}
+          </div>
+        </div>
+        {wide && (
+          <div className="flex min-h-0 flex-col bg-col">
+            <div className="flex items-center gap-2 border-b border-line px-5 py-2.5">
+              <h4 className="grow text-sm font-bold">Transcript</h4>
+              <span className="text-xs text-faint">live from the terminal tab {card.key}</span>
+            </div>
+            <LiveTranscript card={card} />
+          </div>
+        )}
       </div>
       <DrawerActions card={card} />
-    </aside>
+    </section>
+  );
+}
+
+/** The right-hand column: the session as it is written, kept at the newest unless you scrolled up to read. */
+function LiveTranscript({ card }: { card: Card }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const pinned = useRef(true);
+  const count = useStore((s) => (card.sessionId ? s.transcripts[card.sessionId]?.length ?? 0 : 0));
+  useEffect(() => {
+    const el = ref.current;
+    if (el && pinned.current) el.scrollTop = el.scrollHeight;
+  }, [count]);
+  return (
+    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto"
+      onScroll={(e) => { const el = e.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
+      <TranscriptTab card={card} />
+    </div>
   );
 }
 
@@ -344,10 +393,10 @@ function DrawerActions({ card }: { card: Card }) {
   const expand = useExpandKey();
   const linked = useStore((s) => Boolean(card.sessionId && s.sessions.some((x) => x.id === card.sessionId)));
   return (
-    <div className="flex flex-wrap gap-2 border-t border-line bg-col px-5 py-3">
+    <div className="flex flex-wrap gap-2 border-t border-line bg-surface px-4 py-3">
       {card.sessionId && (
         <button className="btn py-1" disabled={!linked} onClick={() => openSession(card.sessionId!)} title={linked ? 'Read and type in this session in the app (Esc comes back)' : 'The session hasn’t shown up in the session list yet'}>
-          <Key k={expand} size="sm" />Full screen
+          <Key k={expand} size="sm" />Type to it here
         </button>
       )}
       <TryButtons card={card} />

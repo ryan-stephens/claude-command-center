@@ -1091,3 +1091,32 @@ What passed:
 - Posting findings to the PR, or the report to Jira. The owner wants this later, asked first each time.
 - QA against the PR's build or a deployed environment, rather than locally.
 - Bringing VU's tools into the app: the scenario generator as a recipe step or an MCP tool, and the hosted field tools as links or MCP servers per workspace. This fits §35's rule: a workspace-level, swappable module.
+
+## 41. Opening a card takes the whole screen
+
+2026-09-30, from the owner: clicking a card opened a side panel, which didn't feel right. When you open a card, you want to give it your full attention.
+
+This departs from the mock (`path-line.html` drew a 620 px drawer) at the owner's request.
+
+**What changed:**
+- **Opening a card fills the line**, the same way the new-card screen does: `Enter` or a click, as before.
+  - The header has the card's key, stage, kind, terminal tab, workspace and title, plus *Back to the board* (`Esc`).
+  - The board stays underneath, and `Esc` returns to it with the card still focused.
+- **Wide windows (1024 px and up) show two columns.** On the left, Overview or Context (`Tab` switches between them). On the right, the live transcript, kept at the newest message unless you scroll up to read.
+- **Narrower windows show one column**, with Overview, Context and Transcript as tabs, as before.
+- Every other key works as it did in the drawer: `c`, `x`, `t`, `o`, `e`, `s`, `Delete`, and the expand key. The action bar runs along the bottom.
+- The button and legend entry for the expand key now say **Type to it here**, since the card itself is already full screen. The key still opens the card's session in the app.
+- `?` says "Open the card full screen…", with a row for `Esc (card open)`, and the legend's `Tab` says *Overview · Context*.
+
+**Verified** (isolated server, the §40 test data; 15 scripted checks, screenshots looked at):
+- The review card opened at full width, with its findings, PR and details on the left and the transcript on the right.
+- `Tab` went to Context and back.
+- `s` opened the findings, and `Esc` there left the card open.
+- `Esc` returned to the board with SHOP-162 still focused, and `Enter` opened it again.
+- `c` opened Add context over it, and `Esc` came back to the card.
+- At 900 px wide, Transcript was a tab again, and `Tab` reached it.
+- No console errors. `pnpm typecheck` and `pnpm test` (210) pass.
+
+**Not yet:**
+- Stepping to the previous or next card without going back to the board.
+- The legend's `Tab` still says *Overview · Context* on a narrow window, where it also reaches Transcript.

@@ -57,7 +57,7 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `Shift+T` | Tickets: Jira and Trello status, demo tickets, which workspace each project goes to, and tickets you hid |
 | | `Delete` (a ticket in the Inbox) | Hide it from the Inbox (nothing changes in Jira or Trello) |
 | | `c` | New card: pick tickets (`/` searches Jira for anyone's), repos or any folder, write a note, `k` the kind (Develop, QA, Code review), `m` the model, `p` previews what Claude gets, `Ctrl+Enter` starts it in a terminal tab |
-| | `← → ↑ ↓` / `Enter` | Move between cards / open one: Overview, Context (how it started, what Claude was given), Transcript (`Tab`) |
+| | `← → ↑ ↓` / `Enter` | Move between cards / open one full screen: Overview or Context (`Tab`; how it started, what Claude was given) beside its live transcript; `Esc` back to the board |
 | | `t` / `o` (a card) | Try it: run its repo's recipe in the card's folder / open the app (`t` again stops it) |
 | | `e` (card open) | Write or edit the run recipe for the card's repo |
 | | `s` (a card) | Ship: commit the ticked files, push, open a PR from the ticket (`gh`); on a card in Ship, merge it. On a QA or review card: its report, `Enter` copies it, `d` moves the card to Done |

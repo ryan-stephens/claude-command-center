@@ -154,12 +154,12 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   if (x.view === 'drawer') {
     return [
       { keys: ['Esc'], label: 'Back to the board' },
-      { keys: ['Tab'], label: 'Overview · Context · Transcript' },
+      { keys: ['Tab'], label: 'Overview · Context' },
       ...tryKeys(x),
       { keys: ['e'], label: 'Run recipe' },
       ...(x.canAdd ? [{ keys: ['c'], label: 'Add context', tone: 'acc' as const }] : []),
       ...(x.hasWaiting ? [{ keys: ['x'], label: 'Take back' }] : []),
-      ...(x.hasSession ? [full] : []),
+      ...(x.hasSession ? [{ ...full, label: 'Type to it here' }] : []),
       { keys: ['Delete'], label: 'Remove card' },
     ];
   }
