@@ -41,13 +41,12 @@ Target: going from "a session needs me" to "handled" should take **3 keystrokes 
 ### Ticket Line (the home page since §30; Home, §17–§25, is gone)
 | Key | Action |
 |---|---|
-| `← → ↑ ↓` | Move between cards; `↓` from the bottom of a column goes down to the Unticketed row |
+| `← → ↑ ↓` | Move between cards |
 | `Enter` | Open the card's drawer (Overview, Context, Transcript; `Tab` switches) |
 | `Ctrl+Enter` | The card's session full screen; again (or `Esc`), back to the line as you left it |
 | `c` | New card (`m` model, `p` preview, `w` keep a card repo for the workspace, `Ctrl+Enter` start work) |
-| `1–9` / `0` | One workspace's cards and sessions / all of them |
-| `u` | The Unticketed row: sessions without a card (`← →`, `Enter` full screen, `R` / `X` rename / end, `↑` or `u` back) |
-| `/` | Filter cards and sessions by words (`Esc` clears) |
+| `1–9` / `0` | One workspace's cards / all of them |
+| `/` | Filter the cards by words (`Esc` clears) |
 | `W` / `E` / `Shift+Delete` | New workspace / edit / delete the one shown (with All showing, a picker asks which) |
 | `+` / `−` | Add a repo from the library to the workspace shown / remove one |
 | `Shift+E` / `Shift+I` | Share the workspace as a file / import one |
@@ -731,5 +730,7 @@ Not planned: more Claude Code parity for its own sake (`!` shell, model pickers)
 - A real card (web-app, current branch): `m` three times picked Haiku, the command showed `--model haiku`; the tab linked, the drawer said Model Haiku, `Ctrl+Enter` opened its session full screen and again came back with the drawer open.
 - A bug the checks found: the workspace dialog had a local `setFilter` shadowing the store's, so saving a workspace would have set the dialog's repo filter instead of showing the workspace. Renamed.
 - No console errors. `pnpm typecheck`, `pnpm test` (149) and the Vite build to `dist/web-test` pass.
+
+**Amended the same day: the Unticketed row is gone.** The owner didn't want it: not every session belongs on the line, so a row of the ones without a card is noise. Removed with its keys (`u`, `R` / `X` there, `↓` into it). Sessions without a card are found with `Ctrl+K`, as before; `Alt+↑ ↓` now walk the cards' sessions only, and `/` filters the cards.
 
 **Next:** Jira/Trello import against mock tickets (the Inbox, `n` on a ticket, the ticket layer of the packet), then adding context later.

@@ -6,9 +6,8 @@ import {
   branchFor, CARD_MODELS, defaultMessage, homeOf, includedRepos, LAUNCH_MODES, modelName, STAGES,
   type Card, type CardDraft, type Packet, type PacketItem, type Stage,
 } from '../shared/cards.ts';
-import type { RepoInfo, SessionSummary, Workspace } from '../shared/protocol.ts';
+import type { RepoInfo, Workspace } from '../shared/protocol.ts';
 import { homeRepo, repoName, samePath } from '../shared/workspaces.ts';
-import { groupSessions, sessionsIn, type Flags } from './home-model.ts';
 
 /** Which workspace's cards the board shows. */
 export type LineFilter = 'all' | string;
@@ -27,44 +26,9 @@ export function lanes(cards: Card[], filter: LineFilter, q = ''): { stage: Stage
   }));
 }
 
-// ---- The Unticketed row: sessions without a card ---------------------------------------------
-
-/** At most this many sessions on the row; Ctrl+K finds the rest. */
-export const ROW_MAX = 12;
-/** Sessions that ended longer ago than this stay off the row unless the filter asks for them. */
-const ROW_RECENT_MS = 3 * 24 * 3600_000;
-
-export interface RowInput {
-  sessions: SessionSummary[];
-  cards: Card[];
-  workspaces: Workspace[];
-  filter: LineFilter;
-  q: string;
-  flags: (s: SessionSummary) => Flags;
-  /** The order Alt+N serves sessions that need you. */
-  attention: string[];
-  now: number;
-}
-
-/**
- * The row under the board: sessions no card follows, in the workspace shown. The ones that need
- * you come first, then working, then finished, then the last few days' others. `more` counts the
- * rest, which Ctrl+K (or typing in the filter) still finds.
- */
-export function unticketed(x: RowInput): { shown: SessionSummary[]; more: number } {
-  const linked = new Set(x.cards.map((c) => c.sessionId).filter(Boolean));
-  const all = sessionsIn(x.filter, x.sessions, x.workspaces)
-    .filter((s) => !linked.has(s.id) && matches(x.q, `${s.title} ${s.cwd} ${s.branch ?? ''}`));
-  const ordered = groupSessions(all, x.flags, x.attention)
-    .flatMap((g) => (g.bucket === 'earlier' && !x.q.trim() ? g.sessions.filter((s) => x.now - s.lastModified < ROW_RECENT_MS) : g.sessions));
-  const shown = ordered.slice(0, ROW_MAX);
-  return { shown, more: all.length - shown.length };
-}
-
-/** Every session the line shows, in order: the cards' (column by column), then the row's. Alt+↑ ↓ walk it. */
-export function lineSessions(cols: { cards: Card[] }[], row: SessionSummary[]): string[] {
-  const ids = cols.flatMap((l) => l.cards.map((c) => c.sessionId).filter((id): id is string => Boolean(id)));
-  return [...new Set([...ids, ...row.map((s) => s.id)])];
+/** The cards' sessions, column by column: what Alt+↑ ↓ walk. */
+export function lineSessions(cols: { cards: Card[] }[]): string[] {
+  return [...new Set(cols.flatMap((l) => l.cards.map((c) => c.sessionId).filter((id): id is string => Boolean(id))))];
 }
 
 /** Arrows on the board: ↑ ↓ within a column, ← → to the nearest column that has cards, keeping the row. */

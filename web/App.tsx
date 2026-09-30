@@ -30,7 +30,7 @@ function Legend() {
   });
   const drafting = useStore((s) => Boolean(s.openId && s.drafts[s.openId]));
   const modal = useStore((s) => s.modal);
-  const lineView = useStore((s) => (s.composer ? 'composer' : s.line.drawer ? 'drawer' : s.line.row ? 'row' : 'board'));
+  const lineView = useStore((s) => (s.composer ? 'composer' : s.line.drawer ? 'drawer' : 'board'));
   const pane = useStore((s) => s.composer?.pane);
   const preview = useStore((s) => s.composer?.preview);
   const cardRepo = useStore((s) => {

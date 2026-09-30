@@ -77,9 +77,9 @@ interface State {
   userModel: string | null;
   /**
    * The board: the focused card, the card open in the drawer and its tab, the workspace shown, and
-   * the text filter (/). `row` is set while the keys are on the Unticketed row: the session focused there.
+   * the text filter (/).
    */
-  line: { focus: string | null; drawer: string | null; tab: 'over' | 'ctx' | 'tx'; filter: LineFilter; q: string; searching: boolean; row: string | null };
+  line: { focus: string | null; drawer: string | null; tab: 'over' | 'ctx' | 'tx'; filter: LineFilter; q: string; searching: boolean };
   /** The new-card screen, while it is open. */
   composer: Composer | null;
   openId: string | null;
@@ -138,7 +138,7 @@ export const useStore = create<State>(() => ({
   nextKey: 'CARD-1',
   cardModel: null,
   userModel: null,
-  line: { focus: null, drawer: null, tab: 'over', filter: loadFilter(), q: '', searching: false, row: null },
+  line: { focus: null, drawer: null, tab: 'over', filter: loadFilter(), q: '', searching: false },
   composer: null,
   openId: null,
   zone: 'composer',
@@ -203,7 +203,7 @@ export function currentWorkspace(s: Pick<State, 'workspaces' | 'line'>): Workspa
 
 /** Show one workspace on the line (remembered per browser), or all of them. */
 export function setFilter(filter: LineFilter): void {
-  set({ line: { ...get().line, filter, row: null } });
+  set({ line: { ...get().line, filter } });
   try { localStorage.setItem('cc-control.lineFilter', filter); } catch { /* ignore */ }
 }
 

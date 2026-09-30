@@ -40,7 +40,7 @@ function PadRail({ onOpen }: { onOpen: () => void }) {
 
 /**
  * A session full screen: its conversation, cards, to-do list, activity and message box. It opens
- * from a card on the Ticket Line (the expand key) or from the Unticketed row; Esc goes back.
+ * from a card on the Ticket Line (the expand key) or from Ctrl+K; Esc goes back.
  */
 export function SessionView() {
   const id = useStore((s) => s.openId)!;

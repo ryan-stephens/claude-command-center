@@ -1,22 +1,19 @@
 // The Ticket Line (PLAN §27, spec: docs/futures/path-line.html), the home page: work as cards
-// moving left to right through the loop, the Unticketed row of sessions without a card under it,
-// a drawer for one card, and the new-card screen over the whole board. Cards run in terminal tabs
+// moving left to right through the loop, a drawer for one card, and the new-card screen over the
+// whole board. Cards run in terminal tabs
 // and follow their session through its hooks (server/card-events.ts).
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { fmtK, includedRepos, memoryPct, modelName, packetText, tokens, type Card, type PacketItem } from '../../shared/cards.ts';
-import type { SessionSummary } from '../../shared/protocol.ts';
 import { homeRepo, repoName, samePath } from '../../shared/workspaces.ts';
-import { activityShort } from '../activity-label.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { importWorkspace } from '../commands.ts';
-import { age } from '../home-model.ts';
 import { openSession } from '../keys.ts';
 import { booting, cardActivity, elapsed, lanes, needsYou, progress, shortPath } from '../line-model.ts';
-import { openCard, openComposer, rowOf, workspaceKey } from '../line-keys.ts';
-import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useFlags, useStore } from '../store.ts';
+import { openCard, openComposer, workspaceKey } from '../line-keys.ts';
+import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { NewCard } from './NewCard.tsx';
@@ -39,10 +36,7 @@ export function TicketLine() {
       <LineBar />
       <WorkspaceBar />
       <div className="relative flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <Board />
-          <UnticketedRow />
-        </div>
+        <Board />
         {drawer && <Drawer id={drawer} />}
         {composer && <NewCard />}
       </div>
@@ -79,7 +73,7 @@ function LineBar() {
   );
 }
 
-/** / filters the cards and the Unticketed row by words. Shown while typing or while it holds text. */
+/** / filters the cards by words. Shown while typing or while it holds text. */
 function SearchBox() {
   const q = useStore((s) => s.line.q);
   const searching = useStore((s) => s.line.searching);
@@ -90,11 +84,11 @@ function SearchBox() {
       <Key k="/" size="sm" />
       <input
         id="line-q" ref={ref} type="text" autoComplete="off" value={q} placeholder="Filter"
-        onChange={(e) => set({ line: { ...get().line, q: e.target.value, row: null } })}
+        onChange={(e) => set({ line: { ...get().line, q: e.target.value } })}
         onFocus={() => set({ line: { ...get().line, searching: true } })}
         onBlur={() => set({ line: { ...get().line, searching: false } })}
         className={`bg-transparent text-[13.5px] outline-none placeholder:text-faint ${open ? 'w-44' : 'w-14'}`}
-        aria-label="Filter cards and sessions"
+        aria-label="Filter cards"
       />
       {q && <button className="text-faint hover:text-ink" onClick={() => set({ line: { ...get().line, q: '' } })} aria-label="Clear the filter"><Icon name="x" size={13} /></button>}
     </label>
@@ -117,7 +111,7 @@ function WorkspaceBar() {
     <div className="flex items-center gap-2 overflow-x-auto border-b border-line bg-col px-4 py-1.5 text-[13px]">
       {ws ? (
         <>
-          <span className="whitespace-nowrap text-faint" title="Every card and session in this workspace can read and change all of these repos">{ws.name} repos</span>
+          <span className="whitespace-nowrap text-faint" title="Every card in this workspace can read and change all of these repos">{ws.name} repos</span>
           {ws.repos.length
             ? ws.repos.map((r) => (
               <span key={r} title={r} className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-line bg-raise px-1.5 font-mono text-[12px] text-sub">
@@ -145,7 +139,7 @@ function Board() {
   const cards = useStore((s) => s.cards);
   const filter = useStore((s) => s.line.filter);
   const q = useStore((s) => s.line.q);
-  const focus = useStore((s) => (s.line.row ? null : s.line.focus));
+  const focus = useStore((s) => s.line.focus);
   const workspaces = useStore((s) => s.workspaces);
   const cols = lanes(cards, filter, q);
   useEffect(() => {
@@ -168,62 +162,6 @@ function Board() {
         </section>
       ))}
     </div>
-  );
-}
-
-/**
- * Sessions no card follows, as the mock's "Unticketed" row: second class, under the board.
- * Enter (or a click) opens one full screen; Ctrl+K finds any session that isn't shown.
- */
-function UnticketedRow() {
-  const row = useStore((s) => s.line.row);
-  // Recomputed on any change to what it reads; the ids joined keep it from re-rendering needlessly.
-  const ids = useStore((s) => rowOf(s).shown.map((x) => x.id).join('\n'));
-  const more = useStore((s) => rowOf(s).more);
-  const sessions = useStore((s) => s.sessions);
-  const q = useStore((s) => s.line.q.trim());
-  const palette = useStore((s) => displayCombo(bindingsFor('palette', s.settings.bindings ?? NO_BINDINGS)[0] ?? ''));
-  const shown = ids ? ids.split('\n').map((id) => sessions.find((x) => x.id === id)).filter((x): x is SessionSummary => Boolean(x)) : [];
-  const active = row !== null;
-  return (
-    <section aria-label="Unticketed" className={`border-t border-line px-4 pb-2.5 pt-2 ${active ? 'bg-surface shadow-[inset_0_3px_0_var(--c-acc)]' : 'bg-col'}`}>
-      <div className="mb-1.5 flex items-center gap-2 text-[13px]">
-        <h4 className={`font-bold ${active ? '' : 'text-sub'}`}>Unticketed</h4>
-        <span className="hidden text-faint sm:inline">sessions without a card</span>
-        <Key k="u" size="sm" />
-        <span className="grow" />
-        {more > 0 && <span className="whitespace-nowrap text-faint">{more} more<span className="hidden sm:inline"> · <Key k={palette} size="sm" /> finds any session</span></span>}
-      </div>
-      {shown.length
-        ? <div className="flex gap-2 overflow-x-auto pb-0.5" role="listbox" aria-label="Sessions without a card">{shown.map((s) => <RowTile key={s.id} s={s} focused={row === s.id} />)}</div>
-        : <p className="text-[12.5px] text-faint">{q ? `No session without a card matches “${q}”.` : 'Every recent session here has a card.'}</p>}
-    </section>
-  );
-}
-
-function RowTile({ s, focused }: { s: SessionSummary; focused: boolean }) {
-  const flags = useFlags(s.id);
-  const activity = useStore((st) => st.activity[s.id]);
-  const needs = flags.pending || flags.unread || s.status === 'requires_action';
-  const working = s.live && (s.status === 'running' || s.background);
-  const doing = s.live ? activityShort(activity, s.cwd) : null;
-  return (
-    <button
-      id={`row-${s.id}`} role="option" aria-selected={focused}
-      onClick={() => openSession(s.id)}
-      title={`${s.title}\n${s.cwd}\nOpen full screen`}
-      className={`flex w-60 shrink-0 flex-col gap-0.5 rounded-lg border px-2.5 py-1.5 text-left ${needs ? 'bg-attn-bg' : 'bg-surface'} ${focused ? 'is-focus border-transparent' : `${needs ? 'border-attn/45' : 'border-line'} hover:bg-raise`}`}
-    >
-      <span className="flex min-w-0 items-center gap-1.5 text-[13px]">
-        {needs ? <span className="h-2 w-2 shrink-0 rounded-full bg-attn" /> : working ? <span className="spinner text-busy" /> : s.live ? <Icon name="check" size={13} className="text-ok" /> : null}
-        <span className={`truncate ${needs ? 'font-semibold' : 'font-medium'}`}>{s.title}</span>
-      </span>
-      <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-faint">
-        <span className="truncate">{repoName(s.cwd) || 'no folder'}{doing ? ` · ${doing}` : ''}</span>
-        <span className="grow" />
-        {needs ? <span className="font-semibold text-attn">{flags.pending || s.status === 'requires_action' ? 'Your OK' : 'Your turn'}</span> : <span className="tabular-nums">{age(s.lastModified)}</span>}
-      </span>
-    </button>
   );
 }
 

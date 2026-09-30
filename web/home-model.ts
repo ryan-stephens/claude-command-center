@@ -1,5 +1,5 @@
 // Sessions per workspace, bucketed by what they need from you, with plain status words: the
-// Ticket Line's Unticketed row and the session view use them. Pure (tested in home-model.test.ts).
+// session view and the palette use them. Pure (tested in home-model.test.ts).
 
 import type { SessionSummary, Workspace } from '../shared/protocol.ts';
 import { workspacesFor } from '../shared/workspaces.ts';

@@ -107,7 +107,7 @@ const ACTION_HELP: Partial<Record<ActionId, string>> = {
   sound: 'Sound on / off (outside text fields)',
   pushToTalk: 'Push-to-talk: hold, speak, release to send (not while you are mid-message)',
   theme: 'Theme: match Windows → light → dark',
-  expand: 'On the line: the focused card’s session (or the Unticketed row’s) full screen. In a session: back to the line',
+  expand: 'On the line: the focused card’s session full screen. In a session: back to the line',
   ticketLine: 'Back to the Ticket Line from a session',
 };
 
@@ -302,11 +302,11 @@ export function jumpToAttention(): void {
   openSession(list[(i + 1) % list.length].id);
 }
 
-/** Alt+↑ / Alt+↓: previous / next session the line shows (the cards', then the Unticketed row's). */
+/** Alt+↑ / Alt+↓: previous / next card's session on the line. */
 export function hop(delta: number): void {
   const s = get();
   const list = lineSessionIds().filter((id) => s.sessions.some((x) => x.id === id));
-  if (!list.length) { flash('No sessions on the line'); return; }
+  if (!list.length) { flash('No card has a session yet. Ctrl+K finds any session.'); return; }
   const i = list.indexOf(activeSession(s) ?? '');
   // Not in this list (e.g. filtered out): start from the matching end.
   const from = i < 0 ? (delta > 0 ? -1 : list.length) : i;

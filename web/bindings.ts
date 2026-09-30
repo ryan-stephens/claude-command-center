@@ -71,9 +71,9 @@ const hasModifier = (combo: string) => /(^|\+)(Ctrl|Alt|Meta)\+/.test(combo);
 const RESERVED = new Set([
   'Enter', 'Escape', 'Tab', 'Shift+Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete',
   'Home', 'End', 'PageUp', 'PageDown', 'Ctrl+C', 'Ctrl+V', 'Ctrl+X', 'Ctrl+A', 'Ctrl+Z',
-  // Screen keys: the Ticket Line (/ c u W E F R X + − digits, Shift+E Shift+I Shift+Delete; p x e w on the new-card screen),
+  // Screen keys: the Ticket Line (/ c W E F + − digits, Shift+E Shift+I Shift+Delete; p x e w on the new-card screen),
   // session (i T R X + D), approvals (Y A N D), number pad (E [ ] Shift+E Shift+I Ctrl+arrows).
-  'Y', 'A', 'N', 'E', 'I', 'R', 'X', 'T', 'W', 'D', 'F', 'C', 'U', 'P', 'Shift+W', '-', '/', '[', ']', '=', 'Shift+=', 'Shift+E', 'Shift+I', 'Shift+Delete',
+  'Y', 'A', 'N', 'E', 'I', 'R', 'X', 'T', 'W', 'D', 'F', 'C', 'P', 'Shift+W', '-', '/', '[', ']', '=', 'Shift+=', 'Shift+E', 'Shift+I', 'Shift+Delete',
   ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(String),
   'Ctrl+ArrowUp', 'Ctrl+ArrowDown', 'Ctrl+ArrowLeft', 'Ctrl+ArrowRight',
   ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `Alt+${n}`),

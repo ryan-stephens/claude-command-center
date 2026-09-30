@@ -2,7 +2,7 @@
 
 **A keyboard-driven cockpit for your Claude Code sessions.** Your work is a board of cards, the **Ticket Line**: each card gathers its context, starts Claude Code in a terminal tab, and moves by itself from Plan to Build to Try it as the session works. Group your repos into workspaces, see at a glance what needs you, and drive every session with the arrow keys, the number pad or your voice. Everything also works with a mouse.
 
-![The Ticket Line: workspace chips and the workspace's repos along the top, the columns Inbox to Done with a card that needs you, sessions without a card in the Unticketed row, and the keys that work right now along the bottom](docs/screenshots/line.png)
+![The Ticket Line: workspace chips and the workspace's repos along the top, the columns Inbox to Done with a card that needs you, and the keys that work right now along the bottom](docs/screenshots/line.png)
 
 ## Why
 
@@ -10,16 +10,16 @@ Running several Claude Code sessions across several repos means a lot of termina
 
 - **The Ticket Line.** `c` makes a card: pick repos from your library, write a note, choose the model (`m`) and how it starts, and `p` previews exactly what Claude will be told. `Ctrl+Enter` makes the branch and opens `claude` in a Windows Terminal tab with that context. From then on the card follows its session: *Plan*, *Build*, amber in *Needs you* when it asks something, *Try it* when its turn ends with changes. `Ctrl+Enter` on a card opens its session full screen.
 - **Workspaces.** Group the repos you work on together ("Storefront", "Payments") and pick them with `1`–`9`. **Every card and session in a workspace can use all of its repos**, so Claude can change the API and the web app in one go. `+` adds a repo from your **repo library** (the git repos under folders you pick with `F`), `−` removes one.
-- **Know who needs you.** Cards that need you turn amber, with a chime. Sessions without a card sit in the *Unticketed* row under the board (`u`), needs-you first. `Alt+N` jumps to the next one that needs you from anywhere; `Y` / `A` / `N` answers.
+- **Know who needs you.** Cards that need you turn amber, with a chime. `Ctrl+K` finds any session, with a card or without. `Alt+N` jumps to the next one that needs you from anywhere; `Y` / `A` / `N` answers.
 - **Approvals you can judge.** "Claude wants to check app.js for syntax errors", rated *safe*, *makes changes* or *careful* (deletes files, pushes, installs…), with what it touches. The raw command sits behind `D`.
 - **Follow along in plain words.** Claude's actions fold into readable steps ("Read index.html", "Changed src/app.js +3") with a real diff behind "See change", and a live line says what it's doing right now. `Esc` stops it, just like in the terminal.
 - **Workflows on the number pad.** The pad on screen is drawn like the one under your hand; each key is a saved instruction such as "Run the tests" or "Commit my work". Workspaces come with starter workflows, and share them as a file.
 - **Everything Claude Code does, at your fingertips.** Type `/` for commands and skills (`/cl` → `/clear`) and `@` for files in the repos Claude can use. `Shift+Tab` switches between *asks first*, *accepts edits*, *plan first* and *auto*, and a plan arrives as a card to approve. Commands with choices list them (`/model`, `/effort`, on/off), and Claude's questions and approvals are picked with the arrow keys and `Enter`, like Claude Code (or `1`–`4`, `Y`/`A`/`N`); and its to-do list ticks along above the message box. `↑` recalls earlier messages, and you can paste or drop images.
 - **Keys you can see.** Every button shows its key, and a bar along the bottom lists the ones that work right now. `?` lists them all (and lets you rebind them); `Ctrl+K` searches everything.
 
-| A session waiting for your OK | Dark theme, on the Unticketed row | On a phone |
+| A session waiting for your OK | Dark theme | On a phone |
 |---|---|---|
-| ![A plain-language approval card with Y, A and N keys, beside the on-screen number pad](docs/screenshots/approval.png) | ![The Ticket Line in the dark theme with the Unticketed row focused](docs/screenshots/line-dark.png) | ![Phone layout of the Ticket Line](docs/screenshots/phone.png) |
+| ![A plain-language approval card with Y, A and N keys, beside the on-screen number pad](docs/screenshots/approval.png) | ![The Ticket Line in the dark theme](docs/screenshots/line-dark.png) | ![Phone layout of the Ticket Line](docs/screenshots/phone.png) |
 
 ## Quick start
 
@@ -46,9 +46,8 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | Ticket Line | `c` | New card: pick repos, write a note, `m` the model, `p` previews what Claude gets, `Ctrl+Enter` starts it in a terminal tab |
 | | `← → ↑ ↓` / `Enter` | Move between cards / open one: Overview, Context (how it started, what Claude was given), Transcript (`Tab`) |
 | | `Ctrl+Enter` | The card's session full screen (again, or `Esc`: back to the line) |
-| | `u` | The Unticketed row: sessions without a card (`Enter` opens one, `R` / `X` rename / end it) |
 | | `1`–`9` / `0` | One workspace / all of them |
-| | `/` | Filter the cards and sessions by words |
+| | `/` | Filter the cards by words |
 | | `W` / `E` / `Shift+Delete` | New workspace / edit / delete the one shown (with *All* showing, it asks which) |
 | | `+` / `−` | Add a repo from the library to the workspace / remove one |
 | | `F` | Pick the folders the repo library lists: walk the disk with `↑ ↓ → ←`, `Space` uses the folder you're in |

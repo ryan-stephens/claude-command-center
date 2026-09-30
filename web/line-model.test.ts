@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Card } from '../shared/cards.ts';
-import type { SessionSummary, Workspace } from '../shared/protocol.ts';
+import type { Workspace } from '../shared/protocol.ts';
 import {
-  cardActivity, cycleModel, draftOf, elapsed, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin, ROW_MAX,
-  setWorkspace, sources, stepOption, togglePacketRow, toggleSource, unticketed,
+  cardActivity, cycleModel, draftOf, elapsed, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin,
+  setWorkspace, sources, stepOption, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
 
@@ -125,34 +125,9 @@ test('the / filter narrows the board by key, title or branch, every word', () =>
   assert.deepEqual(lanes(cs, 'all', 'links gift').flatMap((l) => l.cards.map((c) => c.id)), []);
 });
 
-const sess = (id: string, extra: Partial<SessionSummary> = {}): SessionSummary =>
-  ({ id, title: id, cwd: 'D:\\r\\web-app', lastModified: 1_000_000_000, live: false, ...extra });
-const noFlags = () => ({ pending: false, unread: false });
-
-test('the Unticketed row: sessions no card follows, needs-you first, recent others only', () => {
-  const now = 1_000_000_000;
-  const base = { cards: [{ ...card('a', 'build'), sessionId: 'linked' }], workspaces: [W1, W2], filter: 'all', q: '', flags: noFlags, attention: [], now };
-  const sessions = [
-    sess('linked', { live: true, status: 'running' }),
-    sess('old', { lastModified: now - 10 * 86400_000 }),
-    sess('recent', { lastModified: now - 3600_000 }),
-    sess('busy', { live: true, status: 'running' }),
-    sess('pay', { cwd: 'D:\\r\\pay', live: true, status: 'idle' }),
-  ];
-  const row = unticketed({ ...base, sessions, flags: (s) => ({ pending: s.id === 'recent', unread: false }) });
-  assert.deepEqual(row.shown.map((s) => s.id), ['recent', 'busy', 'pay'], 'a card’s session is left out; needs you, working, done; the old one stays off');
-  assert.equal(row.more, 1);
-  assert.deepEqual(unticketed({ ...base, sessions, filter: 'w2' }).shown.map((s) => s.id), ['pay'], 'one workspace');
-  assert.deepEqual(unticketed({ ...base, sessions, q: 'old' }).shown.map((s) => s.id), ['old'], 'the filter reaches older sessions');
-  const many = Array.from({ length: 20 }, (_, i) => sess(`s${i}`, { live: true, status: 'idle' }));
-  const capped = unticketed({ ...base, sessions: many });
-  assert.equal(capped.shown.length, ROW_MAX);
-  assert.equal(capped.more, 20 - ROW_MAX);
-});
-
-test('Alt+arrows walk the cards’ sessions, then the row’s, once each', () => {
+test('Alt+arrows walk the cards’ sessions, once each', () => {
   const cols = lanes([{ ...card('a', 'plan'), sessionId: 's1' }, card('b', 'plan'), { ...card('c', 'try'), sessionId: 's2' }], 'all');
-  assert.deepEqual(lineSessions(cols, [sess('s3'), sess('s1')]), ['s1', 's2', 's3']);
+  assert.deepEqual(lineSessions(cols), ['s1', 's2']);
 });
 
 test('w keeps a repo the card added for the whole workspace', () => {

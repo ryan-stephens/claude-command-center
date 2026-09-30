@@ -32,7 +32,7 @@ test('a question or a plan changes the answer keys', () => {
 
 test('the Ticket Line bar follows the view and the new-card panel', () => {
   const labels = (x: Parameters<typeof lineLegendFor>[0]) => lineLegendFor(x).map((i) => i.label);
-  assert.deepEqual(labels({ view: 'board', bindings: {} }), ['Move', 'New card', 'Workspace / all', 'Unticketed', 'Filter', 'Repos', 'Workspace', 'Share / import', 'Folders']);
+  assert.deepEqual(labels({ view: 'board', bindings: {} }), ['Move', 'New card', 'Workspace / all', 'Filter', 'Repos', 'Workspace', 'Share / import', 'Folders']);
   const focused = labels({ view: 'board', hasFocus: true, hasSession: true, filtered: true, bindings: {} });
   assert.ok(focused.includes('Open') && focused.includes('Full screen') && focused.includes('Clear filter') && focused.includes('Remove'));
   assert.ok(!labels({ view: 'board', hasFocus: true, bindings: {} }).includes('Full screen'), 'no session linked yet: nothing to open');
@@ -44,6 +44,5 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(labels({ view: 'composer', pane: 'go', bindings: {} }).includes('Change'));
   assert.deepEqual(labels({ view: 'drawer', bindings: {} }), ['Back to the board', 'Overview · Context · Transcript', 'Remove card']);
   assert.ok(labels({ view: 'drawer', hasSession: true, bindings: {} }).includes('Full screen'));
-  assert.deepEqual(labels({ view: 'row', bindings: {} }).slice(0, 4), ['Sessions', 'Open full screen', 'Rename / end', 'Back to the cards']);
   assert.deepEqual(lineLegendFor({ view: 'board', hasSession: true, hasFocus: true, bindings: { expand: ['Alt+Enter'] } }).find((i) => i.label === 'Full screen')!.keys, ['Alt+Enter']);
 });

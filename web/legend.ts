@@ -82,8 +82,7 @@ export function legendFor(x: LegendInput): LegendItem[] {
 }
 
 export interface LineLegendInput {
-  /** row: the keys are on the Unticketed row under the board. */
-  view: 'board' | 'row' | 'drawer' | 'composer';
+  view: 'board' | 'drawer' | 'composer';
   /** Board: a card is focused. */
   hasFocus?: boolean;
   /** The focused card's session has linked (the expand key opens it). */
@@ -98,7 +97,7 @@ export interface LineLegendInput {
   bindings: Bindings;
 }
 
-/** The workspace keys, shown on the board and the row. */
+/** The workspace keys, shown on the board. */
 const WORKSPACE_KEYS: LegendItem[] = [
   { keys: ['+', '−'], label: 'Repos' },
   { keys: ['W', 'E', '⇧Del'], label: 'Workspace' },
@@ -135,23 +134,12 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       { keys: ['Delete'], label: 'Remove card' },
     ];
   }
-  if (x.view === 'row') {
-    return [
-      { keys: ['←', '→'], label: 'Sessions' },
-      { keys: ['Enter'], label: 'Open full screen' },
-      { keys: ['R', 'X'], label: 'Rename / end' },
-      { keys: ['↑', 'u'], label: 'Back to the cards' },
-      { keys: ['1–9', '0'], label: 'Workspace / all' },
-      ...WORKSPACE_KEYS,
-    ];
-  }
   return [
     { keys: ['←', '→', '↑', '↓'], label: 'Move' },
     ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open' }] : []),
     ...(x.hasSession ? [full] : []),
     { keys: ['c'], label: 'New card', tone: 'acc' },
     { keys: ['1–9', '0'], label: 'Workspace / all' },
-    { keys: ['u'], label: 'Unticketed' },
     { keys: ['/'], label: 'Filter' },
     ...(x.filtered ? [{ keys: ['Esc'], label: 'Clear filter' }] : []),
     ...(x.hasFocus ? [{ keys: ['Delete'], label: 'Remove' }] : []),
