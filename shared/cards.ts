@@ -25,6 +25,27 @@ export const LAUNCH_MODES: { id: LaunchMode; name: string }[] = [
   { id: 'auto', name: 'Auto' },
 ];
 
+/**
+ * The model a card's session starts with: one of Claude Code's model aliases for `--model`, or
+ * nothing, which leaves it to Claude Code (your settings, or the server's CC_CONTROL_MODEL).
+ */
+export type CardModel = 'opus' | 'sonnet' | 'haiku';
+export const CARD_MODELS: { id: CardModel; name: string }[] = [
+  { id: 'opus', name: 'Opus' },
+  { id: 'sonnet', name: 'Sonnet' },
+  { id: 'haiku', name: 'Haiku' },
+];
+
+/** The model a card will run: its own choice, else the server's pinned one, else the user's setting. */
+export function modelFor(launch: Pick<CardLaunch, 'model'>, pinned?: string, userDefault?: string): string | undefined {
+  return launch.model ?? pinned ?? userDefault;
+}
+
+/** "Opus" for an alias, the id itself otherwise (a full model id from settings or the server). */
+export function modelName(id: string | undefined): string {
+  return CARD_MODELS.find((m) => m.id === id)?.name ?? id ?? 'Claude Code’s default';
+}
+
 /** new: a branch named after the card · current: stay where the repo is · worktree: a new folder on a new branch. */
 export type BranchChoice = 'new' | 'current' | 'worktree';
 
@@ -52,6 +73,8 @@ export interface CardLaunch {
   home: string;
   branch: BranchChoice;
   mode: LaunchMode;
+  /** Chosen on the new-card screen; unset means the default (see modelFor). */
+  model?: CardModel;
   /** The first thing claude is told. */
   message: string;
 }
@@ -103,6 +126,8 @@ export interface Card extends CardDraft {
   createdAt: number;
   /** The branch it made or stayed on. */
   branchName?: string;
+  /** The model it started with, when known (its choice, the server's, or the user's setting). */
+  model?: string;
   /** Where claude runs: the home repo, or the worktree made for the card. */
   cwd?: string;
   /** The Claude Code session the SessionStart hook reported. */
@@ -218,8 +243,12 @@ export function wtArg(s: string): string {
     .replace(/;/g, '\\;');
 }
 
-/** The steps Start work takes, as shown under "What happens" (and run by the server). */
-export function launchLines(d: Pick<CardDraft, 'title' | 'packet' | 'launch'>, key: string, model?: string): string[] {
+/**
+ * The steps Start work takes, as shown under "What happens" (and run by the server). `pinned` is
+ * the server's CC_CONTROL_MODEL; the card's own choice wins over it.
+ */
+export function launchLines(d: Pick<CardDraft, 'title' | 'packet' | 'launch'>, key: string, pinned?: string): string[] {
+  const model = d.launch.model ?? pinned;
   const home = homeOf(d.packet, d.launch) ?? '(no repo)';
   const others = includedRepos(d.packet).filter((r) => !samePath(r, home));
   const branch = branchFor(key, d.title || 'new');

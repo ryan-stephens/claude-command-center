@@ -1,26 +1,24 @@
 import { useEffect } from 'react';
 import { Dialogs } from './components/Dialogs.tsx';
-import { Home } from './components/Home.tsx';
 import { SessionView } from './components/SessionView.tsx';
 import { Icon, Key, KeyHint, WsBadge } from './components/ui.tsx';
 import { armOnFirstGesture, setNotificationHandler } from './attention.ts';
 import { bindingsFor, displayCombo, type ActionId } from './bindings.ts';
-import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession, shownCols } from './keys.ts';
+import { backToLine, cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession } from './keys.ts';
 import { legendFor, lineLegendFor } from './legend.ts';
-import { toggleLine } from './line-keys.ts';
+import { packetRows } from './line-model.ts';
+import { openLine } from './line-keys.ts';
 import { TicketLine } from './components/TicketLine.tsx';
 import { stopVoice } from './voice.ts';
 import { maybeShowWelcome } from './components/Welcome.tsx';
-import { activeSession, attention, currentWorkspace, isDocked, NO_BINDINGS, set, toggleSound, useStore } from './store.ts';
+import { activeSession, attention, currentWorkspace, NO_BINDINGS, set, toggleSound, useStore } from './store.ts';
 
-/** The keys that matter right now, as big keycaps. Changes with the focused column or zone. */
+/** The keys that matter right now, as big keycaps. Changes with the view, the panel or the zone. */
 function Legend() {
   const screen = useStore((s) => s.screen);
-  const homeCol = useStore((s) => s.homeCol);
   const zone = useStore((s) => s.zone);
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
-  const docked = useStore(isDocked);
-  const focusId = useStore((s) => activeSession(s) ?? (s.screen === 'list' ? s.selectedId : null));
+  const focusId = useStore((s) => activeSession(s));
   const pending = useStore((s) => Object.values(s.permissions).some((p) => p.sessionId === focusId));
   const pendingKind = useStore((s) => {
     const p = Object.values(s.permissions).find((x) => x.sessionId === focusId);
@@ -31,18 +29,21 @@ function Legend() {
     return Boolean(activeSession(s)) && (status === 'running' || status === 'requires_action');
   });
   const drafting = useStore((s) => Boolean(s.openId && s.drafts[s.openId]));
-  const inWorkspace = useStore((s) => s.scope.kind === 'workspace');
   const modal = useStore((s) => s.modal);
-  const lineView = useStore((s) => (s.composer ? 'composer' : s.line.drawer ? 'drawer' : 'board'));
+  const lineView = useStore((s) => (s.composer ? 'composer' : s.line.drawer ? 'drawer' : s.line.row ? 'row' : 'board'));
   const pane = useStore((s) => s.composer?.pane);
   const preview = useStore((s) => s.composer?.preview);
+  const cardRepo = useStore((s) => {
+    const row = s.composer ? packetRows(s.composer)[s.composer.pi] : undefined;
+    return row?.layer === 'card' && row.item.kind === 'repo';
+  });
   const lineFocus = useStore((s) => Boolean(s.line.focus && s.cards.some((c) => c.id === s.line.focus)));
+  const hasSession = useStore((s) => Boolean(s.cards.find((c) => c.id === (s.line.drawer ?? s.line.focus))?.sessionId));
+  const filtered = useStore((s) => Boolean(s.line.q.trim()));
   if (modal) return null;
-  // The session pane without a session in it (it was ended) acts as the list, as in homeKeys.
-  const col = (shownCols().includes(homeCol) && (homeCol !== 'preview' || docked)) || homeCol === 'library' ? homeCol : 'sessions';
   const items = screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, pane, preview, bindings })
-    : legendFor({ screen, homeCol: col, zone, pending, pendingKind, busy, drafting, hasSelection: Boolean(focusId), inWorkspace, bindings, previewShown: shownCols().includes('preview'), docked });
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, hasSession, filtered, pane, preview, cardRepo, bindings })
+    : legendFor({ zone, pending, pendingKind, busy, drafting, bindings });
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
     <footer className="hidden items-center gap-x-6 gap-y-2 border-t border-line bg-col px-4 py-2.5 text-[13.5px] text-sub md:flex md:flex-wrap" aria-label="Keys you can press now">
@@ -65,24 +66,19 @@ function Header() {
   const needYou = useStore((s) => attention(s).length);
   const waiting = useStore((s) => Object.keys(s.permissions).length);
   const ws = useStore((s) => currentWorkspace(s));
-  const scopeKind = useStore((s) => s.scope.kind);
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
     <header className="flex items-center gap-3 border-b border-line bg-col px-3 py-2 md:px-4">
-      <button onClick={() => set({ screen: 'list', openId: null, homeCol: 'sessions' })} className="whitespace-nowrap font-semibold tracking-tight" title="Home">
+      <button onClick={() => (screen === 'session' ? backToLine() : openLine())} className="whitespace-nowrap font-semibold tracking-tight" title="The Ticket Line">
         Command Center
       </button>
-      {screen === 'line' && (
-        <span className="hidden min-w-0 items-center gap-2 text-sub md:flex"><span className="text-faint">/</span><span className="font-semibold text-ink">Ticket Line</span></span>
-      )}
-      {screen === 'list' && (
-        <span className="hidden min-w-0 items-center gap-2 text-sub md:flex">
-          <span className="text-faint">/</span>
-          <WsBadge ws={ws} size={22} />
-          <span className="truncate">{ws?.name ?? (scopeKind === 'rest' ? 'Everything else' : '')}</span>
-        </span>
-      )}
+      <span className="hidden min-w-0 items-center gap-2 text-sub md:flex">
+        <span className="text-faint">/</span>
+        {screen === 'session'
+          ? <button className="flex items-center gap-1.5 hover:text-ink" onClick={backToLine} title="Back to the Ticket Line">Ticket Line<Key k={k('ticketLine')} size="sm" /></button>
+          : <><span className="font-semibold text-ink">Ticket Line</span>{ws && <><span className="text-faint">·</span><WsBadge ws={ws} size={20} /><span className="truncate">{ws.name}</span></>}</>}
+      </span>
       {flash && <span className="truncate text-sm text-busy" role="status">{flash}</span>}
       {lastError && (
         <button onClick={() => set({ lastError: null })} className="flex min-w-0 items-center gap-1.5 rounded-lg bg-bad-bg px-2 py-1 text-sm text-bad" title="Dismiss">
@@ -96,9 +92,6 @@ function Header() {
           <Key k={k('nextAttention')} size="sm" tone="attn" className="hidden md:inline-flex" />
         </button>
       )}
-      <button onClick={toggleLine} className={`btn-ghost btn hidden md:inline-flex ${screen === 'line' ? 'text-ink' : ''}`} title="Your work as cards on a board">
-        <Icon name="grid" size={16} />{screen === 'line' ? 'Home' : 'Ticket Line'}<Key k={k('ticketLine')} size="sm" />
-      </button>
       <button onClick={() => set({ modal: { kind: 'palette' } })} className="btn-ghost btn hidden md:inline-flex" title="Search sessions, workflows and actions">
         <Icon name="search" size={16} />Search<Key k={k('palette')} size="sm" />
       </button>
@@ -157,7 +150,7 @@ export function App() {
     <div className="flex h-dvh flex-col bg-bg text-ink">
       <Header />
       <OutdatedBanner />
-      <main className="flex min-h-0 flex-1 flex-col">{screen === 'line' ? <TicketLine /> : screen === 'list' ? <Home /> : <SessionView />}</main>
+      <main className="flex min-h-0 flex-1 flex-col">{screen === 'session' ? <SessionView /> : <TicketLine />}</main>
       <Legend />
       <Dialogs />
     </div>

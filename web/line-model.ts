@@ -3,21 +3,68 @@
 // Tested in line-model.test.ts; the components only draw it.
 
 import {
-  branchFor, defaultMessage, homeOf, includedRepos, LAUNCH_MODES, STAGES,
+  branchFor, CARD_MODELS, defaultMessage, homeOf, includedRepos, LAUNCH_MODES, modelName, STAGES,
   type Card, type CardDraft, type Packet, type PacketItem, type Stage,
 } from '../shared/cards.ts';
-import type { RepoInfo, Workspace } from '../shared/protocol.ts';
+import type { RepoInfo, SessionSummary, Workspace } from '../shared/protocol.ts';
 import { homeRepo, repoName, samePath } from '../shared/workspaces.ts';
+import { groupSessions, sessionsIn, type Flags } from './home-model.ts';
 
 /** Which workspace's cards the board shows. */
 export type LineFilter = 'all' | string;
 
-export function lanes(cards: Card[], filter: LineFilter): { stage: Stage; name: string; cards: Card[] }[] {
+/** Does the / filter's text match? Every word must appear somewhere in `hay`. */
+export function matches(q: string, hay: string): boolean {
+  const h = hay.toLowerCase();
+  return q.trim().toLowerCase().split(/\s+/).every((w) => !w || h.includes(w));
+}
+
+export function lanes(cards: Card[], filter: LineFilter, q = ''): { stage: Stage; name: string; cards: Card[] }[] {
   return STAGES.map((s) => ({
     stage: s.id,
     name: s.name,
-    cards: cards.filter((c) => c.stage === s.id && (filter === 'all' || c.workspaceId === filter)),
+    cards: cards.filter((c) => c.stage === s.id && (filter === 'all' || c.workspaceId === filter) && matches(q, `${c.key} ${c.title} ${c.branchName ?? ''}`)),
   }));
+}
+
+// ---- The Unticketed row: sessions without a card ---------------------------------------------
+
+/** At most this many sessions on the row; Ctrl+K finds the rest. */
+export const ROW_MAX = 12;
+/** Sessions that ended longer ago than this stay off the row unless the filter asks for them. */
+const ROW_RECENT_MS = 3 * 24 * 3600_000;
+
+export interface RowInput {
+  sessions: SessionSummary[];
+  cards: Card[];
+  workspaces: Workspace[];
+  filter: LineFilter;
+  q: string;
+  flags: (s: SessionSummary) => Flags;
+  /** The order Alt+N serves sessions that need you. */
+  attention: string[];
+  now: number;
+}
+
+/**
+ * The row under the board: sessions no card follows, in the workspace shown. The ones that need
+ * you come first, then working, then finished, then the last few days' others. `more` counts the
+ * rest, which Ctrl+K (or typing in the filter) still finds.
+ */
+export function unticketed(x: RowInput): { shown: SessionSummary[]; more: number } {
+  const linked = new Set(x.cards.map((c) => c.sessionId).filter(Boolean));
+  const all = sessionsIn(x.filter, x.sessions, x.workspaces)
+    .filter((s) => !linked.has(s.id) && matches(x.q, `${s.title} ${s.cwd} ${s.branch ?? ''}`));
+  const ordered = groupSessions(all, x.flags, x.attention)
+    .flatMap((g) => (g.bucket === 'earlier' && !x.q.trim() ? g.sessions.filter((s) => x.now - s.lastModified < ROW_RECENT_MS) : g.sessions));
+  const shown = ordered.slice(0, ROW_MAX);
+  return { shown, more: all.length - shown.length };
+}
+
+/** Every session the line shows, in order: the cards' (column by column), then the row's. Alt+↑ ↓ walk it. */
+export function lineSessions(cols: { cards: Card[] }[], row: SessionSummary[]): string[] {
+  const ids = cols.flatMap((l) => l.cards.map((c) => c.sessionId).filter((id): id is string => Boolean(id)));
+  return [...new Set([...ids, ...row.map((s) => s.id)])];
 }
 
 /** Arrows on the board: ↑ ↓ within a column, ← → to the nearest column that has cards, keeping the row. */
@@ -188,9 +235,22 @@ export function togglePacketRow(c: Composer, index: number, remove = false): Com
   return withHome({ ...c, packet: { ...c.packet, [row.layer]: next } });
 }
 
+/**
+ * w on a repo this card added: keep it for the whole workspace. It moves to the workspace layer
+ * here, and the caller tells the server, so every later card in the workspace gets it too.
+ */
+export function keepForWorkspace(c: Composer, index: number): { composer: Composer; repo: string } | string {
+  const row = packetRows(c)[index];
+  if (!row || row.layer !== 'card' || row.item.kind !== 'repo') return 'Only a repo you added to this card can be kept for the workspace.';
+  if (!c.workspaceId) return 'This card has no workspace. Pick one under How it starts.';
+  const { item } = row;
+  const packet = { ...c.packet, card: c.packet.card.filter((i) => i !== item), workspace: [...c.packet.workspace, { ...item, on: true }] };
+  return { composer: { ...c, packet }, repo: item.id };
+}
+
 /** Panel 3's rows: each a choice you change with ← →, or the message you type. */
 export interface GoRow {
-  id: 'where' | 'ws' | 'home' | 'branch' | 'mode' | 'msg';
+  id: 'where' | 'ws' | 'home' | 'branch' | 'mode' | 'model' | 'msg';
   label: string;
   opts: string[];
   at: number;
@@ -198,7 +258,16 @@ export interface GoRow {
   off?: number[];
 }
 
-export function goRows(c: Composer, workspaces: Workspace[], key: string): GoRow[] {
+/** What the default model is, for the Model row's first option: the server's pin, else the user's setting. */
+export interface ModelDefaults { pinned?: string | null; user?: string | null }
+
+/** The Model row's options: the default (named when known), then Opus, Sonnet, Haiku. */
+export function modelOpts(d: ModelDefaults = {}): string[] {
+  const def = d.pinned ?? d.user;
+  return [def ? `Default · ${modelName(def)}` : 'Default', ...CARD_MODELS.map((x) => x.name)];
+}
+
+export function goRows(c: Composer, workspaces: Workspace[], key: string, models: ModelDefaults = {}): GoRow[] {
   const repos = includedRepos(c.packet);
   const home = homeOf(c.packet, c.launch);
   return [
@@ -207,11 +276,18 @@ export function goRows(c: Composer, workspaces: Workspace[], key: string): GoRow
     { id: 'home', label: 'Starts in', opts: repos.length ? repos.map(repoName) : ['(no repo)'], at: Math.max(0, repos.findIndex((r) => r === home)) },
     { id: 'branch', label: 'Branch', opts: [`New: ${branchFor(key, c.title || 'new')}`, 'Current branch', 'New worktree'], at: ['new', 'current', 'worktree'].indexOf(c.launch.branch) },
     { id: 'mode', label: 'Mode', opts: LAUNCH_MODES.map((m) => m.name), at: LAUNCH_MODES.findIndex((m) => m.id === c.launch.mode) },
+    { id: 'model', label: 'Model', opts: modelOpts(models), at: c.launch.model ? 1 + CARD_MODELS.findIndex((x) => x.id === c.launch.model) : 0 },
     { id: 'msg', label: 'Opening message', opts: [], at: 0 },
   ];
 }
 
 /** ← → on a panel 3 row. */
+/** m on the new-card screen: the next model (default → Opus → Sonnet → Haiku → default). */
+export function cycleModel(c: Composer): Composer {
+  const at = c.launch.model ? 1 + CARD_MODELS.findIndex((x) => x.id === c.launch.model) : 0;
+  return pickOption(c, 'model', (at + 1) % (CARD_MODELS.length + 1), [], '');
+}
+
 export function stepOption(c: Composer, row: GoRow, delta: number, workspaces: Workspace[], key: string): Composer {
   const n = row.opts.length;
   if (!n) return c;
@@ -228,6 +304,11 @@ export function pickOption(c: Composer, id: GoRow['id'], at: number, workspaces:
     case 'ws': return setWorkspace(c, workspaces[at] ?? null);
     case 'home': { const r = includedRepos(c.packet)[at]; return r ? { ...c, launch: { ...c.launch, home: r } } : c; }
     case 'branch': return { ...c, launch: { ...c.launch, branch: (['new', 'current', 'worktree'] as const)[at] ?? 'new' } };
+    case 'model': {
+      const { model: _, ...launch } = c.launch;
+      const pick = CARD_MODELS[at - 1]?.id;
+      return { ...c, launch: pick ? { ...launch, model: pick } : launch };
+    }
     case 'mode': {
       const mode = LAUNCH_MODES[at]?.id ?? 'plan';
       return { ...c, launch: { ...c.launch, mode, message: c.msgTouched ? c.launch.message : defaultMessage(key, mode) } };

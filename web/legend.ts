@@ -2,7 +2,7 @@
 // Pure (tested in legend.test.ts). The full list lives in keys.ts keymap() and the ? overlay.
 
 import { bindingsFor, displayCombo, type ActionId, type Bindings } from './bindings.ts';
-import type { HomeCol, SessionZone } from './store.ts';
+import type { SessionZone } from './store.ts';
 
 export interface LegendItem {
   keys: string[];
@@ -10,11 +10,10 @@ export interface LegendItem {
   tone?: 'attn' | 'bad' | 'acc';
 }
 
+/** A session full screen (the line has lineLegendFor). */
 export interface LegendInput {
-  screen: 'list' | 'session';
-  homeCol: HomeCol;
   zone: SessionZone;
-  /** The selected (home) or open (session) session is waiting on an approval. */
+  /** The open session is waiting on an approval. */
   pending: boolean;
   /** What is waiting: a tool to allow (default), a question to answer, or a plan to approve. */
   pendingKind?: 'tool' | 'question' | 'plan';
@@ -22,15 +21,7 @@ export interface LegendInput {
   busy: boolean;
   /** The message box has text in it (numpad and talk keys type instead). */
   drafting: boolean;
-  /** Home: a session is selected; the library: a repo is selected. */
-  hasSelection: boolean;
-  /** Home: a real workspace is selected (not "everything else"). */
-  inWorkspace: boolean;
   bindings: Bindings;
-  /** The docked session fits beside the list (otherwise Enter opens sessions full screen). */
-  previewShown?: boolean;
-  /** On home, stepped into the docked session: it takes the session keys. */
-  docked?: boolean;
 }
 
 const k = (b: Bindings, id: ActionId) => displayCombo(bindingsFor(id, b)[0] ?? '');
@@ -65,49 +56,8 @@ function answerKeys(kind: LegendInput['pendingKind']): LegendItem[] {
 
 export function legendFor(x: LegendInput): LegendItem[] {
   const b = x.bindings;
-  if (x.screen === 'list' && !x.docked) {
-    switch (x.homeCol) {
-      case 'library':
-        return [
-          { keys: ['←', '→'], label: 'Choose a repo' },
-          ...(x.inWorkspace ? [{ keys: ['Enter'], label: 'Add to this workspace' }] : []),
-          { keys: ['N'], label: 'New session in it' },
-          { keys: ['F'], label: 'Folders to scan' },
-          { keys: ['C'], label: 'Fold / unfold' },
-          { keys: ['Tab'], label: 'Back to sessions' },
-        ];
-      case 'workspaces':
-        return [
-          { keys: ['↑', '↓'], label: 'Choose' },
-          { keys: ['1–9'], label: 'Jump to a workspace' },
-          { keys: ['→'], label: 'Its sessions' },
-          { keys: ['W'], label: 'New workspace' },
-          { keys: ['C'], label: 'Fold column' },
-          ...(x.inWorkspace ? [{ keys: ['E'], label: 'Edit' }, { keys: ['+'], label: 'Add a repo' }, { keys: ['−'], label: 'Remove one' }, { keys: ['⇧E'], label: 'Share' }] : []),
-          { keys: ['⇧I'], label: 'Import' },
-        ];
-      default:
-        return [
-          { keys: ['←', '→'], label: 'Columns' },
-          { keys: ['↑', '↓'], label: 'Choose' },
-          ...(x.hasSelection
-            ? x.previewShown === false
-              ? [{ keys: ['Enter'], label: 'Open' }]
-              : [{ keys: ['Enter'], label: 'Go into it' }, { keys: [k(b, 'expand')], label: 'Full screen' }]
-            : []),
-          ...(x.pending ? [x.previewShown === false ? { keys: ['Enter'], label: 'Open to answer', tone: 'attn' as const } : { keys: ['→'], label: 'Answer it here', tone: 'attn' as const }] : []),
-          { keys: ['N'], label: 'New session', tone: 'acc' },
-          { keys: ['/'], label: 'Filter' },
-          { keys: ['C'], label: 'Fold group' },
-          { keys: ['Tab'], label: 'Repo library' },
-        ];
-    }
-  }
   const stop: LegendItem = { keys: ['Esc'], label: 'Stop Claude', tone: 'bad' };
-  // Docked beside the list: Esc goes back to the list, the expand key opens it full screen.
-  const size: LegendItem[] = x.docked
-    ? [{ keys: [k(b, 'expand')], label: 'Full screen' }]
-    : x.previewShown === false ? [] : [{ keys: [k(b, 'expand')], label: 'Beside the list' }];
+  const size: LegendItem[] = [{ keys: [k(b, 'expand')], label: 'Back to the line' }];
   if (x.zone === 'composer') {
     return [
       { keys: ['Enter'], label: 'Send' },
@@ -115,7 +65,6 @@ export function legendFor(x: LegendInput): LegendItem[] {
       ...(x.pending ? [{ keys: ['Tab'], label: 'Answer Claude', tone: 'attn' as const }] : [{ keys: ['Tab'], label: 'Number pad' }]),
       { keys: ['⇧Tab'], label: 'Mode' },
       ...(!x.drafting ? [{ keys: ['1–9'], label: 'Workflow (number pad)' }, { keys: [`Hold ${k(b, 'pushToTalk')}`], label: 'Talk' }] : []),
-      ...(x.docked && !x.busy ? [{ keys: ['Esc'], label: 'Back to the list' }] : []),
       ...size,
       { keys: [k(b, 'prevSession'), k(b, 'nextSession')], label: 'Other sessions' },
     ];
@@ -124,23 +73,38 @@ export function legendFor(x: LegendInput): LegendItem[] {
     ...(x.pending
       ? answerKeys(x.pendingKind)
       : [{ keys: ['1–9'], label: 'Run a workflow' }, { keys: ['Enter'], label: 'Run focused key' }]),
-    x.busy ? stop : { keys: ['Esc'], label: x.docked ? 'Back to the list' : 'Home' },
+    x.busy ? stop : { keys: ['Esc'], label: 'Ticket Line' },
     { keys: ['i'], label: 'Type a message' },
     ...size,
     { keys: ['+', '−'], label: 'Add / remove a repo' },
-    ...(!x.pending ? [{ keys: ['E'], label: 'Edit key' }, { keys: ['C'], label: x.docked ? 'Fold this pane' : 'Fold pad' }] : []),
+    ...(!x.pending ? [{ keys: ['E'], label: 'Edit key' }, { keys: ['C'], label: 'Fold pad' }] : []),
   ];
 }
 
 export interface LineLegendInput {
-  view: 'board' | 'drawer' | 'composer';
+  /** row: the keys are on the Unticketed row under the board. */
+  view: 'board' | 'row' | 'drawer' | 'composer';
   /** Board: a card is focused. */
   hasFocus?: boolean;
+  /** The focused card's session has linked (the expand key opens it). */
+  hasSession?: boolean;
+  /** The / filter has text in it. */
+  filtered?: boolean;
   /** New-card screen: which panel, and whether panel 2 shows the exact text. */
   pane?: 'src' | 'pkt' | 'go';
   preview?: boolean;
+  /** New-card screen, panel 2: the highlighted row is a repo this card added (w keeps it for the workspace). */
+  cardRepo?: boolean;
   bindings: Bindings;
 }
+
+/** The workspace keys, shown on the board and the row. */
+const WORKSPACE_KEYS: LegendItem[] = [
+  { keys: ['+', '−'], label: 'Repos' },
+  { keys: ['W', 'E', '⇧Del'], label: 'Workspace' },
+  { keys: ['⇧E', '⇧I'], label: 'Share / import' },
+  { keys: ['F'], label: 'Folders' },
+];
 
 /** The Ticket Line's bar: the board, a card's drawer, or the new-card screen. */
 export function lineLegendFor(x: LineLegendInput): LegendItem[] {
@@ -150,26 +114,47 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       ...(x.pane === 'src'
         ? [{ keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Add or remove' }, { keys: ['/'], label: 'Search' }]
         : x.pane === 'pkt'
-          ? (x.preview ? [] : [{ keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Include or leave out' }, { keys: ['x'], label: 'Remove' }, { keys: ['e'], label: 'Your note' }])
+          ? (x.preview ? [] : [
+            { keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Include or leave out' }, { keys: ['x'], label: 'Remove' },
+            ...(x.cardRepo ? [{ keys: ['w'], label: 'Keep for the workspace' }] : []),
+            { keys: ['e'], label: 'Your note' },
+          ])
           : [{ keys: ['↑', '↓'], label: 'Option' }, { keys: ['←', '→'], label: 'Change' }]),
+      { keys: ['m'], label: 'Model' },
       { keys: ['p'], label: x.preview ? 'Back to the list' : 'Preview' },
       { keys: ['Ctrl Enter'], label: 'Start work', tone: 'acc' },
       { keys: ['Esc'], label: 'Cancel' },
     ];
   }
+  const full: LegendItem = { keys: [k(x.bindings, 'expand')], label: 'Full screen' };
   if (x.view === 'drawer') {
     return [
       { keys: ['Esc'], label: 'Back to the board' },
       { keys: ['Tab'], label: 'Overview · Context · Transcript' },
+      ...(x.hasSession ? [full] : []),
       { keys: ['Delete'], label: 'Remove card' },
+    ];
+  }
+  if (x.view === 'row') {
+    return [
+      { keys: ['←', '→'], label: 'Sessions' },
+      { keys: ['Enter'], label: 'Open full screen' },
+      { keys: ['R', 'X'], label: 'Rename / end' },
+      { keys: ['↑', 'u'], label: 'Back to the cards' },
+      { keys: ['1–9', '0'], label: 'Workspace / all' },
+      ...WORKSPACE_KEYS,
     ];
   }
   return [
     { keys: ['←', '→', '↑', '↓'], label: 'Move' },
     ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open' }] : []),
+    ...(x.hasSession ? [full] : []),
     { keys: ['c'], label: 'New card', tone: 'acc' },
     { keys: ['1–9', '0'], label: 'Workspace / all' },
+    { keys: ['u'], label: 'Unticketed' },
+    { keys: ['/'], label: 'Filter' },
+    ...(x.filtered ? [{ keys: ['Esc'], label: 'Clear filter' }] : []),
     ...(x.hasFocus ? [{ keys: ['Delete'], label: 'Remove' }] : []),
-    { keys: ['Esc', k(x.bindings, 'ticketLine')], label: 'Home' },
+    ...WORKSPACE_KEYS,
   ];
 }

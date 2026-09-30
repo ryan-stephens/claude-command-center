@@ -8,7 +8,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
-import { CardService, cleanDraft } from './cards.ts';
+import { CardService, cleanDraft, userModel } from './cards.ts';
 import { CommandService } from './commands.ts';
 import { PermissionBroker } from './permission-broker.ts';
 import { Mirror } from './mirror.ts';
@@ -49,10 +49,11 @@ const broker = new PermissionBroker(
 
 const store = new Store();
 const commands = new CommandService(store);
-const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, changed: () => broadcast(cardsMsg()) });
+const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, changed: () => broadcast(cardsMsg()) });
 
 function cardsMsg(): ServerMsg {
-  return { type: 'cards', cards: cards.list(), nextKey: cards.peekKey(), ...(process.env.CC_CONTROL_MODEL ? { model: process.env.CC_CONTROL_MODEL } : {}) };
+  const mine = userModel();
+  return { type: 'cards', cards: cards.list(), nextKey: cards.peekKey(), ...(process.env.CC_CONTROL_MODEL ? { model: process.env.CC_CONTROL_MODEL } : {}), ...(mine ? { userModel: mine } : {}) };
 }
 
 const manager: SessionManager = new SessionManager({

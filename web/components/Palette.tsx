@@ -3,9 +3,9 @@ import { useMemo, useRef, useState } from 'react';
 import { repoName } from '../../shared/workspaces.ts';
 import { exportPack, exportWorkspace, fireCommand, importPack, importWorkspace } from '../commands.ts';
 import { fuzzyScore } from '../fuzzy.ts';
-import { askStop, cycleTheme, hop, interrupt, jumpToAttention, newSession, openSession } from '../keys.ts';
+import { askStop, backToLine, cycleTheme, hop, interrupt, jumpToAttention, newSession, openSession } from '../keys.ts';
 import { taskKind, taskRunning } from '../activity-label.ts';
-import { currentWorkspace, get, set, setScope, toggleSound, useStore } from '../store.ts';
+import { currentWorkspace, get, set, setFilter, toggleSound, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { close, DialogKeys, Overlay } from './Overlay.tsx';
 
@@ -18,7 +18,6 @@ interface Item {
 }
 
 const MAX_RESULTS = 12;
-const home = () => set({ screen: 'list', openId: null, homeCol: 'sessions' });
 
 /** Ctrl+K: fuzzy search over actions, workspaces, the open session's workflows, and every session. */
 export function Palette() {
@@ -50,7 +49,7 @@ export function Palette() {
     actions.push(
       action('importws', 'Import a workspace file', importWorkspace),
       action('sources', 'Choose the folders the repo library lists', () => set({ modal: { kind: 'sources' } })),
-      action('home', 'Go home', home),
+      action('home', 'Go to the Ticket Line', backToLine),
       action('theme', 'Switch theme (match Windows, light, dark)', cycleTheme),
       action('sound', `Turn sound ${get().sound ? 'off' : 'on'}`, toggleSound),
       action('help', 'Show every key', () => set({ modal: { kind: 'help' } })),
@@ -85,8 +84,8 @@ export function Palette() {
       }
     }
     const wsItems: Item[] = [
-      ...workspaces.map((w, i): Item => ({ key: `w:${w.id}`, kind: 'Workspace', label: w.name, detail: `key ${i + 1}`, run: () => { setScope({ kind: 'workspace', id: w.id }); home(); } })),
-      { key: 'w:rest', kind: 'Workspace', label: workspaces.length ? 'Everything else' : 'All sessions', detail: 'key 0', run: () => { setScope({ kind: 'rest' }); home(); } },
+      ...workspaces.map((w, i): Item => ({ key: `w:${w.id}`, kind: 'Workspace', label: w.name, detail: `key ${i + 1}`, run: () => { setFilter(w.id); backToLine(); } })),
+      { key: 'w:all', kind: 'Workspace', label: 'All workspaces', detail: 'key 0', run: () => { setFilter('all'); backToLine(); } },
     ];
     const commands: Item[] = open && board?.sessionId === open.id
       ? board.groups.flatMap((g) => g.commands.map((c) => ({

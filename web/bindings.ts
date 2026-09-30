@@ -20,12 +20,12 @@ export const ACTIONS: ActionDef[] = [
   { id: 'prevSession', label: 'Previous session', defaults: ['Alt+ArrowUp'], inText: true },
   { id: 'nextSession', label: 'Next session', defaults: ['Alt+ArrowDown'], inText: true },
   { id: 'newSession', label: 'New session', defaults: ['Alt+Shift+N'], inText: true },
-  { id: 'expand', label: 'Full screen / back beside the list (the session you are in)', defaults: ['Ctrl+Enter'], inText: true },
+  { id: 'expand', label: 'Full screen: the focused card’s session / back to the Ticket Line', defaults: ['Ctrl+Enter'], inText: true },
   { id: 'interrupt', label: 'Interrupt the open session (Esc also works while it is busy)', defaults: ['Ctrl+.'], inText: true },
   { id: 'background', label: 'Send the running tool or subagent to the background', defaults: ['Ctrl+B'], inText: true },
   { id: 'sound', label: 'Sound on / off', defaults: ['M'], inText: false },
   { id: 'theme', label: 'Switch theme (match Windows, light, dark)', defaults: ['Alt+T'], inText: true },
-  { id: 'ticketLine', label: 'Ticket Line (and back)', defaults: ['Alt+L'], inText: true },
+  { id: 'ticketLine', label: 'Back to the Ticket Line', defaults: ['Alt+L'], inText: true },
   // Voice follows the numpad rule instead (only while not mid-message), so a plain key is fine.
   { id: 'pushToTalk', label: 'Push-to-talk (hold)', defaults: ['`', 'NumpadDecimal'], inText: false },
 ];
@@ -71,9 +71,9 @@ const hasModifier = (combo: string) => /(^|\+)(Ctrl|Alt|Meta)\+/.test(combo);
 const RESERVED = new Set([
   'Enter', 'Escape', 'Tab', 'Shift+Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete',
   'Home', 'End', 'PageUp', 'PageDown', 'Ctrl+C', 'Ctrl+V', 'Ctrl+X', 'Ctrl+A', 'Ctrl+Z',
-  // Screen keys: home (/ N W E R X C + − digits, F in the library), session (i T R X + D), approvals (Y A N D),
-  // number pad (E [ ] Shift+E Shift+I Ctrl+arrows).
-  'Y', 'A', 'N', 'E', 'I', 'R', 'X', 'T', 'W', 'D', 'F', 'C', 'Shift+C', '-', '/', '[', ']', '=', 'Shift+=', 'Shift+E', 'Shift+I',
+  // Screen keys: the Ticket Line (/ c u W E F R X + − digits, Shift+E Shift+I Shift+Delete; p x e w on the new-card screen),
+  // session (i T R X + D), approvals (Y A N D), number pad (E [ ] Shift+E Shift+I Ctrl+arrows).
+  'Y', 'A', 'N', 'E', 'I', 'R', 'X', 'T', 'W', 'D', 'F', 'C', 'U', 'P', 'Shift+W', '-', '/', '[', ']', '=', 'Shift+=', 'Shift+E', 'Shift+I', 'Shift+Delete',
   ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(String),
   'Ctrl+ArrowUp', 'Ctrl+ArrowDown', 'Ctrl+ArrowLeft', 'Ctrl+ArrowRight',
   ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `Alt+${n}`),

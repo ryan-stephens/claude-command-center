@@ -1,20 +1,33 @@
-// The Ticket Line (PLAN §27, spec: docs/futures/path-line.html): work as cards moving left to right
-// through the loop, a drawer for one card, and the new-card screen over the whole board.
-// Cards run in terminal tabs and follow their session through its hooks (server/card-events.ts).
+// The Ticket Line (PLAN §27, spec: docs/futures/path-line.html), the home page: work as cards
+// moving left to right through the loop, the Unticketed row of sessions without a card under it,
+// a drawer for one card, and the new-card screen over the whole board. Cards run in terminal tabs
+// and follow their session through its hooks (server/card-events.ts).
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fmtK, includedRepos, memoryPct, packetText, tokens, type Card, type PacketItem } from '../../shared/cards.ts';
-import { repoName } from '../../shared/workspaces.ts';
+import { fmtK, includedRepos, memoryPct, modelName, packetText, tokens, type Card, type PacketItem } from '../../shared/cards.ts';
+import type { SessionSummary } from '../../shared/protocol.ts';
+import { homeRepo, repoName, samePath } from '../../shared/workspaces.ts';
+import { activityShort } from '../activity-label.ts';
+import { bindingsFor, displayCombo } from '../bindings.ts';
+import { importWorkspace } from '../commands.ts';
+import { age } from '../home-model.ts';
+import { openSession } from '../keys.ts';
 import { booting, cardActivity, elapsed, lanes, needsYou, progress, shortPath } from '../line-model.ts';
-import { openCard, openComposer } from '../line-keys.ts';
-import { get, set, useStore } from '../store.ts';
+import { openCard, openComposer, rowOf, workspaceKey } from '../line-keys.ts';
+import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useFlags, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { NewCard } from './NewCard.tsx';
 import { Transcript } from './Transcript.tsx';
-import { Key, Pill, SWATCH, WsBadge } from './ui.tsx';
+import { Icon, Key, Pill, SWATCH, WsBadge } from './ui.tsx';
+
+/** The expand key's current binding, as a keycap label. */
+function useExpandKey(): string {
+  const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
+  return displayCombo(bindingsFor('expand', bindings)[0] ?? '');
+}
 
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
 
@@ -24,8 +37,12 @@ export function TicketLine() {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <LineBar />
+      <WorkspaceBar />
       <div className="relative flex min-h-0 flex-1">
-        <Board />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <Board />
+          <UnticketedRow />
+        </div>
         {drawer && <Drawer id={drawer} />}
         {composer && <NewCard />}
       </div>
@@ -41,15 +58,18 @@ function LineBar() {
   const starting = cards.filter(booting).length;
   const needs = cards.filter(needsYou).length;
   const chip = (on: boolean) => `flex items-center gap-2 whitespace-nowrap rounded-lg border px-2 py-1 text-[13.5px] ${on ? 'border-ring bg-surface shadow-[0_0_0_2px_color-mix(in_srgb,var(--c-ring)_25%,transparent)]' : 'border-line bg-surface hover:bg-raise'}`;
-  const pick = (f: string) => set({ line: { ...get().line, filter: f } });
   return (
     <div className="flex items-center gap-3 overflow-x-auto border-b border-line bg-col px-4 py-2">
-      <button className={chip(filter === 'all')} onClick={() => pick('all')}><Key k="0" size="sm" />All</button>
+      <button className={chip(filter === 'all')} onClick={() => setFilter('all')}><Key k="0" size="sm" />All</button>
       {workspaces.slice(0, 9).map((w, i) => (
-        <button key={w.id} className={chip(filter === w.id)} onClick={() => pick(w.id)}>
+        <button key={w.id} className={chip(filter === w.id)} onClick={() => setFilter(w.id)} onDoubleClick={() => set({ modal: { kind: 'workspace', id: w.id } })} title={`${w.name} (${i + 1}) · double-click or E to edit`}>
           <Key k={String(i + 1)} size="sm" /><WsBadge ws={w} size={20} />{w.name}
         </button>
       ))}
+      <button className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-dashed border-line px-2 py-1 text-[13.5px] text-faint hover:text-ink" onClick={() => set({ modal: { kind: 'workspace', id: null } })} title="New workspace">
+        <Icon name="plus" size={14} />Workspace<Key k="W" size="sm" />
+      </button>
+      <SearchBox />
       <span className="grow" />
       <span className="whitespace-nowrap text-[13.5px] text-sub"><b className="text-ink tabular-nums">{inFlight}</b> in flight</span>
       <span className={`whitespace-nowrap text-[13.5px] ${needs ? 'text-attn' : 'text-sub'}`}><b className={`tabular-nums ${needs ? '' : 'text-ink'}`}>{needs}</b> need{needs === 1 ? 's' : ''} you</span>
@@ -59,12 +79,75 @@ function LineBar() {
   );
 }
 
+/** / filters the cards and the Unticketed row by words. Shown while typing or while it holds text. */
+function SearchBox() {
+  const q = useStore((s) => s.line.q);
+  const searching = useStore((s) => s.line.searching);
+  const ref = useRef<HTMLInputElement>(null);
+  const open = searching || Boolean(q);
+  return (
+    <label className={`flex items-center gap-2 rounded-lg border bg-surface py-1 pl-2 pr-1.5 ${open ? 'border-ring' : 'border-line text-faint'}`} onClick={() => ref.current?.focus()}>
+      <Key k="/" size="sm" />
+      <input
+        id="line-q" ref={ref} type="text" autoComplete="off" value={q} placeholder="Filter"
+        onChange={(e) => set({ line: { ...get().line, q: e.target.value, row: null } })}
+        onFocus={() => set({ line: { ...get().line, searching: true } })}
+        onBlur={() => set({ line: { ...get().line, searching: false } })}
+        className={`bg-transparent text-[13.5px] outline-none placeholder:text-faint ${open ? 'w-44' : 'w-14'}`}
+        aria-label="Filter cards and sessions"
+      />
+      {q && <button className="text-faint hover:text-ink" onClick={() => set({ line: { ...get().line, q: '' } })} aria-label="Clear the filter"><Icon name="x" size={13} /></button>}
+    </label>
+  );
+}
+
+/**
+ * The workspace shown: its repos, which every card and session in it can use, and the keys that
+ * change them. With All showing, the same keys ask which workspace.
+ */
+function WorkspaceBar() {
+  const ws = useStore((s) => currentWorkspace(s));
+  const count = useStore((s) => s.workspaces.length);
+  const sources = useStore((s) => s.library.sources.length);
+  const act = (label: string, k: string, onClick: () => void, title?: string) => (
+    <button className="flex items-center gap-1.5 whitespace-nowrap text-[13px] text-faint hover:text-ink" onClick={onClick} title={title}>{label}<Key k={k} size="sm" /></button>
+  );
+  const home = ws ? homeRepo(ws) : undefined;
+  return (
+    <div className="flex items-center gap-2 overflow-x-auto border-b border-line bg-col px-4 py-1.5 text-[13px]">
+      {ws ? (
+        <>
+          <span className="whitespace-nowrap text-faint" title="Every card and session in this workspace can read and change all of these repos">{ws.name} repos</span>
+          {ws.repos.length
+            ? ws.repos.map((r) => (
+              <span key={r} title={r} className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-line bg-raise px-1.5 font-mono text-[12px] text-sub">
+                {home && samePath(r, home) && <Icon name="home" size={11} className="text-acc" />}{repoName(r)}
+              </span>
+            ))
+            : <span className="whitespace-nowrap text-faint">none yet: + adds one from the library</span>}
+          <span className="mx-1 h-4 w-px bg-line" />
+          {act('Add', '+', () => workspaceKey('addRepo'), 'Add a repo from the library to this workspace')}
+          {ws.repos.length > 0 && act('Remove', '−', () => workspaceKey('removeRepo'))}
+          {act('Edit', 'E', () => workspaceKey('edit'))}
+          {act('Share', '⇧E', () => workspaceKey('share'), 'Save this workspace as a file to share')}
+        </>
+      ) : (
+        <span className="whitespace-nowrap text-faint">{count ? `All ${count} workspaces. Pick one (1–9) to see its repos; + and − ask which.` : 'No workspaces yet. A workspace groups the repos you work on together: W makes one.'}</span>
+      )}
+      <span className="grow" />
+      {act('Import', '⇧I', importWorkspace, 'Import a workspace someone shared')}
+      {act(sources ? 'Library folders' : 'Pick repo folders', 'F', () => set({ modal: { kind: 'sources' } }), 'Choose the folders the repo library lists')}
+    </div>
+  );
+}
+
 function Board() {
   const cards = useStore((s) => s.cards);
   const filter = useStore((s) => s.line.filter);
-  const focus = useStore((s) => s.line.focus);
+  const q = useStore((s) => s.line.q);
+  const focus = useStore((s) => (s.line.row ? null : s.line.focus));
   const workspaces = useStore((s) => s.workspaces);
-  const cols = lanes(cards, filter);
+  const cols = lanes(cards, filter, q);
   useEffect(() => {
     if (focus) document.getElementById(`card-${focus}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [focus]);
@@ -85,6 +168,62 @@ function Board() {
         </section>
       ))}
     </div>
+  );
+}
+
+/**
+ * Sessions no card follows, as the mock's "Unticketed" row: second class, under the board.
+ * Enter (or a click) opens one full screen; Ctrl+K finds any session that isn't shown.
+ */
+function UnticketedRow() {
+  const row = useStore((s) => s.line.row);
+  // Recomputed on any change to what it reads; the ids joined keep it from re-rendering needlessly.
+  const ids = useStore((s) => rowOf(s).shown.map((x) => x.id).join('\n'));
+  const more = useStore((s) => rowOf(s).more);
+  const sessions = useStore((s) => s.sessions);
+  const q = useStore((s) => s.line.q.trim());
+  const palette = useStore((s) => displayCombo(bindingsFor('palette', s.settings.bindings ?? NO_BINDINGS)[0] ?? ''));
+  const shown = ids ? ids.split('\n').map((id) => sessions.find((x) => x.id === id)).filter((x): x is SessionSummary => Boolean(x)) : [];
+  const active = row !== null;
+  return (
+    <section aria-label="Unticketed" className={`border-t border-line px-4 pb-2.5 pt-2 ${active ? 'bg-surface shadow-[inset_0_3px_0_var(--c-acc)]' : 'bg-col'}`}>
+      <div className="mb-1.5 flex items-center gap-2 text-[13px]">
+        <h4 className={`font-bold ${active ? '' : 'text-sub'}`}>Unticketed</h4>
+        <span className="hidden text-faint sm:inline">sessions without a card</span>
+        <Key k="u" size="sm" />
+        <span className="grow" />
+        {more > 0 && <span className="whitespace-nowrap text-faint">{more} more<span className="hidden sm:inline"> · <Key k={palette} size="sm" /> finds any session</span></span>}
+      </div>
+      {shown.length
+        ? <div className="flex gap-2 overflow-x-auto pb-0.5" role="listbox" aria-label="Sessions without a card">{shown.map((s) => <RowTile key={s.id} s={s} focused={row === s.id} />)}</div>
+        : <p className="text-[12.5px] text-faint">{q ? `No session without a card matches “${q}”.` : 'Every recent session here has a card.'}</p>}
+    </section>
+  );
+}
+
+function RowTile({ s, focused }: { s: SessionSummary; focused: boolean }) {
+  const flags = useFlags(s.id);
+  const activity = useStore((st) => st.activity[s.id]);
+  const needs = flags.pending || flags.unread || s.status === 'requires_action';
+  const working = s.live && (s.status === 'running' || s.background);
+  const doing = s.live ? activityShort(activity, s.cwd) : null;
+  return (
+    <button
+      id={`row-${s.id}`} role="option" aria-selected={focused}
+      onClick={() => openSession(s.id)}
+      title={`${s.title}\n${s.cwd}\nOpen full screen`}
+      className={`flex w-60 shrink-0 flex-col gap-0.5 rounded-lg border px-2.5 py-1.5 text-left ${needs ? 'bg-attn-bg' : 'bg-surface'} ${focused ? 'is-focus border-transparent' : `${needs ? 'border-attn/45' : 'border-line'} hover:bg-raise`}`}
+    >
+      <span className="flex min-w-0 items-center gap-1.5 text-[13px]">
+        {needs ? <span className="h-2 w-2 shrink-0 rounded-full bg-attn" /> : working ? <span className="spinner text-busy" /> : s.live ? <Icon name="check" size={13} className="text-ok" /> : null}
+        <span className={`truncate ${needs ? 'font-semibold' : 'font-medium'}`}>{s.title}</span>
+      </span>
+      <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-faint">
+        <span className="truncate">{repoName(s.cwd) || 'no folder'}{doing ? ` · ${doing}` : ''}</span>
+        <span className="grow" />
+        {needs ? <span className="font-semibold text-attn">{flags.pending || s.status === 'requires_action' ? 'Your OK' : 'Your turn'}</span> : <span className="tabular-nums">{age(s.lastModified)}</span>}
+      </span>
+    </button>
   );
 }
 
@@ -184,10 +323,23 @@ function Drawer({ id }: { id: string }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'ctx' ? <ContextTab card={card} wsName={ws?.name} /> : tab === 'tx' ? <TranscriptTab card={card} /> : <Overview card={card} />}
       </div>
-      <div className="flex flex-wrap gap-2 border-t border-line bg-col px-5 py-3">
-        <button className="btn py-1" onClick={() => set({ modal: { kind: 'deleteCard', id: card.id } })}><Key k="Delete" size="sm" />Remove card</button>
-      </div>
+      <DrawerActions card={card} />
     </aside>
+  );
+}
+
+function DrawerActions({ card }: { card: Card }) {
+  const expand = useExpandKey();
+  const linked = useStore((s) => Boolean(card.sessionId && s.sessions.some((x) => x.id === card.sessionId)));
+  return (
+    <div className="flex flex-wrap gap-2 border-t border-line bg-col px-5 py-3">
+      {card.sessionId && (
+        <button className="btn py-1" disabled={!linked} onClick={() => openSession(card.sessionId!)} title={linked ? 'Read and type in this session in the app (Esc comes back)' : 'The session hasn’t shown up in the session list yet'}>
+          <Key k={expand} size="sm" />Full screen
+        </button>
+      )}
+      <button className="btn py-1" onClick={() => set({ modal: { kind: 'deleteCard', id: card.id } })}><Key k="Delete" size="sm" />Remove card</button>
+    </div>
   );
 }
 
@@ -246,6 +398,7 @@ function Overview({ card }: { card: Card }) {
           <dt className="text-faint">Terminal tab</dt><dd>Titled <b>{card.key}</b> in Windows Terminal. Type to Claude there.</dd>
           <dt className="text-faint">Folder</dt><dd className="break-all font-mono text-[12.5px]">{card.cwd}</dd>
           {card.branchName && <><dt className="text-faint">Branch</dt><dd className="font-mono text-[12.5px]">{card.branchName}</dd></>}
+          <dt className="text-faint">Model</dt><dd>{modelName(card.model ?? card.launch.model)}{!card.launch.model && card.model ? <span className="text-faint"> (the default)</span> : null}</dd>
           <dt className="text-faint">Session</dt><dd className="font-mono text-[12.5px]">{card.sessionId ?? 'not linked yet'}</dd>
           <dt className="text-faint">Started</dt><dd>{new Date(card.createdAt).toLocaleString()}</dd>
         </dl>

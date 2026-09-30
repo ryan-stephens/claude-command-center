@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { branchFor, fmtK, homeOf, includedRepos, launchLines, memoryPct, packetText, worktreeFor, wtArg, type CardDraft, type Packet } from './cards.ts';
+import { branchFor, fmtK, homeOf, includedRepos, launchLines, memoryPct, modelFor, modelName, packetText, worktreeFor, wtArg, type CardDraft, type Packet } from './cards.ts';
 
 const repo = (id: string, on = true) => ({ kind: 'repo' as const, id, label: id.split('\\').pop()!, on });
 const packet = (over: Partial<Packet> = {}): Packet => ({
@@ -65,6 +65,16 @@ test('wt arguments survive Windows Terminal re-quoting them', () => {
   assert.equal(wtArg('two\nlines'), 'two lines');
 });
 
+test('the model: the card’s choice, else the server’s, else the user’s setting', () => {
+  assert.equal(modelFor({ model: 'sonnet' }, 'haiku', 'opus'), 'sonnet');
+  assert.equal(modelFor({}, 'claude-haiku-4-5-20251001', 'opus'), 'claude-haiku-4-5-20251001');
+  assert.equal(modelFor({}, undefined, 'opus'), 'opus');
+  assert.equal(modelFor({}), undefined);
+  assert.equal(modelName('opus'), 'Opus');
+  assert.equal(modelName('claude-haiku-4-5-20251001'), 'claude-haiku-4-5-20251001');
+  assert.equal(modelName(undefined), 'Claude Code’s default');
+});
+
 test('what happens: branch, then the terminal tab with the extra repos and the message', () => {
   const lines = launchLines(draft(), 'CARD-3', 'haiku');
   assert.equal(lines[0], 'git -C D:\\repos\\web-app switch -c card-3-add-size-guide-product');
@@ -73,4 +83,6 @@ test('what happens: branch, then the terminal tab with the extra repos and the m
   assert.match(wt[0], /worktree add D:\\repos\\web-app-card-3 -b card-3/);
   assert.match(wt[2], /-d D:\\repos\\web-app-card-3 /);
   assert.equal(launchLines(draft({ launch: { ...draft().launch, branch: 'current' } }), 'CARD-3').length, 2);
+  assert.match(launchLines(draft({ launch: { ...draft().launch, model: 'opus' } }), 'CARD-3', 'haiku')[2], /--model opus /, 'the card’s choice wins over the server’s');
+  assert.doesNotMatch(launchLines(draft(), 'CARD-3')[2], /--model/, 'no choice, no pin: Claude Code decides');
 });

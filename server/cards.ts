@@ -6,11 +6,12 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
-import { existsSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  branchFor, defaultMessage, homeOf, includedRepos, LAUNCH_MODES, packetText, tokens, fmtK, worktreeFor, wtArg,
+  branchFor, CARD_MODELS, defaultMessage, homeOf, includedRepos, LAUNCH_MODES, modelFor, packetText, tokens, fmtK, worktreeFor, wtArg,
   type BranchChoice, type BootStep, type Card, type CardDraft, type LaunchMode, type Packet, type PacketItem,
 } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
@@ -60,7 +61,8 @@ export function cleanDraft(raw: unknown, workspaces: Workspace[]): CardDraft {
   if (!home) throw new Error('A card needs at least one repo.');
   const mode: LaunchMode = LAUNCH_MODES.some((m) => m.id === l.mode) ? l.mode! : 'plan';
   const branch: BranchChoice = l.branch === 'current' || l.branch === 'worktree' ? l.branch : 'new';
-  return { title, workspaceId, packet, launch: { home, mode, branch, message: str(l.message, 1000).replace(/[\r\n]+/g, ' ').trim() } };
+  const model = CARD_MODELS.find((m) => m.id === l.model)?.id;
+  return { title, workspaceId, packet, launch: { home, mode, branch, ...(model ? { model } : {}), message: str(l.message, 1000).replace(/[\r\n]+/g, ' ').trim() } };
 }
 
 function git(cwd: string, args: string[]): Promise<string> {
@@ -119,12 +121,31 @@ function sameToken(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+interface CardOpts {
+  port: number;
+  /** CC_CONTROL_MODEL: every card without its own choice starts with this. */
+  model?: string;
+  /** The model in the user's Claude Code settings, read when a card starts. */
+  userModel?: () => string | undefined;
+  changed: () => void;
+}
+
+/** The "model" in ~/.claude/settings.json: what a plain `claude` would start with. */
+export function userModel(file = join(homedir(), '.claude', 'settings.json')): string | undefined {
+  try {
+    const m = (JSON.parse(readFileSync(file, 'utf8')) as { model?: unknown }).model;
+    return typeof m === 'string' && m.trim() ? m.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export class CardService {
   private waits = new Map<string, NodeJS.Timeout>();
   private store: Store;
-  private opts: { port: number; model?: string; changed: () => void };
+  private opts: CardOpts;
 
-  constructor(store: Store, opts: { port: number; model?: string; changed: () => void }) {
+  constructor(store: Store, opts: CardOpts) {
     this.store = store;
     this.opts = opts;
   }
@@ -178,10 +199,11 @@ export class CardService {
       this.step(card, `Made a worktree ${repoName(dir)} on ${branch}`);
     }
 
+    card.model = modelFor(card.launch, this.opts.model, this.opts.userModel?.());
     const token = crypto.randomUUID();
     const others = includedRepos(card.packet).filter((r) => !samePath(r, home));
     const args = ['-w', '0', 'nt', '--title', key, '-d', card.cwd, findClaude(), '--settings', writeHookSettings(),
-      '--permission-mode', card.launch.mode, ...(this.opts.model ? ['--model', this.opts.model] : []),
+      '--permission-mode', card.launch.mode, ...((card.launch.model ?? this.opts.model) ? ['--model', card.launch.model ?? this.opts.model!] : []),
       ...others.flatMap((r) => ['--add-dir', r]), '--', wtArg(card.launch.message)];
     await new Promise<void>((resolve, reject) => {
       const child = spawn('wt.exe', args, { env: tabEnv(process.env, card.id, token, this.opts.port), stdio: 'ignore', windowsHide: true, detached: true });

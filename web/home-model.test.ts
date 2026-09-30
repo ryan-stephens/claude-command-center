@@ -27,13 +27,12 @@ test('status words are plain', () => {
   assert.equal(statusLabel(s('a'), none).text, '');
 });
 
-test('sessions belong to a workspace by folder; the rest go under key 0', () => {
+test('sessions belong to a workspace by folder; All holds every one', () => {
   const store: Workspace = { id: 'w1', name: 'Store', color: 'orange', repos: ['C:\\repos\\web-app', 'C:\\repos\\api'] };
   const list = [s('web'), s('api', { cwd: 'c:/repos/api/src' }), s('other', { cwd: 'D:\\scratch' })];
-  assert.deepEqual(sessionsIn({ kind: 'workspace', id: 'w1' }, list, [store]).map((x) => x.id), ['web', 'api']);
-  assert.deepEqual(sessionsIn({ kind: 'rest' }, list, [store]).map((x) => x.id), ['other']);
-  assert.deepEqual(sessionsIn({ kind: 'workspace', id: 'gone' }, list, [store]), []);
-  assert.equal(sessionsIn({ kind: 'rest' }, list, []).length, 3, 'with no workspaces, key 0 holds everything');
+  assert.deepEqual(sessionsIn('w1', list, [store]).map((x) => x.id), ['web', 'api']);
+  assert.deepEqual(sessionsIn('gone', list, [store]), []);
+  assert.equal(sessionsIn('all', list, [store]).length, 3);
 });
 
 test('groups come in fixed order, skip empty buckets, and order "needs you" like Alt+N', () => {

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Card } from '../shared/cards.ts';
-import type { Workspace } from '../shared/protocol.ts';
+import type { SessionSummary, Workspace } from '../shared/protocol.ts';
 import {
-  cardActivity, draftOf, elapsed, goRows, lanes, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin, setWorkspace, sources, stepOption, togglePacketRow, toggleSource,
+  cardActivity, cycleModel, draftOf, elapsed, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin, ROW_MAX,
+  setWorkspace, sources, stepOption, togglePacketRow, toggleSource, unticketed,
   type Composer,
 } from './line-model.ts';
 
@@ -115,4 +116,71 @@ test('progress, elapsed time and short paths', () => {
   assert.equal(elapsed(0, 65 * 60_000), '1h 05m');
   assert.equal(shortPath('C:\\Repos\\web-app\\src\\a.ts', 'c:/repos/web-app'), 'src/a.ts');
   assert.equal(shortPath('D:\\other\\b.ts', 'C:\\repos\\web-app'), 'D:\\other\\b.ts');
+});
+
+test('the / filter narrows the board by key, title or branch, every word', () => {
+  const cs = [{ ...card('CARD-1', 'plan'), title: 'Gift card field' }, { ...card('CARD-2', 'build'), title: 'Footer links' }];
+  assert.deepEqual(lanes(cs, 'all', 'gift').flatMap((l) => l.cards.map((c) => c.id)), ['CARD-1']);
+  assert.deepEqual(lanes(cs, 'all', 'card-2').flatMap((l) => l.cards.map((c) => c.id)), ['CARD-2']);
+  assert.deepEqual(lanes(cs, 'all', 'links gift').flatMap((l) => l.cards.map((c) => c.id)), []);
+});
+
+const sess = (id: string, extra: Partial<SessionSummary> = {}): SessionSummary =>
+  ({ id, title: id, cwd: 'D:\\r\\web-app', lastModified: 1_000_000_000, live: false, ...extra });
+const noFlags = () => ({ pending: false, unread: false });
+
+test('the Unticketed row: sessions no card follows, needs-you first, recent others only', () => {
+  const now = 1_000_000_000;
+  const base = { cards: [{ ...card('a', 'build'), sessionId: 'linked' }], workspaces: [W1, W2], filter: 'all', q: '', flags: noFlags, attention: [], now };
+  const sessions = [
+    sess('linked', { live: true, status: 'running' }),
+    sess('old', { lastModified: now - 10 * 86400_000 }),
+    sess('recent', { lastModified: now - 3600_000 }),
+    sess('busy', { live: true, status: 'running' }),
+    sess('pay', { cwd: 'D:\\r\\pay', live: true, status: 'idle' }),
+  ];
+  const row = unticketed({ ...base, sessions, flags: (s) => ({ pending: s.id === 'recent', unread: false }) });
+  assert.deepEqual(row.shown.map((s) => s.id), ['recent', 'busy', 'pay'], 'a card’s session is left out; needs you, working, done; the old one stays off');
+  assert.equal(row.more, 1);
+  assert.deepEqual(unticketed({ ...base, sessions, filter: 'w2' }).shown.map((s) => s.id), ['pay'], 'one workspace');
+  assert.deepEqual(unticketed({ ...base, sessions, q: 'old' }).shown.map((s) => s.id), ['old'], 'the filter reaches older sessions');
+  const many = Array.from({ length: 20 }, (_, i) => sess(`s${i}`, { live: true, status: 'idle' }));
+  const capped = unticketed({ ...base, sessions: many });
+  assert.equal(capped.shown.length, ROW_MAX);
+  assert.equal(capped.more, 20 - ROW_MAX);
+});
+
+test('Alt+arrows walk the cards’ sessions, then the row’s, once each', () => {
+  const cols = lanes([{ ...card('a', 'plan'), sessionId: 's1' }, card('b', 'plan'), { ...card('c', 'try'), sessionId: 's2' }], 'all');
+  assert.deepEqual(lineSessions(cols, [sess('s3'), sess('s1')]), ['s1', 's2', 's3']);
+});
+
+test('w keeps a repo the card added for the whole workspace', () => {
+  const c = toggleSource(newComposer(W1, 'CARD-3'), 'D:\\r\\pay');
+  const at = packetRows(c).findIndex((r) => r.layer === 'card');
+  const r = keepForWorkspace(c, at);
+  assert.equal(typeof r, 'object');
+  const { composer, repo } = r as { composer: Composer; repo: string };
+  assert.equal(repo, 'D:\\r\\pay');
+  assert.deepEqual(composer.packet.workspace.map((i) => i.label), ['web-app', 'tokens', 'pay']);
+  assert.equal(composer.packet.card.length, 0);
+  assert.match(String(keepForWorkspace(c, 0)), /Only a repo you added/);
+  assert.match(String(keepForWorkspace({ ...c, workspaceId: null }, at)), /no workspace/);
+});
+
+test('the model: the default is named, ← → or m pick Opus, Sonnet, Haiku and back', () => {
+  const c = newComposer(W1, 'CARD-3');
+  const row = (x: Composer, d = {}) => goRows(x, [W1], 'CARD-3', d).find((r) => r.id === 'model')!;
+  assert.deepEqual(row(c).opts, ['Default', 'Opus', 'Sonnet', 'Haiku']);
+  assert.equal(row(c, { user: 'opus' }).opts[0], 'Default · Opus');
+  assert.equal(row(c, { pinned: 'claude-haiku-4-5-20251001', user: 'opus' }).opts[0], 'Default · claude-haiku-4-5-20251001', 'the server’s pin is the default');
+  const sonnet = stepOption(stepOption(c, row(c), 1, [W1], 'CARD-3'), row(c), 2, [W1], 'CARD-3');
+  assert.equal(sonnet.launch.model, 'sonnet');
+  assert.equal(row(sonnet).at, 2);
+  let m = c;
+  const seen = [];
+  for (let i = 0; i < 4; i++) { m = cycleModel(m); seen.push(m.launch.model ?? 'default'); }
+  assert.deepEqual(seen, ['opus', 'sonnet', 'haiku', 'default']);
+  assert.ok(!('model' in m.launch), 'back to the default drops the flag');
+  assert.equal((draftOf({ ...cycleModel(c), title: 'x' }) as { launch: { model?: string } }).launch.model, 'opus');
 });

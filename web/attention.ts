@@ -111,7 +111,7 @@ export function onCardChange(prev: Card | undefined, next: Card): void {
   });
   n.onclick = () => {
     window.focus();
-    set({ screen: 'line', composer: null, line: { ...get().line, focus: next.id, drawer: next.id, tab: 'over' } });
+    set({ screen: 'line', openId: null, composer: null, modal: null, line: { ...get().line, focus: next.id, drawer: next.id, tab: 'over', row: null } });
     n.close();
   };
 }

@@ -1,21 +1,20 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { FileHit, ImageAttachment, ModelChoice, SlashInfo, Todo, TranscriptItem } from '../../shared/protocol.ts';
-import { workspacesFor } from '../../shared/workspaces.ts';
+import type { FileHit, ImageAttachment, ModelChoice, SessionSummary, SlashInfo, Todo, TranscriptItem, Workspace } from '../../shared/protocol.ts';
+import { repoName, samePath, workspacesFor } from '../../shared/workspaces.ts';
 import { turnClock } from '../activity-label.ts';
 import { argQuery, exactCommand, fileQuery, hintChoices, matchSlash, mention, runsAlone, slashQuery } from '../slash.ts';
 import { historyFor, loadPrompts, rememberPrompt } from '../prompt-history.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { statusLabel } from '../home-model.ts';
-import { askStop, backToList, cycleMode, dockSession, hop, openSession } from '../keys.ts';
+import { askStop, backToLine, cycleMode, hop } from '../keys.ts';
 import { MODE_LABEL } from '../questions.ts';
 import { startVoice, stopVoice, voiceSupported } from '../voice.ts';
 import { activeSession, flash, NO_BINDINGS, set, setDraft, toggleFold, useFlags, useStore } from '../store.ts';
 import { searchFiles, send } from '../ws.ts';
 import { ActivityBar, useNow } from './ActivityBar.tsx';
 import { ApprovalCard } from './Approval.tsx';
-import { ContextChips } from './Home.tsx';
 import { NumPad } from './NumPad.tsx';
 import { Transcript } from './Transcript.tsx';
 import { Icon, Key, Pill, WsBadge } from './ui.tsx';
@@ -24,18 +23,13 @@ const EMPTY: TranscriptItem[] = [];
 const NO_SLASH: SlashInfo[] = [];
 const NO_MODELS: ModelChoice[] = [];
 
-/**
- * The number pad, folded away: the conversation gets the width; Tab (or a click) still opens it.
- * Beside the list on home it is always this rail (`docked`), and opens while you use it.
- */
-function PadRail({ docked, onOpen }: { docked: boolean; onOpen: () => void }) {
+/** The number pad, folded away: the conversation gets the width; Tab (or a click) still opens it. */
+function PadRail({ onOpen }: { onOpen: () => void }) {
   return (
     <aside aria-label="Number pad (folded)" className="flex w-14 shrink-0 flex-col items-center gap-4 border-l border-line bg-col py-3">
-      {!docked && (
-        <button onClick={() => toggleFold('pad')} aria-label="Keep the number pad open" title="Keep the number pad open" className="grid h-8 w-8 place-items-center rounded-lg text-faint hover:bg-raise hover:text-ink">
-          <Icon name="back" size={16} />
-        </button>
-      )}
+      <button onClick={() => toggleFold('pad')} aria-label="Keep the number pad open" title="Keep the number pad open" className="grid h-8 w-8 place-items-center rounded-lg text-faint hover:bg-raise hover:text-ink">
+        <Icon name="back" size={16} />
+      </button>
       <button onClick={onOpen} title="Use the number pad (Tab from the message box)" className="flex flex-col items-center gap-1.5 text-faint hover:text-ink">
         <Icon name="grid" size={20} />
         <Key k="Tab" size="sm" />
@@ -45,14 +39,11 @@ function PadRail({ docked, onOpen }: { docked: boolean; onOpen: () => void }) {
 }
 
 /**
- * A session: its conversation, cards, to-do list, activity and message box. Full screen it is the
- * open session; `docked`, it sits beside the session list on home and takes the keys once you
- * step into it (→ or Enter), with the number pad as a rail.
+ * A session full screen: its conversation, cards, to-do list, activity and message box. It opens
+ * from a card on the Ticket Line (the expand key) or from the Unticketed row; Esc goes back.
  */
-export function SessionView({ id: shownId, docked = false }: { id?: string; docked?: boolean }) {
-  const openId = useStore((s) => s.openId);
-  const id = shownId ?? openId!;
-  const active = useStore((s) => activeSession(s) === id);
+export function SessionView() {
+  const id = useStore((s) => s.openId)!;
   const session = useStore((s) => s.sessions.find((x) => x.id === id));
   const items = useStore((s) => s.transcripts[id] ?? EMPTY);
   const loaded = useStore((s) => id in s.transcripts);
@@ -65,11 +56,6 @@ export function SessionView({ id: shownId, docked = false }: { id?: string; dock
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
-  // Beside the list, the transcript loads once the selection has settled on this session.
-  useEffect(() => {
-    if (docked && !loaded) send({ type: 'session.open', id });
-  }, [docked, loaded, id]);
-
   // A different session starts at its newest message.
   useLayoutEffect(() => { stick.current = true; }, [id]);
 
@@ -81,12 +67,12 @@ export function SessionView({ id: shownId, docked = false }: { id?: string; dock
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SessionHeader id={id} docked={docked} />
+      <SessionHeader id={id} />
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           {session && (
             <div className="flex flex-wrap items-center gap-3 border-b border-line bg-col px-4 py-2 md:px-6">
-              <ContextChips s={session} ws={ws} removable />
+              <ContextChips s={session} ws={ws} />
               {session.ctxPct !== undefined && <MemoryMeter pct={session.ctxPct} />}
             </div>
           )}
@@ -114,14 +100,13 @@ export function SessionView({ id: shownId, docked = false }: { id?: string; dock
           </div>
           <TodoPanel id={id} />
           <ActivityBar id={id} />
-          <Composer id={id} focused={zone === 'composer'} docked={docked && !active} />
+          <Composer id={id} focused={zone === 'composer'} />
           {/* Phones: the number pad opens as a panel under the composer. */}
-          {!docked && <MobilePad />}
+          <MobilePad />
         </div>
         <div className="hidden md:flex">
-          {/* Beside the list the pad opens only to run a workflow; a waiting card keeps the width. */}
-          {(docked || padFolded) && (zone !== 'board' || (docked && permission))
-            ? <PadRail docked={docked} onOpen={() => { if (docked && !active) dockSession(id); set({ zone: 'board' }); }} />
+          {padFolded && zone !== 'board'
+            ? <PadRail onOpen={() => set({ zone: 'board' })} />
             : <NumPad focused={zone === 'board'} />}
         </div>
       </div>
@@ -129,61 +114,80 @@ export function SessionView({ id: shownId, docked = false }: { id?: string; dock
   );
 }
 
-function SessionHeader({ id, docked }: { id: string; docked: boolean }) {
+function SessionHeader({ id }: { id: string }) {
   const session = useStore((s) => s.sessions.find((x) => x.id === id));
+  // A card's session can open before the session list has it: name it after the card meanwhile.
+  const cardTitle = useStore((s) => { const c = s.cards.find((x) => x.sessionId === id); return c ? `${c.key} ${c.title}` : undefined; });
   const ws = useStore((s) => (session ? workspacesFor(session.cwd, s.workspaces)[0] ?? null : null));
   const flags = useFlags(id);
   const activity = useStore((s) => s.activity[id]);
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
-  const dockFolded = useStore((s) => s.folds.dock);
   const now = useNow(Boolean(activity && activity.phase !== 'idle'));
   const status = session ? statusLabel(session, flags) : null;
   const clock = turnClock(activity, now);
-  const k = (a: 'prevSession' | 'nextSession' | 'expand') => displayCombo(bindingsFor(a, bindings)[0] ?? '');
+  const k = (a: 'prevSession' | 'nextSession') => displayCombo(bindingsFor(a, bindings)[0] ?? '');
   return (
     <div className="flex items-center gap-3 border-b border-line px-3 py-2.5 md:px-4">
-      {!docked && (
-        <button onClick={backToList} className="btn btn-ghost min-h-0 py-1 pl-1.5 pr-2" title="Back to home (Esc when idle, Numpad 0)">
-          <Icon name="back" size={17} /><span className="hidden md:inline">Home</span><Key k="0" size="sm" className="hidden md:inline-flex" />
-        </button>
-      )}
-      {ws && !docked && <span className="hidden items-center gap-2 text-sub md:flex"><WsBadge ws={ws} size={22} />{ws.name}<span className="text-faint">/</span></span>}
-      <button className={`min-w-0 truncate text-left font-semibold ${docked ? 'text-[15px]' : 'text-[16px]'}`} onClick={() => set({ modal: { kind: 'rename', id } })} title="Rename (R)">
-        {session?.title ?? id}
+      <button onClick={backToLine} className="btn btn-ghost min-h-0 whitespace-nowrap py-1 pl-1.5 pr-2" title="Back to the Ticket Line (Esc when idle, Numpad 0)">
+        <Icon name="back" size={17} /><span className="hidden md:inline">Ticket Line</span><Key k="Esc" size="sm" className="hidden md:inline-flex" />
+      </button>
+      {ws && <span className="hidden items-center gap-2 text-sub md:flex"><WsBadge ws={ws} size={22} />{ws.name}<span className="text-faint">/</span></span>}
+      <button className="min-w-0 truncate text-left text-[16px] font-semibold" onClick={() => set({ modal: { kind: 'rename', id } })} title="Rename (R)">
+        {session?.title ?? cardTitle ?? id}
       </button>
       {status?.text && <Pill tone={status.tone} spin={status.tone === 'blue'}>{status.text}{clock && status.tone === 'blue' ? ` · ${clock}` : ''}</Pill>}
       <span className="ml-auto" />
-      {!docked && (
-        <span className="hidden items-center gap-1.5 text-sm text-faint lg:flex">
-          <button onClick={() => hop(-1)} title="Previous session"><Key k={k('prevSession')} size="sm" /></button>
-          <button onClick={() => hop(1)} title="Next session"><Key k={k('nextSession')} size="sm" /></button>
-          other sessions
-        </span>
-      )}
+      <span className="hidden items-center gap-1.5 text-sm text-faint lg:flex">
+        <button onClick={() => hop(-1)} title="Previous session"><Key k={k('prevSession')} size="sm" /></button>
+        <button onClick={() => hop(1)} title="Next session"><Key k={k('nextSession')} size="sm" /></button>
+        other sessions
+      </span>
       {session?.live && (
-        <button className={`btn btn-ghost min-h-0 whitespace-nowrap py-1 text-sm hover:text-bad ${docked ? 'hidden 2xl:inline-flex' : ''}`} onClick={() => askStop(id)} title="End this session: stops Claude and anything it runs in the background. It stays in the list and can be continued.">
+        <button className="btn btn-ghost min-h-0 whitespace-nowrap py-1 text-sm hover:text-bad" onClick={() => askStop(id)} title="End this session: stops Claude and anything it runs in the background. It stays in the list and can be continued.">
           End session<Key k="X" size="sm" className="hidden md:inline-flex" />
         </button>
       )}
-      {docked ? (
-        <>
-          <button className="btn btn-ghost min-h-0 whitespace-nowrap py-1 text-sm" onClick={() => openSession(id)} aria-label="Full screen" title="Full screen (double-clicking the session in the list does too)">
-            <Icon name="expand" size={15} /><span className="hidden 2xl:inline">Full screen</span><Key k={k('expand')} size="sm" />
+    </div>
+  );
+}
+
+/**
+ * The repos a session can use, as chips: its own, its workspace's (removed from the workspace on
+ * the line, −), and ones added to it alone (× or − takes them out).
+ */
+function ContextChips({ s, ws }: { s: SessionSummary; ws: Workspace | null }) {
+  const workspaces = useStore((st) => st.workspaces);
+  const fromWs = s.workspaceDirs ?? [];
+  const own = (s.extraDirs ?? []).filter((d) => !fromWs.some((w) => samePath(w, d)));
+  const ownerOf = (d: string) => workspacesFor(s.cwd, workspaces).find((w) => w.repos.some((r) => samePath(r, d))) ?? null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm text-faint">Claude can use</span>
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-raise py-0.5 pl-1 pr-3 text-sm" title={s.cwd}>
+        <WsBadge ws={ws} size={20} />{repoName(s.cwd)}<span className="text-faint">{s.branch && s.branch !== 'HEAD' ? s.branch : 'home'}</span>
+      </span>
+      {fromWs.map((d) => {
+        const owner = ownerOf(d);
+        return (
+          <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line py-0.5 pl-1.5 pr-3 text-sm" title={`${d}\nFrom the ${owner?.name ?? ''} workspace: every session there can use it. Remove it from the workspace (− on the Ticket Line).`}>
+            <WsBadge ws={owner} size={16} />{repoName(d)}
+          </span>
+        );
+      })}
+      {own.map((d) => (
+        <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-raise py-0.5 pl-2.5 pr-1.5 text-sm" title={`${d}\nAdded to this session only.`}>
+          <Icon name="link" size={13} className="text-faint" />{repoName(d)}
+          <button className="rounded-full p-0.5 text-faint hover:bg-surface hover:text-bad" onClick={() => send({ type: 'session.removeDir', id: s.id, path: d })} aria-label={`Stop working in ${repoName(d)}`}>
+            <Icon name="x" size={13} />
           </button>
-          <button
-            onClick={() => { if (!dockFolded) toggleFold('dock'); backToList(); }}
-            aria-label="Fold the session away"
-            title="Fold the session away, so the list gets the width (C from its number pad)"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-faint hover:bg-raise hover:text-ink"
-          >
-            <Icon name="right" size={15} />
-          </button>
-        </>
-      ) : (
-        <button className="btn btn-ghost hidden min-h-0 whitespace-nowrap py-1 text-sm lg:inline-flex" onClick={() => dockSession(id)} title="Back beside the session list, on home">
-          <Icon name="collapse" size={15} />Beside the list<Key k={k('expand')} size="sm" />
-        </button>
-      )}
+        </span>
+      ))}
+      <button
+        onClick={() => set({ modal: { kind: 'repoPicker', target: { kind: 'session', id: s.id } } })}
+        className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-line px-2.5 py-0.5 text-sm text-faint hover:text-ink"
+      >
+        <Icon name="plus" size={13} />Add a repo<Key k="+" size="sm" />
+      </button>
     </div>
   );
 }
@@ -228,7 +232,7 @@ function readImage(file: File): Promise<Pasted> {
   });
 }
 
-function Composer({ id, focused, docked = false }: { id: string; focused: boolean; docked?: boolean }) {
+function Composer({ id, focused }: { id: string; focused: boolean }) {
   const draft = useStore((s) => s.drafts[id] ?? '');
   const voice = useStore((s) => (s.voice?.sessionId === id ? s.voice : null));
   const text = voice ? voice.text : draft;
@@ -363,8 +367,7 @@ function Composer({ id, focused, docked = false }: { id: string; focused: boolea
     return true;
   }
 
-  const placeholder = docked ? 'Press → or Enter in the list to type here'
-    : pending ? 'Answer Claude above, or type a different instruction'
+  const placeholder = pending ? 'Answer Claude above, or type a different instruction'
     : status === 'running' ? 'Claude is working. Type your next message; it waits its turn.'
     : 'Tell Claude what you want · / for commands · @ for files · Enter to send';
   return (
@@ -441,7 +444,7 @@ function Composer({ id, focused, docked = false }: { id: string; focused: boolea
             }}
             onKeyDown={(e) => {
               if (e.nativeEvent.isComposing) return;
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) return; // full screen / beside the list, not send
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) return; // back to the line, not send
               const take = () => { e.preventDefault(); e.stopPropagation(); };
               if (chosen) {
                 if (e.key === 'ArrowDown') { take(); setPick((pick + 1) % suggestions.length); return; }

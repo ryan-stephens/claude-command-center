@@ -3,10 +3,10 @@
 // branch, mode, opening message, and the commands it will run). Ctrl+Enter starts work.
 
 import { useEffect, type ReactNode } from 'react';
-import { fmtK, HOOK_CONTEXT_LIMIT, homeOf, itemTokens, launchLines, memoryPct, packetText, tokens } from '../../shared/cards.ts';
+import { fmtK, HOOK_CONTEXT_LIMIT, homeOf, itemTokens, launchLines, memoryPct, modelFor, modelName, packetText, tokens } from '../../shared/cards.ts';
 import { samePath } from '../../shared/workspaces.ts';
 import { goRows, packetRows, pickOption, repoOrigin, sources, toggleSource, togglePacketRow, type Composer, type Pane } from '../line-model.ts';
-import { startWork, updateComposer } from '../line-keys.ts';
+import { keepRepo, startWork, updateComposer } from '../line-keys.ts';
 import { set, useStore } from '../store.ts';
 import { Key, WsBadge } from './ui.tsx';
 
@@ -14,15 +14,24 @@ export function NewCard() {
   const c = useStore((s) => s.composer)!;
   const workspaces = useStore((s) => s.workspaces);
   const key = useStore((s) => s.nextKey);
+  const pinned = useStore((s) => s.cardModel);
+  const user = useStore((s) => s.userModel);
   const ws = workspaces.find((w) => w.id === c.workspaceId) ?? null;
   const text = packetText(c, key);
+  const model = modelFor(c.launch, pinned ?? undefined, user ?? undefined);
   const size = tokens(text);
   return (
     <div className="absolute inset-0 z-20 flex flex-col bg-bg" role="region" aria-label="New card">
       <div className="flex items-center gap-4 border-b border-line bg-surface px-4 py-3">
         <WsBadge ws={ws} size={30} />
         <div className="flex min-w-0 grow flex-col gap-1">
-          <div className="text-sm text-faint">New card · {key} · {ws?.name ?? 'no workspace'} · no ticket yet</div>
+          <div className="flex items-center gap-1.5 text-sm text-faint">
+            New card · {key} · {ws?.name ?? 'no workspace'} · no ticket yet ·
+            <button className="flex items-center gap-1.5 rounded-md border border-line bg-raise px-1.5 font-semibold text-ink hover:border-ring" onClick={() => updateComposer((x) => ({ ...x, pane: 'go' }))}
+              title="The model Claude runs in this card. m changes it; so does Model under How it starts.">
+              {modelName(model)}{!c.launch.model && <span className="font-normal text-faint">default</span>}<Key k="m" size="sm" />
+            </button>
+          </div>
           <input
             id="cp-title" type="text" autoComplete="off" value={c.title}
             placeholder="What should this card do? e.g. Add a size guide to product pages"
@@ -100,7 +109,7 @@ function Sources({ c }: { c: Composer }) {
               {inPacket ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">added</span> : <span className="w-4 text-center font-mono text-[17px] font-bold text-faint">+</span>}
             </button>
           );
-        }) : <div className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{repos.length ? `Nothing matches “${c.q}”` : 'The repo library is empty. On home, Tab then F picks the folders it scans.'}</div>}
+        }) : <div className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{repos.length ? `Nothing matches “${c.q}”` : 'The repo library is empty. F on the board picks the folders it scans.'}</div>}
       </div>
       <div className="border-t border-line px-4 pb-3 pt-2 text-[12.5px] leading-snug text-faint">The repo library. Extra repos start with --add-dir, so Claude can read and edit them.</div>
     </PaneBox>
@@ -113,6 +122,7 @@ function PacketPane({ c, text }: { c: Composer; text: string }) {
   const pi = Math.min(c.pi, rows.length - 1);
   const home = homeOf(c.packet, c.launch);
   const over = text.length > HOOK_CONTEXT_LIMIT;
+  const wsName = useStore((s) => s.workspaces.find((w) => w.id === c.workspaceId)?.name);
   let idx = -1;
   const row = (layer: 'workspace' | 'ticket' | 'card', item: (typeof c.packet.card)[number]) => {
     idx += 1;
@@ -127,6 +137,10 @@ function PacketPane({ c, text }: { c: Composer; text: string }) {
         {isHome && <span className="rounded-full bg-busy-bg px-2 text-[11px] font-semibold text-busy">starts here</span>}
         {item.kind === 'repo' && item.on && !isHome && <span className="text-xs text-faint">--add-dir</span>}
         <span className={`font-mono text-[11.5px] font-semibold tabular-nums text-faint ${item.on ? '' : 'line-through'}`}>{fmtK(itemTokens(item))}</span>
+        {layer === 'card' && item.kind === 'repo' && c.workspaceId && (
+          <button className="flex items-center gap-1 whitespace-nowrap text-xs text-faint hover:text-ink" title="Keep this repo for the whole workspace: every card there gets it"
+            onClick={(e) => { e.stopPropagation(); keepRepo(at); }}>Keep for {wsName ?? 'workspace'}<Key k="w" size="sm" /></button>
+        )}
         {layer === 'card' && <Key k="x" size="sm" />}
       </div>
     );
@@ -145,7 +159,6 @@ function PacketPane({ c, text }: { c: Composer; text: string }) {
       </div>
     );
   };
-  const wsName = useStore((s) => s.workspaces.find((w) => w.id === c.workspaceId)?.name);
   const noteFocused = focused && pi === rows.length - 1;
   return (
     <PaneBox pane="pkt" n={2} c={c} title={c.preview ? 'Exactly what Claude receives' : 'What Claude will know'}
@@ -157,7 +170,7 @@ function PacketPane({ c, text }: { c: Composer; text: string }) {
           : <>
             {layer('Workspace', wsName ? `shared by every ${wsName} card · set once` : 'no workspace', 'workspace', 'Pick a workspace under How it starts, or add repos from the library.')}
             {layer('Ticket', 'none yet', 'ticket', 'No ticket. Describe the work in the title. Jira and Trello import comes next.')}
-            {layer('This card', 'only this card gets these', 'card', <>Add repos from the library with <Key k="Space" size="sm" />.</>,
+            {layer('This card', 'only this card gets these', 'card', <>Add repos from the library with <Key k="Space" size="sm" />. <Key k="w" size="sm" /> on one keeps it for the whole workspace.</>,
               <div className={`flex items-start gap-2.5 border-t border-line/60 px-3 py-1.5 ${noteFocused ? 'is-focus' : ''}`}>
                 <span className="mt-1.5 rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">you</span>
                 <textarea id="cp-note" value={c.packet.note} placeholder="Anything else Claude should know? e.g. Keep it behind the size_guide flag."
@@ -175,7 +188,8 @@ function PacketPane({ c, text }: { c: Composer; text: string }) {
 function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
   const workspaces = useStore((s) => s.workspaces);
   const model = useStore((s) => s.cardModel);
-  const rows = goRows(c, workspaces, keyName);
+  const user = useStore((s) => s.userModel);
+  const rows = goRows(c, workspaces, keyName, { pinned: model, user });
   const gi = Math.min(c.gi, rows.length - 1);
   const focused = c.pane === 'go';
   return (
@@ -197,7 +211,8 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
                   ))}
                 </div>}
             {r.id === 'where' && <div className="text-[12.5px] text-faint">A new Windows Terminal tab runs claude. A SessionStart hook hands it the packet and links the session to the card. Running cards in the app comes later.</div>}
-            {r.id === 'mode' && c.launch.mode === 'auto' && <div className="text-[12.5px] text-faint">Auto isn’t offered on every model.</div>}
+            {r.id === 'mode' && c.launch.mode === 'auto' && <div className="text-[12.5px] text-faint">Auto isn’t offered on every model{c.launch.model === 'haiku' ? ' (Haiku refuses it)' : ''}.</div>}
+            {r.id === 'model' && <div className="text-[12.5px] text-faint">{c.launch.model ? `Starts with --model ${c.launch.model}.` : model ? `The default is ${model}, pinned by this server (CC_CONTROL_MODEL).` : user ? `The default is ${user}, from your Claude Code settings.` : 'Claude Code picks, as in a plain terminal.'} <Key k="m" size="sm" /> changes it from anywhere on this screen.</div>}
           </div>
         ))}
         <div className="grid gap-1.5 px-2.5 py-2">

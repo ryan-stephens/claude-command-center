@@ -1,7 +1,7 @@
 import type { CardDraft } from '../shared/cards.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
-import { activeSession, flash, get, groupKeyOf, set, setScope } from './store.ts';
+import { activeSession, flash, get, groupKeyOf, set, setFilter } from './store.ts';
 
 let socket: WebSocket | null = null;
 let retryMs = 1000;
@@ -152,10 +152,8 @@ function receive(msg: ServerMsg): void {
   }
   switch (msg.type) {
     case 'sessions': {
-      const { selectedId } = get();
-      const stillThere = msg.sessions.some((s) => s.id === selectedId);
       const before = new Map(get().sessions.map((s) => [s.id, s.status]));
-      set({ sessions: msg.sessions, repos: msg.repos, selectedId: stillThere ? selectedId : (msg.sessions[0]?.id ?? null) });
+      set({ sessions: msg.sessions, repos: msg.repos });
       // Snapshots carry live statuses too, so they can be where a transition shows up first.
       for (const s of msg.sessions) if (before.has(s.id)) onStatusChange(before.get(s.id), s);
       return;
@@ -178,7 +176,6 @@ function receive(msg: ServerMsg): void {
       set({
         transcripts: { ...s.transcripts, [msg.newId]: s.transcripts[msg.newId] ?? s.transcripts[msg.oldId] ?? [] },
         openId: s.openId === msg.oldId ? msg.newId : s.openId,
-        selectedId: s.selectedId === msg.oldId ? msg.newId : s.selectedId,
       });
       if (get().openId === msg.newId) send({ type: 'board.get', sessionId: msg.newId });
       return;
@@ -234,12 +231,10 @@ function receive(msg: ServerMsg): void {
       set({ settings: msg.settings });
       return;
     case 'workspaces': {
-      const { scope } = get();
+      const { filter } = get().line;
       set({ workspaces: msg.workspaces, workspacesLoaded: true });
-      // A remembered workspace that is gone falls back to the first one (or everything else).
-      if (scope.kind === 'workspace' && !msg.workspaces.some((w) => w.id === scope.id)) {
-        setScope(msg.workspaces[0] ? { kind: 'workspace', id: msg.workspaces[0].id } : { kind: 'rest' });
-      }
+      // A remembered workspace that is gone: show them all.
+      if (filter !== 'all' && !msg.workspaces.some((w) => w.id === filter)) setFilter('all');
       return;
     }
     case 'library':
@@ -247,7 +242,7 @@ function receive(msg: ServerMsg): void {
       return;
     case 'cards': {
       const before = new Map(get().cards.map((c) => [c.id, c]));
-      set({ cards: msg.cards, nextKey: msg.nextKey, cardModel: msg.model ?? null });
+      set({ cards: msg.cards, nextKey: msg.nextKey, cardModel: msg.model ?? null, userModel: msg.userModel ?? null });
       for (const c of msg.cards) onCardChange(before.get(c.id), c);
       return;
     }

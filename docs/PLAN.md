@@ -36,28 +36,26 @@ Target: going from "a session needs me" to "handled" should take **3 keystrokes 
 | `Alt+N` | Jump to the next session that **needs attention**: pending approvals first (oldest first), then sessions that finished unseen |
 | `M` | Sound on / off (outside text fields) |
 | `Alt+T` | Theme: match Windows → light → dark |
-| `Alt+Shift+N` (or `N` in the list) | New session (pick repo → optional first prompt). Not `Ctrl+Shift+N`: Chrome reserves it for an incognito window and pages can't intercept it. |
+| `Alt+Shift+N` | New session in the app, without a card (pick repo → optional first prompt). Not `Ctrl+Shift+N`: Chrome reserves it for an incognito window and pages can't intercept it. |
 
-### Home (since §17: three columns plus the repo library)
+### Ticket Line (the home page since §30; Home, §17–§25, is gone)
 | Key | Action |
 |---|---|
-| `← →` | Move between columns: **workspaces → sessions → the selected session** (docked beside the list, §24) |
-| `↑ ↓` `Home` `End` | Choose in the focused column (`Ctrl+↑ ↓`: 5 rows at a time, here and in every picker and the palette) |
-| `1–9` / `0` | Jump to workspace 1–9 / everything outside your workspaces (number row or numpad) |
-| `Enter` / `→` | Step into the selected session beside the list (§24); under 1024 px, open it full screen (in the workspace column, `Enter` goes to its sessions) |
-| `Ctrl+Enter` | The selected session full screen; again, back beside the list |
-| `N` | New session in the current workspace |
-| `W` | New workspace; `E` / `Delete` in the workspace column edit / delete it |
-| `+` / `−` | Add a repo to the current workspace / remove one (every session in it can use them all) |
-| `Tab` | Go to the repo library (`← →` choose, `Enter` add to this workspace, `N` new session in it, `F` source folders); `Tab` or `Esc` back |
-| `/` | Filter sessions (title, repo, branch) |
-| `C` / `Shift+C` | Fold what you're in: the workspace column (to a rail), the selected session's group, the repo library, the docked session (from its number pad) / open every group |
-| `Esc` / `Numpad 0` | In the session beside the list: back to the list (`Esc` stops Claude first while it works) |
-| `R` | Rename session |
-| `X` | End session (with confirmation) |
+| `← → ↑ ↓` | Move between cards; `↓` from the bottom of a column goes down to the Unticketed row |
+| `Enter` | Open the card's drawer (Overview, Context, Transcript; `Tab` switches) |
+| `Ctrl+Enter` | The card's session full screen; again (or `Esc`), back to the line as you left it |
+| `c` | New card (`m` model, `p` preview, `w` keep a card repo for the workspace, `Ctrl+Enter` start work) |
+| `1–9` / `0` | One workspace's cards and sessions / all of them |
+| `u` | The Unticketed row: sessions without a card (`← →`, `Enter` full screen, `R` / `X` rename / end, `↑` or `u` back) |
+| `/` | Filter cards and sessions by words (`Esc` clears) |
+| `W` / `E` / `Shift+Delete` | New workspace / edit / delete the one shown (with All showing, a picker asks which) |
+| `+` / `−` | Add a repo from the library to the workspace shown / remove one |
+| `Shift+E` / `Shift+I` | Share the workspace as a file / import one |
+| `F` | The folders the repo library lists |
+| `Delete` | Take the card off the line |
 
 ### Folder picker
-The folders dialog (`F` in the library), the workspace editor's "add a folder", and "Another folder…" (`Ctrl+O`) in the new-session and add-a-repo pickers all use it.
+The folders dialog (`F` on the Ticket Line), the workspace editor's "add a folder", and "Another folder…" (`Ctrl+O`) in the new-session and add-a-repo pickers all use it.
 
 | Key | Action |
 |---|---|
@@ -708,3 +706,30 @@ Not planned: more Claude Code parity for its own sake (`!` shell, model pickers)
 - Sessions without a card don't show on the board yet.
 
 **Next:** Jira/Trello import against mock tickets (the owner has no Jira credentials to hand), then adding context later.
+
+## 30. Ticket Line, milestone 3: the line is the home page
+
+2026-09-29. The app opens on the Ticket Line, and Home (the three columns, the docked session and the repo library strip) is gone. What Home did that is still needed moved onto the line first.
+
+**What moved where:**
+- **Workspaces** are managed from the chips: `W` new, `E` edit, `Shift+Delete` delete, `Shift+E` share, `Shift+I` import. A bar under the chips shows the workspace's repos, with buttons for the same keys. With All showing, `+` `−` `E` `Shift+E` `Shift+Delete` ask which workspace (`pickWorkspace`, `1`–`9` or arrows); with one workspace they just use it. The filter (`1`–`9` / `0`) is remembered per browser, as Home's scope was.
+- **Repo context:** `+` adds a repo from the library to the workspace shown, `−` removes one (the existing picker and remover dialogs). `F` picks the library's folders. The drag-and-drop library strip went with Home; `+` is how repos come in now.
+- **The new-card screen:** `w` on a repo the card added keeps it for the whole workspace. It moves to the workspace layer and the server saves it, so later cards get it too. There is a button on the row as well.
+- **Sessions without a card** sit in the mock's **Unticketed** row under the board (`line-model.ts` `unticketed`, tested): not linked to a card, in the workspace shown, needs-you first, then working, finished, and the last three days' others, at most 12 (the rest are counted; `Ctrl+K` or `/` finds them). `u` or `↓` from the bottom of a column goes there; `Enter` opens one full screen; `R` / `X` rename / end it.
+- **Full screen from a card:** `Ctrl+Enter` (the rebindable expand key) on the focused card or in its drawer opens its session full screen, and the drawer has a Full screen button. `Esc`, `Numpad 0`, `Alt+0`, `Alt+L` or the expand key go back to the line as it was, drawer and focus kept. `Alt+↑ ↓` walk the sessions the line shows: the cards' in column order, then the row's.
+- **`/` filters** the board and the row by words (key, title, branch; the row by title, folder, branch).
+
+**Choosing the model (the owner asked for it mid-milestone):** the new-card screen names the model in its header, and **Model** under How it starts offers the default, Opus, Sonnet or Haiku (`← →` there, or `m` from anywhere on the screen). The default is named: the server's `CC_CONTROL_MODEL` if set, otherwise the `model` in `~/.claude/settings.json` (sent as `userModel` with `cards`), otherwise "Claude Code picks". A chosen model goes on the command as `--model <alias>` and wins over the server's pin; the server only accepts the three aliases. The card records the model it started with, and the drawer shows it. Optional fields only, so no `PROTOCOL` bump.
+
+**Dropped with Home, as redundant:** the column keys (`← →` between columns, `Tab` to the library), folding (`C` / `Shift+C`, the workspace rail, session groups, the docked pane), the docked session itself (full screen replaces it), bare `N` (`Alt+Shift+N` still starts an app session), and "Everything else" as a scope (All now shows every session). `folds.ts` keeps only the number pad and the to-do list.
+
+**Verified** (isolated server, Demo workspace, scripted with Playwright; 30 checks plus 12 on a real card):
+- Opens on the line, no Home in the header; `1` shows Demo and its repos; the legend and `?` have the new keys and no Home section.
+- `W`, `E` (edits Demo), `F` open their dialogs; `+` added `cdn-worker` to Demo from the library and `−` removed it; with All showing, `+` asked which workspace and `2` opened the picker for the second one; `Shift+Delete` deleted it.
+- The Unticketed row listed Demo sessions; `u`, `Enter` opened one full screen, `Alt+0` came back with the row still focused, `↑` left it; `/` filtered it and `Esc` cleared.
+- New card: `/ design-tokens`, then `w` on it moved it to the workspace layer, and Demo kept it.
+- A real card (web-app, current branch): `m` three times picked Haiku, the command showed `--model haiku`; the tab linked, the drawer said Model Haiku, `Ctrl+Enter` opened its session full screen and again came back with the drawer open.
+- A bug the checks found: the workspace dialog had a local `setFilter` shadowing the store's, so saving a workspace would have set the dialog's repo filter instead of showing the workspace. Renamed.
+- No console errors. `pnpm typecheck`, `pnpm test` (149) and the Vite build to `dist/web-test` pass.
+
+**Next:** Jira/Trello import against mock tickets (the Inbox, `n` on a ticket, the ticket layer of the packet), then adding context later.

@@ -5,8 +5,8 @@ import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
 import { keymap, openSession } from '../keys.ts';
-import { deleteCard } from '../line-keys.ts';
-import { get, NO_BINDINGS, sessionById, set, setScope, useStore, type RepoTarget } from '../store.ts';
+import { deleteCard, runWorkspaceAction } from '../line-keys.ts';
+import { get, NO_BINDINGS, sessionById, set, setFilter as showWorkspace, useStore, type RepoTarget, type WorkspaceAction } from '../store.ts';
 import { createSession, send, setSources } from '../ws.ts';
 import { BindingsDialog } from './BindingsDialog.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
@@ -37,6 +37,7 @@ export function Dialogs() {
     case 'repoRemove': return <RepoRemover target={modal.target} />;
     case 'sources': return <SourcesDialog />;
     case 'deleteCard': return <DeleteCardDialog id={modal.id} />;
+    case 'pickWorkspace': return <PickWorkspaceDialog then={modal.then} />;
   }
 }
 
@@ -284,7 +285,7 @@ function StopDialog({ id }: { id: string }) {
     if (k === 'y' || k === 'enter') {
       send({ type: 'session.stop', id });
       close();
-      if (get().openId === id) set({ screen: 'list', openId: null, homeCol: 'sessions' });
+      if (get().openId === id) set({ screen: 'line', openId: null });
     } else if (k === 'n' || k === 'escape') close();
     else return false;
     return true;
@@ -295,7 +296,7 @@ function StopDialog({ id }: { id: string }) {
       <p className="text-sub"><strong className="text-ink">{sessionById(id)?.title}</strong> stops, along with anything it is running in the background. It stays in the list, and you can pick it up again any time.</p>
       <div className="mt-5 flex justify-end gap-2.5">
         <button className="btn" onClick={close}>Keep it<Key k="N" size="sm" /></button>
-        <button className="btn btn-primary" onClick={() => { send({ type: 'session.stop', id }); close(); if (get().openId === id) set({ screen: 'list', openId: null, homeCol: 'sessions' }); }}>End session<Key k="Y" size="sm" tone="ghost" /></button>
+        <button className="btn btn-primary" onClick={() => { send({ type: 'session.stop', id }); close(); if (get().openId === id) set({ screen: 'line', openId: null }); }}>End session<Key k="Y" size="sm" tone="ghost" /></button>
       </div>
     </Overlay>
   );
@@ -336,8 +337,8 @@ function WorkspaceDialog({ id }: { id: string | null }) {
     const workspaceId = existing?.id ?? crypto.randomUUID();
     const homePath = home && repos.some((r) => samePath(r, home)) ? home : undefined;
     send({ type: 'workspace.save', workspace: { id: workspaceId, name: name.trim(), color, repos, home: homePath }, template: existing ? undefined : template });
-    setScope({ kind: 'workspace', id: workspaceId });
-    set({ modal: null, homeCol: 'sessions' });
+    showWorkspace(workspaceId);
+    set({ modal: null });
   }
 
   const onKey = (e: ReactKeyboardEvent) => {
@@ -447,7 +448,7 @@ function WorkspaceDialog({ id }: { id: string | null }) {
         {error && <p className="mt-3 text-sm text-bad">{error}</p>}
         <div className="mt-5 flex items-center gap-3">
           <DialogKeys items={[['Tab', 'next part'], ['↑ ↓', 'choose repo'], ['Space', 'pick'], ['H', 'home repo']]} />
-          {existing && <button className="btn btn-ghost ml-auto" onClick={() => exportWorkspace(existing.id)} title="Save this workspace and its workflows as a file to share (Shift+E on home)"><Icon name="file" size={16} />Export</button>}
+          {existing && <button className="btn btn-ghost ml-auto" onClick={() => exportWorkspace(existing.id)} title="Save this workspace and its workflows as a file to share (Shift+E on the Ticket Line)"><Icon name="file" size={16} />Export</button>}
           <button className={`btn btn-primary ${existing ? '' : 'ml-auto'}`} onClick={save}>{existing ? 'Save' : 'Create workspace'}<Key k="Enter" size="sm" tone="ghost" /></button>
         </div>
       </div>
@@ -495,6 +496,48 @@ function DeleteCardDialog({ id }: { id: string }) {
         <button className="btn" onClick={close}>Keep it<Key k="N" size="sm" /></button>
         <button className="btn btn-primary" onClick={doIt}>Remove<Key k="Y" size="sm" tone="ghost" /></button>
       </div>
+    </Overlay>
+  );
+}
+
+const PICK_TITLE: Record<WorkspaceAction, string> = {
+  addRepo: 'Add a repo to which workspace?',
+  removeRepo: 'Remove a repo from which workspace?',
+  edit: 'Edit which workspace?',
+  share: 'Share which workspace?',
+  delete: 'Delete which workspace?',
+};
+
+/** All is showing on the line and a workspace key was pressed: which workspace it is for. */
+function PickWorkspaceDialog({ then }: { then: WorkspaceAction }) {
+  const workspaces = useStore((s) => s.workspaces);
+  const [index, setIndex] = useState(0);
+  const pick = (i: number) => { const w = workspaces[i]; if (w) runWorkspaceAction(then, w.id); };
+  useDialogKeys((e) => {
+    const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
+    if (digit) pick(Number(digit[1]) - 1);
+    else if (e.key === 'ArrowDown') setIndex((i) => Math.min(workspaces.length - 1, i + listStep(e)));
+    else if (e.key === 'ArrowUp') setIndex((i) => Math.max(0, i - listStep(e)));
+    else if (e.key === 'Enter') pick(index);
+    else if (e.key === 'Escape') close();
+    else return false;
+    return true;
+  });
+  return (
+    <Overlay label={PICK_TITLE[then]}>
+      <DialogTitle>{PICK_TITLE[then]}</DialogTitle>
+      <ul className="space-y-1" role="listbox" aria-label="Workspaces">
+        {workspaces.map((w, i) => (
+          <li key={w.id} role="option" aria-selected={i === index} onClick={() => pick(i)} onMouseEnter={() => setIndex(i)}
+            className={`flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 ${i === index ? 'is-focus bg-raise' : 'hover:bg-raise/60'}`}>
+            {i < 9 ? <Key k={String(i + 1)} size="sm" /> : <span className="w-5" />}
+            <WsBadge ws={w} />
+            <span className="grow font-semibold">{w.name}</span>
+            <span className="text-sm text-faint">{w.repos.length} repo{w.repos.length === 1 ? '' : 's'}</span>
+          </li>
+        ))}
+      </ul>
+      <DialogKeys items={[['1–9', 'Pick'], ['↑ ↓', 'Choose'], ['Enter', 'This one'], ['Esc', 'Cancel']]} />
     </Overlay>
   );
 }
@@ -639,7 +682,7 @@ function RepoRemover({ target }: { target: RepoTarget }) {
               <span className="w-5" />
               <WsBadge ws={owner} size={16} />
               <span className="shrink-0 whitespace-nowrap">{repoName(d)}</span>
-              <span className="min-w-0 truncate text-xs">from {owner?.name ?? 'its workspace'}: remove it there (− on home)</span>
+              <span className="min-w-0 truncate text-xs">from {owner?.name ?? 'its workspace'}: remove it there (− on the Ticket Line)</span>
             </li>
           );
         })}

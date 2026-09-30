@@ -361,5 +361,5 @@ export type ServerMsg =
   | { type: 'info'; message: string }
   | { type: 'error'; message: string; reqId?: string }
   /** Every card on the Ticket Line, on connect and whenever one changes. */
-  | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string }
+  | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string; /** The model in the user's Claude Code settings (a card's default otherwise). */ userModel?: string }
   | { type: 'card.started'; reqId: string; id: string };

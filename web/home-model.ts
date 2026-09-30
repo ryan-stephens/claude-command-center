@@ -1,11 +1,8 @@
-// What the home screen shows: sessions per workspace, bucketed by what they need from you,
-// with plain status words. Pure (tested in home-model.test.ts).
+// Sessions per workspace, bucketed by what they need from you, with plain status words: the
+// Ticket Line's Unticketed row and the session view use them. Pure (tested in home-model.test.ts).
 
 import type { SessionSummary, Workspace } from '../shared/protocol.ts';
 import { workspacesFor } from '../shared/workspaces.ts';
-
-/** The workspace column: a workspace, or everything outside all workspaces (key 0). */
-export type Scope = { kind: 'workspace'; id: string } | { kind: 'rest' };
 
 export type Bucket = 'needs' | 'working' | 'done' | 'earlier';
 export const BUCKET_TITLE: Record<Bucket, string> = { needs: 'Needs you', working: 'Working', done: 'Done', earlier: 'Earlier' };
@@ -39,9 +36,10 @@ export function statusLabel(s: SessionSummary, f: Flags): { text: string; tone: 
   return { text: '', tone: 'grey' };
 }
 
-export function sessionsIn(scope: Scope, sessions: SessionSummary[], workspaces: Workspace[]): SessionSummary[] {
-  if (scope.kind === 'rest') return sessions.filter((s) => workspacesFor(s.cwd, workspaces).length === 0);
-  const w = workspaces.find((x) => x.id === scope.id);
+/** The sessions in one workspace (by folder), or every session for 'all'. */
+export function sessionsIn(filter: 'all' | string, sessions: SessionSummary[], workspaces: Workspace[]): SessionSummary[] {
+  if (filter === 'all') return sessions;
+  const w = workspaces.find((x) => x.id === filter);
   return w ? sessions.filter((s) => workspacesFor(s.cwd, [w]).length > 0) : [];
 }
 

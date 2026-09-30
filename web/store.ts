@@ -1,20 +1,13 @@
 import { create } from 'zustand';
 import type { Card } from '../shared/cards.ts';
 import type { Command, CommandGroup, ModelChoice, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, Todo, TranscriptItem, Workspace } from '../shared/protocol.ts';
-import { bucketToggled, loadFolds, saveFolds, toggled, unfolded, type FoldKey, type Folds } from './folds.ts';
+import { loadFolds, saveFolds, toggled, type FoldKey, type Folds } from './folds.ts';
 import type { QaState } from './questions.ts';
-import { bucketOf, groupSessions, sessionsIn, type Bucket, type Flags, type Scope } from './home-model.ts';
+import type { Flags } from './home-model.ts';
 import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
 import type { Composer, LineFilter } from './line-model.ts';
 
-/**
- * Home is three columns you walk with ← →, plus the repo library (Tab). The third, 'preview', holds
- * the selected session itself, docked: stepping into it (openId set, screen still 'list') makes it
- * take the session keys exactly as it does full screen.
- */
-export type HomeCol = 'workspaces' | 'sessions' | 'preview' | 'library';
-export const HOME_COLS: HomeCol[] = ['workspaces', 'sessions', 'preview'];
-/** Where keys go inside the session view. Esc steps outward: composer → number pad → home. */
+/** Where keys go inside the session view. Esc steps outward: composer → number pad → the line. */
 export type SessionZone = 'composer' | 'board';
 /** Where a repo picked from the library goes. */
 export type RepoTarget = { kind: 'session'; id: string } | { kind: 'workspace'; id: string };
@@ -39,7 +32,12 @@ export type Modal =
   | { kind: 'sources' }
   /** Take a card off the Ticket Line. */
   | { kind: 'deleteCard'; id: string }
+  /** "All" is showing: which workspace a workspace key (+ − E ⇧E ⇧Delete) is for. */
+  | { kind: 'pickWorkspace'; then: WorkspaceAction }
   | null;
+
+/** What the workspace keys on the line do, once it is clear which workspace. */
+export type WorkspaceAction = 'addRepo' | 'removeRepo' | 'edit' | 'share' | 'delete';
 
 export interface Library {
   sources: string[];
@@ -70,24 +68,20 @@ interface State {
   sound: boolean;
   theme: ThemePref;
 
-  /** Home, a session full screen, or the Ticket Line (a board of cards). */
-  screen: 'list' | 'session' | 'line';
-  /** Ticket Line cards, what the next one will be called, and the model the server starts them with. */
+  /** The Ticket Line (a board of cards, the home page), or a session full screen. */
+  screen: 'line' | 'session';
+  /** Ticket Line cards, what the next one will be called, the model the server pins for them, and the one in the user's Claude Code settings. */
   cards: Card[];
   nextKey: string;
   cardModel: string | null;
-  /** The board: the focused card, the card open in the drawer and its tab, the workspace shown. */
-  line: { focus: string | null; drawer: string | null; tab: 'over' | 'ctx' | 'tx'; filter: LineFilter };
+  userModel: string | null;
+  /**
+   * The board: the focused card, the card open in the drawer and its tab, the workspace shown, and
+   * the text filter (/). `row` is set while the keys are on the Unticketed row: the session focused there.
+   */
+  line: { focus: string | null; drawer: string | null; tab: 'over' | 'ctx' | 'tx'; filter: LineFilter; q: string; searching: boolean; row: string | null };
   /** The new-card screen, while it is open. */
   composer: Composer | null;
-  /** The workspace column's selection. */
-  scope: Scope;
-  homeCol: HomeCol;
-  /** Selected repo in the library row. */
-  libIndex: number;
-  filter: string;
-  filterFocused: boolean;
-  selectedId: string | null;
   openId: string | null;
   zone: SessionZone;
   expandTools: boolean;
@@ -110,8 +104,6 @@ interface State {
   settings: Settings;
   /** Phones: number pad panel shown under the composer. */
   mobileBoard: boolean;
-  /** A repo card is being dragged: drop targets light up. */
-  dragging: string | null;
   /** Collapsible sections the viewer folded away (remembered per browser). */
   folds: Folds;
   /** Answers in progress on a question card from Claude. */
@@ -141,18 +133,13 @@ export const useStore = create<State>(() => ({
   sound: loadSound(),
   theme,
 
-  screen: 'list',
+  screen: 'line',
   cards: [],
   nextKey: 'CARD-1',
   cardModel: null,
-  line: { focus: null, drawer: null, tab: 'over', filter: 'all' },
+  userModel: null,
+  line: { focus: null, drawer: null, tab: 'over', filter: loadFilter(), q: '', searching: false, row: null },
   composer: null,
-  scope: loadScope(),
-  homeCol: 'sessions',
-  libIndex: 0,
-  filter: '',
-  filterFocused: false,
-  selectedId: null,
   openId: null,
   zone: 'composer',
   expandTools: false,
@@ -167,7 +154,6 @@ export const useStore = create<State>(() => ({
   voice: null,
   settings: {},
   mobileBoard: false,
-  dragging: null,
   folds: loadFolds(),
   qa: null,
   todos: {},
@@ -202,86 +188,32 @@ export function useFlags(id: string | null): Flags {
   return { pending, unread };
 }
 
-type ListState = Pick<State, 'sessions' | 'workspaces' | 'scope' | 'filter' | 'permissions' | 'unread'>;
-
-/** The sessions column: the scope's sessions, filtered, grouped (needs you → working → done → earlier). */
-export function sessionGroups(s: ListState) {
-  const needle = s.filter.trim().toLowerCase();
-  let list = sessionsIn(s.scope, s.sessions, s.workspaces);
-  if (needle) list = list.filter((x) => `${x.title} ${x.cwd} ${x.branch ?? ''}`.toLowerCase().includes(needle));
-  return groupSessions(list, (x) => flagsFor(s, x.id), attention(s).map((x) => x.id));
-}
-
-/** The sessions column in display order, minus folded groups: what ↑ ↓ walk through. */
-export function visibleSessions(s: ListState & Pick<State, 'folds'>): SessionSummary[] {
-  return unfolded(sessionGroups(s), s.folds);
-}
-
-function setFolds(folds: Folds): void {
+/** Fold or unfold a section: the number pad, Claude's to-do list. */
+export function toggleFold(key: FoldKey): void {
+  const folds = toggled(get().folds, key);
   set({ folds });
   saveFolds(folds);
 }
 
-/** Fold or unfold a whole section: the workspace column, the repo library, the number pad. */
-export function toggleFold(key: FoldKey): void {
-  setFolds(toggled(get().folds, key));
+/** The workspace the line is showing, or null for All. */
+export function currentWorkspace(s: Pick<State, 'workspaces' | 'line'>): Workspace | null {
+  const f = s.line.filter;
+  return f === 'all' ? null : s.workspaces.find((w) => w.id === f) ?? null;
 }
 
-/** Fold or unfold one group of sessions; the selection moves off a group as it folds. */
-export function toggleBucket(bucket: Bucket): void {
-  setFolds(bucketToggled(get().folds, bucket));
-  const s = get();
-  const list = visibleSessions(s);
-  if (s.selectedId && !list.some((x) => x.id === s.selectedId)) set({ selectedId: list[0]?.id ?? s.selectedId });
+/** Show one workspace on the line (remembered per browser), or all of them. */
+export function setFilter(filter: LineFilter): void {
+  set({ line: { ...get().line, filter, row: null } });
+  try { localStorage.setItem('cc-control.lineFilter', filter); } catch { /* ignore */ }
 }
 
-export function unfoldAllBuckets(): void {
-  setFolds({ ...get().folds, buckets: {} });
+function loadFilter(): LineFilter {
+  try { return localStorage.getItem('cc-control.lineFilter') || 'all'; } catch { return 'all'; }
 }
 
-/** The group the selected session sits in (what C folds in the sessions column). */
-export function bucketOfSelected(): Bucket | null {
-  const s = get();
-  const x = s.sessions.find((y) => y.id === s.selectedId);
-  return x ? bucketOf(x, flagsFor(s, x.id)) : null;
-}
-
-/** The workspace column's entries in key order: workspaces 1–9…, then "everything else" (0). */
-export function scopes(s: Pick<State, 'workspaces'>): Scope[] {
-  return [...s.workspaces.map((w): Scope => ({ kind: 'workspace', id: w.id })), { kind: 'rest' }];
-}
-
-export function sameScope(a: Scope, b: Scope): boolean {
-  return a.kind === b.kind && (a.kind === 'rest' || a.id === (b as { id: string }).id);
-}
-
-export function currentWorkspace(s: Pick<State, 'workspaces' | 'scope'>): Workspace | null {
-  const scope = s.scope;
-  return scope.kind === 'workspace' ? s.workspaces.find((w) => w.id === scope.id) ?? null : null;
-}
-
-export function setScope(scope: Scope): void {
-  set({ scope, filter: '' });
-  try { localStorage.setItem('cc-control.scope', JSON.stringify(scope)); } catch { /* ignore */ }
-}
-
-function loadScope(): Scope {
-  try {
-    const v = JSON.parse(localStorage.getItem('cc-control.scope') ?? 'null') as Scope | null;
-    if (v?.kind === 'workspace' && typeof v.id === 'string') return v;
-  } catch { /* default */ }
-  return { kind: 'rest' };
-}
-
-/** The session that takes the session keys: open full screen, or docked on home and stepped into. */
-export function activeSession(s: Pick<State, 'screen' | 'homeCol' | 'openId'>): string | null {
-  if (!s.openId || s.screen === 'line') return null;
-  return s.screen === 'session' || s.homeCol === 'preview' ? s.openId : null;
-}
-
-/** On home, stepped into the docked session. */
-export function isDocked(s: Pick<State, 'screen' | 'homeCol' | 'openId'>): boolean {
-  return s.screen === 'list' && s.homeCol === 'preview' && Boolean(s.openId);
+/** The session that takes the session keys: the one open full screen. */
+export function activeSession(s: Pick<State, 'screen' | 'openId'>): string | null {
+  return s.screen === 'session' ? s.openId : null;
 }
 
 export function sessionById(id: string | null): SessionSummary | undefined {

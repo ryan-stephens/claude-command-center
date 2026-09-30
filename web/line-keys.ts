@@ -1,11 +1,14 @@
-// Keys on the Ticket Line: the board, a card's drawer and the new-card screen. keys.ts routes here
+// Keys on the Ticket Line, the home page: the board, the Unticketed row under it, a card's drawer
+// and the new-card screen, plus the workspace keys that used to live on Home. keys.ts routes here
 // while the line is on screen, before the global shortcuts, so Ctrl+Enter starts work instead of
 // expanding a session. Every key here has a row in LINE_SECTIONS (the ? overlay) and in
 // lineLegendFor (the bar at the bottom).
 
-import { flash, get, set } from './store.ts';
+import { exportWorkspace, importWorkspace } from './commands.ts';
+import { askStop, openSession } from './keys.ts';
+import { attention, currentWorkspace, flagsFor, flash, get, set, setFilter, type WorkspaceAction } from './store.ts';
 import {
-  draftOf, goRows, lanes, moveFocus, newComposer, packetRows, PANES, sources, stepOption, togglePacketRow, toggleSource,
+  cycleModel, draftOf, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, sources, stepOption, togglePacketRow, toggleSource, unticketed,
   type Composer,
 } from './line-model.ts';
 import { send, startCard } from './ws.ts';
@@ -14,13 +17,29 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
     title: 'Ticket Line',
     keys: [
-      ['← → ↑ ↓', 'Move between cards'],
+      ['← → ↑ ↓', 'Move between cards (↓ from the bottom of a column goes down to the Unticketed row)'],
       ['Enter', 'Open the card: Overview, Context (how it started, what Claude was given), Transcript'],
+      ['Ctrl+Enter', 'The card’s session full screen, to read and type there (Esc comes back)'],
       ['c', 'New card: build its context and start work in a terminal tab'],
-      ['1–9  /  0', 'Show one workspace’s cards / all of them'],
+      ['1–9  /  0', 'Show one workspace’s cards and sessions / all of them'],
+      ['u', 'The Unticketed row: sessions without a card (again: back to the cards)'],
+      ['/', 'Filter the cards and sessions by words'],
       ['Tab (card open)', 'Overview, Context, Transcript'],
       ['Delete', 'Take the card off the line (its terminal session keeps running)'],
-      ['Esc', 'Close the card; on the board, back home'],
+      ['Enter / Ctrl+Enter (Unticketed row)', 'Open the session full screen'],
+      ['R / X (Unticketed row)', 'Rename / end the session'],
+      ['Esc', 'Close the card, clear the filter, or leave the Unticketed row'],
+    ],
+  },
+  {
+    title: 'Workspaces (Ticket Line)',
+    keys: [
+      ['W', 'New workspace'],
+      ['E', 'Edit the workspace shown (with All showing, pick which)'],
+      ['+ / −', 'Add a repo from the library to the workspace shown / remove one (every card and session in it can use them all)'],
+      ['F', 'Choose the folders the repo library lists'],
+      ['Shift+E / Shift+I', 'Share the workspace as a file / import one'],
+      ['Shift+Delete', 'Delete the workspace shown (its repos and sessions stay)'],
     ],
   },
   {
@@ -31,8 +50,10 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Space', 'Add a repo from the library, or take it out; include or leave out a line of the context'],
       ['/', 'Search the repo library'],
       ['x', 'Remove something you added to this card'],
+      ['w (what Claude will know)', 'Keep a repo you added to this card for the whole workspace'],
       ['e', 'Write your own note for Claude'],
-      ['← → (how it starts)', 'Change the option: workspace, the repo it starts in, branch, mode'],
+      ['← → (how it starts)', 'Change the option: workspace, the repo it starts in, branch, mode, model'],
+      ['m', 'Change the model: your default, Opus, Sonnet or Haiku'],
       ['p', 'Preview exactly what Claude gets'],
       ['Ctrl+Enter', 'Start work (also while typing)'],
       ['Esc', 'Leave the text field, then cancel'],
@@ -42,18 +63,67 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
 
 export function openLine(): void {
   const s = get();
-  const cols = lanes(s.cards, s.line.filter);
+  const cols = lanes(s.cards, s.line.filter, s.line.q);
   const focus = s.cards.some((c) => c.id === s.line.focus) ? s.line.focus : moveFocus(cols, null, 1, 0);
   set({ screen: 'line', line: { ...s.line, focus }, modal: null });
 }
 
-export function leaveLine(): void {
-  set({ screen: 'list', composer: null });
+type St = ReturnType<typeof get>;
+
+/** The Unticketed row as the line shows it now. */
+export function rowOf(s: St) {
+  const order = attention(s).map((x) => x.id);
+  return unticketed({
+    sessions: s.sessions, cards: s.cards, workspaces: s.workspaces, filter: s.line.filter, q: s.line.q,
+    flags: (x) => flagsFor(s, x.id), attention: order, now: Date.now(),
+  });
 }
 
-export function toggleLine(): void {
-  if (get().screen === 'line') leaveLine();
-  else openLine();
+/** The sessions the line shows, in order (what Alt+↑ ↓ walk from a session). */
+export function lineSessionIds(): string[] {
+  const s = get();
+  return lineSessions(lanes(s.cards, s.line.filter, s.line.q), rowOf(s).shown);
+}
+
+/** The expand key on the line: the focused card's session (or the row's) full screen. */
+export function expandFromLine(): void {
+  const s = get();
+  if (s.screen !== 'line' || s.composer) return;
+  if (s.line.row) { openSession(s.line.row); return; }
+  const id = s.line.drawer ?? s.line.focus;
+  const card = s.cards.find((c) => c.id === id);
+  if (!card) { flash('Pick a card first'); return; }
+  if (!card.sessionId) { flash(`${card.key} has no session yet: it links once its terminal tab starts`); return; }
+  openSession(card.sessionId);
+}
+
+/** The workspace keys: act on the workspace shown, or with All showing, ask which. */
+export function workspaceKey(then: WorkspaceAction): void {
+  const s = get();
+  const ws = currentWorkspace(s);
+  if (ws) { runWorkspaceAction(then, ws.id); return; }
+  if (!s.workspaces.length) {
+    if (then === 'addRepo') set({ modal: { kind: 'workspace', id: null } });
+    else flash('No workspaces yet. W makes one.');
+    return;
+  }
+  if (s.workspaces.length === 1) { runWorkspaceAction(then, s.workspaces[0].id); return; }
+  set({ modal: { kind: 'pickWorkspace', then } });
+}
+
+export function runWorkspaceAction(then: WorkspaceAction, id: string): void {
+  const ws = get().workspaces.find((w) => w.id === id);
+  if (!ws) return;
+  switch (then) {
+    case 'addRepo': set({ modal: { kind: 'repoPicker', target: { kind: 'workspace', id } } }); return;
+    case 'removeRepo':
+      if (ws.repos.length) set({ modal: { kind: 'repoRemove', target: { kind: 'workspace', id } } });
+      else { set({ modal: null }); flash(`${ws.name} has no repos yet. + adds one.`); }
+      return;
+    case 'edit': set({ modal: { kind: 'workspace', id } }); return;
+    case 'share': set({ modal: null }); exportWorkspace(id); return;
+    case 'delete': set({ modal: { kind: 'deleteWorkspace', id } }); return;
+  }
 }
 
 export function openComposer(): void {
@@ -139,6 +209,7 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
   if (e.key === 'Tab') { updateComposer((x) => ({ ...x, pane: PANES[(PANES.indexOf(x.pane) + (e.shiftKey ? 2 : 1)) % 3] })); return true; }
   if (e.key === 'p') { updateComposer((x) => ({ ...x, preview: !x.preview })); return true; }
   if (e.key === 'e') { updateComposer((x) => ({ ...x, pane: 'pkt', preview: false })); focusField('cp-note'); return true; }
+  if (e.key === 'm') { updateComposer(cycleModel); return true; }
   const up = e.key === 'ArrowUp';
   const down = e.key === 'ArrowDown';
   const step = up ? -1 : down ? 1 : 0;
@@ -148,7 +219,7 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
     if (e.key === ' ' || e.key === 'Enter') {
       const repo = list[Math.min(c.si, list.length - 1)];
       if (repo) updateComposer((x) => toggleSource(x, repo.path));
-      else if (!s.library.repos.length) flash('The repo library is empty. Pick its folders from home: Tab, then F.');
+      else if (!s.library.repos.length) flash('The repo library is empty. On the board, F picks the folders it scans.');
       return true;
     }
     if (e.key === '/') { focusField('cp-q'); return true; }
@@ -164,9 +235,10 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
       return true;
     }
     if (e.key === 'x' || e.key === 'Delete') { updateComposer((x) => togglePacketRow(x, x.pi, true)); return true; }
+    if (e.key === 'w') { keepRepo(c.pi); return true; }
     return false;
   }
-  const rows = goRows(c, s.workspaces, s.nextKey);
+  const rows = goRows(c, s.workspaces, s.nextKey, { pinned: s.cardModel, user: s.userModel });
   if (step) { updateComposer((x) => ({ ...x, gi: Math.max(0, Math.min(rows.length - 1, x.gi + step)) })); return true; }
   const row = rows[Math.min(c.gi, rows.length - 1)];
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -175,6 +247,18 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
   }
   if (e.key === 'Enter' && row.id === 'msg') { focusField('cp-msg'); return true; }
   return false;
+}
+
+/** w on the new-card screen: the card's repo goes to the workspace, for every card after this one too. */
+export function keepRepo(index: number): void {
+  const c = get().composer;
+  if (!c) return;
+  const r = keepForWorkspace(c, index);
+  if (typeof r === 'string') { flash(r); return; }
+  send({ type: 'workspace.addRepo', id: c.workspaceId!, path: r.repo });
+  set({ composer: { ...r.composer, error: null } });
+  const ws = get().workspaces.find((w) => w.id === c.workspaceId);
+  flash(`Kept for ${ws?.name ?? 'the workspace'}: every card there gets it`);
 }
 
 function drawerKeys(e: KeyboardEvent): boolean {
@@ -192,34 +276,97 @@ function drawerKeys(e: KeyboardEvent): boolean {
   return false;
 }
 
+function focusRow(id: string | null): void {
+  set({ line: { ...get().line, row: id } });
+  if (id) setTimeout(() => document.getElementById(`row-${id}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }), 0);
+}
+
+/** The keys on the Unticketed row. */
+function rowKeys(e: KeyboardEvent): boolean {
+  const s = get();
+  const list = rowOf(s).shown;
+  const i = Math.max(0, list.findIndex((x) => x.id === s.line.row));
+  const here = list[i];
+  switch (e.key) {
+    case 'ArrowLeft': if (list.length) focusRow(list[Math.max(0, i - 1)].id); return true;
+    case 'ArrowRight': if (list.length) focusRow(list[Math.min(list.length - 1, i + 1)].id); return true;
+    case 'ArrowUp': case 'Escape': case 'u': focusRow(null); return true;
+    case 'ArrowDown': return true;
+    case 'Home': if (list.length) focusRow(list[0].id); return true;
+    case 'End': if (list.length) focusRow(list[list.length - 1].id); return true;
+    case 'Enter': if (here) openSession(here.id); return true;
+  }
+  switch (e.key.toLowerCase()) {
+    case 'r': if (here) set({ modal: { kind: 'rename', id: here.id } }); return true;
+    case 'x': if (here) askStop(here.id); return true;
+  }
+  return false;
+}
+
+/** The workspace keys, the same on the board and the Unticketed row. */
+function workspaceKeys(e: KeyboardEvent): boolean {
+  if (e.key === 'Delete' && e.shiftKey) { workspaceKey('delete'); return true; }
+  switch (e.key) {
+    case 'w': case 'W': set({ modal: { kind: 'workspace', id: null } }); return true;
+    case 'e': workspaceKey('edit'); return true;
+    case 'E': workspaceKey('share'); return true;
+    case 'I': importWorkspace(); return true;
+    case 'f': case 'F': set({ modal: { kind: 'sources' } }); return true;
+    case '+': case '=': workspaceKey('addRepo'); return true;
+    case '-': workspaceKey('removeRepo'); return true;
+  }
+  return false;
+}
+
 function boardKeys(e: KeyboardEvent): boolean {
   const s = get();
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
-  const cols = lanes(s.cards, s.line.filter);
-  const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-  if (arrows[e.key]) {
-    const [dx, dy] = arrows[e.key];
-    set({ line: { ...s.line, focus: moveFocus(cols, s.line.focus, dx, dy) } });
-    return true;
-  }
   const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code);
   if (digit && !e.shiftKey) {
     const n = Number(digit[1]);
     const ws = s.workspaces[n - 1];
-    if (n && !ws) { flash(`There is no workspace ${n}`); return true; }
+    if (n && !ws) { flash(s.workspaces.length ? `There is no workspace ${n}` : 'No workspaces yet. W makes one.'); return true; }
     const filter = n === 0 ? 'all' : ws.id;
-    const focus = moveFocus(lanes(s.cards, filter), null, 1, 0);
-    set({ line: { ...s.line, filter, focus } });
+    setFilter(filter);
+    set({ line: { ...get().line, focus: moveFocus(lanes(s.cards, filter, s.line.q), null, 1, 0) } });
     flash(n === 0 ? 'Every workspace' : ws.name);
     return true;
   }
+  if (workspaceKeys(e)) return true;
+  if (e.key === '/' && !e.shiftKey) { set({ line: { ...s.line, searching: true } }); focusField('line-q'); return true; }
+  if (s.line.row) return rowKeys(e);
+  const cols = lanes(s.cards, s.line.filter, s.line.q);
   const focused = cols.some((l) => l.cards.some((c) => c.id === s.line.focus)) ? s.line.focus : null;
+  const toRow = () => {
+    const row = rowOf(s).shown;
+    if (row.length) focusRow(row[0].id);
+    else flash('No sessions without a card here');
+  };
+  const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  if (arrows[e.key]) {
+    const [dx, dy] = arrows[e.key];
+    const next = moveFocus(cols, focused, dx, dy);
+    // ↓ from the bottom of a column (or on an empty board) goes down to the row.
+    if (dy === 1 && (!focused || next === focused)) { toRow(); return true; }
+    set({ line: { ...s.line, focus: next } });
+    return true;
+  }
   switch (e.key) {
     case 'Enter': if (focused) openCard(focused); return true;
     case 'c': openComposer(); return true;
+    case 'u': toRow(); return true;
     case 'Delete': if (focused) set({ modal: { kind: 'deleteCard', id: focused } }); return true;
-    case 'Escape': leaveLine(); return true;
+    case 'Escape': if (s.line.q) set({ line: { ...s.line, q: '' } }); return true;
   }
+  return false;
+}
+
+/** The filter box (/): typing filters, Enter or ↓ goes back to the board with the filter kept, Esc clears it. */
+function searchKeys(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement;
+  if (el.id !== 'line-q') return false;
+  if (e.key === 'Escape') { el.blur(); set({ line: { ...get().line, q: '', searching: false } }); return true; }
+  if (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'Tab') { el.blur(); set({ line: { ...get().line, searching: false } }); return true; }
   return false;
 }
 
@@ -227,7 +374,7 @@ export function lineKeys(e: KeyboardEvent, typing: boolean): boolean {
   const s = get();
   if (s.screen !== 'line' || s.modal) return false;
   if (s.composer) return composerKeys(e, typing);
-  if (typing) return false;
+  if (typing) return searchKeys(e);
   if (s.line.drawer) return drawerKeys(e);
   return boardKeys(e);
 }
@@ -236,6 +383,6 @@ export function lineKeys(e: KeyboardEvent, typing: boolean): boolean {
 export function deleteCard(id: string): void {
   send({ type: 'card.delete', id });
   const s = get();
-  const cols = lanes(s.cards.filter((c) => c.id !== id), s.line.filter);
+  const cols = lanes(s.cards.filter((c) => c.id !== id), s.line.filter, s.line.q);
   set({ line: { ...s.line, drawer: s.line.drawer === id ? null : s.line.drawer, focus: s.line.focus === id ? moveFocus(cols, null, 1, 0) : s.line.focus } });
 }

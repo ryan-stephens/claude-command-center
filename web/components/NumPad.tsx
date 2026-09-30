@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Command, CommandGroup, CommandScope } from '../../shared/protocol.ts';
 import { cycleGroup, exportPack, fireSlot, importPack } from '../commands.ts';
-import { backToList } from '../keys.ts';
+import { backToLine } from '../keys.ts';
 import { startVoice, stopVoice, voiceSupported } from '../voice.ts';
 import { currentGroup, groupKeyOf, set, toggleFold, useStore } from '../store.ts';
 import { Icon, Key } from './ui.tsx';
@@ -52,7 +52,7 @@ export function NumPad({ focused, compact = false }: { focused: boolean; compact
         {tile(4)}{tile(5)}{tile(6)}
         {tile(1)}{tile(2)}{tile(3)}
         <Fn label="Enter" text="Run focused" onClick={() => fireSlot(useStoreSlot())} tall />
-        <Fn label="0" text="Back to home" onClick={backToList} wide />
+        <Fn label="0" text="Ticket Line" onClick={backToLine} wide />
         <TalkKey />
       </div>
 
