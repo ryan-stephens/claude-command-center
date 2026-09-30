@@ -5,10 +5,11 @@ import type { IncomingMessage } from 'node:http';
 import { existsSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type Workspace } from '../shared/protocol.ts';
+import { PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { CommandService } from './commands.ts';
 import { PermissionBroker } from './permission-broker.ts';
+import { Mirror } from './mirror.ts';
 import { COOKIE, cookieToken, findRemoteIp, remoteHostAllowed, remoteToken, remoteUpgradeAllowed, tokenMatches } from './remote.ts';
 import { searchFiles } from './file-search.ts';
 import { listFolder, listRoots, normalizeFolder, notAFullPath } from './fs-browse.ts';
@@ -57,7 +58,15 @@ const manager: SessionManager = new SessionManager({
   activity: (id, activity) => broadcast({ type: 'session.activity', id, activity }),
   transcript: (id, items) => broadcast({ type: 'session.transcript', id, items }),
   todos: (id, todos) => broadcast({ type: 'session.todos', id, todos }),
+  fileChanged: (id) => mirror.changed(id),
 }, broker, store);
+
+// Sessions open in a terminal: whoever is looking at one sees it update live.
+const mirror = new Mirror<WebSocket>({
+  read: (id) => manager.transcript(id),
+  send: (ws, id, items) => send(ws, { type: 'session.transcript', id, items: items as TranscriptItem[] }),
+  owned: (id) => manager.owns(id),
+});
 
 /** Only known keys with sane shapes reach the database. */
 function cleanSettings(raw: unknown): Settings {
@@ -171,6 +180,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     }
     case 'session.open':
+      mirror.watch(ws, msg.id);
       send(ws, { type: 'session.transcript', id: msg.id, items: await manager.transcript(msg.id) });
       return;
     case 'session.send':
@@ -352,7 +362,7 @@ const localApp = buildApp(async (c, next) => {
 const wss = new WebSocketServer({ noServer: true });
 wss.on('connection', (ws) => {
   clients.add(ws);
-  ws.on('close', () => clients.delete(ws));
+  ws.on('close', () => { clients.delete(ws); mirror.forget(ws); });
   ws.on('message', (raw) => {
     let msg: ClientMsg;
     try { msg = JSON.parse(String(raw)); } catch { return; }
@@ -431,6 +441,7 @@ process.on('unhandledRejection', (reason) => {
 function shutdown(): void {
   manager.stopAll();
   manager.history.stop();
+  mirror.stop();
   for (const server of servers) server.close();
   process.exit(0);
 }

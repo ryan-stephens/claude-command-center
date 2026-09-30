@@ -585,3 +585,30 @@ Added 2026-09-28 at the owner's request: *"sessions need to be able to see the s
 - **The `/` suggestion list no longer cuts off command names** to fit descriptions. The name is kept whole (up to 70% of the row), and the description, aliases and argument hint give way. Hovering a description shows all of it.
 
 **Verified** (headless Chromium, isolated server, Demo workspace, 1280×800): `Ctrl+↓` went from row 0 to 5, `↓` to 6, and `Ctrl+↑` back to 1. In the docked pane at its narrowest, no command name in the `/` list overflowed (measured `scrollWidth`). `Ctrl+↓` in `Ctrl+K` raised no errors, and there were no console errors. `pnpm typecheck`, `pnpm test` (109) and `pnpm build` pass.
+
+## 26. Direction: sit on top of the terminal. Step 1, terminal sessions update live; Auto mode
+
+2026-09-29. The owner wasn't reaching for the app over plain Claude Code terminals. Agreed roadmap, in order:
+1. **Sit on top of terminals, not beside them.** Sessions started in a terminal show up live, and can be answered from the app.
+2. **Visualise every step of development**, so non-developers can be dangerous and experienced developers fast: a card when a session finishes (what changed, in plain words, the diff, one-key Commit / Open PR / Ask for a fix), and a Changes view per session with undo per file or back to any message (SDK file checkpoints).
+3. **Context you can move around:** `@session` pulls another session's findings into a prompt, one-key handoff to a fresh session when memory fills, and workspace notes every session starts with.
+4. **A short first run for newcomers:** pick a workspace → say what you want → review the result card. Plan first by default for new users; the pad, library and modes appear when wanted.
+
+Not planned: more Claude Code parity for its own sake (`!` shell, model pickers).
+
+**What Claude Code allows** (checked against CLI 2.1.285, the SDK types and the docs):
+- No supported way for another program to join a running terminal session. `claude --bg` / `claude attach` are terminal-only, Remote Control only connects claude.ai and the apps, and the cross-session socket is internal.
+- The documented way in is a **channel** (research preview): an MCP server with the `claude/channel` capability pushes messages into a running session, and `claude/channel/permission` relays its permission prompts. A channel of our own needs the terminal to start with `--dangerously-load-development-channels server:<name>`, and Team/Enterprise orgs need `channelsEnabled`. The messages show as `← <name>: …` and reach Claude in a `<channel>` tag; slash commands arrive as text.
+- The transcript file format is internal, so the app reads it only through the SDK (`getSessionMessages`).
+
+**Step 1, done: terminal sessions update live** (`server/mirror.ts`, tested). The history watcher now reports which session's file changed. Each page's last-opened session is watched, and a session this app doesn't run is re-read through the SDK and pushed as `session.transcript`, at most once per 700 ms, only to the pages looking at it. Subagent files are ignored, and so are sessions the app runs itself (their updates already stream). The banner says "Open in a terminal: you're watching it live…". Replies arrive a message at a time, not word by word. No protocol change.
+
+**Auto mode:** `Shift+Tab` now cycles *Asks first → Accepts edits → Plan first → Auto*, like Claude Code. Terminal sessions keep whatever mode they were started with. **Auto isn't offered for every model** (the CLI said "auto mode unavailable for this model" on Haiku), and a failed switch used to leave the mode where it was, so `Shift+Tab` retried Auto forever. Now it goes round to *Asks first* and says why, like Claude Code skipping it.
+
+**Verified** (isolated server, Demo workspace):
+- A session made with the plain `claude -p` in `web-app` showed beside the list with the live banner. Running `claude -p --resume <id>` made its reply appear on the page with no reload, within 10 ms of the CLI finishing.
+- On Haiku: *Accepts edits → Plan first → Asks first*, with the message, and the next press went on to *Accepts edits*.
+- After `/model sonnet`: *Plan first → Auto → Asks first*.
+- No console errors. `pnpm typecheck`, `pnpm test` (113) and `pnpm build` pass.
+
+**Next:** try a cc-control channel in a real terminal (sending from the page, relaying approvals, working out which session a channel belongs to), then the finish card.

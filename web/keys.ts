@@ -65,7 +65,7 @@ const FIXED_SECTIONS: { title: string; keys: [string, string][] }[] = [
     title: 'Session',
     keys: [
       ['Enter / Shift+Enter', 'Send / new line (message box)'],
-      ['Shift+Tab', 'Switch mode, like Claude Code: asks first → accepts edits → plan first'],
+      ['Shift+Tab', 'Switch mode, like Claude Code: asks first → accepts edits → plan first → auto'],
       ['/ (start of a message)', 'Suggests commands and skills as you type, like Claude Code: ↑ ↓ choose, Tab completes, Enter runs, Esc hides'],
       ['/model, /effort … then ↑ ↓', 'Commands with choices list them (models, effort levels, on/off): pick one with the arrows and Enter'],
       ['@ (message box)', 'Suggests files in the repos Claude can use; Tab or Enter puts it in'],
@@ -310,7 +310,7 @@ function questionKeys(e: KeyboardEvent, req: PermissionRequest): boolean {
   return false;
 }
 
-/** Shift+Tab: asks first → accepts edits → plan first, as in Claude Code. */
+/** Shift+Tab: asks first → accepts edits → plan first → auto, as in Claude Code. */
 export function cycleMode(id: string | null): void {
   if (!id) return;
   const mode = nextMode(sessionById(id)?.mode);

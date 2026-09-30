@@ -88,5 +88,5 @@ export const MODE_LABEL: Record<PermissionMode, { name: string; hint: string }> 
   plan: { name: 'Plan first', hint: 'looks around and proposes a plan; changes nothing until you approve' },
   bypassPermissions: { name: 'Never asks', hint: 'runs everything without asking' },
   dontAsk: { name: 'Only allowed', hint: 'never asks; skips what is not already allowed' },
-  auto: { name: 'Auto', hint: 'a classifier decides what needs your OK' },
+  auto: { name: 'Auto', hint: 'decides for itself what is safe to do, and asks about the rest' },
 };

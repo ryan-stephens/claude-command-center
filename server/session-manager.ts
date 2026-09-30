@@ -65,6 +65,8 @@ export interface SessionEvents {
   transcript(id: string, items: TranscriptItem[]): void;
   /** A live session's to-do list changed. */
   todos(id: string, todos: Todo[]): void;
+  /** A session's transcript file changed on disk (a terminal, or us). */
+  fileChanged(id: string): void;
 }
 
 export class SessionManager {
@@ -96,7 +98,12 @@ export class SessionManager {
     this.events = events;
     this.broker = broker;
     this.dirs = dirs;
-    this.history = new HistoryIndex(() => events.sessionsChanged());
+    this.history = new HistoryIndex(() => events.sessionsChanged(), (id) => events.fileChanged(id));
+  }
+
+  /** This app runs the session (or just did): its updates stream, and its file writes are ours. */
+  owns(id: string): boolean {
+    return this.live.has(id) || (this.recentlyOwned.get(id) ?? 0) > Date.now() - ACTIVE_ELSEWHERE_MS;
   }
 
   summaries(): SessionSummary[] {
@@ -287,10 +294,26 @@ export class SessionManager {
   async setMode(id: string, mode: PermissionMode): Promise<void> {
     if (!MODES.includes(mode)) throw new Error('That mode is not available here.');
     const target = this.forkedTo.get(id) ?? id;
+    const before = this.modes.get(target);
     this.modes.set(target, mode);
     const l = this.live.get(target);
     if (!l) { this.events.sessionsChanged(); return; }
-    await l.q.setPermissionMode(mode);
+    try {
+      await l.q.setPermissionMode(mode);
+    } catch (e) {
+      // Auto isn't offered for every model (Haiku, say). Like Claude Code, the cycle skips it and
+      // goes round to Asks first; staying on the previous mode would make Shift+Tab try Auto forever.
+      if (mode === 'auto') {
+        this.modes.set(target, 'default');
+        await l.q.setPermissionMode('default').catch(() => {});
+        l.mode = 'default';
+        this.emitUpsert(target);
+        throw new Error('Auto mode isn’t available for this model, so it’s back to Asks first. /model can switch to one that has it.');
+      }
+      if (before) this.modes.set(target, before);
+      else this.modes.delete(target);
+      throw e;
+    }
     l.mode = mode;
     this.emitUpsert(target);
   }

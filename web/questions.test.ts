@@ -43,7 +43,8 @@ test('nextMode cycles like Shift+Tab in Claude Code', () => {
   assert.equal(nextMode(undefined), 'acceptEdits');
   assert.equal(nextMode('default'), 'acceptEdits');
   assert.equal(nextMode('acceptEdits'), 'plan');
-  assert.equal(nextMode('plan'), 'default');
+  assert.equal(nextMode('plan'), 'auto');
+  assert.equal(nextMode('auto'), 'default');
   assert.equal(nextMode('bypassPermissions'), 'default');
 });
 

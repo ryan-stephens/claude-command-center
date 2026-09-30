@@ -2,6 +2,7 @@ import { listSessions, type SDKSessionInfo } from '@anthropic-ai/claude-agent-sd
 import { watch, type FSWatcher } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { sessionOfFile } from './mirror.ts';
 
 const PROJECTS_DIR = join(homedir(), '.claude', 'projects');
 const LIST_LIMIT = 300;
@@ -16,16 +17,22 @@ export class HistoryIndex {
   private watcher: FSWatcher | null = null;
   private timer: NodeJS.Timeout | null = null;
   private onChange: () => void;
+  private onFile: (sessionId: string) => void;
 
-  constructor(onChange: () => void) {
+  /** `onFile`: a session's own transcript file was written (by us or by a terminal). */
+  constructor(onChange: () => void, onFile: (sessionId: string) => void = () => {}) {
     this.onChange = onChange;
+    this.onFile = onFile;
   }
 
   async start(): Promise<void> {
     await this.refresh();
     try {
       this.watcher = watch(PROJECTS_DIR, { recursive: true }, (_event, file) => {
-        if (file && String(file).endsWith('.jsonl')) this.scheduleRefresh();
+        if (!file || !String(file).endsWith('.jsonl')) return;
+        this.scheduleRefresh();
+        const id = sessionOfFile(String(file));
+        if (id) this.onFile(id);
       });
     } catch (e) {
       console.warn(`history: cannot watch ${PROJECTS_DIR}: ${(e as Error).message}`);

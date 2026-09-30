@@ -92,7 +92,7 @@ export function SessionView({ id: shownId, docked = false }: { id?: string; dock
           )}
           {session?.activeElsewhere && !session.live && (
             <div className="flex items-center gap-2 border-b border-line bg-calm-bg px-4 py-2 text-sm text-calm md:px-6">
-              <Icon name="warn" size={16} />This session looks open in a terminal. Sending here makes a copy, so the two don’t write over each other.
+              <Icon name="warn" size={16} />Open in a terminal: you’re watching it live, and it updates here as it goes. Sending from here makes a copy, so the two don’t write over each other.
             </div>
           )}
           <div
@@ -502,7 +502,7 @@ function TodoPanel({ id }: { id: string }) {
   );
 }
 
-const MODE_TONE: Record<string, string> = { default: 'bg-raise text-sub', acceptEdits: 'bg-busy-bg text-busy', plan: 'bg-calm-bg text-calm' };
+const MODE_TONE: Record<string, string> = { default: 'bg-raise text-sub', acceptEdits: 'bg-busy-bg text-busy', plan: 'bg-calm-bg text-calm', auto: 'bg-ok-bg text-ok' };
 
 /** Under the message box: the mode (Shift+Tab switches it, as in Claude Code) and the model. */
 function ModeLine({ id }: { id: string }) {
@@ -512,7 +512,7 @@ function ModeLine({ id }: { id: string }) {
   return (
     <div className="mx-auto mt-1.5 flex max-w-3xl items-center gap-2 px-1 text-xs text-faint">
       <button onClick={() => cycleMode(id)} title={`${label.name}: ${label.hint}. Shift+Tab switches.`} className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-semibold ${MODE_TONE[mode] ?? 'bg-raise text-sub'}`}>
-        <Icon name={mode === 'plan' ? 'plan' : mode === 'acceptEdits' ? 'edit' : 'shield'} size={12} />{label.name}
+        <Icon name={mode === 'plan' ? 'plan' : mode === 'acceptEdits' ? 'edit' : mode === 'auto' ? 'auto' : 'shield'} size={12} />{label.name}
       </button>
       <span className="hidden truncate sm:inline">{label.hint}</span>
       <Key k="⇧Tab" size="sm" />

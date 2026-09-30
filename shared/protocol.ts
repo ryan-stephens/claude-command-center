@@ -12,7 +12,8 @@ export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 /** How much Claude may do without asking (Claude Code's Shift+Tab modes). */
 export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'dontAsk' | 'auto';
 /** The modes Shift+Tab cycles through, in order (bypassing permissions is never offered). */
-export const MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan'];
+/** Shift+Tab cycles these, as in Claude Code. Never bypassPermissions. */
+export const MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'auto'];
 
 /** A file offered as you type "@" in the message box. */
 export interface FileHit {
