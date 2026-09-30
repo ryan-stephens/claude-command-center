@@ -4,19 +4,21 @@ Paste this into a new Claude Code session opened in `D:\repos\cc-control`.
 
 ---
 
-Read `docs/prompts/continue.md` first. It explains what cc-control is, where things are, and how to test without touching the owner's running app. Then read `docs/PLAN.md` §26 to §30.
+Read `docs/prompts/continue.md` first. It explains what cc-control is, where things are, and how to test without touching the owner's running app. Then read `docs/PLAN.md` §26 to §31.
 
 ## The job
 The owner chose a direction: the **Ticket Line** (PLAN §27). The spec is the clickable mock at `docs/futures/path-line.html`. Open it in a browser and drive it with the keys before designing anything. Work becomes cards on a board: Inbox → Plan → Build → Needs you → Try it → Ship → Done. Each card is a ticket (Jira or Trello) or a card with no ticket. A new-card screen builds the card's context, and the card follows a Claude Code session running in a terminal tab.
 
 The owner likes the mock a lot. Keep its look, its words and its keys, including the legend bar and the `?` overlay, unless something can't be built as drawn. If so, say why.
 
-## Where it stands: milestones 1 to 3 are done (PLAN §28–§30)
+## Where it stands: milestones 1 to 4 are done (PLAN §28–§31)
 - **1 (§28):** a card saves its context, makes its branch and starts `claude` in a Windows Terminal tab. The hook, loaded with `claude --settings`, fetches the packet and links the session. Read §28 for the Claude Code facts it established: the `--add-dir` / `--` gotcha, trust prompts and inherited session markers will bite again.
 - **2 (§29):** cards follow their session through async hooks (Plan ready, Needs you, Try it, steps, files changed).
 - **3 (§30):** the line is the home page; Home is gone. Workspace keys (`W` `E` `+` `−` `F` `Shift+E` `Shift+I` `Shift+Delete`) work on the line and ask which workspace when All is showing. (An Unticketed row of sessions without a card was built, then removed at the owner's request: not every session belongs on the line; `Ctrl+K` finds them.) `Ctrl+Enter` opens a card's session full screen. The new-card screen chooses the model (`m`) and can keep a card's repo for the workspace (`w`).
 
-**Next: Jira/Trello import, against mock tickets** (the owner has no Jira credentials yet). The mock's Inbox, `n` on a ticket, the Tickets tab in panel 1 and the ticket layer (description, acceptance criteria, comments / attachments / linked tickets switched off by default) are the spec. Then carry on from **Then, in order** below.
+- **4 (§31):** tickets from Jira and Trello (read-only, env-var tokens on the server) and a demo set in the real shape. The Inbox, `n` on a ticket, Tickets / Repos in panel 1, related tickets, the ticket layer, and `Shift+T` for sources and the project → workspace mapping. The Jira and Trello clients are tested against the APIs' JSON but **not yet against a live site**: when the owner sends the site URL, email and API token, try it and adjust `fromJira` / `splitAcceptance` as needed.
+
+**Next: adding context later** (the mock's `c` in a card's drawer and "Added since it started" on its Context tab; extras wait on the card and a UserPromptSubmit hook, in the same `--settings` file, adds them to the next message typed in the tab). Then carry on from **Then, in order** below.
 
 **Open questions for the owner** (asked at the end of milestone 3; check the reply before building on them): whether the drag-and-drop repo library strip should come back on the line, and whether the in-app new-session dialog (`Alt+Shift+N`) is still wanted.
 
@@ -47,7 +49,7 @@ This first milestone proves the mechanism end to end. Leave the board polish, Ji
    - The Context tab shows the start-up log and what Claude was given.
    - Add a key and a `?` row for every action.
 
-**Then, in order:** ~~the board and drawer over the existing session list~~ (done, §29–§30) → Jira/Trello import (read-only, tokens kept on the server) with a ticket-to-workspace mapping → adding context later (a UserPromptSubmit hook sends queued extras with the next message) → run recipes (Try it) → Ship (commit, `gh pr create`, Slack post). Add a PLAN section for each piece, in the same commit.
+**Then, in order:** ~~the board and drawer over the existing session list~~ (done, §29–§30) → ~~Jira/Trello import~~ (done against demo tickets, §31) (read-only, tokens kept on the server) with a ticket-to-workspace mapping → adding context later (a UserPromptSubmit hook sends queued extras with the next message) → run recipes (Try it) → Ship (commit, `gh pr create`, Slack post). Add a PLAN section for each piece, in the same commit.
 
 ## The owner's answers (2026-09-29)
 - **Hooks:** per launch with `claude --settings`. Nothing goes into `~/.claude/settings.json`. The UserPromptSubmit hook for adding context later goes in the same file (`writeHookSettings` in `server/cards.ts`).
