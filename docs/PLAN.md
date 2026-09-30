@@ -944,3 +944,18 @@ Keys: `s` on the board and in the drawer (Ship, or Merge once there is a PR), wi
 - Unit tests: the step syntax (and that `--port=5000` in a command isn't a variable); what Claude is told; a card runs its workspace's recipe first; saving, removing and importing workspace recipes; a real two-repo run (a variable per step, a note skipped, the stop step run on stop); a repo name that matches nothing; the workspace file's recipe, bounded on import. `pnpm typecheck`, `pnpm test` (191) and the Vite build pass.
 
 **Not yet:** passing a value one step printed (the Okteto endpoint, say) into a later step's variable (for now, write the address in the recipe; per-developer namespaces are usually stable); a recipe per developer on top of the shared one; waiting on a by-hand step before going on.
+
+## 38. Hide tickets from the Inbox
+
+2026-09-30, asked for while trying it at VU: the Inbox should be able to drop tickets you don't want there.
+
+- **`Delete` on a ticket in the Inbox hides it.** It is gone from the Inbox, and focus moves to the next ticket. The message says "Shift+T shows hidden tickets again". Nothing is written to Jira or Trello: the import stays read-only.
+- **`Shift+T` has a *Hidden from the Inbox* list** under the project mapping. `↑ ↓` walk the projects and then the hidden tickets, and `Enter` (or the button) shows one in the Inbox again. With none hidden, the list says so, and points to `CC_CONTROL_JIRA_JQL` for leaving out whole groups.
+- **The hidden list is kept on the server** (`tickets.hidden`, with when each was hidden), so it survives restarts and other browsers. A hidden ticket can still be picked on the new-card screen, sorted after the open ones and marked "hidden from the Inbox".
+- Keys: the legend on a focused ticket shows `Delete` *Hide*, and `?` has a row. `PROTOCOL` 9 (`tickets.hide`).
+- **Found by the walkthrough:** the dialog's list filtered inside the store selector, which returns a new array each time, so React re-rendered forever (the same bug as §34's). It now filters outside the selector.
+- **Verified** (isolated server, demo tickets; 9 scripted checks):
+  - `Delete` on PAY-91 hid it, said how to bring it back, and moved the focus to PAY-77.
+  - `Shift+T` listed it, and `Enter` showed it again; it was back in the Inbox.
+  - It stayed hidden across a reload, and the legend shows *Hide*. No console errors.
+  - Unit tests cover hiding surviving a new service on the same store, and the Inbox leaving out only that ticket. `pnpm test` (192) passes.

@@ -218,7 +218,7 @@ export function composerKey(c: Composer, nextKey: string): string {
  */
 export function ticketSources(c: Composer, tickets: Ticket[], started: Set<string> = new Set()): Ticket[] {
   const q = c.q.trim().toLowerCase();
-  const rank = (t: Ticket) => (t.done ? 2 : started.has(t.key) ? 1 : 0);
+  const rank = (t: Ticket) => (t.done ? 3 : t.hidden ? 2 : started.has(t.key) ? 1 : 0);
   return tickets
     .filter((t) => !q || `${t.key} ${t.title} ${ticketSub(t)}`.toLowerCase().includes(q))
     .sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt);

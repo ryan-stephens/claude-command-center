@@ -162,7 +162,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   }
   return [
     { keys: ['←', '→', '↑', '↓'], label: 'Move' },
-    ...(x.onTicket ? [{ keys: ['n', 'Enter'], label: 'Start work', tone: 'acc' as const }] : []),
+    ...(x.onTicket ? [{ keys: ['n', 'Enter'], label: 'Start work', tone: 'acc' as const }, { keys: ['Delete'], label: 'Hide' }] : []),
     ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open' }, ...tryKeys(x)] : []),
     ...(x.hasSession ? [full] : []),
     { keys: ['c'], label: 'New card', tone: 'acc' },

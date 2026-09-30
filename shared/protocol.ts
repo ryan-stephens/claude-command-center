@@ -10,7 +10,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  * says `hello` first; a page that hears anything else first is talking to a server from before
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
-export const PROTOCOL = 8;
+export const PROTOCOL = 9;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -349,6 +349,8 @@ export type ClientMsg =
   /** Tickets: show the demo set, map a project (Jira key / Trello board) to a workspace, fetch again. */
   | { type: 'tickets.demo'; on: boolean }
   | { type: 'tickets.map'; project: string; workspaceId: string | null }
+  /** Hide a ticket from the Inbox (Delete on it), or show it again (Shift+T). Read-only towards the tracker. */
+  | { type: 'tickets.hide'; key: string; hidden: boolean }
   | { type: 'tickets.refresh' };
 
 export type ServerMsg =

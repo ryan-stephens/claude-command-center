@@ -462,6 +462,9 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       if (project) tickets.setMapping(project, ws);
       return;
     }
+    case 'tickets.hide':
+      tickets.setHidden(String(msg.key).slice(0, 60), msg.hidden === true);
+      return;
     case 'tickets.refresh':
       await tickets.refresh();
       return;

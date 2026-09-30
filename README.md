@@ -51,7 +51,8 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `Alt+↑` / `Alt+↓` | Previous / next session |
 | | `Alt+L` | Back to the Ticket Line from a session |
 | Ticket Line | `n` / `Enter` (a ticket in the Inbox) | Start work on it: the new-card screen with the ticket as context |
-| | `Shift+T` | Tickets: Jira and Trello status, demo tickets, which workspace each project goes to |
+| | `Shift+T` | Tickets: Jira and Trello status, demo tickets, which workspace each project goes to, and tickets you hid |
+| | `Delete` (a ticket in the Inbox) | Hide it from the Inbox (nothing changes in Jira or Trello) |
 | | `c` | New card: pick repos, write a note, `m` the model, `p` previews what Claude gets, `Ctrl+Enter` starts it in a terminal tab |
 | | `← → ↑ ↓` / `Enter` | Move between cards / open one: Overview, Context (how it started, what Claude was given), Transcript (`Tab`) |
 | | `t` / `o` (a card) | Try it: run its repo's recipe in the card's folder / open the app (`t` again stops it) |

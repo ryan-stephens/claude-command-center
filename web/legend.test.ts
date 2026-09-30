@@ -39,6 +39,7 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Add or remove'));
   assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Tickets / Repos'));
   assert.equal(labels({ view: 'board', onTicket: true, bindings: {} })[1], 'Start work', 'a ticket in the Inbox: n starts work');
+  assert.equal(labels({ view: 'board', onTicket: true, bindings: {} })[2], 'Hide', 'and Delete hides it');
   assert.ok(labels({ view: 'composer', pane: 'pkt', bindings: {} }).includes('Include or leave out'));
   assert.ok(!labels({ view: 'composer', pane: 'pkt', bindings: {} }).includes('Keep for the workspace'));
   assert.ok(labels({ view: 'composer', pane: 'pkt', cardRepo: true, bindings: {} }).includes('Keep for the workspace'));

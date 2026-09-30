@@ -392,8 +392,23 @@ export class TicketService {
   /** Every ticket, with the workspace its project maps to (a mapped workspace that is gone counts as none). */
   list(workspaceIds: string[]): Ticket[] {
     const m = this.mapping();
+    const hidden = this.hiddenKeys();
     const all = [...this.real, ...(this.demoOn() ? demoTickets() : [])];
-    return all.map((t) => ({ ...t, workspaceId: m[t.project] && workspaceIds.includes(m[t.project]) ? m[t.project] : null }));
+    return all.map((t) => ({ ...t, workspaceId: m[t.project] && workspaceIds.includes(m[t.project]) ? m[t.project] : null, ...(hidden[t.key] ? { hidden: true } : {}) }));
+  }
+
+  /** Tickets hidden from the Inbox, with when: kept on the server so they stay hidden across restarts and browsers. */
+  hiddenKeys(): Record<string, number> {
+    try { return JSON.parse(this.store.getMeta('tickets.hidden') ?? '{}') as Record<string, number>; } catch { return {}; }
+  }
+
+  /** Hide a ticket from the Inbox, or show it again. Nothing is written to Jira or Trello. */
+  setHidden(key: string, hidden: boolean): void {
+    const h = this.hiddenKeys();
+    if (hidden) h[key] = Date.now();
+    else delete h[key];
+    this.store.setMeta('tickets.hidden', JSON.stringify(h));
+    this.changed();
   }
 
   get(key: string, workspaceIds: string[]): Ticket | undefined {

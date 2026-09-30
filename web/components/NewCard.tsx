@@ -165,7 +165,7 @@ function Sources({ c }: { c: Composer }) {
               <TicketKey k={tk.key} source={tk.source} />
               <span className="min-w-0 grow">
                 <span className="block truncate">{tk.title}</span>
-                <span className="block truncate text-xs text-faint">{ticketSub(tk)}{taken ? ' · has a card' : ''}{tk.demo ? ' · demo' : ''}</span>
+                <span className="block truncate text-xs text-faint">{ticketSub(tk)}{taken ? ' · has a card' : ''}{tk.hidden ? ' · hidden from the Inbox' : ''}{tk.demo ? ' · demo' : ''}</span>
               </span>
               {own ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">this card’s</span>
                 : related ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">{c.addTo ? 'adding' : 'related'}</span>

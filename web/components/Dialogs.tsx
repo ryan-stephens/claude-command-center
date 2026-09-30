@@ -17,7 +17,7 @@ import { Palette } from './Palette.tsx';
 import { ShipSheet } from './ShipSheet.tsx';
 import { Welcome } from './Welcome.tsx';
 import { close, DialogKeys, DialogTitle, Overlay, useDialogKeys } from './Overlay.tsx';
-import { Icon, Key, SWATCH, WsBadge } from './ui.tsx';
+import { Icon, Key, SWATCH, TicketKey, WsBadge } from './ui.tsx';
 
 export function Dialogs() {
   const modal = useStore((s) => s.modal);
@@ -599,8 +599,17 @@ function TicketsDialog() {
   const sources = useStore((s) => s.ticketSources);
   const projects = useStore((s) => s.ticketProjects);
   const workspaces = useStore((s) => s.workspaces);
+  // Filtered outside the selector: a new array from the selector each time would re-render forever.
+  const allTickets = useStore((s) => s.tickets);
+  const hidden = useMemo(() => allTickets.filter((t) => t.hidden), [allTickets]);
   const [index, setIndex] = useState(0);
-  const at = Math.min(index, projects.length - 1);
+  // ↑ ↓ walk the projects, then the hidden tickets.
+  const rows = projects.length + hidden.length;
+  const at = Math.max(0, Math.min(index, rows - 1));
+  const showAgain = (i: number) => {
+    const t = hidden[i - projects.length];
+    if (t) send({ type: 'tickets.hide', key: t.key, hidden: false });
+  };
   const map = (i: number, delta: number) => {
     const p = projects[i];
     if (!p) return;
@@ -610,12 +619,13 @@ function TicketsDialog() {
   };
   useDialogKeys((e) => {
     if (e.key === 'Escape') close();
-    else if (e.key === 'ArrowDown') setIndex(Math.min(projects.length - 1, at + 1));
+    else if (e.key === 'ArrowDown') setIndex(Math.min(rows - 1, at + 1));
     else if (e.key === 'ArrowUp') setIndex(Math.max(0, at - 1));
     else if (e.key === 'ArrowRight') map(at, 1);
     else if (e.key === 'ArrowLeft') map(at, -1);
     else if (e.key === 'd' || e.key === 'D') send({ type: 'tickets.demo', on: !sources?.demo });
     else if (e.key === 'r' || e.key === 'R') send({ type: 'tickets.refresh' });
+    else if ((e.key === 'Enter' || e.key === ' ' || e.key === 'Delete') && at >= projects.length) showAgain(at);
     else return false;
     return true;
   });
@@ -649,7 +659,23 @@ function TicketsDialog() {
           })}
         </ul>
       ) : <p className="text-sm text-faint">No tickets yet, so no projects to map. Connect a source above, or switch on the demo tickets.</p>}
-      <DialogKeys items={[['↑ ↓', 'Project'], ['← →', 'Workspace'], ['D', 'Demo tickets'], ['R', 'Fetch again'], ['Esc', 'Close']]} />
+      <h3 className="eyebrow mb-2 mt-5">Hidden from the Inbox</h3>
+      {hidden.length ? (
+        <ul className="space-y-1" role="listbox" aria-label="Hidden tickets">
+          {hidden.map((t, j) => {
+            const i = projects.length + j;
+            return (
+              <li key={t.key} role="option" aria-selected={i === at} onMouseEnter={() => setIndex(i)}
+                className={`flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 ${i === at ? 'is-focus bg-raise' : ''}`}>
+                <TicketKey k={t.key} source={t.source} />
+                <span className="min-w-0 grow truncate text-sm">{t.title}<span className="ml-2 text-faint">{t.status}</span></span>
+                <button className="btn py-0.5 text-[13px]" onClick={() => showAgain(i)}>Show in the Inbox<Key k="Enter" size="sm" /></button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : <p className="text-sm text-faint">None. Delete on a ticket in the Inbox hides it here; nothing changes in Jira or Trello. To leave whole groups out, narrow CC_CONTROL_JIRA_JQL instead.</p>}
+      <DialogKeys items={[['↑ ↓', 'Project or hidden ticket'], ['← →', 'Workspace'], ['Enter', 'Show a hidden ticket again'], ['D', 'Demo tickets'], ['R', 'Fetch again'], ['Esc', 'Close']]} />
     </Overlay>
   );
 }

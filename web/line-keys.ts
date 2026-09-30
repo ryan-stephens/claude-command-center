@@ -24,6 +24,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['← → ↑ ↓', 'Move between cards'],
       ['Enter', 'Open the card: Overview, Context (how it started, what Claude was given), Transcript'],
       ['n / Enter (a ticket in the Inbox)', 'Start work on it: the new-card screen, with the ticket as its context'],
+      ['Delete (a ticket in the Inbox)', 'Hide it from the Inbox (nothing changes in Jira or Trello; Shift+T shows it again)'],
       ['Shift+T', 'Tickets: demo tickets, Jira and Trello, and which workspace each project goes to'],
       ['Ctrl+Enter', 'The card’s session full screen, to read and type there (Esc comes back)'],
       ['c', 'New card: build its context and start work in a terminal tab'],
@@ -443,7 +444,7 @@ function boardKeys(e: KeyboardEvent): boolean {
   const ticket = cols[0].tickets.find((t) => ticketFocus(t.key) === focused);
   if (ticket) {
     if (e.key === 'Enter' || e.key === 'n') { openComposer(ticket); return true; }
-    if (e.key === 'Delete') { flash(`${ticket.key} stays in ${ticket.source === 'jira' ? 'Jira' : 'Trello'}; n starts work on it`); return true; }
+    if (e.key === 'Delete') { hideTicket(ticket.key, cols); return true; }
   }
   const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   if (arrows[e.key]) {
@@ -480,6 +481,17 @@ export function lineKeys(e: KeyboardEvent, typing: boolean): boolean {
   if (typing) return searchKeys(e);
   if (s.line.drawer) return drawerKeys(e);
   return boardKeys(e);
+}
+
+/** Delete on a ticket in the Inbox: hide it there (the tracker is untouched), and move to the next one. */
+function hideTicket(key: string, cols: ReturnType<typeof boardOf>): void {
+  const s = get();
+  const ids = cols[0].tickets.map((t) => ticketFocus(t.key));
+  const at = ids.indexOf(ticketFocus(key));
+  const next = ids[at + 1] ?? ids[at - 1] ?? cols[0].cards[0]?.id ?? null;
+  send({ type: 'tickets.hide', key, hidden: true });
+  set({ line: { ...s.line, focus: next } });
+  flash(`Hid ${key} from the Inbox. Shift+T shows hidden tickets again.`);
 }
 
 /** Take a card off the line (the Delete dialog's yes). */

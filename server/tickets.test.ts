@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
+import { inbox } from '../shared/tickets.ts';
 import type { Store } from './store.ts';
 import { adfText, boardPrefix, demoTickets, fetchJira, fromJira, fromTrello, jiraConfig, jiraSearch, splitAcceptance, TicketService } from './tickets.ts';
 
@@ -108,6 +109,20 @@ test('the service: demo tickets on request, projects mapped to workspaces, nothi
   svc.setMapping('SHOP', null);
   assert.equal(svc.get('SHOP-155', ['w1'])!.workspaceId, null);
   assert.ok(changes >= 4);
+});
+
+test('Delete hides a ticket from the Inbox (kept on the server); Shift+T shows it again', () => {
+  const store = fakeStore();
+  const svc = new TicketService(store, () => {}, {});
+  svc.setDemo(true);
+  svc.setHidden('PAY-91', true);
+  assert.equal(svc.get('PAY-91', [])!.hidden, true);
+  const again = new TicketService(store, () => {}, {});
+  assert.equal(again.get('PAY-91', [])!.hidden, true, 'still hidden for a new service on the same store (a restart)');
+  const keys = inbox(again.list([]), new Set(), 'all').map((t) => t.key);
+  assert.ok(!keys.includes('PAY-91') && keys.includes('PAY-77'), 'the Inbox leaves it out, and only it');
+  again.setHidden('PAY-91', false);
+  assert.ok(inbox(again.list([]), new Set(), 'all').some((t) => t.key === 'PAY-91'));
 });
 
 test('a source that fails says why, and the others still load', async () => {

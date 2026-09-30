@@ -41,6 +41,8 @@ export interface Ticket {
   updatedAt: number;
   /** A made-up ticket from the demo set, not a real one. */
   demo?: boolean;
+  /** Hidden from the Inbox by you (Delete on it); Shift+T shows it again. Nothing changes in the tracker. */
+  hidden?: boolean;
   /** The workspace its project maps to, filled in by the server. */
   workspaceId?: string | null;
 }
@@ -124,6 +126,6 @@ export function ticketSub(t: Ticket): string {
  */
 export function inbox(tickets: Ticket[], started: Set<string>, filter: 'all' | string): Ticket[] {
   return tickets
-    .filter((t) => !t.done && !started.has(t.key) && (filter === 'all' || t.workspaceId === filter))
+    .filter((t) => !t.done && !t.hidden && !started.has(t.key) && (filter === 'all' || t.workspaceId === filter))
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
