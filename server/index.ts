@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
+import { CardService, cleanDraft } from './cards.ts';
 import { CommandService } from './commands.ts';
 import { PermissionBroker } from './permission-broker.ts';
 import { Mirror } from './mirror.ts';
@@ -47,6 +48,11 @@ const broker = new PermissionBroker(
 
 const store = new Store();
 const commands = new CommandService(store);
+const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, changed: () => broadcast(cardsMsg()) });
+
+function cardsMsg(): ServerMsg {
+  return { type: 'cards', cards: cards.list(), nextKey: cards.peekKey(), ...(process.env.CC_CONTROL_MODEL ? { model: process.env.CC_CONTROL_MODEL } : {}) };
+}
 
 const manager: SessionManager = new SessionManager({
   sessionsChanged: () => broadcast(snapshot()),
@@ -314,6 +320,14 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       send(ws, { type: 'workspace.file', reqId: msg.reqId, file: workspaceToFile(w, store.loadWorkspacePack(w.id)) });
       return;
     }
+    case 'card.start': {
+      const card = await cards.start(cleanDraft(msg.draft, store.loadWorkspaces()));
+      send(ws, { type: 'card.started', reqId: msg.reqId, id: card.id });
+      return;
+    }
+    case 'card.delete':
+      cards.delete(String(msg.id));
+      return;
     case 'workspace.import': {
       const r = workspaceFromFile(msg.file, (library(true) as Extract<ServerMsg, { type: 'library' }>).repos);
       const w = cleanWorkspace({ ...r.workspace, id: crypto.randomUUID() });
@@ -341,10 +355,11 @@ function isTrusted(req: IncomingMessage): boolean {
   return allowedHosts.has(req.headers.host ?? '') && allowedOrigins.has(req.headers.origin ?? '');
 }
 
-/** The web app behind a guard: host checks locally, host + token remotely. */
-function buildApp(guard: MiddlewareHandler): Hono {
+/** The web app behind a guard: host checks locally, host + token remotely. `routes` go before the static files. */
+function buildApp(guard: MiddlewareHandler, routes?: (app: Hono) => void): Hono {
   const app = new Hono();
   app.use('*', guard);
+  routes?.(app);
   if (existsSync(WEB_DIST)) {
     app.use('*', serveStatic({ root: WEB_DIST }));
     app.get('*', serveStatic({ root: WEB_DIST, path: 'index.html' }));
@@ -354,10 +369,32 @@ function buildApp(guard: MiddlewareHandler): Hono {
   return app;
 }
 
+/**
+ * What a card session's hook calls (hooks/cc-control-hook.mjs), on loopback only, never on the
+ * remote listener. It must carry the card's token in a header: a custom header can't be sent
+ * cross-site without a CORS preflight, which this never answers, so web pages can't forge it.
+ */
+function hookRoutes(app: Hono): void {
+  app.post('/hooks/:event', async (c) => {
+    const id = c.req.header('x-cc-control-card') ?? '';
+    const token = c.req.header('x-cc-control-token') ?? '';
+    if (!id || !token) return c.text('Forbidden', 403);
+    let input: unknown;
+    try { input = await c.req.json(); } catch { return c.text('Bad request', 400); }
+    if (c.req.param('event') !== 'SessionStart') return c.body(null, 204);
+    try {
+      const out = cards.sessionStart(id, token, (input ?? {}) as object);
+      return out ? c.json(out) : c.body(null, 204);
+    } catch (e) {
+      return c.text((e as Error).message, 403);
+    }
+  });
+}
+
 const localApp = buildApp(async (c, next) => {
   if (!allowedHosts.has(c.req.header('host') ?? '')) return c.text('Forbidden host', 403);
   await next();
-});
+}, hookRoutes);
 
 const wss = new WebSocketServer({ noServer: true });
 wss.on('connection', (ws) => {
@@ -375,6 +412,7 @@ wss.on('connection', (ws) => {
   send(ws, { type: 'settings', settings: store.loadSettings() });
   send(ws, { type: 'workspaces', workspaces: store.loadWorkspaces() });
   send(ws, library());
+  send(ws, cardsMsg());
   for (const request of broker.list()) send(ws, { type: 'permission.request', request });
   for (const [id, activity] of manager.activities()) send(ws, { type: 'session.activity', id, activity });
   for (const [id, todos] of manager.allTodos()) send(ws, { type: 'session.todos', id, todos });
@@ -440,6 +478,7 @@ process.on('unhandledRejection', (reason) => {
 
 function shutdown(): void {
   manager.stopAll();
+  cards.stop();
   manager.history.stop();
   mirror.stop();
   for (const server of servers) server.close();

@@ -1,11 +1,13 @@
 // WebSocket protocol shared by server and web. Plain types only (erasable TS, runs under Node type stripping).
 
+import type { Card, CardDraft } from './cards.ts';
+
 /**
  * Bump when the client starts relying on a message an older server doesn't handle. The server
  * says `hello` first; a page that hears anything else first is talking to a server from before
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
-export const PROTOCOL = 3;
+export const PROTOCOL = 4;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -319,7 +321,11 @@ export type ClientMsg =
   | { type: 'fs.list'; reqId: string; path?: string }
   | { type: 'workspace.export'; reqId: string; id: string }
   /** An untrusted WorkspaceFile; its repos are matched by name against the library. */
-  | { type: 'workspace.import'; file: unknown };
+  | { type: 'workspace.import'; file: unknown }
+  /** Ticket Line: save the card and start its session in a terminal tab. Answered with card.started or an error. */
+  | { type: 'card.start'; reqId: string; draft: CardDraft }
+  /** Take a card off the line (its terminal session keeps running). */
+  | { type: 'card.delete'; id: string };
 
 export type ServerMsg =
   /** Always the first message on a connection. */
@@ -353,4 +359,7 @@ export type ServerMsg =
   | { type: 'ok'; reqId: string }
   /** Something worth a line in the status area, e.g. what an import could not match. */
   | { type: 'info'; message: string }
-  | { type: 'error'; message: string; reqId?: string };
+  | { type: 'error'; message: string; reqId?: string }
+  /** Every card on the Ticket Line, on connect and whenever one changes. */
+  | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string }
+  | { type: 'card.started'; reqId: string; id: string };

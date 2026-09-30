@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite';
+import type { Card } from '../shared/cards.ts';
 import type { CommandPack, Settings, Workspace } from '../shared/protocol.ts';
 import { emptyPack, STARTER_PACK, validatePack } from './packs.ts';
 
@@ -16,7 +17,7 @@ const { DatabaseSync } = await import('node:sqlite');
 
 export const DB_PATH = process.env.CC_CONTROL_DB || join(homedir(), '.cc-control', 'cc-control.db');
 
-/** One SQLite file for everything cc-control owns: commands, settings, workspaces and per-session extra repos. */
+/** One SQLite file for everything cc-control owns: commands, settings, workspaces, per-session extra repos and Ticket Line cards. */
 export class Store {
   private db: DatabaseSyncType;
 
@@ -38,12 +39,17 @@ export class Store {
       CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, position INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS workspace_commands (workspace_id TEXT PRIMARY KEY, pack TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS session_dirs (session_id TEXT PRIMARY KEY, dirs TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, created INTEGER NOT NULL, token TEXT NOT NULL, data TEXT NOT NULL);
     `);
     this.db.exec('PRAGMA foreign_keys = ON');
     if (!this.db.prepare("SELECT 1 FROM meta WHERE key = 'seeded'").get()) {
       this.saveGlobalPack(STARTER_PACK);
       this.db.prepare("INSERT INTO meta (key, value) VALUES ('seeded', ?)").run(new Date().toISOString());
     }
+  }
+
+  close(): void {
+    this.db.close();
   }
 
   getMeta(key: string): string | undefined {
@@ -149,5 +155,34 @@ export class Store {
 
   setLibrarySources(sources: string[]): void {
     this.setMeta('library.sources', JSON.stringify(sources));
+  }
+
+  loadCards(): Card[] {
+    const rows = this.db.prepare('SELECT id, data FROM cards ORDER BY created').all() as { id: string; data: string }[];
+    return rows.flatMap((r) => {
+      try { return [{ ...(JSON.parse(r.data) as Card), id: r.id }]; } catch { return []; }
+    });
+  }
+
+  /** Insert or update. The token (what the card's hook proves itself with) is set once, on insert. */
+  saveCard(card: Card, token?: string): void {
+    const { id, ...data } = card;
+    this.db.prepare('INSERT INTO cards (id, created, token, data) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
+      .run(id, card.createdAt, token ?? crypto.randomUUID(), JSON.stringify(data));
+  }
+
+  cardToken(id: string): string | undefined {
+    return (this.db.prepare('SELECT token FROM cards WHERE id = ?').get(id) as { token: string } | undefined)?.token;
+  }
+
+  deleteCard(id: string): void {
+    this.db.prepare('DELETE FROM cards WHERE id = ?').run(id);
+  }
+
+  /** CARD-1, CARD-2 …: never reused, even after a card is deleted. */
+  nextCardKey(): string {
+    const n = Number(this.getMeta('cards.next') ?? '1');
+    this.setMeta('cards.next', String(n + 1));
+    return `CARD-${n}`;
   }
 }
