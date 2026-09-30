@@ -54,7 +54,7 @@ The main concepts:
 - The `claude-code-guide` agent can look things up in the official docs.
 
 ## State
-- `main` has 9 commits that are not pushed. Ask the owner before pushing.
+- `main` may have commits that are not pushed yet (`git log origin/main..HEAD`). Ask the owner before pushing.
 - Checks: `pnpm typecheck`, `pnpm test` (113 tests, `node:test`) and `pnpm build` all pass.
 
 ## How to work here
