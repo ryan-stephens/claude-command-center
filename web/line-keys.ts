@@ -11,7 +11,7 @@ import { exportWorkspace, importWorkspace } from './commands.ts';
 import { openSession } from './keys.ts';
 import { currentWorkspace, flash, get, set, setFilter, setInboxView, type WorkspaceAction } from './store.ts';
 import {
-  addComposer, additionOf, cardFolders, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
+  addComposer, additionOf, cardFolders, stepCard, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
@@ -33,6 +33,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['/', 'Filter the cards by words'],
       ['Tab (card open)', 'Overview or Context (on a narrow window, Transcript too)'],
       ['Esc (card open)', 'Back to the board, the card still focused'],
+      ['← → (card open)', 'The previous / next card on the board, in column order'],
       ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app'],
@@ -442,6 +443,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
   switch (e.key) {
     case 'Escape': set({ line: { ...s.line, drawer: null } }); return true;
+    case 'ArrowLeft': case 'ArrowRight': if (s.line.drawer) openNeighbour(s.line.drawer, e.key === 'ArrowRight' ? 1 : -1); return true;
     case 'Tab': {
       // Wide screens show the transcript beside the tabs, so Tab only switches Overview and Context.
       const tabs = window.matchMedia?.('(min-width: 1024px)').matches ? TABS.filter((t) => t !== 'tx') : [...TABS];
@@ -546,6 +548,14 @@ function hideTicket(key: string, cols: ReturnType<typeof boardOf>): void {
   send({ type: 'tickets.hide', key, hidden: true });
   set({ line: { ...s.line, focus: next } });
   flash(`Hid ${key} from the Inbox. Shift+T shows hidden tickets again.`);
+}
+
+/** ← → with a card open: the next card the board shows opens in its place, on the same tab. */
+export function openNeighbour(id: string, delta: number): void {
+  const s = get();
+  const next = stepCard(boardOf(s), id, delta);
+  if (!next.id) { flash(delta > 0 ? 'That is the last card on the board' : 'That is the first card on the board'); return; }
+  set({ line: { ...s.line, focus: next.id, drawer: next.id } });
 }
 
 /** Take a card off the line (the Delete dialog's yes). */

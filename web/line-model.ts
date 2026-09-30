@@ -58,6 +58,17 @@ export function moveFocus(cols: { cards: Card[]; tickets?: Ticket[] }[], focus: 
   return focus;
 }
 
+/**
+ * ← → with a card open: the previous or next card the board shows, column by column (Inbox
+ * tickets aren't cards, so they are skipped). Where it is among them, for "3 of 7".
+ */
+export function stepCard(cols: { cards: Card[] }[], id: string, delta: number): { id: string | null; at: number; total: number } {
+  const ids = cols.flatMap((l) => l.cards.map((c) => c.id));
+  const at = ids.indexOf(id);
+  const next = at < 0 ? null : ids[at + delta] ?? null;
+  return { id: next, at, total: ids.length };
+}
+
 /** A card is still starting until its session reports in. */
 export function booting(c: Card): boolean {
   return !c.sessionId;

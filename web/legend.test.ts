@@ -45,11 +45,11 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(labels({ view: 'composer', pane: 'pkt', cardRepo: true, bindings: {} }).includes('Keep for the workspace'));
   assert.ok(!labels({ view: 'composer', pane: 'pkt', preview: true, bindings: {} }).includes('Remove'), 'the preview has nothing to toggle');
   assert.ok(labels({ view: 'composer', pane: 'go', bindings: {} }).includes('Change'));
-  assert.deepEqual(labels({ view: 'drawer', bindings: {} }), ['Back to the board', 'Overview · Context', 'Run recipe', 'Remove card']);
+  assert.deepEqual(labels({ view: 'drawer', bindings: {} }), ['Back to the board', 'Previous / next card', 'Overview · Context', 'Run recipe', 'Remove card']);
   assert.ok(labels({ view: 'drawer', hasSession: true, bindings: {} }).includes('Type to it here'));
-  assert.deepEqual(labels({ view: 'drawer', canAdd: true, hasWaiting: true, bindings: {} }).slice(2, 5), ['Run recipe', 'Add context', 'Take back']);
-  assert.deepEqual(labels({ view: 'drawer', canTry: true, bindings: {} }).slice(2, 4), ['Try it', 'Run recipe']);
-  assert.deepEqual(labels({ view: 'drawer', canTry: true, appRunning: true, appUp: true, bindings: {} }).slice(2, 4), ['Stop the app', 'Open the app']);
+  assert.deepEqual(labels({ view: 'drawer', canAdd: true, hasWaiting: true, bindings: {} }).slice(3, 6), ['Run recipe', 'Add context', 'Take back']);
+  assert.deepEqual(labels({ view: 'drawer', canTry: true, bindings: {} }).slice(3, 5), ['Try it', 'Run recipe']);
+  assert.deepEqual(labels({ view: 'drawer', canTry: true, appRunning: true, appUp: true, bindings: {} }).slice(3, 5), ['Stop the app', 'Open the app']);
   assert.ok(labels({ view: 'board', hasFocus: true, canTry: true, bindings: {} }).includes('Try it'));
   assert.ok(labels({ view: 'board', hasFocus: true, ship: 'ship', bindings: {} }).includes('Ship'));
   assert.ok(labels({ view: 'drawer', ship: 'merge', bindings: {} }).includes('Merge'));

@@ -13,8 +13,8 @@ import { importWorkspace } from '../commands.ts';
 import { openSession } from '../keys.ts';
 import { INBOX_VIEWS, inView, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
-import { booting, cardActivity, elapsed, needsYou, progress, shortPath, ticketFocus } from '../line-model.ts';
-import { boardOf, editRecipe, openAddComposer, openApp, openCard, openComposer, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
+import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard, ticketFocus } from '../line-model.ts';
+import { boardOf, editRecipe, openAddComposer, openApp, openCard, openComposer, openNeighbour, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
 import { cardRecipe, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
 import { prLine } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
@@ -324,6 +324,11 @@ function CardView({ id }: { id: string }) {
   const tab = useStore((s) => s.line.tab);
   const ws = useStore((s) => s.workspaces.find((w) => w.id === card?.workspaceId) ?? null);
   const wide = useWide();
+  // Where it sits among the cards the board shows, for ← →.
+  useStore((s) => s.line.filter);
+  useStore((s) => s.line.q);
+  useStore((s) => s.cards);
+  const place = stepCard(boardOf(get()), id, 0);
   if (!card) return null;
   const stage = { inbox: 'Inbox', plan: 'Plan', build: 'Build', needs: 'Needs you', try: 'Try it', ship: 'Ship', done: 'Done' }[card.stage];
   const left = tab === 'tx' && wide ? 'over' : tab;
@@ -342,6 +347,13 @@ function CardView({ id }: { id: string }) {
           </div>
           <h2 className="truncate text-[19px] font-bold leading-snug tracking-tight">{card.title}</h2>
         </div>
+        {place.at >= 0 && place.total > 1 && (
+          <div className="flex shrink-0 items-center gap-1.5 text-sm text-faint">
+            <button className="hover:text-ink disabled:opacity-40" disabled={place.at === 0} onClick={() => openNeighbour(id, -1)} title="The previous card on the board"><Key k="←" size="sm" /></button>
+            <span className="tabular-nums">Card {place.at + 1} of {place.total}</span>
+            <button className="hover:text-ink disabled:opacity-40" disabled={place.at === place.total - 1} onClick={() => openNeighbour(id, 1)} title="The next card on the board"><Key k="→" size="sm" /></button>
+          </div>
+        )}
         <button className="flex shrink-0 items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={() => set({ line: { ...get().line, drawer: null } })}>Back to the board <Key k="Esc" size="sm" /></button>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">

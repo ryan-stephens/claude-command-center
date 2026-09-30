@@ -1117,6 +1117,16 @@ This departs from the mock (`path-line.html` drew a 620 px drawer) at the owner'
 - At 900 px wide, Transcript was a tab again, and `Tab` reached it.
 - No console errors. `pnpm typecheck` and `pnpm test` (210) pass.
 
-**Not yet:**
-- Stepping to the previous or next card without going back to the board.
-- The legend's `Tab` still says *Overview · Context* on a narrow window, where it also reaches Transcript.
+**Amended the same day: `←` / `→` step to the previous or next card**, asked for by the owner.
+- The order is the board's: column by column, only the cards the board shows (the workspace and the `/` filter apply). Inbox tickets are skipped.
+- The next card opens in the same place and on the same tab, and the board's focus follows it, so `Esc` returns to the card you ended on.
+- At either end it says it is the first or last card and stays put.
+- The header shows "Card 2 of 7" between two arrow keycaps, which can also be clicked (`stepCard` in `line-model.ts`, tested).
+- The legend shows *Previous / next card*, and `?` has a row for it.
+- **Verified** (isolated server, 8 scripted checks):
+  - `→` from SHOP-162 on its Context tab opened SHOP-149, still on Context.
+  - `→` again said it was the last card, and `←` went back.
+  - `Esc` left SHOP-162 focused, and `?` has the row.
+  - No console errors. `pnpm test` (211) passes.
+
+**Not yet:** the legend's `Tab` still says *Overview · Context* on a narrow window, where it also reaches Transcript.

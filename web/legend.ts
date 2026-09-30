@@ -154,6 +154,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   if (x.view === 'drawer') {
     return [
       { keys: ['Esc'], label: 'Back to the board' },
+      { keys: ['←', '→'], label: 'Previous / next card' },
       { keys: ['Tab'], label: 'Overview · Context' },
       ...tryKeys(x),
       { keys: ['e'], label: 'Run recipe' },
