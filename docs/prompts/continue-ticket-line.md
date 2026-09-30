@@ -24,6 +24,8 @@ The owner likes the mock a lot. Keep its look, its words and its keys, including
 
 - **7 (§34):** Ship. `s` opens the sheet (commit, branch, the files with the card's own ticked, the PR written from the ticket); `Enter` makes a branch when on the default one, stages the ticked files by name, commits, pushes and runs `gh pr create`; the card goes to Ship and follows the PR through `gh pr view`; `s` again squash-merges it and the card goes to Done. Tested against a local bare origin and a stand-in `gh` (`CC_CONTROL_GH`); **a real `gh pr create` has not been run**, because it publishes: ask the owner which repo to try it on.
 
+**Before adding any tracker, environment tool or code host, read PLAN §35:** teams differ (GitHub and Azure DevOps / TFS, Okteto backends with a UI proxy change, multi-repo workspaces), so each step stays one swappable module with workspace-level configuration.
+
 **Next: ask the owner.** The build order is done. Candidates, none started: a real PR on a repo they choose; connecting their Jira (credentials pending); Slack posts from Ship; `f` feedback through the channel (a preview flag); the open questions below; polish from using it.
 
 **Open questions for the owner** (asked at the end of milestones 3 and 5, not yet answered; they do not block run recipes or Ship): whether the drag-and-drop repo library strip should come back on the line, and whether the in-app new-session dialog (`Alt+Shift+N`) is still wanted. Jira credentials (site URL, email, API token) will come from the owner; when they do, try the live site and adjust `fromJira` / `splitAcceptance`.

@@ -861,3 +861,24 @@ Keys: `s` on the board and in the drawer (Ship, or Merge once there is a PR), wi
 **Not verified:** a real `gh pr create` on GitHub. That publishes a PR, so it waits for the owner to say which repo to try it on.
 
 **Not yet:** posting to Slack; moving the ticket to Done in Jira or Trello (the import is read-only); shipping from more than one repo per card; `f` (feedback / fix, needs the channel).
+
+## 35. Direction: every team's processes differ, so each step stays swappable
+
+2026-09-30, from the owner after milestone 7. Ticketing, starting a dev environment and opening PRs all vary by team, and will keep changing: some repos are on GitHub, some on Azure DevOps (TFS); a workspace can span several repos with different setups. **Example (Veterans United Home Loans):** backend dev environments are spun up with **Okteto**, and the UI has to be pointed at them through a proxy config change. cc-control can't handle every setup for people, but it should know the shapes these take and leave room to add new ones later without rewrites.
+
+**Where the code stands** (honest inventory, so later work knows what to loosen):
+
+| Step | Today | Hard-wired to | The seam to grow |
+|---|---|---|---|
+| Tickets | `server/tickets.ts`: Jira, Trello, demo; each a fetch that returns the shared `Ticket` shape; project → workspace mapping | the `TicketSource` union (`'jira' \| 'trello'`) and one fetch per source inside `TicketService` | A source interface (`id`, `name`, `configured()`, `fetch()`), so Azure DevOps Boards, GitHub Issues or Linear are one file each. The `Ticket` shape (key, description, acceptance, comments, links) already fits them. |
+| Dev environment (Try it) | `server/recipes.ts`: one recipe **per repo**, detected or written; steps run in the card's folder | one repo per run; every step runs in the same folder with the same environment | **Workspace recipes**: steps that name their repo (`cwd`), set environment variables, and say whether they are long-running. Okteto fits as a step (`okteto up` in the backend repo, long-running, its endpoint read from its output) followed by a UI step with the proxy target passed in (an env var such as `VITE_API_PROXY`, or a config file the step writes), then the UI's dev server. A teardown step (`okteto down`) runs on stop. Keep recipes in the workspace file so a team shares one. |
+| Code host (Ship) | `server/ship.ts`: git for branch / commit / push (host-neutral); `gh` for create, view, merge | `gh` and GitHub's PR JSON | A host interface (`createPr`, `viewPr`, `merge`), picked from the remote URL: `github.com` → gh; `dev.azure.com` / `*.visualstudio.com` / an on-prem TFS URL → `az repos pr create` / `show` / `update --auto-complete`, or the REST API with a PAT kept on the server like the Jira token. The sheet's words (`shared/ship.ts`) don't change: Azure DevOps PRs take the same title and markdown body, and link work items with `#123` / `AB#123`. |
+| Hooks and context | Claude Code hooks via `--settings`; the packet's three layers | Claude Code (by design) | Already open: workspace notes and per-card extras carry anything team-specific ("the UI proxies to your Okteto namespace; run okteto up first"). |
+
+**Rules for new work:**
+- A new ticket tracker, environment tool or code host should be **one module behind an interface**, chosen by configuration or detected (remote URL, files in the repo), never an `if` threaded through the UI.
+- **Configuration lives with the workspace** (and its shareable file), since that's where one team's way of working sits; per-repo detection stays the fallback.
+- When a setup can't be automated, **say what to do instead of guessing**: a recipe step can be a note ("Point the UI at your Okteto URL in proxy.config.js"), and Ship can stop after the push with "open the PR in Azure DevOps".
+- Tokens stay on the server, as for Jira and Trello.
+
+**Not started.** This records the direction. The first concrete pieces will likely be workspace recipes (several repos, env and long-running steps, which the Okteto case needs) and an Azure DevOps host for Ship, once there is a real repo to try them on.
