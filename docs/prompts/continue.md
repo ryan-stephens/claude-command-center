@@ -16,8 +16,8 @@ It is **keyboard-first with the keys visible**: keycaps drawn on everything, a l
 
 The main concepts:
 - **Workspaces:** named groups of repos. Every session in a workspace can use all of its repos.
-- **A repo library** scanned from source folders, where you drag a repo onto a workspace or a session.
-- **Home:** three columns (workspaces → sessions → the selected session docked beside the list), with sessions grouped as Needs you / Working / Done / Earlier.
+- **A repo library** scanned from source folders; `+` on the line adds a repo from it to a workspace.
+- **The Ticket Line is the home page** (PLAN §27–§30): cards on a board (Inbox → Plan → Build → Needs you → Try it → Ship → Done), each following a Claude Code session in a terminal tab, with the sessions that have no card in an Unticketed row underneath. A session opens full screen from its card (`Ctrl+Enter`) or the row. The old three-column Home is gone.
 
 **Latest direction (2026-09-29):** the owner still reaches for plain Claude Code terminals over the app. They want it to *sit on top of* terminal sessions and to help people see and follow the development work, rather than replicate Claude Code features. How to get there is open; talk it through with them. `docs/PLAN.md` §26 has the reasoning. **Chosen (§27):** the *Ticket Line*, a board of tickets moving through the loop with a new-card screen for context. The spec is `docs/futures/path-line.html`; the build handoff is `docs/prompts/continue-ticket-line.md`.
 
@@ -36,8 +36,8 @@ The main concepts:
   - `store.ts` (SQLite: commands, workspaces, settings), `repo-library.ts`, `fs-browse.ts`, `file-search.ts`, `packs.ts` / `commands.ts` (workflows).
 - **Shared:** `shared/protocol.ts` holds the WebSocket message types and `PROTOCOL`. Bump `PROTOCOL` when the page starts relying on a message an older server would drop.
 - **Web** (`web/`, React 19 + Zustand + Tailwind, Vite):
-  - `store.ts` (state), `ws.ts` (messages), `keys.ts` (all key routing and the `?` keymap), `legend.ts` (the bottom key bar), `bindings.ts` (rebindable shortcuts).
-  - Components: `Home.tsx`, `SessionView.tsx` (docked or full screen), `Approval.tsx`, `Transcript.tsx`, `Dialogs.tsx`, `FolderPicker.tsx`, `NumPad.tsx`, `Palette.tsx`.
+  - `store.ts` (state), `ws.ts` (messages), `keys.ts` (key routing and the `?` keymap), `line-keys.ts` / `line-model.ts` (the line's keys and pure logic), `legend.ts` (the bottom key bar), `bindings.ts` (rebindable shortcuts).
+  - Components: `TicketLine.tsx` (the board, the Unticketed row, the drawer), `NewCard.tsx`, `SessionView.tsx` (a session full screen), `Approval.tsx`, `Transcript.tsx`, `Dialogs.tsx`, `FolderPicker.tsx`, `NumPad.tsx`, `Palette.tsx`.
   - Pure logic lives in small modules with `*.test.ts` next to them.
 - **Spikes:** `spike/`, including `channel.mjs`, a tested Claude Code channel server.
 
@@ -57,7 +57,7 @@ The main concepts:
 
 ## State
 - `main` may have commits that are not pushed yet (`git log origin/main..HEAD`). Ask the owner before pushing.
-- Checks: `pnpm typecheck`, `pnpm test` (150 tests, `node:test`) and `pnpm build` all pass.
+- Checks: `pnpm typecheck`, `pnpm test` (149 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
 
 ## How to work here
 - Windows 11, Node 24, pnpm; files are CRLF. The Bash tool's heredocs eat backslashes (regexes, Windows paths), so use Write/Edit, or a Python script written with Write.

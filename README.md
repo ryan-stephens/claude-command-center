@@ -1,25 +1,25 @@
 # Command Center for Claude Code
 
-**A keyboard-driven cockpit for your Claude Code sessions.** Group your repos into workspaces, see at a glance what needs you, what's working and what's done, and drive every session with the arrow keys, the number pad or your voice. Everything also works with a mouse.
+**A keyboard-driven cockpit for your Claude Code sessions.** Your work is a board of cards, the **Ticket Line**: each card gathers its context, starts Claude Code in a terminal tab, and moves by itself from Plan to Build to Try it as the session works. Group your repos into workspaces, see at a glance what needs you, and drive every session with the arrow keys, the number pad or your voice. Everything also works with a mouse.
 
-![Home: workspaces, their sessions and the selected session itself beside the list, over the repo library, with the keys that work right now along the bottom](docs/screenshots/home.png)
+![The Ticket Line: workspace chips and the workspace's repos along the top, the columns Inbox to Done with a card that needs you, sessions without a card in the Unticketed row, and the keys that work right now along the bottom](docs/screenshots/line.png)
 
 ## Why
 
 Running several Claude Code sessions across several repos means a lot of terminal-tab hunting: which one finished, which one is waiting on a permission prompt, which repo it was in, and typing the same "run the tests and summarise failures" prompt for the tenth time. Command Center puts all of it on one screen and makes the common moves single keystrokes.
 
-- **Workspaces.** Group the repos you work on together ("Storefront", "Payments") and pick them with `1`–`9`. **Every session in a workspace can use all of its repos**, so Claude can change the API and the web app in one go. Your repo folder becomes a **repo library** you drag from: drop a repo on a workspace to add it, or on a single session to give just that one another repo.
-- **Know who needs you.** Each workspace's sessions are sorted into *Needs you*, *Working*, *Done* and *Earlier*. `Alt+N` jumps to the next one that needs you from anywhere; `Y` / `A` / `N` answers.
-- **Work without leaving the list.** The selected session shows beside the list, live: its conversation, approvals, questions and plans, to-do list and message box. `→` or `Enter` steps into it to type, answer or run a workflow; `Esc` steps back out; `Ctrl+Enter` makes it full screen and brings it back.
+- **The Ticket Line.** `c` makes a card: pick repos from your library, write a note, choose the model (`m`) and how it starts, and `p` previews exactly what Claude will be told. `Ctrl+Enter` makes the branch and opens `claude` in a Windows Terminal tab with that context. From then on the card follows its session: *Plan*, *Build*, amber in *Needs you* when it asks something, *Try it* when its turn ends with changes. `Ctrl+Enter` on a card opens its session full screen.
+- **Workspaces.** Group the repos you work on together ("Storefront", "Payments") and pick them with `1`–`9`. **Every card and session in a workspace can use all of its repos**, so Claude can change the API and the web app in one go. `+` adds a repo from your **repo library** (the git repos under folders you pick with `F`), `−` removes one.
+- **Know who needs you.** Cards that need you turn amber, with a chime. Sessions without a card sit in the *Unticketed* row under the board (`u`), needs-you first. `Alt+N` jumps to the next one that needs you from anywhere; `Y` / `A` / `N` answers.
 - **Approvals you can judge.** "Claude wants to check app.js for syntax errors", rated *safe*, *makes changes* or *careful* (deletes files, pushes, installs…), with what it touches. The raw command sits behind `D`.
 - **Follow along in plain words.** Claude's actions fold into readable steps ("Read index.html", "Changed src/app.js +3") with a real diff behind "See change", and a live line says what it's doing right now. `Esc` stops it, just like in the terminal.
 - **Workflows on the number pad.** The pad on screen is drawn like the one under your hand; each key is a saved instruction such as "Run the tests" or "Commit my work". Workspaces come with starter workflows, and share them as a file.
 - **Everything Claude Code does, at your fingertips.** Type `/` for commands and skills (`/cl` → `/clear`) and `@` for files in the repos Claude can use. `Shift+Tab` switches between *asks first*, *accepts edits*, *plan first* and *auto*, and a plan arrives as a card to approve. Commands with choices list them (`/model`, `/effort`, on/off), and Claude's questions and approvals are picked with the arrow keys and `Enter`, like Claude Code (or `1`–`4`, `Y`/`A`/`N`); and its to-do list ticks along above the message box. `↑` recalls earlier messages, and you can paste or drop images.
 - **Keys you can see.** Every button shows its key, and a bar along the bottom lists the ones that work right now. `?` lists them all (and lets you rebind them); `Ctrl+K` searches everything.
 
-| A session waiting for your OK | Light theme | On a phone |
+| A session waiting for your OK | Dark theme, on the Unticketed row | On a phone |
 |---|---|---|
-| ![A plain-language approval card with Y, A and N keys, beside the on-screen number pad](docs/screenshots/approval.png) | ![Home in the light theme](docs/screenshots/home-light.png) | ![Phone layout with workspace chips](docs/screenshots/phone.png) |
+| ![A plain-language approval card with Y, A and N keys, beside the on-screen number pad](docs/screenshots/approval.png) | ![The Ticket Line in the dark theme with the Unticketed row focused](docs/screenshots/line-dark.png) | ![Phone layout of the Ticket Line](docs/screenshots/phone.png) |
 
 ## Quick start
 
@@ -42,20 +42,17 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `Ctrl+K` | Search actions, workflows, workspaces and sessions |
 | | `?` | Every key (`B` there to rebind) |
 | | `Alt+↑` / `Alt+↓` | Previous / next session |
-| | `Alt+L` | The Ticket Line: your work as cards on a board (again: back home) |
-| Home | `← →` | Move between columns: workspaces, sessions, the selected session |
-| | `↑ ↓` | Choose; the session shows beside the list (`Ctrl+↑ ↓` moves 5 at a time, in every list) |
-| | `Enter` / `→` | Step into it: type, answer Claude, run workflows (`Esc` back out) |
-| | `Ctrl+Enter` | Full screen, and back beside the list |
-| | `1`–`9` / `0` | Pick a workspace / everything outside your workspaces |
-| | `N` / `W` | New session here / new workspace |
-| | `+` / `−` | Add a repo to this workspace / remove one |
-| | `Tab` | The repo library |
-| | `C` / `Shift+C` | Fold what you're in (workspace column, a group of sessions, the repo library, the session beside the list) / open every group |
-| | `F` (in the library) | Pick the folders it lists: walk the disk with `↑ ↓ → ←`, `Space` uses the folder you're in |
-| Ticket Line | `c` | New card: pick repos, write a note, `p` previews what Claude gets, `Ctrl+Enter` starts it in a terminal tab |
+| | `Alt+L` | Back to the Ticket Line from a session |
+| Ticket Line | `c` | New card: pick repos, write a note, `m` the model, `p` previews what Claude gets, `Ctrl+Enter` starts it in a terminal tab |
 | | `← → ↑ ↓` / `Enter` | Move between cards / open one: Overview, Context (how it started, what Claude was given), Transcript (`Tab`) |
-| | `1`–`9` / `0` | One workspace's cards / all |
+| | `Ctrl+Enter` | The card's session full screen (again, or `Esc`: back to the line) |
+| | `u` | The Unticketed row: sessions without a card (`Enter` opens one, `R` / `X` rename / end it) |
+| | `1`–`9` / `0` | One workspace / all of them |
+| | `/` | Filter the cards and sessions by words |
+| | `W` / `E` / `Shift+Delete` | New workspace / edit / delete the one shown (with *All* showing, it asks which) |
+| | `+` / `−` | Add a repo from the library to the workspace / remove one |
+| | `F` | Pick the folders the repo library lists: walk the disk with `↑ ↓ → ←`, `Space` uses the folder you're in |
+| | `Alt+Shift+N` | New session in the app, without a card |
 | Pickers | `Ctrl+O` | Browse to any folder (new session, add a repo) |
 | Session | `Numpad 1–9` / `Alt+1–9` | Run a workflow |
 | | `Y` / `A` / `N` | Allow once / always / don't allow (`Tab` first if you're in the message box) |
@@ -68,7 +65,7 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 
 ## Sharing with your team
 
-**A whole workspace:** on home, select it and press `Shift+E` (or *Export* in its editor). The file lists its repos by folder name and carries its workflows; a teammate imports it with `Shift+I`, and it matches the names against their own repo library.
+**A whole workspace:** on the Ticket Line, show it (`1`–`9`) and press `Shift+E` (or *Export* in its editor). The file lists its repos by folder name and carries its workflows; a teammate imports it with `Shift+I`, and it matches the names against their own repo library.
 
 **Per-repo workflows:** put a pack at `.cc-control/commands.json` in any repo, and everyone who opens a session there gets the same keys:
 
