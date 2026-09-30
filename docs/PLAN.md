@@ -959,3 +959,13 @@ Keys: `s` on the board and in the drawer (Ship, or Merge once there is a PR), wi
   - `Shift+T` listed it, and `Enter` showed it again; it was back in the Inbox.
   - It stayed hidden across a reload, and the legend shows *Hide*. No console errors.
   - Unit tests cover hiding surviving a new service on the same store, and the Inbox leaving out only that ticket. `pnpm test` (192) passes.
+
+## 39. Home from anywhere: the logo, and Alt+L
+
+2026-09-30, from the owner: people will click the top-left logo to get back to the home page, and the keyboard needs an obvious way too.
+
+- **The logo** ("Command Center", now with an icon, a hover state and its keycap) goes to the board from anywhere. It leaves a session opened full screen, and closes the card that's open, the new-card screen (whose draft is dropped, as `Esc` drops it) and any dialog. The workspace shown and the focused card stay as they were (`goHome` in `line-keys.ts`).
+- **`Alt+L`** (rebindable, the existing *ticketLine* action) now does the same everywhere. Before, it only worked from a session, and it returned to an open drawer. It works while typing, and **through dialogs**: dialogs normally keep every key to themselves, but the home key gets past them. The one exception is the key-rebinding dialog, where `Alt+L` may be the key being assigned.
+- `Esc`, `Numpad 0`, `Alt+0` and the expand key still step back to the line as it was, drawer kept. That keeps the round trip from a card to its session and back. Home is for "take me to the board".
+- The keycap shows next to the logo; `?` says "Home: the Ticket Line board, from anywhere (or click the logo)".
+- **Verified** (isolated server; 10 scripted checks): the logo from an open card; `Alt+L` from the new-card screen while typing in its title, from the `Shift+T` dialog, and from a session opened full screen with `Ctrl+Enter`; the logo from a session; the `?` row. No console errors. `pnpm test` (192) passes.

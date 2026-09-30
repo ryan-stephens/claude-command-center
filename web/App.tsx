@@ -6,10 +6,10 @@ import { SessionView } from './components/SessionView.tsx';
 import { Icon, Key, KeyHint, WsBadge } from './components/ui.tsx';
 import { armOnFirstGesture, setNotificationHandler } from './attention.ts';
 import { bindingsFor, displayCombo, type ActionId } from './bindings.ts';
-import { backToLine, cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession } from './keys.ts';
+import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession } from './keys.ts';
 import { legendFor, lineLegendFor } from './legend.ts';
 import { packetRows } from './line-model.ts';
-import { openLine } from './line-keys.ts';
+import { goHome } from './line-keys.ts';
 import { TicketLine } from './components/TicketLine.tsx';
 import { stopVoice } from './voice.ts';
 import { maybeShowWelcome } from './components/Welcome.tsx';
@@ -84,13 +84,14 @@ function Header() {
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
     <header className="flex items-center gap-3 border-b border-line bg-col px-3 py-2 md:px-4">
-      <button onClick={() => (screen === 'session' ? backToLine() : openLine())} className="whitespace-nowrap font-semibold tracking-tight" title="The Ticket Line">
-        Command Center
+      <button onClick={goHome} className="-ml-1.5 flex items-center gap-2 whitespace-nowrap rounded-lg px-1.5 py-1 font-semibold tracking-tight hover:bg-raise" title={`Home: the Ticket Line (${k('ticketLine')})`} aria-label="Home: the Ticket Line">
+        <Icon name="grid" size={17} className="text-acc" />Command Center
+        <Key k={k('ticketLine')} size="sm" className="hidden md:inline-flex" />
       </button>
       <span className="hidden min-w-0 items-center gap-2 text-sub md:flex">
         <span className="text-faint">/</span>
         {screen === 'session'
-          ? <button className="flex items-center gap-1.5 hover:text-ink" onClick={backToLine} title="Back to the Ticket Line">Ticket Line<Key k={k('ticketLine')} size="sm" /></button>
+          ? <button className="flex items-center gap-1.5 hover:text-ink" onClick={goHome} title="Back to the Ticket Line">Ticket Line</button>
           : <><span className="font-semibold text-ink">Ticket Line</span>{ws && <><span className="text-faint">·</span><WsBadge ws={ws} size={20} /><span className="truncate">{ws.name}</span></>}</>}
       </span>
       {flash && <span className="truncate text-sm text-busy" role="status">{flash}</span>}

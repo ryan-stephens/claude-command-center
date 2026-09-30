@@ -25,7 +25,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'background', label: 'Send the running tool or subagent to the background', defaults: ['Ctrl+B'], inText: true },
   { id: 'sound', label: 'Sound on / off', defaults: ['M'], inText: false },
   { id: 'theme', label: 'Switch theme (match Windows, light, dark)', defaults: ['Alt+T'], inText: true },
-  { id: 'ticketLine', label: 'Back to the Ticket Line', defaults: ['Alt+L'], inText: true },
+  { id: 'ticketLine', label: 'Home: the Ticket Line board, from anywhere (or click the logo)', defaults: ['Alt+L'], inText: true },
   // Voice follows the numpad rule instead (only while not mid-message), so a plain key is fine.
   { id: 'pushToTalk', label: 'Push-to-talk (hold)', defaults: ['`', 'NumpadDecimal'], inText: false },
 ];

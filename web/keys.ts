@@ -14,7 +14,7 @@ import {
 import { lastPermissionAt, send } from './ws.ts';
 import { answersFor, enterOnRow, firstOpen, freshQa, goTo, MODE_LABEL, nextMode, pick } from './questions.ts';
 import { explainPermission } from './plain.ts';
-import { expandFromLine, LINE_SECTIONS, lineKeys, lineSessionIds, openLine } from './line-keys.ts';
+import { expandFromLine, goHome, LINE_SECTIONS, lineKeys, lineSessionIds, openLine } from './line-keys.ts';
 
 /** Keys pressed this soon after an approval card appears were aimed at something else. */
 const APPROVAL_GRACE_MS = 400;
@@ -108,7 +108,7 @@ const ACTION_HELP: Partial<Record<ActionId, string>> = {
   pushToTalk: 'Push-to-talk: hold, speak, release to send (not while you are mid-message)',
   theme: 'Theme: match Windows → light → dark',
   expand: 'On the line: the focused card’s session full screen. In a session: back to the line',
-  ticketLine: 'Back to the Ticket Line from a session',
+  ticketLine: 'Home: the Ticket Line board, from anywhere (or click the logo)',
 };
 
 /** Help sections with the current bindings filled in. */
@@ -508,7 +508,7 @@ function globalAction(e: KeyboardEvent, typing: boolean): boolean {
     case 'background': if (openId) send({ type: 'session.background', id: openId }); break;
     case 'sound': toggleSound(); break;
     case 'theme': cycleTheme(); break;
-    case 'ticketLine': if (get().screen === 'session') backToLine(); break;
+    case 'ticketLine': goHome(); break;
   }
   return true;
 }
@@ -518,6 +518,13 @@ const INPUT_DIALOGS = new Set(['sources', 'repoPicker', 'workspace', 'new', 'ren
 
 export function onKeyDown(e: KeyboardEvent): void {
   if (e.isComposing) return;
+  // Home works from anywhere, dialogs included, except while rebinding keys (that key may be the one being set).
+  const home = comboOf(e);
+  if (home && get().modal?.kind !== 'bindings' && actionFor(home, get().settings.bindings ?? {}) === 'ticketLine') {
+    e.preventDefault();
+    goHome();
+    return;
+  }
   // A dialog that handles a key may close itself before the event bubbles here; never let that
   // same keypress act on the screen underneath (Enter would fire a key, Esc would leave the session).
   if (e.target instanceof Element && e.target.closest('[role=dialog]')) return;

@@ -90,6 +90,17 @@ export function openLine(): void {
   set({ screen: 'line', line: { ...s.line, focus }, modal: null });
 }
 
+/**
+ * Home: the board, from anywhere. Leaves a session, closes the card that is open, the new-card
+ * screen (its draft is dropped, as Esc drops it) and any dialog; the workspace shown and the
+ * card focused stay as they were. The logo and Alt+L (rebindable) do this.
+ */
+export function goHome(): void {
+  const s = get();
+  set({ openId: null, composer: null, modal: null, line: { ...s.line, drawer: null, searching: false } });
+  openLine();
+}
+
 /** The cards' sessions, in column order (what Alt+↑ ↓ walk from a session). Ctrl+K finds any other session. */
 export function lineSessionIds(): string[] {
   const s = get();

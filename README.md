@@ -49,7 +49,7 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `Ctrl+K` | Search actions, workflows, workspaces and sessions |
 | | `?` | Every key (`B` there to rebind) |
 | | `Alt+↑` / `Alt+↓` | Previous / next session |
-| | `Alt+L` | Back to the Ticket Line from a session |
+| | `Alt+L` (or click the logo) | Home: the Ticket Line board, from anywhere (a session, a card, the new-card screen, a dialog) |
 | Ticket Line | `n` / `Enter` (a ticket in the Inbox) | Start work on it: the new-card screen with the ticket as context |
 | | `Shift+T` | Tickets: Jira and Trello status, demo tickets, which workspace each project goes to, and tickets you hid |
 | | `Delete` (a ticket in the Inbox) | Hide it from the Inbox (nothing changes in Jira or Trello) |
