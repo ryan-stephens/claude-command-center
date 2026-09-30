@@ -3,7 +3,7 @@
 
 export type ActionId =
   | 'palette' | 'help' | 'nextAttention' | 'prevSession' | 'nextSession'
-  | 'newSession' | 'expand' | 'interrupt' | 'background' | 'sound' | 'theme' | 'pushToTalk';
+  | 'newSession' | 'expand' | 'interrupt' | 'background' | 'sound' | 'theme' | 'pushToTalk' | 'ticketLine';
 
 export interface ActionDef {
   id: ActionId;
@@ -25,6 +25,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'background', label: 'Send the running tool or subagent to the background', defaults: ['Ctrl+B'], inText: true },
   { id: 'sound', label: 'Sound on / off', defaults: ['M'], inText: false },
   { id: 'theme', label: 'Switch theme (match Windows, light, dark)', defaults: ['Alt+T'], inText: true },
+  { id: 'ticketLine', label: 'Ticket Line (and back)', defaults: ['Alt+L'], inText: true },
   // Voice follows the numpad rule instead (only while not mid-message), so a plain key is fine.
   { id: 'pushToTalk', label: 'Push-to-talk (hold)', defaults: ['`', 'NumpadDecimal'], inText: false },
 ];

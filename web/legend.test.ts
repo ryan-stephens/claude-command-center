@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { legendFor, type LegendInput } from './legend.ts';
+import { legendFor, lineLegendFor, type LegendInput } from './legend.ts';
 
 const base: LegendInput = {
   screen: 'list', homeCol: 'sessions', zone: 'composer', pending: false, busy: false, drafting: false,
@@ -63,4 +63,16 @@ test('a question or a plan changes the answer keys', () => {
   const p = labels({ screen: 'session', zone: 'board', pending: true, pendingKind: 'plan' });
   assert.ok(p.includes('Y Start the plan') && p.includes('N Keep planning'));
   assert.ok(labels({ screen: 'session', zone: 'composer' }).includes('⇧Tab Mode'));
+});
+
+test('the Ticket Line bar follows the view and the new-card panel', () => {
+  const labels = (x: Parameters<typeof lineLegendFor>[0]) => lineLegendFor(x).map((i) => i.label);
+  assert.deepEqual(labels({ view: 'board', bindings: {} }), ['Move', 'New card', 'Workspace / all', 'Home']);
+  assert.ok(labels({ view: 'board', hasFocus: true, bindings: {} }).includes('Open'));
+  assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Add or remove'));
+  assert.ok(labels({ view: 'composer', pane: 'pkt', bindings: {} }).includes('Include or leave out'));
+  assert.ok(!labels({ view: 'composer', pane: 'pkt', preview: true, bindings: {} }).includes('Remove'), 'the preview has nothing to toggle');
+  assert.ok(labels({ view: 'composer', pane: 'go', bindings: {} }).includes('Change'));
+  assert.deepEqual(labels({ view: 'drawer', bindings: {} }), ['Back to the board', 'Overview · Context · Transcript', 'Remove card']);
+  assert.deepEqual(lineLegendFor({ view: 'board', bindings: {} }).at(-1)!.keys, ['Esc', 'Alt+L']);
 });

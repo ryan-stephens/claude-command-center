@@ -5,6 +5,7 @@ import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
 import { keymap, openSession } from '../keys.ts';
+import { deleteCard } from '../line-keys.ts';
 import { get, NO_BINDINGS, sessionById, set, setScope, useStore, type RepoTarget } from '../store.ts';
 import { createSession, send, setSources } from '../ws.ts';
 import { BindingsDialog } from './BindingsDialog.tsx';
@@ -35,6 +36,7 @@ export function Dialogs() {
     case 'repoPicker': return <RepoPicker target={modal.target} />;
     case 'repoRemove': return <RepoRemover target={modal.target} />;
     case 'sources': return <SourcesDialog />;
+    case 'deleteCard': return <DeleteCardDialog id={modal.id} />;
   }
 }
 
@@ -470,6 +472,28 @@ function DeleteWorkspaceDialog({ id }: { id: string }) {
       <div className="mt-5 flex justify-end gap-2.5">
         <button className="btn" onClick={close}>Keep it<Key k="N" size="sm" /></button>
         <button className="btn btn-primary" onClick={doIt}>Delete<Key k="Y" size="sm" tone="ghost" /></button>
+      </div>
+    </Overlay>
+  );
+}
+
+function DeleteCardDialog({ id }: { id: string }) {
+  const card = useStore((s) => s.cards.find((c) => c.id === id));
+  const doIt = () => { deleteCard(id); close(); };
+  useDialogKeys((e) => {
+    const k = e.key.toLowerCase();
+    if (k === 'y' || k === 'enter') doIt();
+    else if (k === 'n' || k === 'escape') close();
+    else return false;
+    return true;
+  });
+  return (
+    <Overlay label="Remove card">
+      <DialogTitle>Take {card ? `${card.key} ${card.title}` : 'this card'} off the line?</DialogTitle>
+      <p className="text-sub">Only the card goes. Its terminal tab, session, branch and changes stay as they are.</p>
+      <div className="mt-5 flex justify-end gap-2.5">
+        <button className="btn" onClick={close}>Keep it<Key k="N" size="sm" /></button>
+        <button className="btn btn-primary" onClick={doIt}>Remove<Key k="Y" size="sm" tone="ghost" /></button>
       </div>
     </Overlay>
   );

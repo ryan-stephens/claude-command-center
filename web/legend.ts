@@ -131,3 +131,45 @@ export function legendFor(x: LegendInput): LegendItem[] {
     ...(!x.pending ? [{ keys: ['E'], label: 'Edit key' }, { keys: ['C'], label: x.docked ? 'Fold this pane' : 'Fold pad' }] : []),
   ];
 }
+
+export interface LineLegendInput {
+  view: 'board' | 'drawer' | 'composer';
+  /** Board: a card is focused. */
+  hasFocus?: boolean;
+  /** New-card screen: which panel, and whether panel 2 shows the exact text. */
+  pane?: 'src' | 'pkt' | 'go';
+  preview?: boolean;
+  bindings: Bindings;
+}
+
+/** The Ticket Line's bar: the board, a card's drawer, or the new-card screen. */
+export function lineLegendFor(x: LineLegendInput): LegendItem[] {
+  if (x.view === 'composer') {
+    return [
+      { keys: ['Tab'], label: 'Next panel' },
+      ...(x.pane === 'src'
+        ? [{ keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Add or remove' }, { keys: ['/'], label: 'Search' }]
+        : x.pane === 'pkt'
+          ? (x.preview ? [] : [{ keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Include or leave out' }, { keys: ['x'], label: 'Remove' }, { keys: ['e'], label: 'Your note' }])
+          : [{ keys: ['↑', '↓'], label: 'Option' }, { keys: ['←', '→'], label: 'Change' }]),
+      { keys: ['p'], label: x.preview ? 'Back to the list' : 'Preview' },
+      { keys: ['Ctrl Enter'], label: 'Start work', tone: 'acc' },
+      { keys: ['Esc'], label: 'Cancel' },
+    ];
+  }
+  if (x.view === 'drawer') {
+    return [
+      { keys: ['Esc'], label: 'Back to the board' },
+      { keys: ['Tab'], label: 'Overview · Context · Transcript' },
+      { keys: ['Delete'], label: 'Remove card' },
+    ];
+  }
+  return [
+    { keys: ['←', '→', '↑', '↓'], label: 'Move' },
+    ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open' }] : []),
+    { keys: ['c'], label: 'New card', tone: 'acc' },
+    { keys: ['1–9', '0'], label: 'Workspace / all' },
+    ...(x.hasFocus ? [{ keys: ['Delete'], label: 'Remove' }] : []),
+    { keys: ['Esc', k(x.bindings, 'ticketLine')], label: 'Home' },
+  ];
+}

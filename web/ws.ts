@@ -1,3 +1,4 @@
+import type { CardDraft } from '../shared/cards.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import { onStatusChange } from './attention.ts';
 import { activeSession, flash, get, groupKeyOf, set, setScope } from './store.ts';
@@ -97,6 +98,12 @@ export async function listFolder(path?: string): Promise<FolderListing> {
 export async function searchFiles(sessionId: string, query: string): Promise<FileHit[]> {
   const reply = await request((reqId) => ({ type: 'fs.files', reqId, sessionId, query }));
   return (reply as Extract<ServerMsg, { type: 'fs.files' }>).hits;
+}
+
+/** Start a card: the server saves it, makes its branch and opens the terminal tab. Resolves with its id. */
+export async function startCard(draft: CardDraft): Promise<string> {
+  const reply = await request((reqId) => ({ type: 'card.start', reqId, draft }), 60_000);
+  return (reply as Extract<ServerMsg, { type: 'card.started' }>).id;
 }
 
 /** Replace the repo library's folders; rejects with the server's reason (a missing folder, say). */
@@ -238,6 +245,11 @@ function receive(msg: ServerMsg): void {
     case 'library':
       set({ library: { sources: msg.sources, repos: msg.repos, suggested: msg.suggested } });
       return;
+    case 'cards':
+      set({ cards: msg.cards, nextKey: msg.nextKey, cardModel: msg.model ?? null });
+      return;
+    case 'card.started':
+      return; // answered to the new-card screen, which waits on it
     case 'workspace.file':
       pendingWorkspaceFiles.get(msg.reqId)?.(msg.file);
       pendingWorkspaceFiles.delete(msg.reqId);

@@ -19,6 +19,7 @@ import { lastPermissionAt, send } from './ws.ts';
 import { answersFor, enterOnRow, firstOpen, freshQa, goTo, MODE_LABEL, nextMode, pick } from './questions.ts';
 import { explainPermission } from './plain.ts';
 import { listStep } from './list-step.ts';
+import { LINE_SECTIONS, lineKeys, toggleLine } from './line-keys.ts';
 
 /** Keys pressed this soon after an approval card appears were aimed at something else. */
 const APPROVAL_GRACE_MS = 400;
@@ -135,6 +136,7 @@ const ACTION_HELP: Partial<Record<ActionId, string>> = {
   pushToTalk: 'Push-to-talk: hold, speak, release to send (not while you are mid-message)',
   theme: 'Theme: match Windows → light → dark',
   expand: 'The session you are in: full screen, and back beside the list on home',
+  ticketLine: 'The Ticket Line: your work as cards on a board (again: back home)',
 };
 
 /** Help sections with the current bindings filled in. */
@@ -145,7 +147,7 @@ export function keymap(overrides: Bindings): { title: string; keys: [string, str
   ];
   const global = ACTIONS.filter((a) => a.id !== 'pushToTalk').map((a) => row(a.id));
   global.push(['B (in this overlay)', 'Change these shortcuts']);
-  const sections = [{ title: 'Anywhere', keys: global }, ...FIXED_SECTIONS.map((s) => ({ ...s, keys: [...s.keys] }))];
+  const sections = [{ title: 'Anywhere', keys: global }, ...[...LINE_SECTIONS, ...FIXED_SECTIONS].map((s) => ({ ...s, keys: [...s.keys] }))];
   const voice = sections.find((x) => x.title.startsWith('Voice'))!;
   voice.keys = [row('pushToTalk'), ...voice.keys];
   return sections;
@@ -753,6 +755,7 @@ function globalAction(e: KeyboardEvent, typing: boolean): boolean {
     case 'background': if (openId) send({ type: 'session.background', id: openId }); break;
     case 'sound': toggleSound(); break;
     case 'theme': cycleTheme(); break;
+    case 'ticketLine': toggleLine(); break;
   }
   return true;
 }
@@ -786,9 +789,12 @@ export function onKeyDown(e: KeyboardEvent): void {
   const typing = isTextTarget(e.target);
   let handled = false;
   if (voiceKeys(e)) handled = true;
+  // The Ticket Line first: its Ctrl+Enter starts work, where the global one would expand a session.
+  else if (lineKeys(e, typing)) handled = true;
   else if (globalAction(e, typing)) handled = true;
   else if (cardKeys(e, typing)) handled = true;
   else if (commandKeys(e)) handled = true;
+  else if (s.screen === 'line') handled = false; // home's keys must not act under the board
   else if (activeSession(s)) handled = sessionKeys(e, typing);
   else handled = homeKeys(e, typing);
   if (handled) e.preventDefault();

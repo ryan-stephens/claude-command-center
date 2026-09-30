@@ -1,9 +1,11 @@
 import { create } from 'zustand';
+import type { Card } from '../shared/cards.ts';
 import type { Command, CommandGroup, ModelChoice, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, Todo, TranscriptItem, Workspace } from '../shared/protocol.ts';
 import { bucketToggled, loadFolds, saveFolds, toggled, unfolded, type FoldKey, type Folds } from './folds.ts';
 import type { QaState } from './questions.ts';
 import { bucketOf, groupSessions, sessionsIn, type Bucket, type Flags, type Scope } from './home-model.ts';
 import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
+import type { Composer, LineFilter } from './line-model.ts';
 
 /**
  * Home is three columns you walk with ← →, plus the repo library (Tab). The third, 'preview', holds
@@ -35,6 +37,8 @@ export type Modal =
   /** Take a repo out of a workspace, or out of a session (the ones added to it). */
   | { kind: 'repoRemove'; target: RepoTarget }
   | { kind: 'sources' }
+  /** Take a card off the Ticket Line. */
+  | { kind: 'deleteCard'; id: string }
   | null;
 
 export interface Library {
@@ -66,7 +70,16 @@ interface State {
   sound: boolean;
   theme: ThemePref;
 
-  screen: 'list' | 'session';
+  /** Home, a session full screen, or the Ticket Line (a board of cards). */
+  screen: 'list' | 'session' | 'line';
+  /** Ticket Line cards, what the next one will be called, and the model the server starts them with. */
+  cards: Card[];
+  nextKey: string;
+  cardModel: string | null;
+  /** The board: the focused card, the card open in the drawer and its tab, the workspace shown. */
+  line: { focus: string | null; drawer: string | null; tab: 'over' | 'ctx' | 'tx'; filter: LineFilter };
+  /** The new-card screen, while it is open. */
+  composer: Composer | null;
   /** The workspace column's selection. */
   scope: Scope;
   homeCol: HomeCol;
@@ -129,6 +142,11 @@ export const useStore = create<State>(() => ({
   theme,
 
   screen: 'list',
+  cards: [],
+  nextKey: 'CARD-1',
+  cardModel: null,
+  line: { focus: null, drawer: null, tab: 'over', filter: 'all' },
+  composer: null,
   scope: loadScope(),
   homeCol: 'sessions',
   libIndex: 0,
@@ -257,7 +275,7 @@ function loadScope(): Scope {
 
 /** The session that takes the session keys: open full screen, or docked on home and stepped into. */
 export function activeSession(s: Pick<State, 'screen' | 'homeCol' | 'openId'>): string | null {
-  if (!s.openId) return null;
+  if (!s.openId || s.screen === 'line') return null;
   return s.screen === 'session' || s.homeCol === 'preview' ? s.openId : null;
 }
 

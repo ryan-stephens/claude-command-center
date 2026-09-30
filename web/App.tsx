@@ -6,7 +6,9 @@ import { Icon, Key, KeyHint, WsBadge } from './components/ui.tsx';
 import { armOnFirstGesture, setNotificationHandler } from './attention.ts';
 import { bindingsFor, displayCombo, type ActionId } from './bindings.ts';
 import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession, shownCols } from './keys.ts';
-import { legendFor } from './legend.ts';
+import { legendFor, lineLegendFor } from './legend.ts';
+import { toggleLine } from './line-keys.ts';
+import { TicketLine } from './components/TicketLine.tsx';
 import { stopVoice } from './voice.ts';
 import { maybeShowWelcome } from './components/Welcome.tsx';
 import { activeSession, attention, currentWorkspace, isDocked, NO_BINDINGS, set, toggleSound, useStore } from './store.ts';
@@ -31,10 +33,16 @@ function Legend() {
   const drafting = useStore((s) => Boolean(s.openId && s.drafts[s.openId]));
   const inWorkspace = useStore((s) => s.scope.kind === 'workspace');
   const modal = useStore((s) => s.modal);
+  const lineView = useStore((s) => (s.composer ? 'composer' : s.line.drawer ? 'drawer' : 'board'));
+  const pane = useStore((s) => s.composer?.pane);
+  const preview = useStore((s) => s.composer?.preview);
+  const lineFocus = useStore((s) => Boolean(s.line.focus && s.cards.some((c) => c.id === s.line.focus)));
   if (modal) return null;
   // The session pane without a session in it (it was ended) acts as the list, as in homeKeys.
   const col = (shownCols().includes(homeCol) && (homeCol !== 'preview' || docked)) || homeCol === 'library' ? homeCol : 'sessions';
-  const items = legendFor({ screen, homeCol: col, zone, pending, pendingKind, busy, drafting, hasSelection: Boolean(focusId), inWorkspace, bindings, previewShown: shownCols().includes('preview'), docked });
+  const items = screen === 'line'
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, pane, preview, bindings })
+    : legendFor({ screen, homeCol: col, zone, pending, pendingKind, busy, drafting, hasSelection: Boolean(focusId), inWorkspace, bindings, previewShown: shownCols().includes('preview'), docked });
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
     <footer className="hidden items-center gap-x-6 gap-y-2 border-t border-line bg-col px-4 py-2.5 text-[13.5px] text-sub md:flex md:flex-wrap" aria-label="Keys you can press now">
@@ -65,6 +73,9 @@ function Header() {
       <button onClick={() => set({ screen: 'list', openId: null, homeCol: 'sessions' })} className="whitespace-nowrap font-semibold tracking-tight" title="Home">
         Command Center
       </button>
+      {screen === 'line' && (
+        <span className="hidden min-w-0 items-center gap-2 text-sub md:flex"><span className="text-faint">/</span><span className="font-semibold text-ink">Ticket Line</span></span>
+      )}
       {screen === 'list' && (
         <span className="hidden min-w-0 items-center gap-2 text-sub md:flex">
           <span className="text-faint">/</span>
@@ -85,6 +96,9 @@ function Header() {
           <Key k={k('nextAttention')} size="sm" tone="attn" className="hidden md:inline-flex" />
         </button>
       )}
+      <button onClick={toggleLine} className={`btn-ghost btn hidden md:inline-flex ${screen === 'line' ? 'text-ink' : ''}`} title="Your work as cards on a board">
+        <Icon name="grid" size={16} />{screen === 'line' ? 'Home' : 'Ticket Line'}<Key k={k('ticketLine')} size="sm" />
+      </button>
       <button onClick={() => set({ modal: { kind: 'palette' } })} className="btn-ghost btn hidden md:inline-flex" title="Search sessions, workflows and actions">
         <Icon name="search" size={16} />Search<Key k={k('palette')} size="sm" />
       </button>
@@ -143,7 +157,7 @@ export function App() {
     <div className="flex h-dvh flex-col bg-bg text-ink">
       <Header />
       <OutdatedBanner />
-      <main className="flex min-h-0 flex-1 flex-col">{screen === 'list' ? <Home /> : <SessionView />}</main>
+      <main className="flex min-h-0 flex-1 flex-col">{screen === 'line' ? <TicketLine /> : screen === 'list' ? <Home /> : <SessionView />}</main>
       <Legend />
       <Dialogs />
     </div>
