@@ -57,7 +57,7 @@ The main concepts:
 
 ## State
 - `main` may have commits that are not pushed yet (`git log origin/main..HEAD`). Ask the owner before pushing.
-- Checks: `pnpm typecheck`, `pnpm test` (135 tests, `node:test`) and `pnpm build` all pass.
+- Checks: `pnpm typecheck`, `pnpm test` (150 tests, `node:test`) and `pnpm build` all pass.
 
 ## How to work here
 - Windows 11, Node 24, pnpm; files are CRLF. The Bash tool's heredocs eat backslashes (regexes, Windows paths), so use Write/Edit, or a Python script written with Write.

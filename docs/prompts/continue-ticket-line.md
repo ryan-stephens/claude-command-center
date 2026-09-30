@@ -4,7 +4,7 @@ Paste this into a new Claude Code session opened in `D:\repos\cc-control`.
 
 ---
 
-Read `docs/prompts/continue.md` first. It explains what cc-control is, where things are, and how to test without touching the owner's running app. Then read `docs/PLAN.md` §26, §27 and §28.
+Read `docs/prompts/continue.md` first. It explains what cc-control is, where things are, and how to test without touching the owner's running app. Then read `docs/PLAN.md` §26 to §29.
 
 ## The job
 The owner chose a direction: the **Ticket Line** (PLAN §27). The spec is the clickable mock at `docs/futures/path-line.html`. Open it in a browser and drive it with the keys before designing anything. Work becomes cards on a board: Inbox → Plan → Build → Needs you → Try it → Ship → Done. Each card is a ticket (Jira or Trello) or a card with no ticket. A new-card screen builds the card's context, and the card follows a Claude Code session running in a terminal tab.
@@ -12,7 +12,7 @@ The owner chose a direction: the **Ticket Line** (PLAN §27). The spec is the cl
 The owner likes the mock a lot. Keep its look, its words and its keys, including the legend bar and the `?` overlay, unless something can't be built as drawn. If so, say why.
 
 ## Milestone 1 is done (PLAN §28)
-A card saves its context, makes its branch and starts `claude` in a Windows Terminal tab. The hook, loaded with `claude --settings`, fetches the packet and links the session. The board, drawer and new-card screen have a first version. Read §28 for the Claude Code facts it established. The `--add-dir` / `--` gotcha, trust prompts and inherited session markers will bite again. Carry on from **Then, in order** below, starting with the board.
+A card saves its context, makes its branch and starts `claude` in a Windows Terminal tab. The hook, loaded with `claude --settings`, fetches the packet and links the session. The board, drawer and new-card screen have a first version. Read §28 for the Claude Code facts it established. The `--add-dir` / `--` gotcha, trust prompts and inherited session markers will bite again. Milestone 2 (PLAN §29) is done too: cards follow their session through async hooks (Plan ready, Needs you, Try it, steps, files changed). Carry on from **Then, in order** below with **Jira/Trello import**, against mock tickets.
 
 ## What milestone 1 was: a card that starts a terminal session with its context
 This first milestone proves the mechanism end to end. Leave the board polish, Jira/Trello, run recipes and Ship for later.

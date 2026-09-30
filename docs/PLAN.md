@@ -669,3 +669,42 @@ Not planned: more Claude Code parity for its own sake (`!` shell, model pickers)
 - No console errors. `pnpm typecheck`, `pnpm test` (135) and the Vite build (to `dist/web-test`) pass. `dist/web`, which the running app serves, was left alone.
 
 **Next:** the board over the existing session list (cards follow their session's state: Needs you from pending approvals, Try it when a turn ends), then Jira/Trello import. The owner doesn't have Jira credentials to hand yet, so the import starts against mock tickets with the same shape, and a real Jira site plugs in later.
+
+## 29. Ticket Line, milestone 2: cards follow their session
+
+2026-09-29. A card now moves by itself as its terminal session works, through more of Claude Code's hooks. They go in the same `--settings` file as SessionStart, so still nothing is added to the user's settings.
+
+**What the hooks send** (recorded live on CLI 2.1.285 in a real tab, every event logged):
+- Every event carries `session_id`, `permission_mode` and `prompt_id`; subagents' events add `agent_id`.
+- `PreToolUse` / `PostToolUse` carry `tool_name`, `tool_input`, `tool_use_id`; PostToolUse adds `tool_response`.
+- **`PermissionRequest` fires the moment a prompt appears in the tab**, with the tool and its input. For a plan, `tool_input.plan` is the plan's markdown. The `Notification` with `notification_type: permission_prompt` comes about 7 s later, so it is only the fallback.
+- `Stop` carries `last_assistant_message`. An idle session sends `Notification` `idle_prompt`.
+- Hooks with `"async": true` run in the background. Every event but SessionStart is async, so following a card never slows Claude down.
+- In plan mode Claude writes its plan to `~/.claude/plans/…` before ExitPlanMode. That is not a change to the card's repos.
+
+**How a card moves** (`server/card-events.ts`, pure, 11 tests, the live sequences replayed):
+- Your message → working, in Plan (plan mode) or Build. A message after Try it is round 2.
+- A tool call → the live line says what it is doing ("editing CheckoutForm.tsx", "running: pnpm test"). TodoWrite and TaskCreate / TaskUpdate become the card's steps (`server/todos.ts`, reused).
+- A prompt in the tab → needs you. A plan stays in Plan, amber, with the plan in the drawer; a tool or question goes to Needs you. When the tool runs, it was allowed, so the card goes back to work; an approved plan goes to Build.
+- **A turn that ends on a question** ("Should it be X or Y?") needs you too. Claude often asks in plain text instead of a prompt. After changes, "Anything else?" doesn't count: the card goes to Try it.
+- **The turn ends with files changed** in the card's own repos → Try it ("Done. Ready to try"). With nothing changed → "Replied: …".
+- The session ends → the line says so. Ship and Done belong to you: hooks never move a card out of them.
+- **Only the card's session moves it.** Once linked, only `/clear` in its tab relinks it. A `claude -p` that Claude runs inside the tab inherits the card's variables, and before this it would have taken the card over.
+
+**What you see:**
+- Tiles: the live line (a spinner while working, amber when it needs you, grey once ended), the steps' progress bar, files changed, time since it started, and the round. Amber tiles for needs you, and "N need you" beside "in flight".
+- The drawer's Overview: what it is doing now (with the turn's time), or what it asks: the plan, rendered, or the question or the tool. It says to answer in its terminal tab, because answering from the board needs the channel (a preview flag). Then the steps, what changed (relative to the card's folder) and what Claude said last.
+- A chime, and a browser notification when the page isn't in front, when a card starts needing you or is ready to try. Clicking the notification opens that card.
+
+**Verified live** (isolated server, Haiku):
+- A plan-mode card in a real tab went: session started → working → "writing the plan" → "presenting its plan" → **Plan ready**, with the plan in the drawer.
+- A card whose session made an edit went Build → writing NOTES.md → **Try it**, with the file and both steps done. For this one, a `claude -p` run with the card's variables stood in for the tab, because a new folder stops at the trust prompt and a test can't answer it. Its reply ended in a question, and the change still won.
+- A session that asked a clarifying question in text: found by this check and fixed (the question rule above).
+- No console errors; `pnpm typecheck` and `pnpm test` (150) pass.
+
+**Known gaps:**
+- Closing a tab kills `claude` without a SessionEnd, so its card keeps its last line.
+- Answering from the board, and `a` to approve a plan, need the channel (§26). For now the drawer says where to answer.
+- Sessions without a card don't show on the board yet.
+
+**Next:** Jira/Trello import against mock tickets (the owner has no Jira credentials to hand), then adding context later.
