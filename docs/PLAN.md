@@ -909,3 +909,32 @@ Keys: `s` on the board and in the drawer (Ship, or Merge once there is a PR), wi
 **Not verified:** a real Jira Data Center, a real TFS, and whether `tfs.p.vu.local`'s certificate chains to a root Windows trusts there. At VU: fill in `config.env`, run `pnpm doctor`, and it says which of these works.
 
 **Next:** workspace run recipes (steps across repos, their own environment variables, long-running steps and a teardown, notes for what can't be automated), which the Okteto + UI proxy setup needs.
+
+## 37. Workspace run recipes: several repos, their own variables, teardown, steps by hand
+
+2026-09-30. The Okteto case (§35): a backend dev environment spun up from one repo, the UI started from another and pointed at it, and torn down afterwards. A workspace can now have **its own run recipe**, which every card in it runs instead of its repo's.
+
+**One step per line** (`shared/recipes.ts` `parseStep`; the editor stays a text box):
+- `@Workspaces-API okteto deploy --wait`: `@repo` runs the step in that repo, by folder name, from the card's repos and its workspace's. The card's own repo is its folder (its worktree when it has one). A name that matches nothing fails the step and lists the names it knows.
+- `@Workspaces-UI API_URL=https://api-you.okteto.example npm run dev`: `NAME=value` before the command sets that variable for that step only. It is parsed by cc-control, so it works in cmd.exe, which has no `NAME=value cmd` of its own. Quotes allow spaces.
+- `! Check the namespace is green in the dashboard`: something to do by hand. It is shown as a step (☐ BY HAND) and never run: for what can't be automated, the recipe says what to do (§35).
+- `stop: @Workspaces-API okteto destroy`: runs when the app is stopped (`t`), after its processes are killed, one after another with two minutes each. It also runs before a restart. A server shutdown kills without them (there is no time to wait).
+- `# …` is a comment.
+- Repo recipes use the same syntax, so a plain `pnpm install` / `pnpm dev` recipe is unchanged.
+
+**What you see:**
+- `e` on a card opens the editor on what the card runs (the workspace's recipe if there is one). **`Alt+W`** switches between *This repo* and *The whole workspace*. Untouched text follows the switch; edited text stays, so a repo's recipe can be saved as the workspace's.
+- The help line under the box gives the syntax. Emptying a workspace recipe removes it, and cards go back to their repo's.
+- The Try it section (*Try it · Demo workspace run recipe*) shows each step with its repo, the **names** of the variables it sets (never the values: they can hold tokens), ☐ BY HAND steps, and a *When stopped* group.
+- New cards in the workspace get the recipe in their context, step by step, variable names only: "in Workspaces-API: (with NAMESPACE set) node deploy.js", "By hand: …", "When stopping: …".
+- **Shared with the workspace file** (`Shift+E` / `Shift+I`). An imported recipe is text; nothing runs until someone presses `t`. It is marked "from the workspace file you imported: check it before running", with an amber note in Try it, because its commands are someone else's. Import keeps strings only, at most 20 steps of 500 characters, and only http(s) addresses.
+- `PROTOCOL` stays 8: `recipes` gains `workspaceRecipes` and `recipe.save` gains `workspaceId`, both optional.
+
+**Verified** (isolated server, Demo workspace, a stand-in `Workspaces-API` repo whose `deploy.js` / `destroy.js` play `okteto deploy` / `destroy`; 11 scripted checks):
+- `e` opened on the repo's detected recipe; `Alt+W` switched to the workspace ("Every Demo card runs this instead of its repo's").
+- Saving `@Workspaces-API NAMESPACE=rs-dev node deploy.js`, a `!` step, `@Workspaces-UI OKTETO_URL=https://api-rs-dev.okteto.vu.local npm run dev` and `stop: @Workspaces-API node destroy.js` showed the steps with repos, variable names only, the BY HAND step and When stopped.
+- `t`: deploy ran **in the API repo with its own variable**; the UI came up at localhost:5196 **serving the Okteto URL it was given**. `t` stopped it, the stop step ran in the API repo, and the port was free.
+- A new Demo card's `p` had the recipe under "Running the app", step by step. No console errors.
+- Unit tests: the step syntax (and that `--port=5000` in a command isn't a variable); what Claude is told; a card runs its workspace's recipe first; saving, removing and importing workspace recipes; a real two-repo run (a variable per step, a note skipped, the stop step run on stop); a repo name that matches nothing; the workspace file's recipe, bounded on import. `pnpm typecheck`, `pnpm test` (191) and the Vite build pass.
+
+**Not yet:** passing a value one step printed (the Okteto endpoint, say) into a later step's variable (for now, write the address in the recipe; per-developer namespaces are usually stable); a recipe per developer on top of the shared one; waiting on a by-hand step before going on.

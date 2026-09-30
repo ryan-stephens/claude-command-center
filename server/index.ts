@@ -9,11 +9,11 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
-import { cardRepos } from '../shared/cards.ts';
+import { cardRepos, type Card } from '../shared/cards.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, cleanDraft, userModel, writeHookSettings } from './cards.ts';
-import { recipeOf, RunService, saveRecipe } from './recipes.ts';
+import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
 import { ShipService } from './ship.ts';
 import { CommandService } from './commands.ts';
 import { TicketService } from './tickets.ts';
@@ -82,7 +82,23 @@ function recipesMsg(): ServerMsg {
     const r = recipeOf(store, p);
     if (r) recipes[p] = r;
   }
-  return { type: 'recipes', recipes };
+  const workspaceRecipes: Record<string, RunRecipe> = {};
+  for (const w of store.loadWorkspaces()) {
+    const r = workspaceRecipeOf(store, w.id);
+    if (r) workspaceRecipes[w.id] = r;
+  }
+  return { type: 'recipes', recipes, workspaceRecipes };
+}
+
+/** Where a card's run goes: its folder, and every repo it or its workspace has by folder name (its own repo is its folder, its worktree if it has one). */
+function runPlaces(card: Card): RunPlaces {
+  const home = cardRepos(card)[0];
+  const cwd = card.cwd ?? home;
+  const repos: Record<string, string> = {};
+  const ws = store.loadWorkspaces().find((w) => w.id === card.workspaceId);
+  for (const p of [...(ws?.repos ?? []), ...cardRepos(card)]) repos[repoName(p).toLowerCase()] = p;
+  if (home) repos[repoName(home).toLowerCase()] = cwd;
+  return { cwd, repos };
 }
 
 function cardsMsg(): ServerMsg {
@@ -357,7 +373,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'workspace.export': {
       const w = store.loadWorkspaces().find((x) => x.id === msg.id);
       if (!w) throw new Error('That workspace no longer exists.');
-      send(ws, { type: 'workspace.file', reqId: msg.reqId, file: workspaceToFile(w, store.loadWorkspacePack(w.id)) });
+      send(ws, { type: 'workspace.file', reqId: msg.reqId, file: workspaceToFile(w, store.loadWorkspacePack(w.id), workspaceRecipeOf(store, w.id)) });
       return;
     }
     case 'card.start': {
@@ -371,7 +387,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     }
     case 'card.delete':
-      runs.forget(String(msg.id));
+      void runs.forget(String(msg.id));
       cards.delete(String(msg.id));
       return;
     case 'card.addContext':
@@ -383,16 +399,16 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const card = cards.get(String(msg.id));
       if (!card) throw new Error('That card is no longer on the line.');
       const home = cardRepos(card)[0];
-      const recipe = home && recipeOf(store, home);
+      const recipe = cardRecipeOf(store, card.workspaceId, home);
       if (!recipe) throw new Error(`${card.key} has no run recipe yet. e writes one for ${home ? repoName(home) : 'its repo'}.`);
-      const cwd = card.cwd ?? home;
-      if (!existsSync(cwd)) throw new Error(`${cwd} isn’t there any more.`);
-      runs.start(card.id, recipe, cwd);
+      const places = runPlaces(card);
+      if (!existsSync(places.cwd)) throw new Error(`${places.cwd} isn’t there any more.`);
       send(ws, { type: 'ok', reqId: msg.reqId });
+      await runs.start(card.id, recipe, places);
       return;
     }
     case 'card.stopRun':
-      runs.stop(String(msg.id));
+      await runs.stop(String(msg.id));
       return;
     case 'card.shipPlan': {
       const card = cards.get(String(msg.id));
@@ -418,9 +434,18 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       send(ws, { type: 'ok', reqId: msg.reqId });
       return;
     case 'recipe.save': {
+      const steps = Array.isArray(msg.steps) ? msg.steps.map(String) : [];
+      const url = typeof msg.url === 'string' ? msg.url : undefined;
+      if (msg.workspaceId) {
+        if (!store.loadWorkspaces().some((w) => w.id === msg.workspaceId)) throw new Error('That workspace no longer exists.');
+        saveWorkspaceRecipe(store, String(msg.workspaceId), steps, url);
+        send(ws, { type: 'ok', reqId: msg.reqId });
+        broadcast(recipesMsg());
+        return;
+      }
       const repo = normalizeFolder(msg.repo);
       if (!repo || !existsSync(repo)) throw new Error('That repo isn’t there any more.');
-      saveRecipe(store, repo, Array.isArray(msg.steps) ? msg.steps.map(String) : [], typeof msg.url === 'string' ? msg.url : undefined);
+      saveRecipe(store, repo, steps, url);
       send(ws, { type: 'ok', reqId: msg.reqId });
       broadcast(recipesMsg());
       return;
@@ -445,6 +470,8 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const w = cleanWorkspace({ ...r.workspace, id: crypto.randomUUID() });
       store.saveWorkspace(w);
       if (r.workflows.groups.length) store.saveWorkspacePack(w.id, r.workflows);
+      // Marked as imported: its commands are someone else's, and the drawer says to check them.
+      if (r.recipe) saveWorkspaceRecipe(store, w.id, r.recipe.steps, r.recipe.url, true);
       workspacesChanged();
       send(ws, {
         type: 'info',

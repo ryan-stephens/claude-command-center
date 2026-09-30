@@ -107,6 +107,8 @@ export interface Workspace {
 
 /** A workspace as a file to share: repos by folder name, since paths differ between machines. */
 export interface WorkspaceFile {
+  /** The workspace's own run recipe (steps as written), when it has one. */
+  recipe?: { steps: string[]; url?: string };
   kind: 'cc-control.workspace';
   version: 1;
   name: string;
@@ -338,7 +340,7 @@ export type ClientMsg =
   /** Stop the card's run and the app it started. */
   | { type: 'card.stopRun'; id: string }
   /** Save the run recipe you wrote for a repo; no steps goes back to the detected one. Answered with ok or an error. */
-  | { type: 'recipe.save'; reqId: string; repo: string; steps: string[]; url?: string }
+  | { type: 'recipe.save'; reqId: string; repo?: string; workspaceId?: string; steps: string[]; url?: string }
   /** Ship: what shipping the card will do (answered with ship.plan), do it (ok or an error), look at its PR again, merge it. */
   | { type: 'card.shipPlan'; reqId: string; id: string }
   | { type: 'card.ship'; reqId: string; id: string; request: ShipRequest }
@@ -385,7 +387,7 @@ export type ServerMsg =
   /** Every card on the Ticket Line, on connect and whenever one changes. */
   | { type: 'ship.plan'; reqId: string; plan: ShipPlan }
   /** Run recipes by repo path: the library's, the workspaces' and the cards' repos. */
-  | { type: 'recipes'; recipes: Record<string, RunRecipe> }
+  | { type: 'recipes'; recipes: Record<string, RunRecipe>; /** Workspaces' own recipes, by workspace id. */ workspaceRecipes?: Record<string, RunRecipe> }
   /** Cards' runs of their recipes (Try it). */
   | { type: 'runs'; runs: CardRun[] }
   | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string; /** The model in the user's Claude Code settings (a card's default otherwise). */ userModel?: string }

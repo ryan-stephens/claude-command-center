@@ -28,7 +28,9 @@ The owner likes the mock a lot. Keep its look, its words and its keys, including
 
 - **VU readiness (§36):** `~/.cc-control/config.env` for settings and tokens, Windows' certificates trusted, `pnpm doctor`; Jira Data Center (PAT, wiki markup, a criteria field); Ship to Azure DevOps Server / TFS through its REST API (the version probed), with GitHub kept on `gh` and other hosts pushed-only. Tested against a stand-in VU (`fake-vu.mjs` in the session scratchpad; the walkthrough is described in §36), not the real servers.
 
-**Next: workspace run recipes** (§35/§36), then ask the owner. The build order is done. Candidates, none started: a real PR on a repo they choose; connecting their Jira (credentials pending); Slack posts from Ship; `f` feedback through the channel (a preview flag); the open questions below; polish from using it.
+- **Workspace run recipes (§37):** a workspace can have its own recipe across its repos: `@repo` per step, `NAME=value` per step, `! by hand`, `stop:` teardown; `Alt+W` in the recipe editor; shared in the workspace file (imports marked to check first).
+
+**Next: ask the owner.** Everything planned for VU is built and tested against stand-ins; what's left needs the real VU servers (Jira Data Center, TFS, Okteto) or the owner's say. Candidates, none started: a real PR on a repo they choose; connecting their Jira (credentials pending); Slack posts from Ship; `f` feedback through the channel (a preview flag); the open questions below; polish from using it.
 
 **Open questions for the owner** (asked at the end of milestones 3 and 5, not yet answered; they do not block run recipes or Ship): whether the drag-and-drop repo library strip should come back on the line, and whether the in-app new-session dialog (`Alt+Shift+N`) is still wanted. Jira credentials (site URL, email, API token) will come from the owner; when they do, try the live site and adjust `fromJira` / `splitAcceptance`.
 

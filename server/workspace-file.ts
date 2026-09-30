@@ -1,11 +1,12 @@
 import type { CommandPack, RepoInfo, Workspace, WorkspaceFile } from '../shared/protocol.ts';
+import type { RunRecipe } from '../shared/recipes.ts';
 import { homeRepo, repoName, samePath, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { validatePack } from './packs.ts';
 
 // A workspace as a file to share: repos by folder name (paths differ between machines),
 // plus its workflows. Importing matches the names against the repo library.
 
-export function workspaceToFile(w: Workspace, workflows: CommandPack | null): WorkspaceFile {
+export function workspaceToFile(w: Workspace, workflows: CommandPack | null, recipe?: RunRecipe): WorkspaceFile {
   const home = homeRepo(w);
   return {
     kind: 'cc-control.workspace',
@@ -14,6 +15,7 @@ export function workspaceToFile(w: Workspace, workflows: CommandPack | null): Wo
     color: w.color,
     repos: w.repos.map((p) => ({ name: repoName(p), ...(home && samePath(home, p) ? { home: true } : {}) })),
     workflows: workflows ?? { version: 1, groups: [] },
+    ...(recipe ? { recipe: { steps: recipe.steps, ...(recipe.url ? { url: recipe.url } : {}) } } : {}),
   };
 }
 
@@ -22,6 +24,8 @@ export interface ImportResult {
   workflows: CommandPack;
   /** Repo names the file lists that the library doesn't have. */
   missing: string[];
+  /** Its run recipe, if it carries one (steps are text; nothing runs until someone presses t). */
+  recipe?: { steps: string[]; url?: string };
 }
 
 /** Parse an untrusted workspace file. Repos are matched by folder name, case-insensitively. */
@@ -43,5 +47,8 @@ export function workspaceFromFile(raw: unknown, library: RepoInfo[]): ImportResu
     if (r.home) home = match.path;
   }
   const workflows = f.workflows ? validatePack(f.workflows) : { version: 1 as const, groups: [] };
-  return { workspace: { name, color, repos, home }, workflows, missing };
+  const rawRecipe = (f.recipe ?? {}) as { steps?: unknown; url?: unknown };
+  const steps = Array.isArray(rawRecipe.steps) ? rawRecipe.steps.filter((s): s is string => typeof s === 'string').map((s) => s.slice(0, 500)).slice(0, 20) : [];
+  const recipe = steps.length ? { steps, ...(typeof rawRecipe.url === 'string' && /^https?:\/\/\S+$/.test(rawRecipe.url) ? { url: rawRecipe.url } : {}) } : undefined;
+  return { workspace: { name, color, repos, home }, workflows, missing, ...(recipe ? { recipe } : {}) };
 }

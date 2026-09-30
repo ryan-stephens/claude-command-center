@@ -7,7 +7,7 @@ import {
   type Card, type CardDraft, type Packet, type PacketItem, type Stage,
 } from '../shared/cards.ts';
 import type { RepoInfo, Workspace } from '../shared/protocol.ts';
-import { recipeFor, recipeLabel, recipeText, type RunRecipe } from '../shared/recipes.ts';
+import { recipeFor, recipeLabel, recipeText, wsRecipeKey, type RunRecipe } from '../shared/recipes.ts';
 import { relatedItem, ticketItems, ticketSub, type Ticket } from '../shared/tickets.ts';
 import { homeRepo, repoName, samePath } from '../shared/workspaces.ts';
 
@@ -154,7 +154,7 @@ export type Recipes = Record<string, RunRecipe>;
 /** The workspace's repos, and the run recipe of the repo cards start in. */
 function workspaceLayer(ws: Workspace | null, recipes: Recipes): PacketItem[] {
   if (!ws) return [];
-  const r = recipeFor(recipes, homeRepo(ws) ?? ws.repos[0]);
+  const r = recipes[wsRecipeKey(ws.id)] ?? recipeFor(recipes, homeRepo(ws) ?? ws.repos[0]);
   return [...ws.repos.map(repoItem), ...(r ? [{ kind: 'recipe' as const, id: `recipe:${r.repo}`, label: recipeLabel(r), text: recipeText(r), on: true }] : [])];
 }
 

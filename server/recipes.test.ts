@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { findUrl, parseSteps, portOf, recipeText } from '../shared/recipes.ts';
-import { appLike, detectRecipe, recipeOf, RunService, saveRecipe, urlFromScript } from './recipes.ts';
+import { cardRecipe, findUrl, parseStep, parseSteps, portOf, recipeLabel, recipeText, stepLabel, wsRecipeKey } from '../shared/recipes.ts';
+import { appLike, cardRecipeOf, detectRecipe, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, urlFromScript, workspaceRecipeOf } from './recipes.ts';
 import { Store } from './store.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'cc-recipes-'));
@@ -120,6 +120,75 @@ test('a failing step stops the run there and keeps what it printed', async () =>
     assert.equal(run.steps[0].code, 3);
     assert.deepEqual(run.steps[0].tail, ['Cannot find package express']);
     assert.match(run.text, /failed \(exit 3\)/);
+  } finally {
+    runs.stopAll();
+  }
+});
+
+test('a step line: @repo, variables, stop:, notes and comments', () => {
+  assert.deepEqual(parseStep('@Workspaces-UI API_URL=https://api-rs.okteto.vu.local MODE="a b" npm run dev'),
+    { line: '@Workspaces-UI API_URL=https://api-rs.okteto.vu.local MODE="a b" npm run dev', cmd: 'npm run dev', repo: 'Workspaces-UI', env: { API_URL: 'https://api-rs.okteto.vu.local', MODE: 'a b' }, stop: false, note: false });
+  assert.deepEqual(parseStep('stop: @api okteto destroy'), { line: 'stop: @api okteto destroy', cmd: 'okteto destroy', repo: 'api', env: {}, stop: true, note: false });
+  assert.deepEqual(parseStep('! Sign in as a test borrower'), { line: '! Sign in as a test borrower', cmd: 'Sign in as a test borrower', env: {}, stop: false, note: true });
+  assert.equal(parseStep('# the backend first'), undefined);
+  assert.equal(parseStep('   '), undefined);
+  assert.equal(parseStep('pnpm dev --port=5000')!.cmd, 'pnpm dev --port=5000', 'an = inside the command is not a variable');
+  assert.equal(stepLabel(parseStep('@web SECRET=abc npm run dev')!), '@web SECRET=… npm run dev', 'values are never shown');
+});
+
+test('a workspace recipe, told to Claude step by step; a card runs its workspace’s when there is one', () => {
+  const ws = { repo: '', workspaceId: 'w1', source: '', url: 'http://localhost:4200', steps: ['@api okteto deploy --wait', '@web API_URL=https://x npm start', '! Sign in', 'stop: @api okteto destroy'] };
+  assert.equal(recipeLabel(ws), 'Run recipe: @api okteto deploy --wait, @web API_URL=… npm start');
+  assert.equal(recipeText(ws), 'The workspace’s run recipe, in order:\n- in api: okteto deploy --wait\n- in web: (with API_URL set) npm start\n- By hand: Sign in\n- When stopping: in api: okteto destroy\nMost of these keep running (the app); then open http://localhost:4200. cc-control runs this when you press Try it; don’t leave a copy of the app running.'.replace('don’t', "don't"));
+  const repoR = { repo: 'D:\\r\\web', source: '', steps: ['pnpm dev'] };
+  const map = { 'D:\\r\\web': repoR, [wsRecipeKey('w1')]: ws };
+  assert.equal(cardRecipe(map, 'w1', 'D:\\r\\web'), ws);
+  assert.equal(cardRecipe(map, 'w2', 'D:\\r\\web'), repoR);
+  assert.equal(cardRecipe(map, null, 'd:\\R\\WEB'), repoR);
+});
+
+test('workspace recipes are saved, win over a repo’s, and are removed by saving none', () => {
+  const store = new Store(join(dir, 'ws.db'));
+  try {
+    const web = repo('ws-web', { 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
+    assert.equal(cardRecipeOf(store, 'w1', web)!.source, 'detected from package.json');
+    saveWorkspaceRecipe(store, 'w1', ['@api okteto deploy', '', '@web npm run dev'], 'http://localhost:4200');
+    assert.deepEqual(workspaceRecipeOf(store, 'w1'), { repo: '', workspaceId: 'w1', steps: ['@api okteto deploy', '@web npm run dev'], url: 'http://localhost:4200', edited: true, source: 'the workspace’s, written by you' });
+    assert.equal(cardRecipeOf(store, 'w1', web)!.workspaceId, 'w1');
+    saveWorkspaceRecipe(store, 'w1', ['echo hi'], undefined, true);
+    assert.match(workspaceRecipeOf(store, 'w1')!.source, /from the workspace file you imported: check it before running/);
+    saveWorkspaceRecipe(store, 'w1', []);
+    assert.equal(workspaceRecipeOf(store, 'w1'), undefined);
+    assert.equal(cardRecipeOf(store, 'w1', web)!.source, 'detected from package.json');
+  } finally {
+    store.close();
+  }
+});
+
+test('a workspace run: each step in its repo with its own variables, notes skipped, a missing repo said, stop: steps run on stop', async () => {
+  const api = repo('ws-api', { 'deploy.js': "require('fs').writeFileSync('deployed.txt', process.env.NAMESPACE); console.log('deployed to ' + process.env.NAMESPACE)", 'destroy.js': "require('fs').writeFileSync('destroyed.txt', 'yes')" });
+  const web = repo('ws-webapp', { 'app.js': "const s=require('http').createServer((q,r)=>r.end(process.env.API_URL)).listen(0,()=>console.log('Local: http://localhost:'+s.address().port+'/'))" });
+  const cardFolder = repo('ws-webapp-worktree', { 'app.js': readFileSync(join(web, 'app.js'), 'utf8') });
+  const runs = new RunService(() => {}, process.env);
+  const places = { cwd: cardFolder, repos: { 'ws-api': api, 'ws-webapp': cardFolder } };
+  try {
+    const recipe = { repo: '', workspaceId: 'w1', source: '', steps: ['@ws-api NAMESPACE=rs-dev node deploy.js', '! Check the Okteto dashboard', '@ws-webapp API_URL=https://api-rs.okteto.vu.local node app.js', 'stop: @ws-api node destroy.js'] };
+    await runs.start('c1', recipe, places);
+    await until(() => runs.get('c1')?.state === 'up');
+    const run = runs.get('c1')!;
+    assert.deepEqual(run.steps.map((s) => s.state), ['ok', 'note', 'up', 'wait']);
+    assert.equal(readFileSync(join(api, 'deployed.txt'), 'utf8'), 'rs-dev', 'the first step ran in the api repo with its variable');
+    assert.deepEqual(run.steps[0].env, ['NAMESPACE'], 'names only reach the page');
+    assert.equal(await (await fetch(run.url!)).text(), 'https://api-rs.okteto.vu.local', 'the app got its own variable');
+    assert.equal(existsSync(join(api, 'destroyed.txt')), false);
+    await runs.stop('c1');
+    assert.equal(readFileSync(join(api, 'destroyed.txt'), 'utf8'), 'yes', 'stop: ran in the api repo');
+    assert.equal(runs.get('c1')!.steps[3].state, 'ok');
+    assert.equal(runs.get('c1')!.text, 'Stopped');
+
+    await runs.start('c2', { repo: '', source: '', steps: ['@nowhere echo hi'] }, places);
+    await until(() => runs.get('c2')?.state === 'failed');
+    assert.match(runs.get('c2')!.steps[0].tail[0], /No repo called nowhere in this card or its workspace \(ws-api, ws-webapp\)/);
   } finally {
     runs.stopAll();
   }

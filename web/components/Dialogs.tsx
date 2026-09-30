@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { addPath, homeRepo, isInside, removePath, repoName, samePath, WORKSPACE_COLORS, workspaceRepos, workspacesFor } from '../../shared/workspaces.ts';
 import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
 import type { SourceState } from '../../shared/tickets.ts';
-import { parseSteps, recipeFor } from '../../shared/recipes.ts';
+import { parseSteps, recipeFor, wsRecipeKey } from '../../shared/recipes.ts';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
 import { keymap, openSession } from '../keys.ts';
@@ -40,7 +40,7 @@ export function Dialogs() {
     case 'repoRemove': return <RepoRemover target={modal.target} />;
     case 'sources': return <SourcesDialog />;
     case 'deleteCard': return <DeleteCardDialog id={modal.id} />;
-    case 'recipe': return <RecipeDialog repo={modal.repo} />;
+    case 'recipe': return <RecipeDialog repo={modal.repo} workspaceId={modal.workspaceId} />;
     case 'ship': return <ShipSheet id={modal.id} />;
     case 'pickWorkspace': return <PickWorkspaceDialog then={modal.then} />;
     case 'tickets': return <TicketsDialog />;
@@ -506,36 +506,69 @@ function DeleteCardDialog({ id }: { id: string }) {
   );
 }
 
-/** e in a card's drawer: the run recipe for its repo, one command per line, and where the app will be. */
-function RecipeDialog({ repo }: { repo: string }) {
-  const recipe = useStore((s) => recipeFor(s.recipes, repo));
+/** e in a card's drawer: the run recipe, for its repo or for its whole workspace (Alt+W), one step per line. */
+function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: string }) {
+  const repoRecipe = useStore((s) => recipeFor(s.recipes, repo));
+  const wsRecipe = useStore((s) => (workspaceId ? s.recipes[wsRecipeKey(workspaceId)] : undefined));
+  const wsName = useStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.name);
+  // Opens on what the card runs: the workspace's recipe when there is one.
+  const [scope, setScope] = useState<'repo' | 'workspace'>(() => (wsRecipe ? 'workspace' : 'repo'));
+  const recipe = scope === 'workspace' ? wsRecipe : repoRecipe;
   const [text, setText] = useState(() => recipe?.steps.join('\n') ?? '');
   const [url, setUrl] = useState(() => recipe?.url ?? '');
   const [error, setError] = useState<string | null>(null);
+  const switchTo = (next: 'repo' | 'workspace') => {
+    if (next === scope || (next === 'workspace' && !workspaceId)) return;
+    const other = next === 'workspace' ? wsRecipe : repoRecipe;
+    // Untouched text follows the switch; edited text stays, so a repo's recipe can become the workspace's.
+    if (text === (recipe?.steps.join('\n') ?? '')) { setText(other?.steps.join('\n') ?? ''); setUrl(other?.url ?? ''); }
+    setScope(next);
+  };
   const save = () => {
-    saveRecipe(repo, parseSteps(text), url.trim() || undefined).then(close, (e: Error) => setError(e.message));
+    const target = scope === 'workspace' && workspaceId ? { workspaceId } : { repo };
+    saveRecipe(target, parseSteps(text), url.trim() || undefined).then(close, (e: Error) => setError(e.message));
   };
   const keys = (e: ReactKeyboardEvent) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
     else if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.altKey && e.key.toLowerCase() === 'w') { e.preventDefault(); switchTo(scope === 'repo' ? 'workspace' : 'repo'); }
   };
+  const tab = (id: 'repo' | 'workspace', label: string, off = false) => (
+    <button disabled={off} onClick={() => switchTo(id)} onKeyDown={keys}
+      className={`rounded-lg border px-2.5 py-1 text-[13px] ${scope === id ? 'border-ring bg-surface font-semibold text-ink shadow-[0_0_0_2px_color-mix(in_srgb,var(--c-ring)_22%,transparent)]' : 'border-line bg-raise text-sub'} disabled:opacity-50`}>{label}</button>
+  );
   return (
-    <Overlay label="Run recipe">
-      <DialogTitle>Run recipe for {repoName(repo)}</DialogTitle>
+    <Overlay label="Run recipe" wide>
+      <DialogTitle>Run recipe</DialogTitle>
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        <span className="eyebrow mr-1">For</span>
+        {tab('repo', `This repo: ${repoName(repo)}`)}
+        {tab('workspace', workspaceId ? `The whole workspace: ${wsName ?? 'this one'}` : 'The whole workspace (the card has none)', !workspaceId)}
+        <Key k="Alt W" size="sm" />
+      </div>
       <p className="mb-3 text-sm text-sub">
-        Try it runs these in the card’s folder, one after another. A step that keeps running and serves is the app: it stays up until you stop it, and the next step starts.
-        {recipe ? ` Now: ${recipe.source}.` : ' Nothing was detected for this repo.'}
+        {scope === 'workspace'
+          ? `Every ${wsName ?? ''} card runs this instead of its repo’s, so it can start several repos: a backend, then the UI pointed at it.`
+          : 'Try it runs these in the card’s folder.'}
+        {' '}Steps run one after another; a step that keeps running and serves is the app, and the next step starts.
+        {recipe ? ` Now: ${recipe.source}.` : scope === 'repo' ? ' Nothing was detected for this repo.' : ' The workspace has none yet.'}
       </p>
-      <label className="eyebrow mb-1.5 block" htmlFor="recipe-steps">Commands, one per line</label>
-      <textarea id="recipe-steps" autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={keys} rows={5} spellCheck={false}
-        placeholder={'pnpm install\npnpm dev'} className="field w-full resize-y font-mono text-[13px]" />
+      <label className="eyebrow mb-1.5 block" htmlFor="recipe-steps">Steps, one per line</label>
+      <textarea id="recipe-steps" autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={keys} rows={7} spellCheck={false}
+        placeholder={scope === 'workspace'
+          ? '@api okteto deploy --wait\n@web API_URL=https://api-you.okteto.example npm run dev\n! Sign in as a test borrower\nstop: @api okteto destroy'
+          : 'pnpm install\npnpm dev'}
+        className="field w-full resize-y font-mono text-[13px]" />
+      <div className="mt-1.5 grid gap-0.5 text-[12.5px] text-faint">
+        <span><code>@repo</code> runs a step in that repo (by folder name) · <code>NAME=value</code> before the command sets a variable for that step · <code>! …</code> is something to do by hand (shown, not run) · <code>stop: …</code> runs when the app is stopped · <code># …</code> is a comment.</span>
+      </div>
       <label className="eyebrow mb-1.5 mt-3 block" htmlFor="recipe-url">Where the app will be (optional; otherwise read from what it prints)</label>
       <input id="recipe-url" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={keys} placeholder="http://localhost:5173" className="field w-full font-mono text-[13px]" />
-      {recipe?.edited && <p className="mt-2 text-[13px] text-faint">Empty the commands and save to go back to the detected recipe.</p>}
+      {recipe?.edited && <p className="mt-2 text-[13px] text-faint">{scope === 'workspace' ? 'Empty the steps and save to remove the workspace’s recipe (cards go back to their repo’s).' : 'Empty the steps and save to go back to the detected recipe.'}</p>}
       {error && <div className="mt-3 rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
       <div className="mt-5 flex items-center justify-end gap-2.5">
         <button className="btn" onClick={close}>Cancel<Key k="Esc" size="sm" /></button>
-        <button className="btn btn-primary" onClick={save}>Save<Key k="Ctrl Enter" size="sm" tone="ghost" /></button>
+        <button className="btn btn-primary" onClick={save}>Save{scope === 'workspace' ? ' for the workspace' : ''}<Key k="Ctrl Enter" size="sm" tone="ghost" /></button>
       </div>
     </Overlay>
   );

@@ -1,4 +1,5 @@
 import type { CardDraft, PacketItem } from '../shared/cards.ts';
+import { wsRecipeKey } from '../shared/recipes.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
@@ -117,9 +118,9 @@ export async function tryCard(id: string): Promise<void> {
   await request((reqId) => ({ type: 'card.try', reqId, id }));
 }
 
-/** Save the run recipe you wrote for a repo (no steps: back to the detected one). */
-export async function saveRecipe(repo: string, steps: string[], url?: string): Promise<void> {
-  await request((reqId) => ({ type: 'recipe.save', reqId, repo, steps, ...(url ? { url } : {}) }));
+/** Save the run recipe you wrote for a repo (no steps: back to the detected one), or for a workspace (no steps: none). */
+export async function saveRecipe(target: { repo: string } | { workspaceId: string }, steps: string[], url?: string): Promise<void> {
+  await request((reqId) => ({ type: 'recipe.save', reqId, ...target, steps, ...(url ? { url } : {}) }));
 }
 
 /** Ship: what it will do for the card. */
@@ -285,7 +286,7 @@ function receive(msg: ServerMsg): void {
       set({ tickets: msg.tickets, ticketProjects: msg.projects, ticketSources: msg.sources });
       return;
     case 'recipes':
-      set({ recipes: msg.recipes });
+      set({ recipes: { ...msg.recipes, ...Object.fromEntries(Object.entries(msg.workspaceRecipes ?? {}).map(([id, r]) => [wsRecipeKey(id), r])) } });
       return;
     case 'runs':
       set({ runs: Object.fromEntries(msg.runs.map((r) => [r.cardId, r])) });

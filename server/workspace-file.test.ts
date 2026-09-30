@@ -6,6 +6,16 @@ import { workspaceFromFile, workspaceToFile } from './workspace-file.ts';
 const ws: Workspace = { id: 'w1', name: 'Storefront', color: 'orange', repos: ['C:\\me\\web-app', 'C:\\me\\cdn-worker'], home: 'C:\\me\\cdn-worker' };
 const pack = { version: 1 as const, groups: [{ name: 'Storefront', commands: [{ slot: 1, label: 'Continue', body: 'Continue.', mode: 'send' as const }] }] };
 
+test('a workspace recipe travels in the file, and comes back as text (nothing runs on import)', () => {
+  const recipe = { repo: '', workspaceId: 'w', source: '', steps: ['@api okteto deploy', 'stop: @api okteto destroy'], url: 'http://localhost:4200' };
+  const file = workspaceToFile(ws, pack, recipe);
+  assert.deepEqual(file.recipe, { steps: ['@api okteto deploy', 'stop: @api okteto destroy'], url: 'http://localhost:4200' });
+  const back = workspaceFromFile({ ...file, recipe: { steps: ['ok', 42, 'x'.repeat(900)], url: 'javascript:alert(1)' } }, []);
+  assert.deepEqual(back.recipe!.steps.map((s) => s.length), [2, 500], 'strings only, bounded');
+  assert.equal(back.recipe!.url, undefined, 'only http(s) addresses');
+  assert.equal(workspaceFromFile(workspaceToFile(ws, pack), []).recipe, undefined);
+});
+
 test('export carries repo names, the home flag and workflows, never paths', () => {
   const file = workspaceToFile(ws, pack);
   assert.deepEqual(file.repos, [{ name: 'web-app' }, { name: 'cdn-worker', home: true }]);

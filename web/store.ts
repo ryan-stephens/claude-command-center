@@ -35,7 +35,7 @@ export type Modal =
   /** Take a card off the Ticket Line. */
   | { kind: 'deleteCard'; id: string }
   /** Write or edit a repo's run recipe (e in a card's drawer). */
-  | { kind: 'recipe'; repo: string }
+  | { kind: 'recipe'; repo: string; workspaceId?: string }
   /** Ship a card (s), or merge its PR once it has one. */
   | { kind: 'ship'; id: string }
   /** Where tickets come from, and which workspace each project goes to. */

@@ -4,7 +4,7 @@
 // lineLegendFor (the bar at the bottom).
 
 import { cardRepos, waiting } from '../shared/cards.ts';
-import { recipeFor } from '../shared/recipes.ts';
+import { cardRecipe } from '../shared/recipes.ts';
 import { repoName } from '../shared/workspaces.ts';
 import { inbox, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
@@ -34,7 +34,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app'],
       ['o (a card)', 'Open the app its run is serving'],
-      ['e (card open)', 'Write or edit the run recipe for the card’s repo'],
+      ['e (card open)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo or the whole workspace)'],
       ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket; on a card in Ship, merge it'],
       ['Delete', 'Take the card off the line (its terminal session keeps running)'],
       ['Esc', 'Close the card, or clear the filter'],
@@ -228,7 +228,7 @@ export function tryIt(id: string): void {
   if (running(id)) { send({ type: 'card.stopRun', id }); flash(`Stopped ${card.key}’s app`); return; }
   const home = cardRepos(card)[0];
   set({ line: { ...s.line, focus: id, drawer: id, tab: 'over' } });
-  if (!recipeFor(s.recipes, home)) { flash(`No run recipe for ${home ? repoName(home) : card.key} yet: e writes one`); return; }
+  if (!cardRecipe(s.recipes, card.workspaceId, home)) { flash(`No run recipe for ${home ? repoName(home) : card.key} yet: e writes one`); return; }
   tryCard(id).then(() => {
     setTimeout(() => document.getElementById('try-it')?.scrollIntoView({ block: 'nearest' }), 0);
   }, (e: Error) => flash(e.message));
@@ -250,11 +250,11 @@ export function shipKey(id: string): void {
   set({ modal: { kind: 'ship', id } });
 }
 
-/** e in a card's drawer: write or edit the run recipe of the repo it starts in. */
+/** e in a card's drawer: write or edit the run recipe: its workspace's if it has one, else its repo's (the dialog switches). */
 export function editRecipe(id: string): void {
   const card = get().cards.find((c) => c.id === id);
   const home = card && cardRepos(card)[0];
-  if (home) set({ modal: { kind: 'recipe', repo: home } });
+  if (home) set({ modal: { kind: 'recipe', repo: home, ...(card.workspaceId ? { workspaceId: card.workspaceId } : {}) } });
 }
 
 export function openCard(id: string): void {

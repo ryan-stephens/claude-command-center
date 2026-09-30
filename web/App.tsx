@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { cardRepos, waiting } from '../shared/cards.ts';
-import { recipeFor } from '../shared/recipes.ts';
+import { cardRecipe } from '../shared/recipes.ts';
 import { Dialogs } from './components/Dialogs.tsx';
 import { SessionView } from './components/SessionView.tsx';
 import { Icon, Key, KeyHint, WsBadge } from './components/ui.tsx';
@@ -47,7 +47,7 @@ function Legend() {
   const drawerCard = useStore((s) => s.cards.find((c) => c.id === s.line.drawer));
   const canAdd = Boolean(drawerCard && drawerCard.stage !== 'done');
   const shown = useStore((s) => s.cards.find((c) => c.id === (s.line.drawer ?? s.line.focus)));
-  const canTry = useStore((s) => Boolean(shown && recipeFor(s.recipes, cardRepos(shown)[0])));
+  const canTry = useStore((s) => Boolean(shown && cardRecipe(s.recipes, shown.workspaceId, cardRepos(shown)[0])));
   const run = useStore((s) => (shown ? s.runs[shown.id] : undefined));
   const appRunning = run?.state === 'running' || run?.state === 'up';
   const appUp = run?.state === 'up' && Boolean(run.url);

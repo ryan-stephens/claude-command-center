@@ -15,7 +15,7 @@ import { SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, ticketFocus } from '../line-model.ts';
 import { boardOf, editRecipe, openAddComposer, openApp, openCard, openComposer, shipKey, tryIt, workspaceKey } from '../line-keys.ts';
-import { recipeFor, type CardRun, type RunStep } from '../../shared/recipes.ts';
+import { cardRecipe, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
 import { prLine } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
 import { send } from '../ws.ts';
@@ -343,7 +343,7 @@ function DrawerActions({ card }: { card: Card }) {
 
 /** The drawer's t / o buttons. */
 function TryButtons({ card }: { card: Card }) {
-  const has = useStore((s) => Boolean(recipeFor(s.recipes, cardRepos(card)[0])));
+  const has = useStore((s) => Boolean(cardRecipe(s.recipes, card.workspaceId, cardRepos(card)[0])));
   const run = useStore((s) => s.runs[card.id]);
   const live = run?.state === 'running' || run?.state === 'up';
   if (!has && !live) return null;
@@ -452,23 +452,49 @@ function Shipped({ card }: { card: Card }) {
   );
 }
 
-/** A step's mark: $ waiting, a spinner, ✓, ● serving, ✗, – stopped. */
+/** A step's mark: $ waiting, a spinner, ✓, ● serving, ✗, – stopped, ☐ by hand. */
 function StepMark({ s }: { s: RunStep['state'] }) {
   if (s === 'go') return <span className="spinner inline-block text-busy" />;
-  const [mark, tone] = { wait: ['$', 'text-faint'], ok: ['✓', 'text-ok'], up: ['●', 'text-ok'], bad: ['✗', 'text-bad'], off: ['–', 'text-faint'] }[s];
+  const marks: Record<Exclude<RunStep['state'], 'go'>, [string, string]> = { wait: ['$', 'text-faint'], ok: ['✓', 'text-ok'], up: ['●', 'text-ok'], bad: ['✗', 'text-bad'], off: ['–', 'text-faint'], note: ['☐', 'text-attn'] };
+  const [mark, tone] = marks[s];
   return <span className={`font-bold ${tone}`}>{mark}</span>;
+}
+
+/** One step of a recipe: its mark, the repo it runs in, the variables it sets (names only), the command or what to do by hand. */
+function StepRow({ s }: { s: RunStep }) {
+  return (
+    <li className={`flex min-w-0 items-center gap-2.5 ${s.state === 'wait' || s.state === 'off' ? 'text-sub' : ''}`}>
+      <span className="w-4 shrink-0 text-center"><StepMark s={s.state} /></span>
+      {s.state === 'note'
+        ? <><span className="shrink-0 rounded bg-attn-bg px-1 font-sans text-[10.5px] font-bold uppercase text-attn">by hand</span><span className="min-w-0 grow truncate font-sans">{s.cmd}</span></>
+        : <>
+          {s.repo && <span className="shrink-0 rounded border border-line bg-raise px-1 text-[11px] text-sub">{s.repo}</span>}
+          {s.env?.length ? <span className="shrink-0 text-[11px] text-faint" title="Variables this step sets (values hidden)">{s.env.join(' ')}</span> : null}
+          <span className="min-w-0 grow truncate">{s.cmd}</span>
+        </>}
+      {s.state === 'bad' && <span className="shrink-0 text-bad">{s.code === undefined ? 'can’t run' : `exit ${s.code}`}</span>}
+      {s.state === 'up' && <span className="shrink-0 text-ok">serving</span>}
+    </li>
+  );
 }
 
 /** Try it: the card's run recipe, each step as it runs, where the app is, and what a failing step said. */
 function TryIt({ card }: { card: Card }) {
   const home = cardRepos(card)[0];
-  const recipe = useStore((s) => recipeFor(s.recipes, home));
+  const recipe = useStore((s) => cardRecipe(s.recipes, card.workspaceId, home));
+  const wsName = useStore((s) => s.workspaces.find((w) => w.id === card.workspaceId)?.name);
   const last: CardRun | undefined = useStore((s) => s.runs[card.id]);
+  const specs = recipe ? specsOf(recipe) : [];
   // A finished run is shown while it is still this recipe's; after an edit, the new steps are.
   const live = last?.state === 'running' || last?.state === 'up';
-  const run = last && (live || (recipe && last.steps.map((s) => s.cmd).join('\n') === recipe.steps.join('\n'))) ? last : undefined;
-  const name = home ? repoName(home) : card.key;
-  const steps: RunStep[] = run?.steps ?? recipe?.steps.map((cmd) => ({ cmd, state: 'wait' as const, tail: [] })) ?? [];
+  const run = last && (live || (recipe && last.steps.map((s) => s.cmd).join('\n') === specs.map((s) => s.cmd).join('\n'))) ? last : undefined;
+  const name = recipe?.workspaceId ? `${wsName ?? 'the workspace'} workspace` : home ? repoName(home) : card.key;
+  const all: RunStep[] = run?.steps ?? specs.map((s) => ({
+    cmd: s.cmd, state: s.note ? 'note' as const : 'wait' as const, tail: [],
+    ...(s.repo ? { repo: s.repo } : {}), ...(Object.keys(s.env).length ? { env: Object.keys(s.env) } : {}), ...(s.stop ? { stop: true } : {}),
+  }));
+  const steps = all.filter((s) => !s.stop);
+  const stops = all.filter((s) => s.stop);
   const shown = run?.steps.find((s) => s.state === 'bad') ?? run?.steps.find((s) => s.state === 'go') ?? (run?.state === 'up' ? run.steps.find((s) => s.state === 'up') : undefined);
   return (
     <Sec id="try-it" title={`Try it · ${name} run recipe`} right={
@@ -477,14 +503,9 @@ function TryIt({ card }: { card: Card }) {
       </button>}>
       {steps.length ? (
         <ol className="grid min-w-0 gap-1 rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[12.5px]">
-          {steps.map((s, i) => (
-            <li key={i} className={`flex min-w-0 items-center gap-2.5 ${s.state === 'wait' || s.state === 'off' ? 'text-sub' : ''}`}>
-              <span className="w-4 shrink-0 text-center"><StepMark s={s.state} /></span>
-              <span className="min-w-0 grow truncate">{s.cmd}</span>
-              {s.state === 'bad' && <span className="shrink-0 text-bad">exit {s.code}</span>}
-              {s.state === 'up' && <span className="shrink-0 text-ok">serving</span>}
-            </li>
-          ))}
+          {steps.map((s, i) => <StepRow key={i} s={s} />)}
+          {stops.length > 0 && <li className="mt-1 font-sans text-[11px] font-bold uppercase tracking-wide text-faint">When stopped</li>}
+          {stops.map((s, i) => <StepRow key={`stop${i}`} s={s} />)}
         </ol>
       ) : <p className="text-sm text-faint">No run recipe for {name}: nothing to go on in its package.json or compose file. Press <Key k="e" size="sm" /> to write one.</p>}
       {run?.state === 'up' && (
@@ -497,6 +518,7 @@ function TryIt({ card }: { card: Card }) {
       {run && run.state !== 'up' && run.state !== 'running' && (
         <div className={`rounded-lg px-3 py-2 text-sm font-semibold ${run.state === 'failed' ? 'bg-bad-bg text-bad' : 'bg-raise text-sub'}`}>{run.text}. <Key k="t" size="sm" /> runs it again.</div>
       )}
+      {recipe?.source.startsWith('from the workspace file') && !run && <div className="rounded-lg bg-attn-bg px-3 py-2 text-sm text-attn">This recipe came with a workspace file someone shared. Read the commands before pressing <Key k="t" size="sm" />: they run on this machine.</div>}
       {shown && shown.tail.length > 0 && (
         <pre className="m-0 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-snug text-sub">{shown.tail.join('\n')}</pre>
       )}
