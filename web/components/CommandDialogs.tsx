@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Command, CommandGroup, CommandMode } from '../../shared/protocol.ts';
 import { fireCommand, fillTemplate, placeholders } from '../commands.ts';
 import { flash, get, sessionById, set } from '../store.ts';

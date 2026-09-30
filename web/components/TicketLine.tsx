@@ -566,7 +566,8 @@ function StepRow({ s }: { s: RunStep }) {
         : <>
           {s.repo && <span className="shrink-0 rounded border border-line bg-raise px-1 text-[11px] text-sub">{s.repo}</span>}
           {s.env?.length ? <span className="shrink-0 text-[11px] text-faint" title="Variables this step sets (values hidden)">{s.env.join(' ')}</span> : null}
-          <span className="min-w-0 grow truncate">{s.cmd}</span>
+          <span className="min-w-0 grow truncate" title={s.cmd}>{s.cmd}</span>
+          {s.waitFor && s.state === 'go' && <span className="shrink-0 font-sans text-[11px] text-busy">waiting for {s.waitFor}</span>}
         </>}
       {s.state === 'bad' && <span className="shrink-0 text-bad">{s.code === undefined ? 'can’t run' : `exit ${s.code}`}</span>}
       {s.state === 'up' && <span className="shrink-0 text-ok">serving</span>}
@@ -581,10 +582,12 @@ function TryIt({ card }: { card: Card }) {
   const wsName = useStore((s) => s.workspaces.find((w) => w.id === card.workspaceId)?.name);
   const last: CardRun | undefined = useStore((s) => s.runs[card.id]);
   const specs = recipe ? specsOf(recipe) : [];
-  // A finished run is shown while it is still this recipe's; after an edit, the new steps are.
+  const stack = recipe?.stack;
+  // A finished run is shown while it is still this recipe's; after an edit, the new steps are. A
+  // stack's steps depend on what was picked, so its last run is shown.
   const live = last?.state === 'running' || last?.state === 'up';
-  const run = last && (live || (recipe && last.steps.map((s) => s.cmd).join('\n') === specs.map((s) => s.cmd).join('\n'))) ? last : undefined;
-  const name = recipe?.workspaceId ? `${wsName ?? 'the workspace'} workspace` : home ? repoName(home) : card.key;
+  const run = last && (live || stack || (recipe && last.steps.map((s) => s.cmd).join('\n') === specs.map((s) => s.cmd).join('\n'))) ? last : undefined;
+  const name = stack ? `${wsName ?? 'the workspace'} stack${run?.choice ? ` · ${run.choice}` : ''}` : recipe?.workspaceId ? `${wsName ?? 'the workspace'} workspace` : home ? repoName(home) : card.key;
   const all: RunStep[] = run?.steps ?? specs.map((s) => ({
     cmd: s.cmd, state: s.note ? 'note' as const : 'wait' as const, tail: [],
     ...(s.repo ? { repo: s.repo } : {}), ...(Object.keys(s.env).length ? { env: Object.keys(s.env) } : {}), ...(s.stop ? { stop: true } : {}),
@@ -593,7 +596,7 @@ function TryIt({ card }: { card: Card }) {
   const stops = all.filter((s) => s.stop);
   const shown = run?.steps.find((s) => s.state === 'bad') ?? run?.steps.find((s) => s.state === 'go') ?? (run?.state === 'up' ? run.steps.find((s) => s.state === 'up') : undefined);
   return (
-    <Sec id="try-it" title={`Try it · ${name} run recipe`} right={
+    <Sec id="try-it" title={`Try it · ${name}${stack ? '' : ' run recipe'}`} right={
       <button className="flex items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={() => editRecipe(card.id)} title="Write or edit the run recipe">
         {recipe ? recipe.source : 'no recipe yet'} · edit <Key k="e" size="sm" />
       </button>}>
@@ -603,6 +606,12 @@ function TryIt({ card }: { card: Card }) {
           {stops.length > 0 && <li className="mt-1 font-sans text-[11px] font-bold uppercase tracking-wide text-faint">When stopped</li>}
           {stops.map((s, i) => <StepRow key={`stop${i}`} s={s} />)}
         </ol>
+      ) : stack ? (
+        <div className="grid gap-1 rounded-lg border border-line bg-bg px-3 py-2 text-[13px]">
+          <div><span className="eyebrow mr-2">Asks</span>{Object.entries(stack.choose).map(([k, v]) => `${k}: ${v.join(' / ')}`).join(' · ') || 'nothing'}</div>
+          <div><span className="eyebrow mr-2">APIs</span><span className="font-mono">{stack.apis.map((a) => a.repo).join(', ') || 'none set up'}</span></div>
+          {stack.ui && <div><span className="eyebrow mr-2">Then</span><span className="font-mono">{stack.ui.repo}</span>{stack.ui.proxyFile ? <span className="text-faint">, its {stack.ui.proxyFile} pointed at the APIs you pick</span> : null}</div>}
+        </div>
       ) : <p className="text-sm text-faint">No run recipe for {name}: nothing to go on in its package.json or compose file. Press <Key k="e" size="sm" /> to write one.</p>}
       {run?.state === 'up' && (
         <div className="flex items-center gap-2.5 rounded-lg bg-ok-bg px-3 py-2 text-sm font-semibold text-ok">
@@ -618,7 +627,9 @@ function TryIt({ card }: { card: Card }) {
       {shown && shown.tail.length > 0 && (
         <pre className="m-0 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-snug text-sub">{shown.tail.join('\n')}</pre>
       )}
-      {!run && recipe && <p className="text-sm text-faint">Press <Key k="t" size="sm" /> to start the app in the card’s folder and try the change.</p>}
+      {!run && recipe && <p className="text-sm text-faint">{stack
+        ? <>Press <Key k="t" size="sm" /> to pick the environment and the APIs to run, then start them and the UI.</>
+        : <>Press <Key k="t" size="sm" /> to start the app in the card’s folder and try the change.</>}</p>}
     </Sec>
   );
 }

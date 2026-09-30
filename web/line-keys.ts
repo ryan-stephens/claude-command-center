@@ -5,6 +5,7 @@
 
 import { cardRepos, waiting } from '../shared/cards.ts';
 import { cardRecipe } from '../shared/recipes.ts';
+import type { StackChoice } from '../shared/stack.ts';
 import { repoName } from '../shared/workspaces.ts';
 import { inbox, INBOX_VIEWS, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
@@ -36,9 +37,10 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['← → (card open)', 'The previous / next card on the board, in column order'],
       ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
-      ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app'],
+      ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a workspace stack, pick the environment and the APIs first'],
+      ['t picker: ← →  /  ↑ ↓ Space  /  Enter', 'Environment (dev, uat …)  /  which APIs run (changed ones are ticked)  /  start them, then the UI'],
       ['o (a card)', 'Open the app its run is serving'],
-      ['e (card open)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo or the whole workspace)'],
+      ['e (card open)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo, the whole workspace, or the workspace’s stack of APIs and UI)'],
       ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket; on a card in Ship, merge it. On a QA or review card: its report, to copy'],
       ['Delete', 'Take the card off the line (its terminal session keeps running)'],
       ['Esc', 'Close the card, or clear the filter'],
@@ -255,10 +257,39 @@ export function tryIt(id: string): void {
   if (running(id)) { send({ type: 'card.stopRun', id }); flash(`Stopped ${card.key}’s app`); return; }
   const home = cardRepos(card)[0];
   set({ line: { ...s.line, focus: id, drawer: id, tab: 'over' } });
-  if (!cardRecipe(s.recipes, card.workspaceId, home)) { flash(`No run recipe for ${home ? repoName(home) : card.key} yet: e writes one`); return; }
+  const recipe = cardRecipe(s.recipes, card.workspaceId, home);
+  if (!recipe) { flash(`No run recipe for ${home ? repoName(home) : card.key} yet: e writes one`); return; }
+  // A stack asks first: which environment, which APIs.
+  if (recipe.stack) { set({ modal: { kind: 'tryPick', id } }); return; }
   tryCard(id).then(() => {
     setTimeout(() => document.getElementById('try-it')?.scrollIntoView({ block: 'nearest' }), 0);
   }, (e: Error) => flash(e.message));
+}
+
+/** Start a card's stack with what the picker chose, and remember the pick for next time. */
+export function tryStack(id: string, choice: StackChoice): void {
+  rememberPick(id, choice);
+  set({ modal: null });
+  tryCard(id, choice).then(() => {
+    setTimeout(() => document.getElementById('try-it')?.scrollIntoView({ block: 'nearest' }), 0);
+  }, (e: Error) => flash(e.message));
+}
+
+const PICK_KEY = 'cc-control.stackPick';
+
+/** What was picked last time for this card, if anything (this browser only). */
+export function lastPick(id: string): StackChoice | undefined {
+  try { return (JSON.parse(localStorage.getItem(PICK_KEY) ?? '{}') as Record<string, StackChoice>)[id]; } catch { return undefined; }
+}
+
+function rememberPick(id: string, choice: StackChoice): void {
+  try {
+    const all = JSON.parse(localStorage.getItem(PICK_KEY) ?? '{}') as Record<string, StackChoice>;
+    all[id] = choice;
+    // Only the most recent cards: an old card's pick doesn't matter.
+    const keep = Object.fromEntries(Object.entries(all).slice(-50));
+    localStorage.setItem(PICK_KEY, JSON.stringify(keep));
+  } catch { /* storage off: the picker starts from the suggestion */ }
 }
 
 /** o: the app the card's run is serving, in a new browser tab. */

@@ -14,6 +14,8 @@ import type { RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, cleanDraft, userModel, writeHookSettings } from './cards.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
+import { plainStack, prepareStackRun, restoreLeftovers, runsDir, saveStack, stackOf, stackRecipe, stackRows } from './stack.ts';
+import { suggested } from '../shared/stack.ts';
 import { ShipService } from './ship.ts';
 import { findPrIn } from './hosts.ts';
 import { CommandService } from './commands.ts';
@@ -26,7 +28,7 @@ import { listFolder, listRoots, normalizeFolder, notAFullPath } from './fs-brows
 import { cleanSources, scanSources } from './repo-library.ts';
 import { workspaceFromFile, workspaceToFile } from './workspace-file.ts';
 import { SessionManager } from './session-manager.ts';
-import { Store } from './store.ts';
+import { DB_PATH, Store } from './store.ts';
 
 // Local-only by design: this is effectively a remote shell. Never bind anything but loopback.
 const HOST = '127.0.0.1';
@@ -68,6 +70,8 @@ function ticketsMsg(): ServerMsg {
 }
 
 const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env);
+// A proxy file a run changed in place and never put back (the server stopped mid-run) goes back now.
+for (const f of restoreLeftovers(runsDir(DB_PATH))) console.log(`Put back ${f}, which Try it had changed.`);
 const ship = new ShipService(cards, runs);
 
 /** Recipes for every repo the page may show one for: the library's, the workspaces' and the cards'. */
@@ -85,13 +89,20 @@ function recipesMsg(): ServerMsg {
   }
   const workspaceRecipes: Record<string, RunRecipe> = {};
   for (const w of store.loadWorkspaces()) {
-    const r = workspaceRecipeOf(store, w.id);
+    // A stack, when the workspace has one, is what its cards run.
+    const st = stackOf(store, w.id);
+    const r = st ? stackRecipe(st) : workspaceRecipeOf(store, w.id);
     if (r) workspaceRecipes[w.id] = r;
   }
   return { type: 'recipes', recipes, workspaceRecipes };
 }
 
 /** Where a card's run goes: its folder, and every repo it or its workspace has by folder name (its own repo is its folder, its worktree if it has one). */
+/** What a card is about, for spotting the APIs it names: its title and its ticket's. */
+function cardText(card: Card): string {
+  return [card.title, card.ticket?.title, card.ticket?.description].filter(Boolean).join('\n');
+}
+
 function runPlaces(card: Card): RunPlaces {
   const home = cardRepos(card)[0];
   const cwd = card.cwd ?? home;
@@ -377,7 +388,8 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'workspace.export': {
       const w = store.loadWorkspaces().find((x) => x.id === msg.id);
       if (!w) throw new Error('That workspace no longer exists.');
-      send(ws, { type: 'workspace.file', reqId: msg.reqId, file: workspaceToFile(w, store.loadWorkspacePack(w.id), workspaceRecipeOf(store, w.id)) });
+      const st = stackOf(store, w.id);
+      send(ws, { type: 'workspace.file', reqId: msg.reqId, file: workspaceToFile(w, store.loadWorkspacePack(w.id), workspaceRecipeOf(store, w.id), st ? plainStack(st) : undefined) });
       return;
     }
     case 'card.start': {
@@ -402,6 +414,16 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'card.try': {
       const card = cards.get(String(msg.id));
       if (!card) throw new Error('That card is no longer on the line.');
+      const stack = card.workspaceId ? stackOf(store, card.workspaceId) : undefined;
+      if (stack) {
+        const c = (msg.choice ?? {}) as { values?: unknown; apis?: unknown };
+        const values = Object.fromEntries(Object.entries((c.values ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)]));
+        const apis = Array.isArray(c.apis) ? c.apis.map(String).slice(0, 30) : [];
+        const { recipe, opts } = await prepareStackRun(stack, { values, apis }, runPlaces(card), card.id, runsDir(DB_PATH));
+        send(ws, { type: 'ok', reqId: msg.reqId });
+        await runs.start(card.id, recipe, runPlaces(card), opts);
+        return;
+      }
       const home = cardRepos(card)[0];
       const recipe = cardRecipeOf(store, card.workspaceId, home);
       if (!recipe) throw new Error(`${card.key} has no run recipe yet. e writes one for ${home ? repoName(home) : 'its repo'}.`);
@@ -414,6 +436,23 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'card.stopRun':
       await runs.stop(String(msg.id));
       return;
+    case 'card.stackPlan': {
+      const card = cards.get(String(msg.id));
+      if (!card) throw new Error('That card is no longer on the line.');
+      const stack = card.workspaceId ? stackOf(store, card.workspaceId) : undefined;
+      if (!stack) throw new Error(`${card.key}’s workspace has no stack.`);
+      const rows = await stackRows(stack, runPlaces(card), cardText(card));
+      send(ws, { type: 'stack.plan', reqId: msg.reqId, rows, suggested: suggested(rows) });
+      return;
+    }
+    case 'stack.save': {
+      const id = String(msg.workspaceId);
+      if (!store.loadWorkspaces().some((w) => w.id === id)) throw new Error('That workspace no longer exists.');
+      saveStack(store, id, msg.stack ?? null);
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      broadcast(recipesMsg());
+      return;
+    }
     case 'card.shipPlan': {
       const card = cards.get(String(msg.id));
       if (!card) throw new Error('That card is no longer on the line.');
@@ -497,6 +536,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       if (r.workflows.groups.length) store.saveWorkspacePack(w.id, r.workflows);
       // Marked as imported: its commands are someone else's, and the drawer says to check them.
       if (r.recipe) saveWorkspaceRecipe(store, w.id, r.recipe.steps, r.recipe.url, true);
+      if (r.stack) saveStack(store, w.id, r.stack, true);
       workspacesChanged();
       send(ws, {
         type: 'info',

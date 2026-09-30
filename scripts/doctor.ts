@@ -1,18 +1,20 @@
 // pnpm run doctor: is this machine ready for cc-control? Checks what it needs (Node, Claude Code,
 // Windows Terminal, git, the built page), reads the settings file, and tries each connection for
 // real: Jira, and the pull-request host of every repo in your workspaces (gh for GitHub, the REST
-// API for Azure DevOps / TFS). Prints one line per check with what to do about it; exits 1 if
-// anything needed is missing. Never prints a token.
+// API for Azure DevOps / TFS), and each workspace stack's programs, repos and proxy file. Prints
+// one line per check with what to do about it; exits 1 if anything needed is missing. Never prints a token.
 
 import '../server/boot.ts';
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findClaude } from '../server/cards.ts';
 import { config, CONFIG_FILE } from '../server/config.ts';
 import { AzureDevOpsHost, GitHubHost, hostFor } from '../server/hosts.ts';
 import { recipeOf } from '../server/recipes.ts';
+import { readLooseJson, stackOf } from '../server/stack.ts';
+import { parseStep } from '../shared/recipes.ts';
 import { DB_PATH, Store } from '../server/store.ts';
 import { jiraConfig, jiraProblem } from '../server/tickets.ts';
 import { repoName } from '../shared/workspaces.ts';
@@ -118,6 +120,61 @@ for (const w of workspaces) {
     }
     const recipe = store && recipeOf(store, repo);
     line('info', `    run recipe`, recipe ? `${recipe.steps.join(' → ')} (${recipe.source})` : 'none detected: e on a card writes one');
+  }
+}
+
+// A stack's steps run programs this machine needs: check each one, without running any step.
+for (const w of workspaces) {
+  const st = store && stackOf(store, w.id);
+  if (!st) continue;
+  section(`Stack: ${w.name}`);
+  const lines = [...st.api.steps, ...(st.ui?.steps ?? [])].map((l) => parseStep(l.replace(/\{\{[^}]*\}\}/g, 'x'))).filter((x) => x && !x.note);
+  const programs = new Set<string>();
+  const commands = new Set<string>();
+  let ps = false;
+  for (const spec of lines) {
+    if (spec!.ps) {
+      ps = true;
+      // PowerShell commands (Verb-Noun) come from modules or your profile, not PATH.
+      for (const m of spec!.cmd.matchAll(/(?<![\\/.\w-])([A-Z][a-z]+-[A-Z][A-Za-z]+)\b(?!\.)/g)) if (!/^(Get|Set|Write|Out|Test|Select|Where|ForEach|New-Item|Remove-Item)-/.test(m[1])) commands.add(m[1]);
+      for (const m of spec!.cmd.matchAll(/(?:^|[;{(|]\s*)([a-z][\w.-]*)(?=\s)/g)) if (!['if', 'else', 'foreach', 'try', 'catch'].includes(m[1])) programs.add(m[1]);
+    } else {
+      const first = /^[\w.\\/-]+/.exec(spec!.cmd)?.[0];
+      if (first && !first.includes('\\') && !first.includes('/')) programs.add(first);
+    }
+  }
+  if (ps) programs.add(process.platform === 'win32' ? 'powershell.exe' : 'pwsh');
+  for (const prog of programs) {
+    const where = onPath(prog) ?? onPath(`${prog}.exe`) ?? onPath(`${prog}.cmd`);
+    line(where ? 'ok' : 'bad', prog, where ?? 'not found on PATH', where ? '' : `A stack step runs ${prog}: install it, or put it on PATH.`);
+  }
+  for (const c of commands) {
+    // With the profile, as Try it runs them; Get-Command only looks, it runs nothing.
+    const r = spawnSync('powershell.exe', ['-NoLogo', '-Command', `if (Get-Command ${c} -ErrorAction SilentlyContinue) { 'yes' }`], { encoding: 'utf8', windowsHide: true, timeout: 60_000 });
+    const ok = r.stdout.includes('yes');
+    line(ok ? 'ok' : 'bad', c, ok ? 'PowerShell has it' : 'PowerShell doesn’t know it', ok ? '' : 'It comes from a module or your PowerShell profile: open PowerShell and check it runs there.');
+  }
+  if (programs.has('okteto')) {
+    const r = spawnSync('okteto', ['context', 'show'], { encoding: 'utf8', windowsHide: true, timeout: 30_000, shell: process.platform === 'win32' });
+    line(r.status === 0 ? 'ok' : 'warn', 'okteto context', r.status === 0 ? (r.stdout || r.stderr).trim().split(/\r?\n/).slice(0, 2).join(' ') : ((r.stderr || r.stdout || '').trim().split(/\r?\n/)[0] || 'couldn’t say'), r.status === 0 ? '' : 'Run okteto context use <your context> (and okteto login if it asks).');
+  }
+  const inWs = (name: string) => w.repos.find((r) => repoName(r).toLowerCase() === name.toLowerCase());
+  for (const a of st.apis) {
+    const at = inWs(a.repo);
+    line(at ? 'ok' : 'info', `API ${a.repo}`, at ? `in the workspace${a.values.port ? `, port ${a.values.port}` : ''}` : 'not in the workspace', at ? '' : 'Fine if cards add it as context; otherwise add it to the workspace (+).');
+  }
+  const ports = st.apis.map((a) => a.values.port).filter(Boolean);
+  const twice = [...new Set(ports.filter((p, i) => ports.indexOf(p) !== i))];
+  if (twice.length) line('warn', 'Ports', `more than one API uses ${twice.join(', ')}`, 'Only one of them can run at a time: give each its own local port.');
+  if (st.ui) {
+    const at = inWs(st.ui.repo);
+    line(at ? 'ok' : 'info', `UI ${st.ui.repo}`, at ? 'in the workspace' : 'not in the workspace', at ? '' : 'Fine if cards add it as context.');
+    if (at && st.ui.proxyFile) {
+      const f = join(at, st.ui.proxyFile);
+      let problem = existsSync(f) ? '' : 'isn’t there';
+      if (!problem) { try { readLooseJson(readFileSync(f, 'utf8')); } catch (e) { problem = `isn’t JSON (${(e as Error).message})`; } }
+      line(problem ? 'bad' : 'ok', `  ${st.ui.proxyFile}`, problem || `read; ${st.ui.proxyMode === 'edit' ? 'changed in place while it runs' : 'a copy is used, the file stays as it is'}`);
+    }
   }
 }
 store?.close();

@@ -4,11 +4,14 @@
 // The server runs it as child processes. Pure and shared, so the drawer, the packet text and the
 // server say the same thing.
 //
-// A step is one line: `[stop:] [@repo] [NAME=value …] command`, or `! something to do by hand`.
-// @repo runs it in that repo (the card's folder for its own repo); NAME=value sets the step's
-// environment (parsed here, so it works in cmd.exe too); stop: lines run when the app is stopped;
-// lines starting with # are comments.
+// A step is one line: `[stop:] [ps:] [wait:…] [answers:…] [@repo] [NAME=value …] command`, or
+// `! something to do by hand`. The prefixes come in any order. @repo runs it in that repo (the card's
+// folder for its own repo); NAME=value sets the step's environment (parsed here, so it works in
+// cmd.exe too); stop: lines run when the app is stopped; ps: runs it in PowerShell instead of cmd;
+// wait:"text" or wait:port:8080 says when a step that keeps running is ready; answers:"y,n" types
+// those lines into the questions it asks; lines starting with # are comments.
 
+import { stackText, type Stack } from './stack.ts';
 import { repoName, samePath } from './workspaces.ts';
 
 export interface RunRecipe {
@@ -24,6 +27,8 @@ export interface RunRecipe {
   source: string;
   /** True when you wrote or edited it (saved on the server, kept over what is detected). */
   edited?: boolean;
+  /** Set when the workspace's recipe is its stack: the steps come from what t picks (shared/stack.ts). */
+  stack?: Stack;
 }
 
 /**
@@ -40,6 +45,8 @@ export interface RunStep {
   env?: string[];
   /** Runs when the app is stopped. */
   stop?: boolean;
+  /** What it waits for before the next step starts: "Now listening on", "port 8080". */
+  waitFor?: string;
   /** Exit code, once it exited. */
   code?: number | null;
   /** The last lines it printed. */
@@ -57,6 +64,8 @@ export interface CardRun {
   startedAt: number;
   /** One line for the drawer and the tile: "Running at http://localhost:5173", "pnpm install failed (exit 1)". */
   text: string;
+  /** What was picked when it started, for a workspace's stack: "dev · orders-api, fees-api". */
+  choice?: string;
 }
 
 /** The page keeps workspaces' recipes in the same map, under this key. */
@@ -82,27 +91,53 @@ export interface StepSpec {
   env: Record<string, string>;
   stop: boolean;
   note: boolean;
+  /** Run in PowerShell rather than cmd. */
+  ps?: boolean;
+  /** When a step that keeps running is ready: a line containing this text, or its port open. */
+  wait?: { text: string } | { port: number };
+  /** Lines typed into the step's input, one per question it asks. */
+  answers?: string[];
 }
 
 const ENV = /^([A-Za-z_][A-Za-z0-9_]*)=("([^"]*)"|'([^']*)'|(\S*))(\s+|$)/;
 
-/** Read a step line: `[stop:] [@repo] [NAME=value …] command`, or `! a note`. Comments (#) and blank lines give undefined. */
+/** Read a step line: `[stop:] [ps:] [wait:…] [answers:…] [@repo] [NAME=value …] command`, or `! a note`. Comments (#) and blank lines give undefined. */
 export function parseStep(line: string): StepSpec | undefined {
   let rest = line.trim();
   if (!rest || rest.startsWith('#')) return undefined;
   if (rest.startsWith('!')) return { line, cmd: rest.slice(1).trim(), env: {}, stop: false, note: true };
   let stop = false;
-  const s = /^stop:\s*/i.exec(rest);
-  if (s) { stop = true; rest = rest.slice(s[0].length); }
+  let ps = false;
   let repo: string | undefined;
-  const r = /^@(\S+)\s+/.exec(rest);
-  if (r) { repo = r[1]; rest = rest.slice(r[0].length); }
+  let wait: StepSpec['wait'];
+  let answers: string[] | undefined;
+  // The prefixes, in any order, so a stack can put @repo in front of a line that starts with stop:.
+  for (;;) {
+    let m: RegExpExecArray | null;
+    if ((m = /^stop:\s*/i.exec(rest))) stop = true;
+    else if ((m = /^ps:\s*/i.exec(rest))) ps = true;
+    else if ((m = /^wait:port:(\d{2,5})\s+/i.exec(rest))) wait = { port: Number(m[1]) };
+    else if ((m = /^wait:"([^"]+)"\s+/i.exec(rest))) wait = { text: m[1] };
+    else if ((m = /^answers:"([^"]*)"\s+/i.exec(rest))) answers = m[1].split(',').map((a) => a.trim());
+    else if ((m = /^@(\S+)\s+/.exec(rest))) repo = m[1];
+    else break;
+    rest = rest.slice(m[0].length);
+  }
   const env: Record<string, string> = {};
   for (let m = ENV.exec(rest); m; m = ENV.exec(rest)) {
     env[m[1]] = m[3] ?? m[4] ?? m[5] ?? '';
     rest = rest.slice(m[0].length);
   }
-  return { line, cmd: rest.trim(), ...(repo ? { repo } : {}), env, stop, note: false };
+  return {
+    line, cmd: rest.trim(), ...(repo ? { repo } : {}), env, stop, note: false,
+    ...(ps ? { ps } : {}), ...(wait ? { wait } : {}), ...(answers ? { answers } : {}),
+  };
+}
+
+/** What a step waits for, as the drawer says it: "Now listening on", "port 8080". */
+export function waitLabel(s: Pick<StepSpec, 'wait'>): string | undefined {
+  if (!s.wait) return undefined;
+  return 'port' in s.wait ? `port ${s.wait.port}` : s.wait.text;
 }
 
 /** The recipe's steps, read (comments dropped). */
@@ -119,11 +154,13 @@ export function stepLabel(s: StepSpec): string {
 
 /** The line in the workspace layer of the packet: "Run recipe: pnpm install, pnpm dev". */
 export function recipeLabel(r: RunRecipe): string {
+  if (r.stack) return `Run: the workspace’s stack (APIs ${r.stack.apis.map((a) => a.repo).join(', ') || 'none'}${r.stack.ui ? `; UI ${r.stack.ui.repo}` : ''})`;
   return `Run recipe: ${specsOf(r).filter((s) => !s.stop && !s.note).map(stepLabel).join(', ')}`;
 }
 
 /** What Claude is told about running the app, under "## Running the app". */
 export function recipeText(r: RunRecipe): string {
+  if (r.stack) return stackText(r.stack);
   const specs = specsOf(r);
   const run = specs.filter((s) => !s.stop);
   const stop = specs.filter((s) => s.stop);

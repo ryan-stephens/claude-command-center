@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { cardRecipe, findUrl, parseStep, parseSteps, portOf, recipeLabel, recipeText, stepLabel, wsRecipeKey } from '../shared/recipes.ts';
-import { appLike, cardRecipeOf, detectRecipe, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, urlFromScript, workspaceRecipeOf } from './recipes.ts';
+import { cardRecipe, findUrl, parseStep, parseSteps, portOf, recipeLabel, recipeText, stepLabel, waitLabel, wsRecipeKey } from '../shared/recipes.ts';
+import { appLike, cardRecipeOf, detectRecipe, expandVars, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, urlFromScript, workspaceRecipeOf } from './recipes.ts';
 import { Store } from './store.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'cc-recipes-'));
@@ -192,4 +192,38 @@ test('a workspace run: each step in its repo with its own variables, notes skipp
   } finally {
     runs.stopAll();
   }
+});
+
+test('a step line: ps:, wait: and answers:, in any order with @repo and stop:', () => {
+  assert.deepEqual(parseStep('@api stop: ps: kubectl delete deployment x -n team-dev'),
+    { line: '@api stop: ps: kubectl delete deployment x -n team-dev', cmd: 'kubectl delete deployment x -n team-dev', repo: 'api', env: {}, stop: true, note: false, ps: true });
+  const s = parseStep('wait:"Now listening on" answers:"y, n" @api PORT=8080 okteto up')!;
+  assert.deepEqual([s.wait, s.answers, s.repo, s.env, s.cmd], [{ text: 'Now listening on' }, ['y', 'n'], 'api', { PORT: '8080' }, 'okteto up']);
+  assert.deepEqual(parseStep('wait:port:8080 okteto up')!.wait, { port: 8080 });
+  assert.equal(waitLabel(parseStep('wait:port:8080 okteto up')!), 'port 8080');
+  assert.equal(parseStep('echo wait:port:1 ps: x')!.cmd, 'echo wait:port:1 ps: x', 'only at the start');
+});
+
+test('a wait: step is ready only when its text shows, and its URL isn’t the app’s', async () => {
+  const cwd = repo('wait', {
+    'api.js': "console.log('Building...'); console.log('Listening at http://localhost:1'); setTimeout(()=>console.log('Now listening on: http://[::]:5999'), 600); setInterval(()=>{}, 1000)",
+    'app.js': "const s=require('http').createServer((q,r)=>r.end('ok')).listen(0,()=>console.log('Local: http://localhost:'+s.address().port+'/'))",
+  });
+  const runs = new RunService(() => {}, process.env);
+  try {
+    await runs.start('w1', { repo: cwd, source: '', steps: ['wait:"now listening on" node api.js', 'node app.js'] }, cwd);
+    await until(() => runs.get('w1')!.steps[0].tail.includes('Building...'));
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(runs.get('w1')!.steps[0].state, 'go', 'a URL alone doesn’t make it ready');
+    await until(() => runs.get('w1')?.state === 'up');
+    assert.deepEqual(runs.get('w1')!.steps.map((s) => s.state), ['up', 'up']);
+    assert.doesNotMatch(runs.get('w1')!.url!, /:5999|:1$/, 'the app is the last step');
+  } finally {
+    runs.stopAll();
+  }
+});
+
+test('step variables fill in %NAME% from the environment, any case, and leave unknown ones', () => {
+  assert.deepEqual(expandVars({ KUBECONFIG: '%USERPROFILE%/.kube/dev.yaml', X: '%NOPE%', Y: 'plain' }, { UserProfile: 'C:/Users/me' }),
+    { KUBECONFIG: 'C:/Users/me/.kube/dev.yaml', X: '%NOPE%', Y: 'plain' });
 });

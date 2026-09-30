@@ -1130,3 +1130,122 @@ This departs from the mock (`path-line.html` drew a 620 px drawer) at the owner'
   - No console errors. `pnpm test` (211) passes.
 
 **Not yet:** the legend's `Tab` still says *Overview · Context* on a narrow window, where it also reaches Transcript.
+
+## 42. Try it starts the stack: pick dev or uat and the APIs, the UI on a proxy copy
+
+2026-09-30, from the owner's answers to `docs/prompts/continue-try-it-stack.md`. Their flow at VU:
+1. Each API runs on Okteto from its own repo: a PowerShell command makes the feature-branch deployment and asks two questions, then `kubectl apply`, `okteto up`, and `dotnet watch run` inside the container.
+2. The UI's `proxy.conf.json` gets rules pointing at the forwarded local port.
+3. The UI's dev server starts.
+4. They sign in and open a loan by hand.
+
+**Which APIs run changes per card and per developer**: some, all or none of the APIs in the card's context. So a single hand-written recipe doesn't fit. A workspace's **stack** says once how *an* API starts and lists the APIs with their own values, and `t` picks what to run.
+
+**The stack** (`shared/stack.ts`, stored per workspace by `server/stack.ts`). It's edited as JSON in the recipe dialog's third tab (`Alt+W`) and has four parts:
+- **`choose`:** what `t` asks every time, the first value being the default: `{ "env": ["dev", "uat"] }`. The owner wants it asked each time.
+- **`api.steps`:** the template for one API, in run-recipe syntax, with `{{placeholders}}`:
+  - `{{env}}` and any other `choose` name;
+  - `{{branch}}`: the API repo's git branch, made safe for a Kubernetes name (`feature/ABC-12` → `feature-abc-12`);
+  - `{{repo}}`, and the API's own `values` (`{{name}}`, `{{port}}`, `{{dir}}` …).
+
+  A placeholder with no value is an error that names it. The braces are double so PowerShell's `{ }` blocks are left alone.
+- **`api.proxy`:** the proxy rules each picked API adds, also templated (`/gateway/…/{{route}}/**` → `http://localhost:{{port}}`). An API's own `proxy` adds routes only that API has.
+- **`apis` and `ui`:** `apis` is a list of `{ repo, values, proxy? }`; `ui` is `{ repo, proxyFile, proxyMode?, steps, url? }`.
+
+Around the stack:
+- It travels in the workspace file (`Shift+E` / `Shift+I`). It is checked on import and marked "from the workspace file you imported: check it before running".
+- A workspace with a stack runs the stack instead of its recipe.
+- The page gets it as the workspace's `RunRecipe` with `stack` set, so the card's context, the `t` check and the Try it section all see it.
+- `PROTOCOL` is 11: `card.try` takes a `choice`, and `card.stackPlan` and `stack.save` are new.
+
+**With a stack, `t` opens a picker** (`web/components/TryPick.tsx`):
+- **Keys:** `←` `→` pick the environment; `↑` `↓` and `Space` tick APIs; `a` / `n` tick all or none; `Enter` starts; `Esc` cancels. They are in its footer, with a `?` row.
+- **Each API says why it is or isn't ticked:**
+  - *changed on this branch* (uncommitted files, or commits the remote's default branch doesn't have): ticked.
+  - *named in the ticket* (its repo or `name`, as a whole word, in the card or ticket text): flagged, not ticked.
+  - *in context, unchanged*: left to the shared environment.
+  - An API whose repo neither the card nor the workspace has can't be ticked.
+- The last pick per card is remembered in this browser, and wins over the suggestion next time.
+- With nothing ticked, the UI runs alone against the shared environment.
+
+**The run** (`stackSteps`, `prepareStackRun`):
+1. Each picked API's steps, in its repo, in the stack's order.
+2. The UI's steps.
+3. Every `stop:` step: the UI's first, then the APIs' in reverse.
+
+The Try it title says what was picked: "Demo stack · uat · orders-api".
+
+**By default the proxy file is never edited.**
+- The UI starts with `{{proxy}}`: a copy of `ui.proxyFile` at `~/.cc-control/runs/<card>.proxy.conf.json`.
+- In the copy, the picked APIs' rules come first, because the dev server takes the first rule that matches. A rule of the same name is replaced.
+- So Ship can't commit it, and the copy is deleted when the run stops.
+- Proxy files with `//` comments and trailing commas are read.
+
+`"proxyMode": "edit"` is for a dev server that can't take a different path:
+- It changes the repo's file in place and keeps a backup.
+- It puts the file back on stop.
+- If the server stopped mid-run, the file is put back when the server next starts (`restoreLeftovers`).
+
+A stack that can't be built changes nothing and says why. That covers a missing placeholder, a repo the card doesn't have, and a proxy file that isn't JSON.
+
+**New step syntax**, for any recipe (`shared/recipes.ts`). Prefixes now come in any order, so a stack can put `@repo` before a line starting `stop:`.
+- **`ps:`** runs the step in PowerShell (`powershell.exe -Command`) instead of cmd, with the profile loaded, since team commands often come from there.
+- **`answers:"y,n"`** types those lines into the step's input.
+  - Checked on this machine: PowerShell's `Read-Host` and `$Host.UI.PromptForChoice` both read them from a pipe.
+  - With no input at all, `Read-Host` returns an empty answer. A step that asks questions but has no `answers:` gets empty replies.
+- **`wait:"Now listening on"` / `wait:port:8080`:** a step that keeps running is ready only when a line contains that text (any case) or that port opens. Printing a URL or going quiet no longer counts. The drawer shows "waiting for Now listening on".
+- **Only the last step sets the address `o` opens**, so an API printing `http://[::]:8080` no longer takes it.
+- **`NAME=value` fills in `%NAME%`** from the environment, as cmd would: `KUBECONFIG=%USERPROFILE%\.kube\dev.yaml`.
+
+**`pnpm run doctor`** has a section per stack. It runs none of the stack's steps. It checks:
+- every program the steps name;
+- PowerShell commands (`Verb-Noun`), looked up with `Get-Command` through the profile;
+- `okteto context show`, when a step uses okteto;
+- where each API and the UI are;
+- two APIs set to the same port;
+- whether the proxy file reads.
+
+**Verified, with stand-ins only.** The real Okteto, kubectl and the team's PowerShell command are on the VU laptop.
+
+The setup was an isolated server with a Demo workspace of three stand-in git repos:
+- `orders-api`, on `feature/ORD-7-rounding` with a change;
+- `fees-api`, clean;
+- `web-ui`, with a commented `proxy.conf.json`.
+
+The API template had three steps:
+1. A `ps:` step that runs a stand-in `New-DevEnvironment.ps1` unless `deployment.json` exists. The stand-in asks two `Read-Host` questions.
+2. `wait:"Now listening on" PORT={{port}} node api.js`, which prints build lines, then dotnet's line after 2.5 s.
+3. `stop: node down.js {{name}}-{{branch}} -n team-{{env}}`.
+
+27 scripted checks passed, and I looked at the screenshots:
+- **Before starting:** Try it showed the stack. `t` opened the picker with orders-api ticked ("changed on this branch"), fees-api not ticked ("in context, unchanged"), and dev the default. `→` chose uat.
+- **`Enter` started it:**
+  - The create step ran in orders-api's repo, with the answers `y` then `n` and `uat`.
+  - The API step showed "waiting for Now listening on" until the line appeared.
+  - The UI came up at localhost:4299, not the API's address, started with the proxy copy: the API's gateway rule first, `/orders/api/**` sent to `localhost:18080`, the rest after.
+  - The repo's proxy file was unchanged, and fees-api never ran.
+- **`t` stopped it:** the stop step ran with `orders-api-feature-ord-7-rounding -n team-uat`, the API's port closed, and the copy was gone.
+- **`t` again** remembered uat + orders-api. The create step was skipped because the stand-in deployment existed.
+- **Editing:** `e` opened on the stack, `Alt+W` went round the tabs, and a stack missing a repo name was refused with the reason. `?` has the picker row. No console errors.
+- **`pnpm run doctor`** against the same data: node and PowerShell found, both APIs and the UI in the workspace with their ports, and the proxy file read.
+
+Unit tests cover:
+- validation and its messages, placeholders, branch names and the choice;
+- the order of the steps and `@repo`, proxy merging, suggestions, and what Claude is told;
+- a real two-API run with readiness, the proxy copy and teardown;
+- edit mode restoring the file on stop and after a crash, and a broken stack changing nothing;
+- PowerShell answering `Read-Host` and a choice prompt;
+- the new prefixes, `wait:` ignoring URLs, `%NAME%`, and the stack in the workspace file.
+
+`pnpm typecheck`, `pnpm test` (227) and `tsc --noUnusedLocals` pass. The unused `useEffect` in `CommandDialogs.tsx` is gone.
+
+**Not verified; needs the VU laptop:**
+- Whether `okteto up` runs without a terminal. It normally opens a shell in the container, so the owner's stack runs `dotnet watch run` through `okteto exec`, in a second step.
+- The exact deployment name the team's command makes from a branch. The stack assumes `<name>-<branch>`.
+- Whether the UI's `nx … serve` accepts `--proxyConfig=<file>`. If not, use `"proxyMode": "edit"`.
+- Each API's forwarded port.
+
+**Not yet:**
+- Opening a loan. For now a `!` step says to sign in and open one; the scenario tool comes later.
+- Starting several APIs at once. They start one after another.
+- Per-developer settings on top of the shared stack. Values like ports are shared through the workspace file.

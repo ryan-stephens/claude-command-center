@@ -3,6 +3,7 @@
 import type { Card, CardDraft, PacketItem, PrTarget } from './cards.ts';
 import type { CardRun, RunRecipe } from './recipes.ts';
 import type { ShipPlan, ShipRequest } from './ship.ts';
+import type { Stack, StackApiRow, StackChoice } from './stack.ts';
 import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 
 /**
@@ -10,7 +11,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  * says `hello` first; a page that hears anything else first is talking to a server from before
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
-export const PROTOCOL = 10;
+export const PROTOCOL = 11;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -113,6 +114,8 @@ export interface Workspace {
 export interface WorkspaceFile {
   /** The workspace's own run recipe (steps as written), when it has one. */
   recipe?: { steps: string[]; url?: string };
+  /** The workspace's stack (the APIs Try it can start, and the UI pointed at them), when it has one. */
+  stack?: Stack;
   kind: 'cc-control.workspace';
   version: 1;
   name: string;
@@ -342,8 +345,12 @@ export type ClientMsg =
   | { type: 'card.addContext'; reqId: string; id: string; items: PacketItem[]; note: string }
   /** Take back something still waiting on a card. */
   | { type: 'card.withdraw'; id: string; itemId: string }
-  /** Try it: run the card's recipe in its folder (again, if it ran before). Answered with ok or an error. */
-  | { type: 'card.try'; reqId: string; id: string }
+  /** Try it: run the card's recipe in its folder (again, if it ran before), or its workspace's stack with what was picked. Answered with ok or an error. */
+  | { type: 'card.try'; reqId: string; id: string; choice?: StackChoice }
+  /** Try it with a stack: the picker's rows (which APIs the card has, which changed). Answered with stack.plan. */
+  | { type: 'card.stackPlan'; reqId: string; id: string }
+  /** Save a workspace's stack (checked on the server); null removes it. Answered with ok or an error. */
+  | { type: 'stack.save'; reqId: string; workspaceId: string; stack: unknown }
   /** Stop the card's run and the app it started. */
   | { type: 'card.stopRun'; id: string }
   /** Save the run recipe you wrote for a repo; no steps goes back to the detected one. Answered with ok or an error. */
@@ -401,6 +408,8 @@ export type ServerMsg =
   | { type: 'error'; message: string; reqId?: string }
   /** Every card on the Ticket Line, on connect and whenever one changes. */
   | { type: 'ship.plan'; reqId: string; plan: ShipPlan }
+  /** The picker's rows for a card's stack, and the APIs to tick when nothing was picked before. */
+  | { type: 'stack.plan'; reqId: string; rows: StackApiRow[]; suggested: string[] }
   /** Run recipes by repo path: the library's, the workspaces' and the cards' repos. */
   | { type: 'recipes'; recipes: Record<string, RunRecipe>; /** Workspaces' own recipes, by workspace id. */ workspaceRecipes?: Record<string, RunRecipe> }
   /** Cards' runs of their recipes (Try it). */

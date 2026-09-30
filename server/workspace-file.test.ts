@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RepoInfo, Workspace } from '../shared/protocol.ts';
+import { STACK_EXAMPLE, validateStack } from '../shared/stack.ts';
 import { workspaceFromFile, workspaceToFile } from './workspace-file.ts';
 
 const ws: Workspace = { id: 'w1', name: 'Storefront', color: 'orange', repos: ['C:\\me\\web-app', 'C:\\me\\cdn-worker'], home: 'C:\\me\\cdn-worker' };
@@ -47,4 +48,12 @@ test('a workspace’s notes and how the team tests travel in the file, bounded o
   const back = workspaceFromFile({ ...file, testing: 'x'.repeat(9000), notes: 42 }, []);
   assert.equal(back.workspace.testing!.length, 8000);
   assert.equal(back.workspace.notes, undefined);
+});
+
+test('a workspace’s stack travels in the file, checked on import', () => {
+  const stack = validateStack(STACK_EXAMPLE);
+  const file = workspaceToFile(ws, pack, undefined, stack);
+  assert.deepEqual(workspaceFromFile(JSON.parse(JSON.stringify(file)), []).stack, stack);
+  assert.throws(() => workspaceFromFile({ ...file, stack: { apis: [{ values: {} }] } }, []), /The workspace file’s stack: API 1 in "apis" has no "repo"/);
+  assert.equal(workspaceFromFile({ ...file, stack: undefined }, []).stack, undefined);
 });

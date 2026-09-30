@@ -38,7 +38,18 @@ The owner likes the mock a lot. Keep its look, its words and its keys, including
   - The Inbox has *Mine* and *Ready for QA* (`v`), `/` on the new-card screen searches Jira for anyone's ticket, and the *Folders* tab adds any folder.
   - **First things to try at VU:** does the Ready for QA view fill, does search find a teammate's ticket, and does a review find its TFS PR?
 
-**Next (chosen by the owner, 2026-09-30): Try it starts the whole stack.** The handoff is `docs/prompts/continue-try-it-stack.md`: the API on Okteto (dev by default, or uat), the UI's proxy.conf pointed at it, the UI started, and a loan opened to test. It lists what to ask the owner first.
+**Done (§42): Try it starts the whole stack**, built from the owner's answers to `docs/prompts/continue-try-it-stack.md`.
+- A workspace stack says how an API starts on Okteto, and `t` picks dev or uat and which APIs to run (the ones changed on the branch are ticked).
+- The UI starts on a proxy copy pointed at the picked APIs, and stop tears them down.
+- Tested against stand-ins only.
+
+**Next: prove it at VU.** The owner pastes their stack in (`e`, `Alt+W` to the stack tab), runs `pnpm run doctor`, and tries `t`. The open points are in §42's *Not verified*:
+- does `okteto up` run without a terminal;
+- the real deployment name;
+- does nx take `--proxyConfig`;
+- the API ports.
+
+Then comes opening a loan through the scenario tool (named in the workspace’s testing notes), in place of the `!` step.
 
 **After that, ask the owner.** Everything planned for VU is built and tested against stand-ins; what's left needs the real VU servers (Jira Data Center, TFS, Okteto) or the owner's say. Candidates, none started: bringing VU's test tools into QA cards (the scenario generator as a recipe step or MCP tool, the hosted field tools as links or MCP servers per workspace, §40); posting review findings to the PR (asked first each time); builds and pipelines from TFS (§35); a real PR on a repo they choose; connecting their Jira (credentials pending); Slack posts from Ship; `f` feedback through the channel (a preview flag); the open questions below; polish from using it.
 

@@ -2,13 +2,14 @@
 // server), keep the ones you wrote (per repo, or a workspace's spanning its repos), and run a
 // card's recipe as child processes for Try it: each step in the card's folder or the repo it
 // names, with its own variables; stop: steps run when it is stopped. A step that keeps running and serves (prints a localhost URL, or its port opens) is the
-// app: the run moves on to the next step and the app stays up until you stop it.
+// app: the run moves on to the next step and the app stays up until you stop it. A step that says
+// wait: is ready only when that text shows or that port opens (an API on a dev environment).
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { join } from 'node:path';
-import { findUrl, portOf, specsOf, stepLabel, type CardRun, type RunRecipe, type StepSpec } from '../shared/recipes.ts';
+import { findUrl, portOf, specsOf, stepLabel, waitLabel, type CardRun, type RunRecipe, type StepSpec } from '../shared/recipes.ts';
 import { repoName } from '../shared/workspaces.ts';
 import type { Store } from './store.ts';
 
@@ -163,6 +164,26 @@ function killTree(child: ChildProcess): void {
   else { try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill('SIGTERM'); } }
 }
 
+/** A step's variables with %NAME% filled in from the environment, as cmd would (KUBECONFIG=%USERPROFILE%\.kube\dev.yaml). */
+export function expandVars(vars: Record<string, string>, env: NodeJS.ProcessEnv): Record<string, string> {
+  const find = (k: string) => env[k] ?? env[Object.keys(env).find((x) => x.toLowerCase() === k.toLowerCase()) ?? ''];
+  return Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, v.replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (m, n: string) => find(n) ?? m)]));
+}
+
+/**
+ * Start a step: through cmd (or sh), or PowerShell for ps: steps. answers: are typed into its
+ * input, one line each (PowerShell's Read-Host and choice prompts read them); otherwise it has none.
+ */
+function launch(spec: StepSpec, cwd: string, base: NodeJS.ProcessEnv, detach = process.platform !== 'win32'): ChildProcess {
+  const env = { ...base, ...expandVars(spec.env, base) };
+  const stdio: ['pipe' | 'ignore', 'pipe', 'pipe'] = [spec.answers ? 'pipe' : 'ignore', 'pipe', 'pipe'];
+  const child = spec.ps
+    ? spawn(process.platform === 'win32' ? 'powershell.exe' : 'pwsh', ['-NoLogo', '-Command', spec.cmd], { cwd, env, windowsHide: true, detached: detach, stdio })
+    : spawn(spec.cmd, { cwd, env, shell: true, windowsHide: true, detached: detach, stdio });
+  if (spec.answers) { child.stdin?.on('error', () => {}); child.stdin?.end(spec.answers.map((a) => `${a}\r\n`).join('')); }
+  return child;
+}
+
 /** Where a run's steps go: the card's folder, and its repos (and its workspace's) by folder name. */
 export interface RunPlaces {
   cwd: string;
@@ -178,6 +199,14 @@ interface Live {
   /** Full output per step; the run carries only the tail. */
   lines: string[][];
   stopped: boolean;
+  /** Runs once the run is stopped and its stop: steps are done (put a proxy file back, say). */
+  cleanup?: () => void;
+}
+
+/** Extra for a run: what was picked (shown on the page), and what to undo when it stops. */
+export interface RunOptions {
+  choice?: string;
+  cleanup?: () => void;
 }
 
 /** Runs cards' recipes. One run per card; starting again stops the last one first (and runs its stop: steps). */
@@ -214,7 +243,7 @@ export class RunService {
   }
 
   /** Stop what runs now (with its stop: steps), then run the recipe. `places` or a plain folder for a repo's own recipe. */
-  async start(cardId: string, recipe: RunRecipe, places: RunPlaces | string): Promise<CardRun> {
+  async start(cardId: string, recipe: RunRecipe, places: RunPlaces | string, opts: RunOptions = {}): Promise<CardRun> {
     await this.stop(cardId, true);
     const at: RunPlaces = typeof places === 'string' ? { cwd: places, repos: {} } : places;
     const specs = specsOf(recipe);
@@ -223,10 +252,12 @@ export class RunService {
       steps: specs.map((s) => ({
         cmd: s.cmd, state: s.note ? 'note' : 'wait', tail: [],
         ...(s.repo ? { repo: s.repo } : {}), ...(Object.keys(s.env).length ? { env: Object.keys(s.env) } : {}), ...(s.stop ? { stop: true } : {}),
+        ...(s.wait ? { waitFor: waitLabel(s) } : {}),
       })),
       text: `Starting ${recipe.workspaceId ? 'the workspace' : repoName(recipe.repo)}`,
+      ...(opts.choice ? { choice: opts.choice } : {}),
     };
-    const live: Live = { run, specs, places: at, procs: [], lines: specs.map(() => []), stopped: false };
+    const live: Live = { run, specs, places: at, procs: [], lines: specs.map(() => []), stopped: false, ...(opts.cleanup ? { cleanup: opts.cleanup } : {}) };
     this.live.set(cardId, live);
     this.step(live, 0);
     this.changed();
@@ -265,29 +296,35 @@ export class RunService {
     step.state = 'go';
     run.text = stepLabel(spec);
     const last = i === runnable[runnable.length - 1];
-    const child = spawn(spec.cmd, { cwd, env: { ...this.env, ...spec.env }, shell: true, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = launch(spec, cwd, this.env);
     live.procs.push(child);
     let moved = false;
     const next = () => { if (!moved) { moved = true; this.step(live, i + 1); } };
     const up = (url?: string) => {
       if (moved || step.state !== 'go') return;
       step.state = 'up';
-      // What the app printed wins, unless the recipe named the same port (it may say localhost where the app says 127.0.0.1).
-      if (url && portOf(url) !== portOf(run.url)) run.url = url;
+      // Only the last step is the app you open: an API before it prints its own address. What the
+      // app printed wins, unless the recipe named the same port (it may say localhost where the app says 127.0.0.1).
+      if (last && url && portOf(url) !== portOf(run.url)) run.url = url;
       next();
     };
-    // The app's port opening says it is up, unless something was already listening there.
-    const port = appLike(spec.cmd, last) ? portOf(run.url) : undefined;
+    // wait: says exactly when the step is ready. Otherwise the app's port opening says it is up
+    // (unless something was already listening there), and so does going quiet.
+    const wait = spec.wait;
+    const port = wait ? ('port' in wait ? wait.port : undefined) : appLike(spec.cmd, last) ? portOf(run.url) : undefined;
     let poll: NodeJS.Timeout | null = null;
     if (port) {
       void listening(port).then((busy) => {
-        if (busy) { step.tail = [...step.tail, `(port ${port} was already in use before this started)`].slice(-SHOW); return; }
+        if (busy) { step.tail = [...step.tail, `(port ${port} was already in use before this started)`].slice(-SHOW); if (!wait) return; }
         if (step.state === 'go') poll = setInterval(() => { void listening(port).then((ok) => { if (ok) up(); }); }, 1000);
       });
     }
-    const quiet = appLike(spec.cmd, last) ? setTimeout(() => up(), QUIET_UP_MS) : null;
+    const quiet = !wait && appLike(spec.cmd, last) ? setTimeout(() => up(), QUIET_UP_MS) : null;
     const settle = () => { if (poll) clearInterval(poll); if (quiet) clearTimeout(quiet); };
-    this.capture(live, i, child, (url) => { if (step.state === 'go') { settle(); up(url); } });
+    const text = wait && 'text' in wait ? wait.text.toLowerCase() : undefined;
+    this.capture(live, i, child, (url) => { if (step.state === 'go' && !wait) { settle(); up(url); } }, (line) => {
+      if (text && step.state === 'go' && line.toLowerCase().includes(text)) { settle(); up(findUrl(line)); }
+    });
     child.on('exit', (code) => {
       settle();
       step.code = code;
@@ -311,7 +348,7 @@ export class RunService {
   }
 
   /** Keep a step's output (colour codes dropped) and watch it for a localhost URL. */
-  private capture(live: Live, i: number, child: ChildProcess, onUrl: (url: string) => void): void {
+  private capture(live: Live, i: number, child: ChildProcess, onUrl: (url: string) => void, onLine?: (line: string) => void): void {
     const step = live.run.steps[i];
     const onData = (buf: Buffer) => {
       for (const raw of buf.toString('utf8').split(/\r?\n/)) {
@@ -324,6 +361,7 @@ export class RunService {
         step.tail = lines.slice(-SHOW);
         const url = findUrl(line);
         if (url) onUrl(url);
+        onLine?.(line);
       }
       this.soon();
     };
@@ -343,7 +381,7 @@ export class RunService {
       step.state = 'go';
       live.run.text = `Stopping: ${stepLabel(spec)}`;
       this.changed();
-      const child = spawn(spec.cmd, { cwd, env: { ...this.env, ...spec.env }, shell: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = launch(spec, cwd, this.env, false);
       this.capture(live, i, child, () => {});
       const code = await new Promise<number | null>((resolve) => {
         const t = setTimeout(() => { killTree(child); resolve(null); }, 120_000);
@@ -367,6 +405,7 @@ export class RunService {
     this.changed();
     // Teardown runs whatever state the run was in: a failed run may have half started something.
     if (live.specs.some((s) => s.stop)) await this.teardown(live);
+    this.cleanup(live);
     if (live.run.state === 'stopped') live.run.text = live.run.steps.some((s) => s.stop && s.state === 'bad') ? 'Stopped, but a stop step failed' : 'Stopped';
     if (quiet) this.live.delete(cardId);
     this.changed();
@@ -379,7 +418,14 @@ export class RunService {
 
   /** The server is going away: kill what runs now. Stop steps are skipped (there is no time to wait for them). */
   stopAll(): void {
-    for (const live of this.live.values()) { live.stopped = true; for (const p of live.procs) killTree(p); }
+    for (const live of this.live.values()) { live.stopped = true; for (const p of live.procs) killTree(p); this.cleanup(live); }
     this.live.clear();
+  }
+
+  /** Undo what the run changed outside its processes, once. */
+  private cleanup(live: Live): void {
+    const c = live.cleanup;
+    live.cleanup = undefined;
+    try { c?.(); } catch (e) { live.run.text = `Stopped, but couldn’t undo a change: ${(e as Error).message}`; }
   }
 }

@@ -1,12 +1,13 @@
 import type { CommandPack, RepoInfo, Workspace, WorkspaceFile } from '../shared/protocol.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
+import { validateStack, type Stack } from '../shared/stack.ts';
 import { homeRepo, repoName, samePath, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { validatePack } from './packs.ts';
 
 // A workspace as a file to share: repos by folder name (paths differ between machines),
 // plus its workflows. Importing matches the names against the repo library.
 
-export function workspaceToFile(w: Workspace, workflows: CommandPack | null, recipe?: RunRecipe): WorkspaceFile {
+export function workspaceToFile(w: Workspace, workflows: CommandPack | null, recipe?: RunRecipe, stack?: Stack): WorkspaceFile {
   const home = homeRepo(w);
   return {
     kind: 'cc-control.workspace',
@@ -16,6 +17,7 @@ export function workspaceToFile(w: Workspace, workflows: CommandPack | null, rec
     repos: w.repos.map((p) => ({ name: repoName(p), ...(home && samePath(home, p) ? { home: true } : {}) })),
     workflows: workflows ?? { version: 1, groups: [] },
     ...(recipe ? { recipe: { steps: recipe.steps, ...(recipe.url ? { url: recipe.url } : {}) } } : {}),
+    ...(stack ? { stack } : {}),
     ...(w.notes ? { notes: w.notes } : {}),
     ...(w.testing ? { testing: w.testing } : {}),
   };
@@ -28,6 +30,8 @@ export interface ImportResult {
   missing: string[];
   /** Its run recipe, if it carries one (steps are text; nothing runs until someone presses t). */
   recipe?: { steps: string[]; url?: string };
+  /** Its stack, checked like one you wrote (commands are text; nothing runs until someone presses t). */
+  stack?: Stack;
 }
 
 /** Parse an untrusted workspace file. Repos are matched by folder name, case-insensitively. */
@@ -56,5 +60,9 @@ export function workspaceFromFile(raw: unknown, library: RepoInfo[]): ImportResu
   const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, 8000) : undefined);
   const notes = text(f.notes);
   const testing = text(f.testing);
-  return { workspace: { name, color, repos, home, ...(notes ? { notes } : {}), ...(testing ? { testing } : {}) }, workflows, missing, ...(recipe ? { recipe } : {}) };
+  let stack: Stack | undefined;
+  if (f.stack !== undefined) {
+    try { stack = validateStack(f.stack); } catch (e) { throw new Error(`The workspace file’s stack: ${(e as Error).message}`); }
+  }
+  return { workspace: { name, color, repos, home, ...(notes ? { notes } : {}), ...(testing ? { testing } : {}) }, workflows, missing, ...(recipe ? { recipe } : {}), ...(stack ? { stack } : {}) };
 }

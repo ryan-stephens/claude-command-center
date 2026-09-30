@@ -1,5 +1,6 @@
 import type { CardDraft, PacketItem } from '../shared/cards.ts';
 import { wsRecipeKey } from '../shared/recipes.ts';
+import type { StackChoice } from '../shared/stack.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
@@ -123,9 +124,19 @@ export async function findPr(key: string, repos: string[]): Promise<Extract<Serv
   return await request((reqId) => ({ type: 'card.findPr', reqId, key, repos }), 60_000) as Extract<ServerMsg, { type: 'pr.found' }>;
 }
 
-/** Try it: run the card's recipe. Rejects with the server's reason (no recipe, folder gone). */
-export async function tryCard(id: string): Promise<void> {
-  await request((reqId) => ({ type: 'card.try', reqId, id }));
+/** Try it: run the card's recipe, or its workspace's stack with what was picked. Rejects with the server's reason (no recipe, folder gone). */
+export async function tryCard(id: string, choice?: StackChoice): Promise<void> {
+  await request((reqId) => ({ type: 'card.try', reqId, id, ...(choice ? { choice } : {}) }), 60_000);
+}
+
+/** The picker's rows for a card's stack: which APIs it has, which changed, which to tick. */
+export async function stackPlan(id: string): Promise<Extract<ServerMsg, { type: 'stack.plan' }>> {
+  return await request((reqId) => ({ type: 'card.stackPlan', reqId, id }), 60_000) as Extract<ServerMsg, { type: 'stack.plan' }>;
+}
+
+/** Save a workspace's stack (the server checks it and says what's wrong); null removes it. */
+export async function saveStack(workspaceId: string, stack: unknown): Promise<void> {
+  await request((reqId) => ({ type: 'stack.save', reqId, workspaceId, stack }));
 }
 
 /** Save the run recipe you wrote for a repo (no steps: back to the detected one), or for a workspace (no steps: none). */
@@ -303,6 +314,7 @@ function receive(msg: ServerMsg): void {
       return;
     case 'card.started':
     case 'ship.plan':
+    case 'stack.plan':
       return; // answered to the screen that asked, which waits on it
     case 'workspace.file':
       pendingWorkspaceFiles.get(msg.reqId)?.(msg.file);
