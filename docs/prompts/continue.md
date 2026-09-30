@@ -56,7 +56,7 @@ The main concepts:
 - The `claude-code-guide` agent can look things up in the official docs.
 
 ## State
-- `main` may have commits that are not pushed yet (`git log origin/main..HEAD`). Ask the owner before pushing.
+- **Push finished work to `main`** (owner, 2026-09-30): once a change is verified and committed, push it without asking. The owner now works and tests mainly on their Veterans United laptop, from a clone they `git pull`; that is where the real Jira Cloud, TFS and Okteto are. Restarting a running server, writing to Jira or TFS, and opening real PRs still need asking.
 - Checks: `pnpm typecheck`, `pnpm test` (192 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
 
 ## How to work here

@@ -74,5 +74,5 @@ This first milestone proves the mechanism end to end. Leave the board polish, Ji
 - Keyboard first with the keys visible: every action needs a key, a row in the legend and a row in `?`.
 - Bump `PROTOCOL` in `shared/protocol.ts` when the page starts relying on new messages.
 - Test on the isolated server (`:7788`) with Demo data. Launching a real terminal session counts as testing, so use a demo repo in `%TEMP%\cc-demo` and Haiku.
-- Don't restart the owner's server on `:7777` or push to `origin` without asking.
+- Push verified work to `main` (the owner tests from a clone on the VU laptop). Don't restart a running server of theirs without asking.
 - Commit in small conventional commits, staging named paths.
