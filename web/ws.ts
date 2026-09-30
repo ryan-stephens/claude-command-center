@@ -1,6 +1,6 @@
 import type { CardDraft } from '../shared/cards.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
-import { onStatusChange } from './attention.ts';
+import { onCardChange, onStatusChange } from './attention.ts';
 import { activeSession, flash, get, groupKeyOf, set, setScope } from './store.ts';
 
 let socket: WebSocket | null = null;
@@ -245,9 +245,12 @@ function receive(msg: ServerMsg): void {
     case 'library':
       set({ library: { sources: msg.sources, repos: msg.repos, suggested: msg.suggested } });
       return;
-    case 'cards':
+    case 'cards': {
+      const before = new Map(get().cards.map((c) => [c.id, c]));
       set({ cards: msg.cards, nextKey: msg.nextKey, cardModel: msg.model ?? null });
+      for (const c of msg.cards) onCardChange(before.get(c.id), c);
       return;
+    }
     case 'card.started':
       return; // answered to the new-card screen, which waits on it
     case 'workspace.file':

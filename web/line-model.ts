@@ -38,10 +38,44 @@ export function booting(c: Card): boolean {
   return !c.sessionId;
 }
 
-/** The line under the card's title: the latest thing that happened to it. */
-export function cardActivity(c: Card): { text: string; state: 'ok' | 'go' | 'bad' } {
+/**
+ * The line under the card's title: what its session is doing (from its hooks), or while it is
+ * starting, the latest start-up step. go: working · bad: needs you · ok: waiting · off: ended.
+ */
+export function cardActivity(c: Card): { text: string; state: 'ok' | 'go' | 'bad' | 'off' } {
+  if (c.sessionId && c.live) {
+    const p = c.live.phase;
+    return { text: c.live.text, state: p === 'working' ? 'go' : p === 'needs' ? 'bad' : p === 'ended' ? 'off' : 'ok' };
+  }
   const last = c.boot[c.boot.length - 1];
   return last ? { text: last.text, state: last.state } : { text: 'Not started', state: 'go' };
+}
+
+/** Waiting on you in its terminal tab, or stuck starting. */
+export function needsYou(c: Card): boolean {
+  return c.live?.phase === 'needs' || (!c.sessionId && c.boot.some((b) => b.state === 'bad'));
+}
+
+/** Steps done out of steps, from Claude's to-do list; null when it has none. */
+export function progress(c: Card): { done: number; total: number } | null {
+  const todos = c.todos ?? [];
+  return todos.length ? { done: todos.filter((t) => t.status === 'completed').length, total: todos.length } : null;
+}
+
+/** "42m", "1h 05m": how long since the card started. */
+export function elapsed(since: number, now: number): string {
+  const m = Math.max(0, Math.floor((now - since) / 60_000));
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
+/** A path as the drawer shows it: relative to the card's folder when inside it. */
+export function shortPath(path: string, cwd?: string): string {
+  if (!cwd) return path;
+  const p = path.replace(/\\/g, '/');
+  const c = cwd.replace(/\\/g, '/').replace(/\/+$/, '');
+  return p.toLowerCase().startsWith(`${c.toLowerCase()}/`) ? p.slice(c.length + 1) : path;
 }
 
 // ---- The new-card screen ------------------------------------------------------------------

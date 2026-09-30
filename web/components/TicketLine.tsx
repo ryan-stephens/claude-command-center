@@ -1,14 +1,17 @@
 // The Ticket Line (PLAN §27, spec: docs/futures/path-line.html): work as cards moving left to right
 // through the loop, a drawer for one card, and the new-card screen over the whole board.
-// This first milestone runs cards in terminal tabs; stage tracking, tickets and the gates come next.
+// Cards run in terminal tabs and follow their session through its hooks (server/card-events.ts).
 
 import { useEffect, type ReactNode } from 'react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { fmtK, includedRepos, memoryPct, packetText, tokens, type Card, type PacketItem } from '../../shared/cards.ts';
 import { repoName } from '../../shared/workspaces.ts';
-import { booting, cardActivity, lanes } from '../line-model.ts';
+import { booting, cardActivity, elapsed, lanes, needsYou, progress, shortPath } from '../line-model.ts';
 import { openCard, openComposer } from '../line-keys.ts';
 import { get, set, useStore } from '../store.ts';
 import { send } from '../ws.ts';
+import { useNow } from './ActivityBar.tsx';
 import { NewCard } from './NewCard.tsx';
 import { Transcript } from './Transcript.tsx';
 import { Key, Pill, SWATCH, WsBadge } from './ui.tsx';
@@ -36,6 +39,7 @@ function LineBar() {
   const cards = useStore((s) => s.cards);
   const inFlight = cards.filter((c) => c.stage !== 'inbox' && c.stage !== 'done').length;
   const starting = cards.filter(booting).length;
+  const needs = cards.filter(needsYou).length;
   const chip = (on: boolean) => `flex items-center gap-2 whitespace-nowrap rounded-lg border px-2 py-1 text-[13.5px] ${on ? 'border-ring bg-surface shadow-[0_0_0_2px_color-mix(in_srgb,var(--c-ring)_25%,transparent)]' : 'border-line bg-surface hover:bg-raise'}`;
   const pick = (f: string) => set({ line: { ...get().line, filter: f } });
   return (
@@ -48,6 +52,7 @@ function LineBar() {
       ))}
       <span className="grow" />
       <span className="whitespace-nowrap text-[13.5px] text-sub"><b className="text-ink tabular-nums">{inFlight}</b> in flight</span>
+      <span className={`whitespace-nowrap text-[13.5px] ${needs ? 'text-attn' : 'text-sub'}`}><b className={`tabular-nums ${needs ? '' : 'text-ink'}`}>{needs}</b> need{needs === 1 ? 's' : ''} you</span>
       {starting > 0 && <span className="whitespace-nowrap text-[13.5px] text-busy"><b className="tabular-nums">{starting}</b> starting</span>}
       <button className="btn whitespace-nowrap py-1" onClick={openComposer}><Key k="c" size="sm" />New card</button>
     </div>
@@ -86,10 +91,10 @@ function Board() {
 /** What moves a card on from each column. Only Start work exists yet; the rest arrive with their milestones. */
 const GATE: Record<Card['stage'], string> = {
   inbox: 'Tickets from Jira and Trello land here',
-  plan: 'Claude writes a plan first',
+  plan: 'Claude plans; approve it in its tab',
   build: 'Watch it work',
-  needs: 'Claude is waiting on you',
-  try: 'Run it and try the change',
+  needs: 'Answer in its terminal tab',
+  try: 'Its turn ended with changes',
   ship: 'Commit, PR, review',
   done: 'Merged',
 };
@@ -98,13 +103,26 @@ const EMPTY: Record<Card['stage'], ReactNode> = {
   plan: 'Empty', build: 'Empty', needs: 'Nothing waiting on you', try: 'Empty', ship: 'Empty', done: 'Merged PRs land here',
 };
 
-function CardTile({ card, focused, color }: { card: Card; focused: boolean; color: string }) {
+/** The live line: a spinner while working, amber while it needs you, green while it waits, grey once ended. */
+function ActLine({ card }: { card: Card }) {
   const act = cardActivity(card);
+  return (
+    <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] ${act.state === 'bad' ? 'font-semibold text-attn' : 'text-sub'}`}>
+      {act.state === 'go' ? <span className="spinner text-busy" /> : <span className={`h-2 w-2 shrink-0 rounded-full ${act.state === 'bad' ? 'bg-attn' : act.state === 'off' ? 'bg-faint' : 'bg-ok'}`} />}
+      <span className="truncate">{act.text}</span>
+    </span>
+  );
+}
+
+function CardTile({ card, focused, color }: { card: Card; focused: boolean; color: string }) {
+  const needs = needsYou(card);
+  const prog = progress(card);
+  const now = useNow(true);
   return (
     <button
       id={`card-${card.id}`}
       onClick={() => openCard(card.id)}
-      className={`flex flex-col gap-1.5 rounded-xl border border-l-4 bg-surface px-2.5 py-2 text-left text-[13px] ${focused ? 'is-focus' : 'border-line hover:bg-raise'}`}
+      className={`flex flex-col gap-1.5 rounded-xl border border-l-4 px-2.5 py-2 text-left text-[13px] ${needs ? 'bg-attn-bg' : 'bg-surface'} ${focused ? 'is-focus' : `${needs ? 'border-attn/45' : 'border-line'} hover:bg-raise`}`}
       style={{ borderLeftColor: color }}
     >
       <span className="flex items-center gap-1.5">
@@ -113,9 +131,16 @@ function CardTile({ card, focused, color }: { card: Card; focused: boolean; colo
         <Pill tone="grey">terminal</Pill>
       </span>
       <span className="text-[14px] font-semibold leading-snug">{card.title}</span>
-      <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] ${act.state === 'bad' ? 'font-semibold text-attn' : 'text-sub'}`}>
-        {act.state === 'go' ? <span className="spinner text-busy" /> : <span className={`h-2 w-2 shrink-0 rounded-full ${act.state === 'bad' ? 'bg-attn' : 'bg-ok'}`} />}
-        <span className="truncate">{act.text}</span>
+      <ActLine card={card} />
+      {prog && (
+        <span className="flex items-center gap-1.5 font-mono text-[11px] font-semibold tabular-nums text-faint">
+          <span className="h-[5px] flex-1 overflow-hidden rounded-full bg-raise"><i className="block h-full bg-ok transition-[width]" style={{ width: `${(100 * prog.done) / prog.total}%` }} /></span>
+          {prog.done}/{prog.total}
+        </span>
+      )}
+      <span className="flex flex-wrap items-center gap-x-2 text-xs tabular-nums text-faint">
+        <span>{card.files?.length ?? 0} files</span><span>·</span><span>{elapsed(card.createdAt, now)}</span>
+        {(card.round ?? 1) > 1 && <><span>·</span><span>round {card.round}</span></>}
       </span>
       <span className="flex flex-wrap gap-1">
         {includedRepos(card.packet).map((r) => <span key={r} className="rounded-md border border-line bg-raise px-1.5 font-mono text-[11.5px] text-sub">{repoName(r)}</span>)}
@@ -140,7 +165,7 @@ function Drawer({ id }: { id: string }) {
           <div className="flex min-w-0 grow flex-col gap-1">
             <div className="flex flex-wrap items-center gap-1.5 text-sm">
               <span className="rounded-md bg-raise px-1.5 font-mono text-[11.5px] font-bold text-sub">{card.key}</span>
-              <Pill tone="grey">{stage}</Pill>
+              <Pill tone={needsYou(card) ? 'amber' : 'grey'}>{stage}</Pill>
               <Pill tone="grey">terminal · tab {card.key}</Pill>
               <span className="text-faint">{ws?.name ?? 'No workspace'}</span>
             </div>
@@ -189,6 +214,33 @@ function Overview({ card }: { card: Card }) {
           </div>
         </Sec>
       )}
+      {!booting(card) && <LiveNow card={card} />}
+      {card.todos?.length ? (
+        <Sec title="Steps" right={<span className="text-sm text-faint">{progress(card)!.done}/{card.todos.length}, from Claude’s to-do list</span>}>
+          <ol className="grid gap-1.5">
+            {card.todos.map((t) => (
+              <li key={t.id} className={`flex items-center gap-2.5 text-sm ${t.status === 'pending' ? 'text-sub' : ''}`}>
+                <span className={`grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full font-mono text-[11px] font-bold ${t.status === 'completed' ? 'bg-ok-bg text-ok' : t.status === 'in_progress' ? 'text-busy' : 'border-2 border-line'}`}>
+                  {t.status === 'completed' ? '✓' : t.status === 'in_progress' ? <span className="spinner" /> : ''}
+                </span>
+                <span>{t.status === 'in_progress' && t.activeForm ? t.activeForm : t.content}</span>
+              </li>
+            ))}
+          </ol>
+        </Sec>
+      ) : null}
+      {card.files?.length ? (
+        <Sec title="What changed" right={<span className="text-sm text-faint">{card.files.length} file{card.files.length === 1 ? '' : 's'} written or edited</span>}>
+          <ul className="grid gap-1 font-mono text-[12.5px]">
+            {card.files.map((f) => <li key={f} className="truncate" title={f}>{shortPath(f, card.cwd)}</li>)}
+          </ul>
+        </Sec>
+      ) : null}
+      {card.live?.lastMessage && card.live.phase !== 'working' && !card.live.ask && (
+        <Sec title="Claude said">
+          <div className="md max-h-64 overflow-y-auto text-sm"><Markdown remarkPlugins={[remarkGfm]}>{card.live.lastMessage}</Markdown></div>
+        </Sec>
+      )}
       <Sec title="Where it runs">
         <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1.5 text-sm">
           <dt className="text-faint">Terminal tab</dt><dd>Titled <b>{card.key}</b> in Windows Terminal. Type to Claude there.</dd>
@@ -205,6 +257,40 @@ function Overview({ card }: { card: Card }) {
         </div>
       </Sec>
     </>
+  );
+}
+
+/**
+ * What the session is doing now. When it waits on you, what it asks, and where to answer: the
+ * terminal tab. Answering from here needs the channel (a preview flag), which comes later.
+ */
+function LiveNow({ card }: { card: Card }) {
+  const now = useNow(true);
+  const live = card.live;
+  if (!live) return null;
+  const ask = live.ask;
+  if (ask) {
+    return (
+      <Sec>
+        <div className="grid gap-2.5 rounded-xl border border-attn/45 bg-attn-bg px-3.5 py-3">
+          <h4 className="text-sm font-bold text-attn">{ask.kind === 'plan' ? 'Plan ready for review' : ask.kind === 'question' ? 'Claude is asking' : 'Claude wants to go ahead'}</h4>
+          {ask.kind === 'plan' && ask.plan
+            ? <div className="md max-h-80 overflow-y-auto rounded-lg border border-line bg-surface px-3 py-2 text-sm"><Markdown remarkPlugins={[remarkGfm]}>{ask.plan}</Markdown></div>
+            : <p className="text-[15px] font-semibold">{ask.kind === 'question' ? ask.detail : `Allow ${ask.detail ?? ask.tool}?`}</p>}
+          <p className="text-sm text-sub">Answer it in the terminal tab <b>{card.key}</b>. Nothing changes until you do.</p>
+        </div>
+      </Sec>
+    );
+  }
+  const state = cardActivity(card).state;
+  return (
+    <Sec>
+      <div className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold ${state === 'go' ? 'bg-busy-bg text-busy' : state === 'off' ? 'bg-raise text-sub' : 'bg-ok-bg text-ok'}`}>
+        {state === 'go' ? <span className="spinner" /> : <span className={`h-2 w-2 rounded-full ${state === 'off' ? 'bg-faint' : 'bg-ok'}`} />}
+        <span className="grow">{live.text}</span>
+        {live.turnSince && <span className="font-mono text-xs font-medium tabular-nums">{elapsed(live.turnSince, now)}</span>}
+      </div>
+    </Sec>
   );
 }
 

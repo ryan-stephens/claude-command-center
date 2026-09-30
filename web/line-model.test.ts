@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { Card } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
 import {
-  draftOf, goRows, lanes, moveFocus, newComposer, packetRows, pickOption, repoOrigin, setWorkspace, sources, stepOption, togglePacketRow, toggleSource,
+  cardActivity, draftOf, elapsed, goRows, lanes, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin, setWorkspace, sources, stepOption, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
 
@@ -95,4 +95,24 @@ test('start work needs a title and a repo', () => {
   const d = draftOf({ ...c, title: ' Size guide ' });
   assert.equal(typeof d, 'object');
   assert.equal((d as { title: string }).title, 'Size guide');
+});
+
+test('the tile line follows the session once linked; needs-you covers asks and stuck starts', () => {
+  const c = card('a', 'build');
+  assert.deepEqual(cardActivity({ ...c, boot: [{ at: 0, text: 'Waiting for the session to start', state: 'go' }] }), { text: 'Waiting for the session to start', state: 'go' });
+  const linked = { ...c, sessionId: 's', live: { phase: 'needs' as const, text: 'Plan ready', at: 0 } };
+  assert.deepEqual(cardActivity(linked), { text: 'Plan ready', state: 'bad' });
+  assert.ok(needsYou(linked));
+  assert.ok(needsYou({ ...c, boot: [{ at: 0, text: 'No word', state: 'bad' }] }));
+  assert.ok(!needsYou({ ...linked, live: { ...linked.live, phase: 'working' } }));
+});
+
+test('progress, elapsed time and short paths', () => {
+  assert.equal(progress(card('a', 'build')), null);
+  assert.deepEqual(progress({ ...card('a', 'build'), todos: [{ id: '1', content: 'x', status: 'completed' }, { id: '2', content: 'y', status: 'in_progress' }] }), { done: 1, total: 2 });
+  assert.equal(elapsed(0, 30_000), 'just now');
+  assert.equal(elapsed(0, 42 * 60_000), '42m');
+  assert.equal(elapsed(0, 65 * 60_000), '1h 05m');
+  assert.equal(shortPath('C:\\Repos\\web-app\\src\\a.ts', 'c:/repos/web-app'), 'src/a.ts');
+  assert.equal(shortPath('D:\\other\\b.ts', 'C:\\repos\\web-app'), 'D:\\other\\b.ts');
 });

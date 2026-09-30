@@ -1,6 +1,7 @@
 // Turns session status transitions into "you're needed" signals: unread marks, a chime and a
 // browser notification. Signals are skipped for the session you're actively looking at.
 
+import type { Card } from '../shared/cards.ts';
 import type { SessionStatus, SessionSummary } from '../shared/protocol.ts';
 import { activeSession, get, markRead, set } from './store.ts';
 
@@ -84,6 +85,33 @@ function notify(kind: Kind, s: SessionSummary): void {
   n.onclick = () => {
     window.focus();
     openFromNotification(s.id);
+    n.close();
+  };
+}
+
+/**
+ * Ticket Line cards: chime and notify when one starts needing you in its terminal tab (a plan to
+ * approve, a tool to allow, a question) or is ready to try. Skipped while you are looking at that
+ * card in the drawer.
+ */
+export function onCardChange(prev: Card | undefined, next: Card): void {
+  if (!prev) return;
+  const s = get();
+  if (s.screen === 'line' && s.line.drawer === next.id && document.visibilityState === 'visible' && document.hasFocus()) return;
+  const needs = next.live?.phase === 'needs' && prev.live?.phase !== 'needs';
+  const ready = next.stage === 'try' && prev.stage !== 'try';
+  if (!needs && !ready) return;
+  const kind: Kind = needs ? 'needs' : 'done';
+  if (s.sound) chime(kind);
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if (document.visibilityState === 'visible' && document.hasFocus()) return;
+  const n = new Notification(`${needs ? 'Needs you' : 'Ready to try'}: ${next.key} ${next.title}`, {
+    body: needs ? `${next.live?.text ?? ''}. Answer it in its terminal tab, ${next.key}.` : 'Its turn finished with changes.',
+    tag: `${next.id}:${kind}`,
+  });
+  n.onclick = () => {
+    window.focus();
+    set({ screen: 'line', composer: null, line: { ...get().line, focus: next.id, drawer: next.id, tab: 'over' } });
     n.close();
   };
 }
