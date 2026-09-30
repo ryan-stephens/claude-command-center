@@ -15,6 +15,7 @@ import {
 } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
 import { repoName, samePath } from '../shared/workspaces.ts';
+import { applyEvent, TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { normalizeFolder } from './fs-browse.ts';
 import { DB_PATH, type Store } from './store.ts';
 
@@ -86,8 +87,14 @@ function writeHookSettings(): string {
   const file = join(dirname(DB_PATH), 'claude-hooks.json');
   // A bare `node`, not a quoted path to node.exe: that runs in Git Bash and in the PowerShell
   // Claude Code falls back to without it (where a quoted path first is a parse error).
-  const hook = (event: string) => [{ hooks: [{ type: 'command', command: `node "${HOOK_SCRIPT.replace(/\\/g, '/')}" ${event}`, timeout: 15 }] }];
-  writeFileSync(file, JSON.stringify({ hooks: { SessionStart: hook('SessionStart') } }, null, 2));
+  const hook = (event: string, async = false) => [{
+    hooks: [{ type: 'command', command: `node "${HOOK_SCRIPT.replace(/\\/g, '/')}" ${event}`, timeout: 15, ...(async ? { async: true } : {}) }],
+  }];
+  // SessionStart answers with the packet, so Claude waits for it. The rest only report, so they
+  // run async and never slow Claude down.
+  const hooks: Record<string, unknown> = { SessionStart: hook('SessionStart') };
+  for (const e of TRACKED_EVENTS) hooks[e] = hook(e, true);
+  writeFileSync(file, JSON.stringify({ hooks }, null, 2));
   return file;
 }
 
@@ -104,13 +111,6 @@ export function tabEnv(base: NodeJS.ProcessEnv, cardId: string, token: string, p
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(base)) if (!SESSION_MARKERS.test(k)) env[k] = v;
   return { ...env, CC_CONTROL_CARD: cardId, CC_CONTROL_TOKEN: token, CC_CONTROL_URL: `http://127.0.0.1:${port}` };
-}
-
-/** What a hook sends on stdin (Claude Code's SessionStart input). */
-interface HookInput {
-  session_id?: string;
-  source?: string;
-  cwd?: string;
 }
 
 function sameToken(a: string, b: string): boolean {
@@ -206,18 +206,29 @@ export class CardService {
     this.save(card);
   }
 
-  /**
-   * The SessionStart hook: check the card's token, link the session, and return what the hook
-   * prints (the packet as additionalContext). A resumed session already has the packet, so it
-   * only gets linked; a cleared or compacted one lost it, so it gets it again.
-   */
-  sessionStart(id: string, token: string, input: HookInput): object | null {
+  /** The card a hook names, if its token matches, and the session the hook came from. */
+  private checked(id: string, token: string, input: HookInput): { card: Card; sessionId: string } {
     const card = this.get(id);
     const expected = card && this.store.cardToken(id);
     if (!card || !expected || !sameToken(token, expected)) throw new Error('Unknown card or wrong token.');
     const sessionId = str(input.session_id, 80);
     if (!/^[\w-]{8,80}$/.test(sessionId)) throw new Error('No session id.');
+    return { card, sessionId };
+  }
+
+  /**
+   * The SessionStart hook: check the card's token, link the session, and return what the hook
+   * prints (the packet as additionalContext). A resumed session already has the packet, so it
+   * only gets linked; a cleared or compacted one lost it, so it gets it again.
+   *
+   * Once linked, only /clear in the card's tab moves the card to a new session. Anything else
+   * starting with the card's variables (a `claude -p` that Claude runs inside the tab inherits
+   * them, or /resume to another session) is not this card's session and gets nothing.
+   */
+  sessionStart(id: string, token: string, input: HookInput): object | null {
+    const { card, sessionId } = this.checked(id, token, input);
     const source = str(input.source, 20) || 'startup';
+    if (card.sessionId && card.sessionId !== sessionId && source !== 'clear') return null;
     clearTimeout(this.waits.get(id));
     this.waits.delete(id);
     const text = packetText(card, card.key, card.branchName);
@@ -228,8 +239,17 @@ export class CardService {
     if (card.sessionId !== sessionId) this.step(card, `Linked session ${sessionId.slice(0, 8)} to this card`);
     if (!card.sessionId) this.step(card, card.launch.mode === 'plan' ? 'Claude started on a plan' : 'Claude started work');
     card.sessionId = sessionId;
+    card.live = { ...card.live, phase: 'working', text: 'Session started', at: Date.now(), mode: card.launch.mode };
     this.save(card);
     return giving ? { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text } } : null;
+  }
+
+  /** Any other hook event: follow the session on the card. Events from other sessions are ignored. */
+  hookEvent(id: string, token: string, event: string, input: HookInput): void {
+    const { card, sessionId } = this.checked(id, token, input);
+    if (card.sessionId !== sessionId) return;
+    const next = applyEvent(card, event, input, Date.now());
+    if (next !== card) this.save(next);
   }
 
   delete(id: string): void {

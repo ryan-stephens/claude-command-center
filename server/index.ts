@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
+import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { CardService, cleanDraft } from './cards.ts';
 import { CommandService } from './commands.ts';
 import { PermissionBroker } from './permission-broker.ts';
@@ -381,9 +382,13 @@ function hookRoutes(app: Hono): void {
     if (!id || !token) return c.text('Forbidden', 403);
     let input: unknown;
     try { input = await c.req.json(); } catch { return c.text('Bad request', 400); }
-    if (c.req.param('event') !== 'SessionStart') return c.body(null, 204);
+    const event = c.req.param('event');
     try {
-      const out = cards.sessionStart(id, token, (input ?? {}) as object);
+      if (event !== 'SessionStart') {
+        if ((TRACKED_EVENTS as readonly string[]).includes(event)) cards.hookEvent(id, token, event, (input ?? {}) as HookInput);
+        return c.body(null, 204);
+      }
+      const out = cards.sessionStart(id, token, (input ?? {}) as HookInput);
       return out ? c.json(out) : c.body(null, 204);
     } catch (e) {
       return c.text((e as Error).message, 403);

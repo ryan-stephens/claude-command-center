@@ -94,3 +94,20 @@ test('the tab gets the card, not the markers of a Claude Code session the server
   assert.deepEqual(Object.keys(env).sort(), ['CC_CONTROL_CARD', 'CC_CONTROL_TOKEN', 'CC_CONTROL_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CONFIG_DIR', 'PATH']);
   assert.equal(env.CC_CONTROL_URL, 'http://127.0.0.1:7777');
 });
+
+test('once linked, only /clear moves the card to another session; a claude run inside the tab gets nothing', () => {
+  const card = seed();
+  cards.sessionStart(card.id, 'secret-token', { session_id: 'tab-session-1', source: 'startup' });
+  assert.equal(cards.sessionStart(card.id, 'secret-token', { session_id: 'nested-run-1', source: 'startup' }), null);
+  assert.equal(cards.get(card.id)!.sessionId, 'tab-session-1');
+});
+
+test('hook events move the linked card; events from other sessions are ignored', () => {
+  const card = seed();
+  cards.sessionStart(card.id, 'secret-token', { session_id: 'tab-session-2', source: 'startup' });
+  cards.hookEvent(card.id, 'secret-token', 'PermissionRequest', { session_id: 'someone-else', tool_name: 'Bash', tool_input: { command: 'x' } });
+  assert.equal(cards.get(card.id)!.stage, 'plan');
+  cards.hookEvent(card.id, 'secret-token', 'PermissionRequest', { session_id: 'tab-session-2', tool_name: 'Bash', tool_input: { command: 'x' } });
+  assert.equal(cards.get(card.id)!.stage, 'needs');
+  assert.throws(() => cards.hookEvent(card.id, 'nope-nope', 'Stop', { session_id: 'tab-session-2' }), /token/);
+});

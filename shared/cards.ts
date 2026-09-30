@@ -71,6 +71,30 @@ export interface BootStep {
   state: 'ok' | 'go' | 'bad';
 }
 
+/** What the card's session is doing now, followed through its hooks. */
+export interface CardLive {
+  /** working: Claude is on it · needs: waiting on you in the tab · waiting: its turn ended · ended: the session closed. */
+  phase: 'working' | 'needs' | 'waiting' | 'ended';
+  /** One line for the tile: "editing GiftCardField.tsx", "Plan ready: approve it in the tab". */
+  text: string;
+  at: number;
+  /** Claude Code's permission mode as the session last reported it. */
+  mode?: string;
+  /** What it is asking in the tab: a tool to allow, a question, or a plan to approve (with its text). */
+  ask?: { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string };
+  /** When the current turn began (for elapsed time). */
+  turnSince?: number;
+  /** Claude's last message, from the Stop hook. */
+  lastMessage?: string;
+}
+
+export interface CardTodo {
+  id: string;
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  activeForm?: string;
+}
+
 export interface Card extends CardDraft {
   id: string;
   /** "CARD-3": what the board and the terminal tab show. Later a ticket key, e.g. SHOP-155. */
@@ -84,6 +108,15 @@ export interface Card extends CardDraft {
   /** The Claude Code session the SessionStart hook reported. */
   sessionId?: string;
   boot: BootStep[];
+  live?: CardLive;
+  /** Files Claude wrote or edited, absolute, in the order first touched. */
+  files?: string[];
+  /** Claude's to-do list: the card's steps. */
+  todos?: CardTodo[];
+  /** TaskCreate calls waiting for the id in their result (server bookkeeping for the to-do list). */
+  creating?: Record<string, { content: string; activeForm?: string }>;
+  /** 1, then 2 after you send it back from Try it, and so on. */
+  round?: number;
 }
 
 /** The repos Claude gets, home first. */
