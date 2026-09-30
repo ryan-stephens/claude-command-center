@@ -92,6 +92,8 @@ export function applyEvent(card: Card, event: string, input: HookInput, now: num
       move(workingStage(mode));
       break;
     case 'PreToolUse':
+      // A helper working in parallel doesn't answer a prompt that is waiting in the tab: the card still needs you.
+      if (sub && live.ask) break;
       live = { ...live, phase: 'working', text: sub ? `subagent ${describeTool(tool, toolInput)}` : describeTool(tool, toolInput), ask: sub ? live.ask : undefined };
       if (!sub) {
         if (stage === 'needs') move(workingStage(mode));

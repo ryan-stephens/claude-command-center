@@ -139,3 +139,18 @@ test('only files in the card’s own repos count as changes; the plan file does 
   assert.equal(c.live!.text, 'writing the plan');
   assert.deepEqual(c.files, []);
 });
+
+test('a helper still working in parallel doesn’t hide a prompt another helper is waiting on', () => {
+  const c = run(card({ stage: 'plan' }), [
+    ['UserPromptSubmit', { permission_mode: 'plan', prompt: 'Plan it' }],
+    ['PreToolUse', { agent_id: 'a1', tool_name: 'Bash', tool_input: { command: 'cd web && ls' } }],
+    ['PermissionRequest', { agent_id: 'a1', tool_name: 'Bash', tool_input: { command: 'cd web && ls' } }],
+    ['PreToolUse', { agent_id: 'a2', tool_name: 'Read', tool_input: { file_path: 'D:\r\a.ts' } }],
+  ]);
+  assert.equal(c.stage, 'needs');
+  assert.equal(c.live!.phase, 'needs');
+  assert.match(c.live!.text, /Waiting for you to allow/);
+  const after = run(c, [['PostToolUse', { agent_id: 'a1', tool_name: 'Bash', tool_input: { command: 'cd web && ls' } }]]);
+  assert.equal(after.live!.phase, 'working', 'once it runs, it was allowed');
+  assert.equal(after.stage, 'plan');
+});
