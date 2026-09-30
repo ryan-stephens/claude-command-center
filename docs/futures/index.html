@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>cc-control Futures</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="futures.css">
+<style>
+/* Overview: the loop as a strip, the four paths as cards, then a coverage matrix and a comparison table. */
+.loop { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.loop span.st { background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 5px 12px; font-weight: 600; font-size: 14px; white-space: nowrap; }
+.loop span.ar { color: var(--sub); }
+.paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 900px) { .paths { grid-template-columns: minmax(0, 1fr); } }
+.path { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: grid; gap: 10px; align-content: start; text-decoration: none; color: inherit; min-width: 0; }
+.path:hover { border-color: var(--sub); }
+.path .num { font: 700 13px var(--mono); color: var(--sub); }
+.path h3 { font-size: 22px; }
+.path .thesis { font-size: 16px; }
+.path dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; font-size: 14px; }
+.path dt { color: var(--sub); }
+.path dd { margin: 0; }
+.path .go { font-weight: 600; }
+.mx td.c { text-align: center; }
+.lvl { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--ink); vertical-align: middle; }
+.lvl.l0 { border-color: var(--line); }
+.lvl.l1 { background: linear-gradient(90deg, var(--ink) 50%, transparent 50%); }
+.lvl.l2 { background: var(--ink); }
+.key { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--sub); font-size: 14px; align-items: center; }
+.key span { display: inline-flex; gap: 6px; align-items: center; }
+section { display: grid; gap: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="pathnav" aria-label="Futures">
+    <div class="seg">
+      <a href="index.html" aria-current="page">Overview</a>
+      <a href="path-line.html">1 Ticket line</a>
+      <a href="path-runbook.html">2 Runbook</a>
+      <a href="path-recorder.html">3 Flight recorder</a>
+      <a href="path-map.html">4 Context map</a>
+    </div>
+    <span class="hint">Each path page has a live mock you drive with the keys</span>
+  </nav>
+
+  <header class="head">
+    <p class="eyebrow">cc-control futures · 2026-09-29</p>
+    <h1>Four ways cc-control could change how you work</h1>
+    <p class="lede">None of these is a nicer layout for chatting with Claude. Each picks a different thing to put at the centre of the screen: the ticket, the steps of your loop, the record of what happened, or what Claude knows. Every one keeps the cockpit rules: local only, keyboard first, keys drawn on screen.</p>
+  </header>
+
+  <section aria-labelledby="loop-h">
+    <h2 id="loop-h">Your loop, as the yardstick</h2>
+    <p>Each path is judged against the way you work today.</p>
+    <div class="loop" aria-label="Your loop">
+      <span class="st">Ticket</span><span class="ar">→</span>
+      <span class="st">Context</span><span class="ar">→</span>
+      <span class="st">Plan</span><span class="ar">→</span>
+      <span class="st">Build</span><span class="ar">→</span>
+      <span class="st">Try it</span><span class="ar">→</span>
+      <span class="st">Fix rounds</span><span class="ar">→</span>
+      <span class="st">Ship: PR and review post</span>
+    </div>
+    <p style="color:var(--sub)">"Try it" means smoke testing: starting the app however that repo starts. All four paths share one idea for it: a <strong>run recipe</strong> per repo or workspace, detected from <code>package.json</code> or <code>compose.yaml</code> and editable, so it works however your team starts its apps.</p>
+  </section>
+
+  <section aria-labelledby="paths-h">
+    <h2 id="paths-h">The four paths</h2>
+    <div class="paths">
+      <a class="path" href="path-line.html">
+        <span class="num">Path 1</span>
+        <h3>Ticket Line</h3>
+        <p class="thesis">The screen shows your tickets, not chats. Each card moves left to right through your loop, and every column has a one-key gate.</p>
+        <dl>
+          <dt>Terminal</dt><dd>Both. Starts <code>claude</code> in a terminal by default and follows it with hooks.</dd>
+          <dt>Best for</dt><dd>Anyone juggling several tickets, and leads</dd>
+          <dt>Build</dt><dd>M–L</dd>
+        </dl>
+        <span class="go">Open the mock →</span>
+      </a>
+      <a class="path" href="path-runbook.html">
+        <span class="num">Path 2</span>
+        <h3>Runbook</h3>
+        <p class="thesis">One piece of work at a time, walked through your loop as a checklist in plain words. The loop is the interface, and each team can edit it.</p>
+        <dl>
+          <dt>Terminal</dt><dd>Runs its own sessions. You can open one in a terminal when you need to.</dd>
+          <dt>Best for</dt><dd>Non-developers and repeatable team workflows</dd>
+          <dt>Build</dt><dd>L</dd>
+        </dl>
+        <span class="go">Open the mock →</span>
+      </a>
+      <a class="path" href="path-recorder.html">
+        <span class="num">Path 3</span>
+        <h3>Flight Recorder</h3>
+        <p class="thesis">Keep working in your terminals. The app records every step of every session on one timeline, so you can scrub through it, compare sessions, see which files overlap, and undo.</p>
+        <dl>
+          <dt>Terminal</dt><dd>Only works on top of terminal sessions and never starts its own</dd>
+          <dt>Best for</dt><dd>Experienced developers running 3–6 terminals</dd>
+          <dt>Build</dt><dd>M</dd>
+        </dl>
+        <span class="go">Open the mock →</span>
+      </a>
+      <a class="path" href="path-map.html">
+        <span class="num">Path 4</span>
+        <h3>Context Map</h3>
+        <p class="thesis">What Claude knows is the thing you manage. Each workspace is a map: shared context in the middle, sessions around it, and every ticket, repo and note drawn as a link.</p>
+        <dl>
+          <dt>Terminal</dt><dd>Both. Terminal sessions get their context through a SessionStart hook.</dd>
+          <dt>Best for</dt><dd>Work across several repos, and teams with shared conventions</dd>
+          <dt>Build</dt><dd>L</dd>
+        </dl>
+        <span class="go">Open the mock →</span>
+      </a>
+    </div>
+  </section>
+
+  <section aria-labelledby="mx-h">
+    <h2 id="mx-h">How much of your loop each one covers</h2>
+    <div class="key"><span><i class="lvl l2"></i> at the centre</span><span><i class="lvl l1"></i> covered</span><span><i class="lvl l0"></i> left out</span></div>
+    <div class="tbl">
+      <table class="mx">
+        <thead><tr><th>Path</th><th>Ticket</th><th>Context</th><th>Plan</th><th>Build</th><th>Try it</th><th>Fix rounds</th><th>Ship</th><th>Many at once</th><th>Undo</th></tr></thead>
+        <tbody>
+          <tr><td>1 Ticket Line</td><td class="c"><i class="lvl l2" aria-label="centre"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l2" aria-label="centre"></i></td><td class="c"><i class="lvl l2" aria-label="centre"></i></td><td class="c"><i class="lvl l0" aria-label="left out"></i></td></tr>
+          <tr><td>2 Runbook</td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l2" aria-label="centre"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l2" aria-label="centre"></i></td><td class="c"><i class="lvl l2" aria-label="centre"></i></td><td class="c"><i class="lvl l2" aria-label="centre"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td></tr>
+          <tr><td>3 Flight Recorder</td><td class="c"><i class="lvl l0" aria-label="left out"></i></td><td class="c"><i class="lvl l0" aria-label="left out"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l2" aria-label="centre"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l0" aria-label="left out"></i></td><td class="c"><i class="lvl l2" aria-label="centre"></i></td><td class="c"><i class="lvl l2" aria-label="centre"></i></td></tr>
+          <tr><td>4 Context Map</td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l2" aria-label="centre"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l0" aria-label="left out"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l0" aria-label="left out"></i></td><td class="c"><i class="lvl l1" aria-label="covered"></i></td><td class="c"><i class="lvl l0" aria-label="left out"></i></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="cmp-h">
+    <h2 id="cmp-h">Side by side</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th></th><th>1 Ticket Line</th><th>2 Runbook</th><th>3 Flight Recorder</th><th>4 Context Map</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">What fills the screen</th><td>Tickets moving through stages</td><td>The steps of one job</td><td>A timeline of every step</td><td>A map of context and sessions</td></tr>
+          <tr><th scope="row">Where you talk to Claude</th><td>The terminal, or the card's drawer</td><td>Answer cards, only when asked</td><td>The terminal (answers relayed)</td><td>The terminal, or the app</td></tr>
+          <tr><th scope="row">What it makes visible</th><td>Where every piece of work stands</td><td>What happens next, in plain words</td><td>What each session actually did, and where they collide</td><td>What each session was told</td></tr>
+          <tr><th scope="row">Best for</th><td>Juggling tickets, leads</td><td>Non-developers, team process</td><td>Experienced developers</td><td>Multi-repo work, teams</td></tr>
+          <tr><th scope="row">Needs from Claude Code</th><td>Hooks, SessionStart context</td><td>SDK sessions, file checkpoints</td><td>Hooks, a channel to answer</td><td>SessionStart hook, a channel for later additions</td></tr>
+          <tr><th scope="row">Build size</th><td>M–L</td><td>L</td><td>M</td><td>L</td></tr>
+          <tr><th scope="row">Biggest risk</th><td>Turns into a second tracker</td><td>Too rigid for experienced developers</td><td>Watching without steering, so you still switch windows</td><td>A canvas is slow to navigate by keyboard</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="mix-h">
+    <h2 id="mix-h">They share a foundation, and they combine</h2>
+    <div class="grid3">
+      <div class="box">
+        <h3>Needed by all four</h3>
+        <ul>
+          <li><strong>A hooks bridge:</strong> terminal sessions post their events (tool use, questions, stop) to the local server. This is the documented way in, and it needs no special flags.</li>
+          <li><strong>Run recipes</strong> for smoke testing, detected from the repo and editable.</li>
+          <li><strong>Ticket import</strong> from Jira and Trello into a session's context.</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Combinations that work</h3>
+        <ul>
+          <li><strong>Line + Recorder:</strong> the board as home, and a card's drawer opens its lane of the timeline.</li>
+          <li><strong>Line + Runbook:</strong> the board for many tickets, the runbook when you open one.</li>
+          <li><strong>Map as the workspace screen</strong> of any of the others.</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Questions that decide it</h3>
+        <ul>
+          <li>Will you keep typing to Claude in a terminal? If yes, lean toward 3 or 1.</li>
+          <li>Who is the showcase for: your org's developers, or people who don't write code? The first points to 3, the second to 2.</li>
+          <li>Is the ticket or the session the thing you think in?</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

@@ -19,7 +19,7 @@ The main concepts:
 - **A repo library** scanned from source folders, where you drag a repo onto a workspace or a session.
 - **Home:** three columns (workspaces → sessions → the selected session docked beside the list), with sessions grouped as Needs you / Working / Done / Earlier.
 
-**Latest direction (2026-09-29):** the owner still reaches for plain Claude Code terminals over the app. They want it to *sit on top of* terminal sessions and to help people see and follow the development work, rather than replicate Claude Code features. How to get there is open; talk it through with them. One open question is whether the app keeps running its own sessions: today it can, with its own message box, modes, approvals and number pad. `docs/PLAN.md` §26 has the reasoning.
+**Latest direction (2026-09-29):** the owner still reaches for plain Claude Code terminals over the app. They want it to *sit on top of* terminal sessions and to help people see and follow the development work, rather than replicate Claude Code features. How to get there is open; talk it through with them. `docs/PLAN.md` §26 has the reasoning. **Chosen (§27):** the *Ticket Line*, a board of tickets moving through the loop with a new-card screen for context. The spec is `docs/futures/path-line.html`; the build handoff is `docs/prompts/continue-ticket-line.md`.
 
 ## Where things are
 - **Rules:** `CLAUDE.md`.

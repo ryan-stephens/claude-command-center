@@ -612,3 +612,27 @@ Not planned: more Claude Code parity for its own sake (`!` shell, model pickers)
 - No console errors. `pnpm typecheck`, `pnpm test` (113) and `pnpm build` pass.
 
 **Next:** try a cc-control channel in a real terminal (sending from the page, relaying approvals, working out which session a channel belongs to), then the finish card.
+
+## 27. Direction chosen: the Ticket Line
+
+2026-09-29. To pick how the app should sit on top of terminal sessions, four future paths were mocked up in `docs/futures/` (open `index.html`): **1 Ticket Line** (a board of tickets moving through the loop), **2 Runbook** (one job as a guided checklist), **3 Flight Recorder** (a timeline of every step across terminals) and **4 Context Map** (a map of what each session knows). Each has a clickable, keyboard-driven mock, a day in the life, trade-offs and a build size. All four share one idea for smoke testing: a **run recipe** per repo, detected from `package.json` / `compose.yaml` and editable.
+
+**The owner chose path 1, the Ticket Line.** `docs/futures/path-line.html` is the spec to build from. What it shows:
+- **The board:** columns Inbox → Plan → Build → Needs you → Try it → Ship → Done. A card is a piece of work (a Jira or Trello ticket, or a card with no ticket) and moves through the columns. Each column's gate is one key: `a` approve the plan, `t` try it, `f` fix, `s` ship.
+- **The new-card screen** (`n` on a ticket, dragging a ticket onto Plan, or `c` for a card with no ticket). It has three panels:
+  - **Add context:** tickets, the repo library, files and links, saved notes, and findings from other cards.
+  - **What Claude will know:** three layers with a size for each item. *Workspace* holds the repos, notes and run recipe. *Ticket* holds the description and each acceptance criterion; comments, attachments and linked tickets can be switched on. *This card* holds your extras and your own note. `p` previews the exact text.
+  - **How it starts:** terminal tab or in the app, the home repo, the branch (new, current or a worktree), the mode, and the opening message, with the launch command shown.
+- **How context reaches a terminal session:**
+  1. The server saves the packet under the card.
+  2. `claude` starts in a new Windows Terminal tab in the home repo, with `--add-dir` for each extra repo and `CC_CONTROL_CARD` set.
+  3. A SessionStart hook fetches the packet and returns it as `additionalContext`.
+  4. The hook also reports the session id, which links the card to the session.
+
+  App-run sessions get the packet directly through the SDK.
+- **Adding context later:** extras wait on the card. A UserPromptSubmit hook adds them to your next message in the terminal, or the channel (preview flag) delivers them at once.
+- **The card drawer** has three tabs, Overview / Context / Transcript. Context shows the start-up log, what Claude was given, and what was added since.
+
+**Rough build order:** context packet and Start work in a terminal, including the hooks bridge → board and drawer → new-card screen → Jira/Trello import → adding context later → run recipes (Try it) → Ship (commit, `gh pr create`, Slack post). The handoff for building it is `docs/prompts/continue-ticket-line.md`.
+
+**Not verified yet:** how SessionStart and UserPromptSubmit handle `additionalContext`, and whether hook processes inherit the `claude` process's environment. Check both against the current Claude Code docs before building on them.

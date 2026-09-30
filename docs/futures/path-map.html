@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Context Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="futures.css">
+<style>
+/* Context Map mock: sources shelf (left) | the workspace map (centre) | what Claude knows (right). */
+.m .top { display: flex; align-items: center; gap: 12px; padding: 0 18px; height: 56px; border-bottom: 1px solid var(--m-line); flex-shrink: 0; }
+.m .wstab { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 6px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; font-weight: 600; font-size: 14px; color: var(--m-sub); }
+.m .wstab.on { background: var(--m-surface); border-color: var(--m-line); color: var(--m-text); }
+.m .wstab .ic { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
+.m .main { flex: 1; display: flex; min-height: 0; position: relative; }
+
+/* shelf */
+.m .shelf { width: 280px; flex-shrink: 0; background: var(--m-col); border-right: 1px solid var(--m-line); display: flex; flex-direction: column; position: relative; z-index: 2; }
+.m .rhead { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; }
+.m .on-region .rhead h4 { color: var(--acc); }
+.m .search { display: flex; align-items: center; gap: 8px; margin: 0 12px 4px; padding: 4px 6px 4px 9px; border-radius: 8px; background: var(--m-surface); border: 1px solid var(--m-line); color: var(--m-faint); }
+.m .search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--m-text); font: 14px var(--body); outline: none; padding: 2px 0; }
+.m .search:focus-within { border-color: var(--ring); }
+.m .srclist { flex: 1; overflow: hidden; position: relative; padding-bottom: 8px; }
+.m .srcsec { padding: 8px 14px 3px; }
+.m .src { position: relative; display: flex; align-items: center; gap: 8px; margin: 1px 8px; padding: 0 8px; height: 30px; border-radius: 8px; font-size: 13.5px; cursor: grab; }
+.m .src:hover { background: var(--m-raise); }
+.m .src.focus { background: var(--m-raise); }
+.m .src.linked { background: var(--acc-soft); }
+.m .src.carried { outline: 2px dashed var(--acc); outline-offset: -2px; }
+.m .src .port { position: absolute; right: -13px; top: 50%; margin-top: -5px; width: 10px; height: 10px; border-radius: 50%; background: var(--m-faint); border: 2px solid var(--m-col); }
+.m .src.linked .port { background: var(--acc); }
+.m .src .use { font: 600 11.5px var(--mono); color: var(--m-faint); white-space: nowrap; }
+.m .grip { color: var(--m-faint); font: 700 12px var(--mono); letter-spacing: -2px; }
+.m .kind { color: var(--m-faint); display: inline-flex; }
+
+/* canvas */
+.m .canvas { flex: 1; position: relative; overflow: hidden; background-color: var(--m-bg); background-image: radial-gradient(color-mix(in srgb, var(--m-faint) 38%, transparent) 1px, transparent 1.3px); background-size: 22px 22px; }
+.m .edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+.m .edges path { fill: none; }
+.m .edges .shared { stroke: var(--m-faint); stroke-width: 1.5; stroke-dasharray: 3 5; }
+.m .edges .shared.dim { opacity: .35; }
+.m .edges .own { stroke: var(--acc); stroke-width: 1.5; opacity: .28; }
+.m .edges .own.on { opacity: 1; stroke-width: 2.4; }
+.m .edges .link { stroke-width: 2.4; }
+.m .edges .link.finding { stroke: var(--m-violet); }
+.m .edges .link.handoff { stroke: var(--m-green); stroke-dasharray: 7 5; }
+.m .edges .fresh { stroke-dasharray: 1; stroke-dashoffset: 1; animation: fdraw .8s ease-out forwards; opacity: 1; stroke-width: 2.4; }
+@keyframes fdraw { to { stroke-dashoffset: 0; } }
+.m .elabel { position: absolute; z-index: 3; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 0 3px var(--m-bg); }
+.m .node { position: absolute; width: 236px; padding: 11px 13px 12px; display: flex; flex-direction: column; gap: 7px; background: var(--m-surface); border: 1px solid var(--m-line); border-radius: 12px; cursor: pointer; z-index: 1; box-shadow: 0 1px 0 rgb(0 0 0 / .04), 0 12px 26px -18px rgb(0 0 0 / .55); transition: opacity .2s; }
+.m .node.hub { width: 280px; border: 1.5px solid color-mix(in srgb, var(--acc) 55%, var(--m-line)); }
+.m .node.ghost { border: 2px dashed var(--m-line); background: color-mix(in srgb, var(--m-surface) 55%, transparent); box-shadow: none; color: var(--m-sub); align-items: center; justify-content: center; text-align: center; min-height: 124px; gap: 5px; }
+.m .node.handed { opacity: .5; }
+.m .node.sel { border-color: var(--ring); }
+.m .node.target { outline: 2px dashed color-mix(in srgb, var(--acc) 65%, transparent); outline-offset: 4px; }
+.m .node.drop { outline: 3px solid var(--acc); outline-offset: 4px; }
+.m .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.m .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.m .chip { display: inline-flex; align-items: center; gap: 4px; font: 600 11.5px var(--body); padding: 2px 7px; border-radius: 6px; background: var(--m-raise); border: 1px solid var(--m-line); color: var(--m-sub); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m .chip svg.i { width: 12px; height: 12px; }
+.m .chip.ticket { background: var(--m-blue-bg); color: var(--m-blue); border-color: transparent; font-family: var(--mono); }
+.m .chip.ticket.trello { background: var(--m-violet-bg); color: var(--m-violet); }
+.m .chip.finding { color: var(--m-violet); background: var(--m-violet-bg); border-color: transparent; }
+.m .chip.handoff { color: var(--m-green); background: var(--m-green-bg); border-color: transparent; }
+.m .chip.fresh { animation: fpop .6s ease; }
+@keyframes fpop { 0% { transform: scale(.6); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+.m .meter { display: flex; align-items: center; gap: 8px; font: 600 11.5px var(--mono); color: var(--m-sub); }
+.m .meter .bar { flex: 1; height: 6px; border-radius: 99px; background: var(--m-raise); overflow: hidden; }
+.m .meter .bar i { display: block; height: 100%; background: var(--m-green); border-radius: 99px; }
+.m .meter.hot, .m .hotnote { color: var(--m-amber); }
+.m .meter.hot .bar i { background: var(--m-amber); }
+.m .hotnote { font-size: 12.5px; font-weight: 600; gap: 6px; }
+.m .notes { margin: 0; padding-left: 16px; font-size: 13px; color: var(--m-sub); display: grid; gap: 2px; }
+.m .hub textarea { width: 100%; height: 104px; font: 13px/1.5 var(--body); color: var(--m-text); background: var(--m-bg); border: 1.5px solid var(--ring); border-radius: 8px; padding: 7px 9px; resize: none; outline: none; }
+.m .carrybar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 14px; border-radius: 12px; background: var(--acc-soft); color: var(--m-text); border: 1px solid var(--acc); font-size: 14px; font-weight: 600; white-space: nowrap; }
+
+/* inspector */
+.m .insp { width: 340px; flex-shrink: 0; background: var(--m-col); border-left: 1px solid var(--m-line); display: flex; flex-direction: column; min-height: 0; z-index: 2; }
+.m .insp-body { flex: 1; overflow: hidden; padding: 0 16px 12px; display: flex; flex-direction: column; gap: 12px; }
+.m .prow { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; font-size: 13.5px; min-height: 32px; }
+.m .prow .sz { margin-left: auto; font: 600 12px var(--mono); color: var(--m-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.m .prow .lab { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m .prow.cursor { cursor: pointer; }
+.m .prow.cursor:hover { background: var(--m-raise); }
+.m .prow.focus { background: var(--m-raise); }
+.m .btn { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px 5px 5px; border-radius: 9px; background: var(--m-surface); border: 1px solid var(--m-line); font: 600 13px var(--body); color: var(--m-text); cursor: pointer; }
+.m .btn.off { color: var(--m-faint); }
+.m .total { display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--m-surface); border: 1px solid var(--m-line); font-size: 13.5px; }
+.m .maplegend { display: grid; gap: 5px; padding: 12px 16px 14px; border-top: 1px solid var(--m-line); font-size: 13px; color: var(--m-sub); }
+.m .maplegend svg { width: 34px; height: 10px; flex-shrink: 0; }
+.m .maplegend line { stroke-width: 2.4; }
+.m .overlay > .card.narrow { width: 600px; }
+.m .opt { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--m-line); background: var(--m-raise); cursor: pointer; }
+.m .opt.focus { background: var(--m-surface); }
+.m .stepline { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; background: var(--m-bg); border: 1px solid var(--m-line); }
+.m .stepline .st { margin-left: auto; font-size: 12.5px; color: var(--m-faint); white-space: nowrap; }
+.m .ring { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--m-line); flex-shrink: 0; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-repo" viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5M8 9h8M8 13h4"/></symbol>
+  <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 0 0 4v4h18v-4a2 2 0 0 1 0-4V4H3z" transform="translate(0 2)"/><path d="M14 6v12" stroke-dasharray="2 2.5"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1"/><path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/></symbol>
+  <symbol id="i-flow" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 6h4a4 4 0 0 1 4 4M7 18h4a4 4 0 0 0 4-4"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 4 3v2H6v-2l4-3z"/><path d="M12 15v6"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l12-7z"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+  <symbol id="i-app" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></symbol>
+</svg>
+
+<div class="wrap">
+  <nav class="pathnav" aria-label="Future paths">
+    <div class="seg">
+      <a href="index.html">Overview</a>
+      <a href="path-line.html">1 Ticket line</a>
+      <a href="path-runbook.html">2 Runbook</a>
+      <a href="path-recorder.html">3 Flight recorder</a>
+      <a href="path-map.html" aria-current="page">4 Context map</a>
+    </div>
+    <span class="hint">The mock below takes keys. Press <span class="k">?</span> for all of them.</span>
+  </nav>
+
+  <header class="head">
+    <p class="eyebrow">cc-control futures · path 4 of 4</p>
+    <h1>What Claude knows is the thing you manage</h1>
+    <p class="lede">Each workspace becomes a map. Its shared context sits in the middle and its sessions sit around it. Every ticket, repo, note and finding you hand a session is drawn as a line, so you can see what each session was told and move context around with a drag.</p>
+    <div class="facts">
+      <div><span class="lab">Terminal sessions</span><span class="val">Both</span><span class="more">A terminal session gets its packet from a SessionStart hook when it starts. Things added later go in through the channel. App sessions get it directly.</span></div>
+      <div><span class="lab">Best for</span><span class="val">Multi-repo work, shared conventions</span><span class="more">Non-developers can read exactly what Claude was told. Experienced devs stop re-pasting the same context.</span></div>
+      <div><span class="lab">Build size</span><span class="val">Large</span><span class="more">The map itself is the big piece. The context model and delivery are medium.</span></div>
+      <div><span class="lab">Drops</span><span class="val">The step timeline and the chat</span><span class="more">Each session is one status line on the map. You talk to Claude in the terminal.</span></div>
+    </div>
+  </header>
+
+  <section style="display:grid;gap:12px" aria-label="Live mockup">
+    <div class="frame" data-w="1440" data-h="880">
+      <div class="m" id="mock" style="width:1440px;height:880px;position:relative;display:flex;flex-direction:column">
+        <div class="top">
+          <strong style="font-size:16px">Command Center</strong>
+          <span class="faint">/</span><span class="sub" style="font-weight:600">Context map</span>
+          <div class="row" id="tabs" style="gap:4px;margin-left:10px"></div>
+          <span class="grow"></span>
+          <span id="needs"></span>
+          <span class="row faint" style="gap:6px;font-size:14px">Search sources <span class="kc sm" data-k="/">/</span></span>
+          <span class="row faint" style="gap:6px;font-size:14px">All keys <span class="kc sm" data-k="?">?</span></span>
+        </div>
+        <div class="main">
+          <aside class="shelf" id="shelf">
+            <div class="rhead"><h4 class="grow">Sources</h4><span class="faint">drag, or</span><span class="kc sm" data-k="a">a</span></div>
+            <label class="search"><svg class="i"><use href="#i-search"/></svg><input id="map-search" type="text" placeholder="Filter tickets, repos, notes" autocomplete="off"><span class="kc sm" data-k="/">/</span></label>
+            <div class="srclist" id="srclist"></div>
+          </aside>
+          <div class="canvas" id="canvas">
+            <svg class="edges" id="edges" aria-hidden="true"></svg>
+            <div id="nodes"></div>
+            <div id="elabels"></div>
+            <div id="carry"></div>
+          </div>
+          <aside class="insp" id="insp"></aside>
+        </div>
+        <div class="legend" id="legend"></div>
+        <div id="modal"></div>
+      </div>
+    </div>
+    <div class="below">
+      <span><strong>Try:</strong> <span class="k">Tab</span> to the shelf, <span class="k">↓</span> to SHOP-155, <span class="k">a</span>, arrow to New session, <span class="k">Enter</span>.</span>
+      <span><span class="k">h</span> on SHOP-142 hands it off.</span>
+      <span><span class="k">@</span> pulls a finding in.</span>
+      <span><span class="k">r</span> on SHOP-151 runs the app.</span>
+      <span><span class="k">2</span> switches to Payments.</span>
+      <button type="button" id="reset">Reset the mock</button>
+    </div>
+    <p class="phone-note">This mock is drawn for a desktop screen. It is easier to use on a wide window, with a keyboard.</p>
+  </section>
+
+  <section style="display:grid;gap:16px">
+    <h2>A day with it</h2>
+    <ol class="day">
+      <li><time>08:50</time><p>You open the Storefront map. Three sessions sit around the shared hub. SHOP-142 reads 71% and its node says hand off soon.</p></li>
+      <li><time>09:00</time><p>You drag SHOP-155 from the Jira shelf onto New session and pick Open in a terminal. A terminal opens in web-app. A SessionStart hook gives Claude the workspace notes, the three repos, the run recipe and the ticket. The map shows that packet: 2.6k tokens.</p></li>
+      <li><time>09:05</time><p>Claude plans in the terminal, as it always has. The node's status line reads Planning. The ticket touches the cart badge, so you drag the design-tokens README onto it. The channel hands it to Claude before its next message.</p></li>
+      <li><time>10:20</time><p>SHOP-142 passes 75%. You press <span class="k">h</span>. A new node appears with a handoff summary, carrying the two items you pinned. The old one dims. You carry on in the new terminal.</p></li>
+      <li><time>11:10</time><p>SHOP-151 says Ready to try. You press <span class="k">r</span>. The web-app recipe, detected from package.json, runs install, seed and dev, and opens localhost:5173. Images still stall on a phone-sized window.</p></li>
+      <li><time>11:30</time><p>You type the fix you want in its terminal. Its finding, "images are served by cdn-worker", shows up on the shelf. You press <span class="k">@</span> on SHOP-142 and pull it in, because the gift card thumbnail uses the same path.</p></li>
+      <li><time>14:00</time><p>SHOP-151 works on the second round. Claude pushes and opens the PR from the terminal. The hub note tells it the review channel, so it posts to #storefront-reviews. The node moves to In review.</p></li>
+      <li><time>16:30</time><p>You press <span class="k">w</span> and add a workspace note: "Never log a full gift card code." Every new Storefront session starts with it. Running ones get it through the channel.</p></li>
+    </ol>
+  </section>
+
+  <section class="grid3">
+    <div class="box"><h3>Good at</h3><ul>
+      <li>You can see exactly what each session was told, and which part came from the workspace.</li>
+      <li>Context moves with a drag: tickets, repos, notes, and findings from other sessions.</li>
+      <li>Handoffs happen before memory fills, and pinned items come along.</li>
+      <li>Conventions written once per workspace reach every session.</li>
+      <li>A non-developer can read "What Claude knows" in plain words.</li>
+    </ul></div>
+    <div class="box"><h3>Trade-offs</h3><ul>
+      <li>A map takes room. Past about six sessions a workspace starts to crowd.</li>
+      <li>Token sizes are estimates until the session reports its usage.</li>
+      <li>Adding to a running terminal session needs the channel, which is a preview behind a dev flag. Without it, additions wait for the next start.</li>
+      <li>"Context" is a new idea for newcomers. The map teaches it, but it is one more thing to learn.</li>
+    </ul></div>
+    <div class="box"><h3>Drops</h3><ul>
+      <li>The step-by-step timeline. Each node has one status line.</li>
+      <li>Chat. You talk to Claude in the terminal, or in the app's session pane as today.</li>
+      <li>Diff review and undo are out of view. Push, PR and the review post happen through Claude, guided by workspace notes.</li>
+    </ul></div>
+  </section>
+
+  <section style="display:grid;gap:12px">
+    <h2>Build size: large</h2>
+    <p class="lede" style="font-size:15px">What each piece needs, and what cc-control or Claude Code already gives us.</p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Piece</th><th>Size</th><th>Already there</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>The map: nodes, lines, arrow keys between nodes, drag and drop</td><td>L</td><td>Home's columns, drag from the repo library</td><td>The biggest piece. It needs a layout that stays readable past six sessions.</td></tr>
+          <tr><td>Context packets: workspace notes plus a stack per session, with sizes</td><td>M</td><td>Workspaces, the repo library, <code>additionalDirectories</code> for app sessions</td><td>Stored in SQLite next to workspaces. Sizes are estimated from the text.</td></tr>
+          <tr><td>Getting the packet into terminal sessions</td><td>M</td><td><code>spike/channel.mjs</code>, tested live</td><td>A SessionStart hook is documented and needs no flag, so it covers the start. Mid-session additions need the channel (research preview, <code>--dangerously-load-development-channels</code>). There is no supported way to attach to a running terminal.</td></tr>
+          <tr><td>Ticket shelf: Jira and Trello, read-only</td><td>M</td><td>None</td><td>A token per user, kept locally. A ticket's text becomes a chip.</td></tr>
+          <tr><td>Findings: a short line on what a session concluded</td><td>M</td><td>The history index; transcripts through the SDK's <code>getSessionMessages</code></td><td>Summarised by a small model when a session goes quiet.</td></tr>
+          <tr><td>Hand off</td><td>M</td><td>Resume and fork in <code>session-manager.ts</code></td><td>Writes a summary and starts a fresh session with the pinned items. For a terminal session it opens a new terminal.</td></tr>
+          <tr><td>Try it: run recipes</td><td>M</td><td>None</td><td>Detected from package.json, compose.yaml or a Procfile, editable per workspace, run for the session's branch.</td></tr>
+          <tr><td>Memory meter</td><td>S</td><td><code>activity.ts</code></td><td>Read from the usage in the transcript.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script src="futures.js"></script>
+<script>
+(function () {
+  var root = document.getElementById('mock');
+  function $(s) { return root.querySelector(s); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function icon(n) { return '<svg class="i"><use href="#i-' + n + '"/></svg>'; }
+  var GLYPH = { ArrowLeft: '←', ArrowUp: '↑', ArrowRight: '→', ArrowDown: '↓' };
+  function kc(k, cls) { return '<span class="kc ' + (cls || 'sm') + '" data-k="' + esc(k) + '">' + esc(GLYPH[k] || k) + '</span>'; }
+
+  var SLOTS = { TL: [18, 18], TR: [566, 18], BL: [18, 556], BR: [566, 556], ML: [18, 290], MR: [566, 290], TC: [292, 18], BC: [292, 556] };
+  var ORDER = ['TL', 'TR', 'BL', 'BR', 'MR', 'ML', 'TC', 'BC'];
+  var HUB = [270, 262];
+  var WSKEY = { '1': 'store', '2': 'pay', '3': 'docs' };
+
+  var ST = {
+    building: { cls: 'p-blue', label: 'Building', spin: 1 },
+    needs: { cls: 'p-amber', label: 'Needs you' },
+    'try': { cls: 'p-green', label: 'Ready to try' },
+    plan: { cls: 'p-amber', label: 'Plan ready' },
+    review: { cls: 'p-violet', label: 'In review' },
+    starting: { cls: 'p-blue', label: 'Planning', spin: 1 },
+    fresh: { cls: 'p-green', label: 'Ready to continue' },
+    handed: { cls: 'p-grey', label: 'Handed off' }
+  };
+
+  function repoSrc(name, shared, size) { return { id: 'r:' + name, kind: 'repo', label: name, size: size, shared: shared }; }
+
+  var INIT = {
+    store: {
+      name: 'Storefront', letter: 'S', ic: 'store', key: '1',
+      notes: ['Use design-tokens for all colors.', 'Reviewers: #storefront-reviews.', 'Feature flags live in web-app/src/flags.ts.'],
+      repos: ['web-app', 'design-tokens', 'cdn-worker'],
+      recipe: { repo: 'web-app', steps: ['pnpm install', 'pnpm db:seed', 'pnpm dev'], url: 'http://localhost:5173', from: 'package.json' },
+      shared: [['note', 'Workspace notes', 0.4], ['repo', 'Repo map: web-app, design-tokens, cdn-worker', 1.1], ['play', 'Run recipe: web-app', 0.1]],
+      sources: [
+        { id: 't:SHOP-142', kind: 'ticket', tkey: 'SHOP-142', label: 'Gift card field at checkout', size: 1.2 },
+        { id: 't:SHOP-151', kind: 'ticket', tkey: 'SHOP-151', label: 'Product images load slowly on mobile', size: 0.9 },
+        { id: 't:FOOT', kind: 'ticket', tkey: 'Trello', trello: true, label: 'Footer links 404 on /about', size: 0.3 },
+        { id: 't:SHOP-155', kind: 'ticket', tkey: 'SHOP-155', label: 'Save cart for signed-out users', size: 1.0, isNew: true },
+        repoSrc('web-app', true, 0), repoSrc('design-tokens', true, 0), repoSrc('cdn-worker', true, 0), repoSrc('payments-api', false, 1.4), repoSrc('docs-site', false, 0.9),
+        { id: 'n:giftrules', kind: 'note', label: 'Gift card rules from finance', size: 0.8 },
+        { id: 'n:lighthouse', kind: 'note', label: 'Lighthouse report, mobile', size: 1.6 },
+        { id: 'n:cards', kind: 'note', label: 'Staging test cards', size: 0.2 }
+      ],
+      sessions: [
+        { id: 's142', tkey: 'SHOP-142', title: 'Gift card field at checkout', origin: 'terminal', status: 'building', detail: 'Editing GiftCardField.tsx · 6 files · round 1', meter: 71, slot: 'TL',
+          branch: 'shop-142-gift-card', check: 'a gift card code applies at checkout and the total updates.', finding: 'gift card codes are checked in checkout/api.ts',
+          chips: [{ kind: 'ticket', label: 'SHOP-142', size: 1.2, src: 't:SHOP-142', pinned: true }, { kind: 'file', label: 'design-tokens README', size: 2.1, pinned: true }, { kind: 'note', label: 'Gift card rules from finance', size: 0.8, src: 'n:giftrules' }, { kind: 'file', label: 'CartSummary.tsx', size: 3.4 }] },
+        { id: 's151', tkey: 'SHOP-151', title: 'Product images load slowly on mobile', origin: 'in app', status: 'try', detail: 'Round 1 done · 4 files changed', meter: 38, slot: 'TR',
+          branch: 'shop-151-image-speed', check: 'product images on /shop load in under 2 seconds on a phone-sized window.', finding: 'images are served by cdn-worker',
+          chips: [{ kind: 'ticket', label: 'SHOP-151', size: 0.9, src: 't:SHOP-151' }, { kind: 'note', label: 'Lighthouse report, mobile', size: 1.6, src: 'n:lighthouse' }, { kind: 'file', label: 'cdn-worker/src/resize.ts', size: 2.2 }] },
+        { id: 'sfoot', tkey: 'Trello', trello: true, title: 'Footer links 404 on /about', origin: 'terminal', status: 'review', detail: 'PR #412 · #storefront-reviews · 1 approval', meter: 24, slot: 'BL',
+          branch: 'fix-footer-links', check: 'every footer link on /about opens a real page.', finding: 'the /about routes live in web-app/src/routes',
+          chips: [{ kind: 'ticket', label: 'Trello', trello: true, size: 0.3, src: 't:FOOT' }, { kind: 'repo', label: 'docs-site', size: 0.9, src: 'r:docs-site' }] }
+      ],
+      links: []
+    },
+    pay: {
+      name: 'Payments', letter: 'P', ic: 'pay', key: '2',
+      notes: ['Money is always integer cents.', 'Every webhook handler must be idempotent.', 'Reviewers: #payments-reviews.'],
+      repos: ['payments-api', 'web-app'],
+      recipe: { repo: 'payments-api', steps: ['docker compose up -d db', 'pnpm dev', 'pnpm test:webhooks'], url: 'http://localhost:4010', from: 'compose.yaml and package.json' },
+      shared: [['note', 'Workspace notes', 0.5], ['repo', 'Repo map: payments-api, web-app', 1.3], ['play', 'Run recipe: payments-api', 0.1]],
+      sources: [
+        { id: 't:PAY-88', kind: 'ticket', tkey: 'PAY-88', label: 'Refund webhook fires twice', size: 1.0 },
+        { id: 't:PAY-91', kind: 'ticket', tkey: 'PAY-91', label: 'Show refund status to support staff', size: 0.8, isNew: true },
+        repoSrc('payments-api', true, 0), repoSrc('web-app', true, 0), repoSrc('design-tokens', false, 2.1), repoSrc('cdn-worker', false, 1.2), repoSrc('docs-site', false, 0.9),
+        { id: 'n:logs', kind: 'note', label: 'Staging webhook logs', size: 2.4 },
+        { id: 'n:stripe', kind: 'note', label: 'Stripe refund docs excerpt', size: 1.9 }
+      ],
+      sessions: [
+        { id: 's88', tkey: 'PAY-88', title: 'Refund webhook fires twice', origin: 'terminal', status: 'needs', detail: 'A duplicate webhook arrives. Return 200 and ignore it, or 409?', meter: 54, slot: 'TL',
+          branch: 'pay-88-dedupe-refunds', check: 'pnpm test:webhooks passes and a replayed refund is stored once.', finding: 'refund events carry an idempotency key',
+          chips: [{ kind: 'ticket', label: 'PAY-88', size: 1.0, src: 't:PAY-88', pinned: true }, { kind: 'note', label: 'Staging webhook logs', size: 2.4, src: 'n:logs' }, { kind: 'file', label: 'src/webhooks/refund.ts', size: 3.1 }] }
+      ],
+      links: []
+    },
+    docs: {
+      name: 'Docs & site', letter: 'D', ic: 'docs', key: '3',
+      notes: ['Write for integrators.', 'Every endpoint page has a curl example.', 'Reviewers: #docs-reviews.'],
+      repos: ['docs-site'],
+      recipe: { repo: 'docs-site', steps: ['pnpm docs:dev'], url: 'http://localhost:4000', from: 'package.json' },
+      shared: [['note', 'Workspace notes', 0.3], ['repo', 'Repo map: docs-site', 0.6], ['play', 'Run recipe: docs-site', 0.1]],
+      sources: [
+        { id: 't:DOCS-19', kind: 'ticket', tkey: 'DOCS-19', label: 'Document the refunds endpoint', size: 0.7 },
+        repoSrc('docs-site', true, 0), repoSrc('payments-api', false, 1.4), repoSrc('web-app', false, 1.8),
+        { id: 'n:style', kind: 'note', label: 'Docs style guide', size: 1.1 }
+      ],
+      sessions: [
+        { id: 's19', tkey: 'DOCS-19', title: 'Document the refunds endpoint', origin: 'in app', status: 'plan', detail: 'Plan ready · 7 steps · review it in the session', meter: 33, slot: 'TL',
+          branch: 'docs-19-refunds', check: 'the refunds page renders with a working curl example.', finding: 'refund amounts are integer cents',
+          chips: [{ kind: 'ticket', label: 'DOCS-19', size: 0.7, src: 't:DOCS-19' }, { kind: 'repo', label: 'payments-api', size: 1.4, src: 'r:payments-api' }, { kind: 'note', label: 'Docs style guide', size: 1.1, src: 'n:style' }] }
+      ],
+      links: []
+    }
+  };
+
+  var D, S, timer;
+
+  function reset() {
+    D = JSON.parse(JSON.stringify(INIT));
+    clearInterval(timer);
+    S = { ws: 'store', region: 'canvas', focus: 's142', srcI: 0, chipI: 0, carrying: null, drag: null, modal: null, editing: false, q: '', fresh: {} };
+    var inp = document.getElementById('map-search'); inp.value = '';
+    render();
+  }
+
+  function ws() { return D[S.ws]; }
+  function sessById(id) { var r = null; Object.keys(D).forEach(function (k) { D[k].sessions.forEach(function (s) { if (s.id === id) r = s; }); }); return r; }
+  function wsOf(id) { var r = null; Object.keys(D).forEach(function (k) { D[k].sessions.forEach(function (s) { if (s.id === id) r = k; }); }); return r; }
+  function cur() { var f = S.focus; if (f === 'hub' || f === 'ghost') return null; var s = sessById(f); return s && wsOf(s.id) === S.ws ? s : null; }
+  function sum(a) { return Math.round(a.reduce(function (t, x) { return t + x; }, 0) * 10) / 10; }
+  function k1(n) { return n.toFixed(1) + 'k'; }
+
+  function sources() {
+    var w = ws(), list = w.sources.slice();
+    Object.keys(D).forEach(function (k) {
+      D[k].sessions.forEach(function (s) {
+        if (s.finding && !s.handed) list.push({ id: 'f:' + s.id, kind: 'finding', label: s.tkey + ': ' + s.finding, size: 0.6, from: s.id, sameWs: k === S.ws });
+      });
+    });
+    var q = S.q.trim().toLowerCase();
+    if (q) list = list.filter(function (s) { return (s.label + ' ' + (s.tkey || '')).toLowerCase().indexOf(q) >= 0; });
+    return list;
+  }
+  function usedBy(srcId) { return ws().sessions.filter(function (s) { return !s.handed && s.chips.some(function (c) { return c.src === srcId || (c.from && 'f:' + c.from === srcId); }); }); }
+  function freeSlots() { var used = ws().sessions.map(function (s) { return s.slot; }); return ORDER.filter(function (o) { return used.indexOf(o) < 0; }); }
+  function ghostSlot() { return freeSlots()[0] || null; }
+
+  /* ---------- rendering ---------- */
+  function render() {
+    renderTabs(); renderShelf(); renderCanvas(); renderInsp(); renderLegend(); renderModal();
+    drawEdges();
+    S.fresh = {};
+    if (S.editing) { var ta = $('#notes-edit'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+  }
+
+  function renderTabs() {
+    var h = '';
+    Object.keys(D).forEach(function (k) {
+      var w = D[k], needs = w.sessions.some(function (s) { return s.status === 'needs'; });
+      h += '<div class="wstab' + (k === S.ws ? ' on' : '') + '" data-ws="' + k + '">' + kc(w.key) + '<span class="ic ' + w.ic + '">' + w.letter + '</span>' + esc(w.name) +
+        (needs ? '<span class="dot" style="background:var(--m-amber)"></span>' : '') + '</div>';
+    });
+    $('#tabs').innerHTML = h;
+    var n = '';
+    Object.keys(D).forEach(function (k) { D[k].sessions.forEach(function (s) { if (s.status === 'needs' && k !== S.ws) n = '<span class="pill p-amber" data-ws="' + k + '" style="cursor:pointer">' + esc(s.tkey) + ' needs you in ' + esc(D[k].name) + ' ' + kc(D[k].key, 'sm amber') + '</span>'; }); });
+    $('#needs').innerHTML = n;
+  }
+
+  var SECT = { ticket: 'Tickets · Jira and Trello', repo: 'Repos · library', note: 'Notes', finding: 'Findings from sessions' };
+  function kindMark(s) {
+    if (s.kind === 'ticket') return '<span class="tkey' + (s.trello ? ' trello' : '') + '">' + esc(s.tkey) + '</span>';
+    if (s.kind === 'repo') return '<span class="kind">' + icon('repo') + '</span>';
+    if (s.kind === 'note') return '<span class="kind">' + icon('note') + '</span>';
+    return '<span class="kind" style="color:var(--m-violet)">' + icon('link') + '</span>';
+  }
+  function renderShelf() {
+    $('#shelf').classList.toggle('on-region', S.region === 'shelf');
+    var list = sources(), c = cur(), h = '', last = '';
+    var linked = {};
+    if (c) c.chips.forEach(function (ch) { if (ch.src) linked[ch.src] = 1; if (ch.from) linked['f:' + ch.from] = 1; });
+    if (S.srcI >= list.length) S.srcI = Math.max(0, list.length - 1);
+    list.forEach(function (s, i) {
+      if (s.kind !== last) { h += '<div class="srcsec"><h4>' + SECT[s.kind] + '</h4></div>'; last = s.kind; }
+      var users = usedBy(s.id), focus = S.region === 'shelf' && i === S.srcI;
+      var right = '';
+      if (focus) right = kc('a');
+      else if (s.shared) right = '<span class="use">shared</span>';
+      else if (s.isNew && !users.length) right = '<span class="pill p-blue" style="padding:1px 7px">new</span>';
+      else if (users.length) right = '<span class="use">→ ' + users.length + '</span>';
+      var cls = 'src' + (focus ? ' focus' : '') + (linked[s.id] ? ' linked' : '') + (S.carrying === s.id ? ' carried' : '');
+      h += '<div class="' + cls + '" draggable="true" data-src="' + esc(s.id) + '" data-i="' + i + '"><span class="grip">⋮⋮</span>' + kindMark(s) +
+        '<span class="grow trunc">' + esc(s.kind === 'finding' ? s.label.replace(/^[^:]+: /, '') : s.label) + '</span>' + right +
+        ((users.length && !s.shared) ? '<span class="port"></span>' : '') + '</div>';
+    });
+    if (!list.length) h = '<div class="faint" style="padding:12px 16px">Nothing matches "' + esc(S.q) + '". Press Esc to clear.</div>';
+    $('#srclist').innerHTML = h;
+  }
+
+  function chipHTML(ch, fresh) {
+    var cls = 'chip ' + ch.kind + (ch.trello ? ' trello' : '') + (fresh ? ' fresh' : '');
+    var ic = { repo: 'repo', file: 'file', note: 'note', finding: 'link', handoff: 'flow' }[ch.kind];
+    return '<span class="' + cls + '">' + (ch.pinned ? icon('pin') : '') + (ic ? icon(ic) : '') + esc(ch.label) + '</span>';
+  }
+  // A node shows at most three chips; the newest one always shows so an addition is visible.
+  function chipsCompact(s) {
+    var idx = s.chips.map(function (c, i) { return i; });
+    if (idx.length > 3) idx = idx.slice(0, 2).concat([idx[idx.length - 1]]);
+    var h = idx.map(function (i) { return chipHTML(s.chips[i], S.fresh[s.id + ':' + i]); }).join('');
+    if (s.chips.length > 3) h += '<span class="chip">+' + (s.chips.length - 3) + ' more</span>';
+    return h;
+  }
+  function tkeyHTML(s) { return '<span class="tkey' + (s.trello ? ' trello' : '') + '">' + esc(s.tkey) + '</span>'; }
+
+  function renderCanvas() {
+    var w = ws(), h = '', inMap = S.region !== 'shelf';
+    // hub
+    var hf = S.focus === 'hub';
+    h += '<div class="node hub' + (hf && inMap && !S.carrying ? ' focus' : '') + (hf && !inMap ? ' sel' : '') + '" data-node="hub" style="left:' + HUB[0] + 'px;top:' + HUB[1] + 'px">' +
+      '<div class="row" style="gap:9px"><span class="ic ' + w.ic + '" style="width:26px;height:26px;font-size:12px;border-radius:7px">' + w.letter + '</span><div class="grow"><div class="t2">' + esc(w.name) + ' · shared context</div><div class="faint">Every ' + esc(w.name) + ' session starts with this</div></div></div>';
+    if (S.editing) h += '<textarea id="notes-edit" aria-label="Workspace notes, one per line">' + esc(w.notes.join('\n')) + '</textarea><div class="row faint" style="gap:6px">One note per line ' + '<span class="grow"></span>' + kc('Esc') + ' Save</div>';
+    else h += '<ul class="notes">' + w.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>';
+    h += '<div class="chips">' + w.repos.map(function (r) { return '<span class="chip">' + icon('repo') + esc(r) + '</span>'; }).join('') + '</div>';
+    var rc = w.recipe;
+    h += '<div class="row faint" style="gap:6px">' + icon('play') + '<span class="mono trunc">' + esc(rc.repo) + ': ' + esc(rc.steps[rc.steps.length - 1]) + ' → :' + rc.url.split(':').pop() + '</span></div>';
+    h += '<div class="row faint" style="gap:6px;border-top:1px solid var(--m-line);padding-top:7px">Shared packet ' + k1(sum(w.shared.map(function (x) { return x[2]; }))) + '<span class="grow"></span>' + (S.editing ? '' : kc('w') + ' Edit notes') + '</div></div>';
+    // sessions
+    w.sessions.forEach(function (s) {
+      var p = SLOTS[s.slot], f = S.focus === s.id, st = ST[s.status], hot = s.meter > 70 && !s.handed;
+      var cls = 'node sess' + (f && inMap ? ' focus' : '') + (f && !inMap ? ' sel' : '') + (s.handed ? ' handed' : '') + ((S.carrying || S.drag) && !s.handed ? ' target' : '');
+      h += '<div class="' + cls + '" data-node="' + s.id + '" style="left:' + p[0] + 'px;top:' + p[1] + 'px">' +
+        '<div class="row" style="gap:6px">' + tkeyHTML(s) + '<span class="pill p-grey">' + icon(s.origin === 'terminal' ? 'term' : 'app').replace('class="i"', 'class="i" style="width:12px;height:12px"') + esc(s.origin) + '</span><span class="grow"></span>' + (f && inMap ? kc('Enter') : '') + '</div>' +
+        '<div class="t2 trunc">' + esc(s.title) + '</div>' +
+        '<div class="row" style="gap:6px"><span class="pill ' + st.cls + '">' + (st.spin ? '<span class="spin"></span>' : '') + st.label + '</span></div>' +
+        '<div class="faint clamp2">' + esc(s.detail) + '</div>' +
+        '<div class="chips">' + chipsCompact(s) + '</div>' +
+        '<div class="meter' + (hot ? ' hot' : '') + '"><span>' + (hot ? 'Hand off soon' : 'Memory') + '</span><div class="bar"><i style="width:' + s.meter + '%"></i></div><span>' + s.meter + '%</span>' + (hot ? kc('h', 'sm amber') : '') + '</div>' +
+        '</div>';
+    });
+    var g = ghostSlot();
+    if (g) {
+      var gp = SLOTS[g], gf = S.focus === 'ghost';
+      h += '<div class="node ghost' + (gf && inMap ? ' focus' : '') + ((S.carrying || S.drag) ? ' target' : '') + '" data-node="ghost" style="left:' + gp[0] + 'px;top:' + gp[1] + 'px">' +
+        '<span style="color:var(--m-faint)">' + icon('plus') + '</span><div class="t2" style="color:var(--m-text)">New session</div><div class="faint">Drop a ticket here to start one</div>' + kc('n') + '</div>';
+    }
+    $('#nodes').innerHTML = h;
+    var carry = '';
+    if (S.carrying) {
+      var src = sources().filter(function (x) { return x.id === S.carrying; })[0] || { label: '' };
+      carry = '<div class="carrybar">Adding ' + esc(src.tkey || src.label) + '. Choose a session ' + kc('ArrowLeft') + kc('ArrowRight') + kc('Enter') + ' Add ' + kc('Esc') + ' Cancel</div>';
+    }
+    $('#carry').innerHTML = carry;
+  }
+
+  function rel(el, anc) { var x = 0, y = 0; while (el && el !== anc) { x += el.offsetLeft; y += el.offsetTop; el = el.offsetParent; } return { x: x, y: y }; }
+  function box(id) { var el = $('#nodes [data-node="' + id + '"]'); return el && { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight }; }
+
+  function drawEdges() {
+    var w = ws(), main = $('.main'), c = cur(), p = '', lab = '';
+    var hub = box('hub'), hc = [hub.x + hub.w / 2, hub.y + hub.h / 2];
+    w.sessions.forEach(function (s) {
+      var b = box(s.id); if (!b) return;
+      var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      p += '<path class="shared' + (s.handed ? ' dim' : '') + '" d="M' + hc[0] + ' ' + hc[1] + ' L' + cx + ' ' + cy + '"/>';
+      s.chips.forEach(function (ch, i) {
+        var sid = ch.src || (ch.from && wsOf(ch.from) !== S.ws ? 'f:' + ch.from : null);
+        if (!sid) return;
+        var it = root.querySelector('.src[data-src="' + sid + '"]'); if (!it) return;
+        var r = rel(it, main), y0 = r.y + it.offsetHeight / 2, x1 = b.x, y1 = b.y + Math.min(b.h / 2, 64);
+        var on = (c && c.id === s.id && S.region !== 'shelf') || (S.region === 'shelf' && S.srcI === +it.dataset.i);
+        var fresh = S.fresh[s.id + ':' + i];
+        p += '<path class="own' + (on ? ' on' : '') + (fresh ? ' fresh' : '') + '"' + (fresh ? ' pathLength="1"' : '') + ' d="M0 ' + y0 + ' C' + (x1 * 0.45) + ' ' + y0 + ' ' + (x1 * 0.55) + ' ' + y1 + ' ' + x1 + ' ' + y1 + '"/>';
+      });
+    });
+    w.links.forEach(function (l) {
+      var a = box(l.from), b = box(l.to); if (!a || !b) return;
+      var ax = a.x + a.w / 2, ay = a.y + a.h / 2, bx = b.x + b.w / 2, by = b.y + b.h / 2;
+      var mx = (ax + bx) / 2, my = (ay + by) / 2;
+      // bow the curve away from the hub so the label sits in open space
+      var hx = hc[0] - mx, hy = hc[1] - my, d = Math.sqrt(hx * hx + hy * hy) || 1, bow = 60;
+      var qx = mx - hx / d * bow, qy = my - hy / d * bow;
+      var fresh = S.fresh['l:' + l.from + ':' + l.to];
+      p += '<path class="link ' + l.kind + (fresh ? ' fresh' : '') + '"' + (fresh ? ' pathLength="1"' : '') + ' d="M' + ax + ' ' + ay + ' Q' + qx + ' ' + qy + ' ' + bx + ' ' + by + '"/>';
+      var lx = (ax + 2 * qx + bx) / 4, ly = (ay + 2 * qy + by) / 4;
+      lab += '<span class="elabel pill ' + (l.kind === 'handoff' ? 'p-green' : 'p-violet') + '" style="left:' + lx + 'px;top:' + ly + 'px">' + icon(l.kind === 'handoff' ? 'flow' : 'link').replace('class="i"', 'class="i" style="width:13px;height:13px"') + esc(l.label) + '</span>';
+    });
+    $('#edges').innerHTML = p;
+    $('#elabels').innerHTML = lab;
+  }
+
+  function sharedRows(w) {
+    return w.shared.map(function (x) { return '<div class="prow"><span class="kind">' + icon(x[0]) + '</span><span class="lab">' + esc(x[1]) + '</span><span class="sz">' + k1(x[2]) + '</span></div>'; }).join('');
+  }
+  function mapLegend() {
+    function ln(stroke, dash) { return '<svg viewBox="0 0 34 10"><line x1="1" y1="5" x2="33" y2="5" style="stroke:' + stroke + (dash ? ';stroke-dasharray:' + dash : '') + '"/></svg>'; }
+    return '<div class="maplegend"><h4>Lines on the map</h4>' +
+      '<div class="row" style="gap:8px">' + ln('var(--m-faint)', '3 5') + 'Shared with the whole workspace</div>' +
+      '<div class="row" style="gap:8px">' + ln('var(--acc)') + 'Given to one session</div>' +
+      '<div class="row" style="gap:8px">' + ln('var(--m-violet)') + 'Finding pulled from another session</div>' +
+      '<div class="row" style="gap:8px">' + ln('var(--m-green)', '7 5') + 'Handoff to a fresh session</div></div>';
+  }
+
+  function renderInsp() {
+    var w = ws(), h = '', inIn = S.region === 'insp';
+    if (S.region === 'shelf') {
+      var s = sources()[S.srcI];
+      h += '<div class="rhead"><h4 class="grow">Source</h4></div><div class="insp-body">';
+      if (s) {
+        var users = usedBy(s.id);
+        h += '<div class="row" style="gap:8px">' + kindMark(s) + '<div class="t2 grow">' + esc(s.kind === 'ticket' ? s.label : s.label) + '</div></div>';
+        h += '<div class="faint">' + ({ ticket: s.trello ? 'Trello card' : 'Jira ticket', repo: 'Repo from your library', note: 'Note', finding: 'Finding from another session' })[s.kind] + (s.size ? ' · about ' + k1(s.size) + ' tokens' : '') + '</div>';
+        if (s.shared) h += '<p class="sub" style="font-size:14px">Shared with every ' + esc(w.name) + ' session through the hub. Nothing to add.</p>';
+        else h += '<div><h4 style="margin-bottom:6px">Used by</h4>' + (users.length ? users.map(function (u) { return '<div class="prow">' + tkeyHTML(u) + '<span class="lab">' + esc(u.title) + '</span></div>'; }).join('') : '<p class="faint">No session has it yet.</p>') + '</div>' +
+          '<p class="sub" style="font-size:14px">Drag it onto a session, or press ' + kc('a') + ' and choose one. Drop a ticket on New session to start work from it.</p>';
+        if (s.kind === 'note') h += '<p class="faint">Drop a note on the hub to share it with the whole workspace.</p>';
+      }
+      h += '</div>';
+    } else if (S.focus === 'hub') {
+      h += '<div class="rhead"><h4 class="grow">Shared context</h4>' + kc('w') + '</div><div class="insp-body">' +
+        '<div class="row" style="gap:9px"><span class="ic ' + w.ic + '" style="width:26px;height:26px;font-size:12px;border-radius:7px">' + w.letter + '</span><div class="t2">' + esc(w.name) + '</div></div>' +
+        '<p class="sub" style="font-size:14px">Every session in this workspace starts with this. Terminal sessions get it from a SessionStart hook. Change a note and running sessions get it through the channel.</p>' +
+        '<div><h4 style="margin-bottom:4px">In the packet</h4>' + sharedRows(w) + '</div>' +
+        '<div><h4 style="margin-bottom:6px">Run recipe</h4><div class="code">' + w.recipe.steps.map(esc).join('<br>') + '<br><span style="color:var(--m-green)">→ ' + esc(w.recipe.url) + '</span></div><div class="faint" style="margin-top:6px">Detected from ' + esc(w.recipe.from) + ' · ' + kc('r') + ' Run it</div></div>' +
+        '<div class="row" style="gap:8px"><span class="btn" data-k2="w">' + kc('w') + 'Edit notes</span><span class="btn" data-k2="r">' + kc('r') + 'Run the app</span></div></div>';
+    } else if (S.focus === 'ghost') {
+      h += '<div class="rhead"><h4 class="grow">New session</h4></div><div class="insp-body"><p class="sub" style="font-size:14px">Drop a ticket on New session, or press ' + kc('n') + ' to pick one from the shelf. It starts with the ' + esc(w.name) + ' shared context plus the ticket.</p>' +
+        '<p class="sub" style="font-size:14px">You choose where it runs: in a terminal, where you talk to Claude as usual, or in the app.</p></div>';
+    } else {
+      var c = cur();
+      if (c) {
+        var own = sum(c.chips.map(function (x) { return x.size; })), shared = sum(w.shared.map(function (x) { return x[2]; }));
+        var st = ST[c.status];
+        h += '<div class="rhead"><h4 class="grow">What Claude knows</h4>' + (inIn ? kc('Esc') : kc('Enter')) + '</div><div class="insp-body">' +
+          '<div class="row" style="gap:8px">' + tkeyHTML(c) + '<div class="t2 trunc grow">' + esc(c.title) + '</div></div>' +
+          '<div class="row" style="gap:6px"><span class="pill p-grey">' + esc(c.origin) + '</span><span class="pill ' + st.cls + '">' + (st.spin ? '<span class="spin"></span>' : '') + st.label + '</span></div>' +
+          '<p class="faint" style="font-size:13px">' + (c.origin === 'terminal' ? 'Given at start by a SessionStart hook. Things you add later go in through the cc-control channel before its next message.' : 'Runs in the app. Things you add reach it with your next message.') + '</p>' +
+          '<div><h4 style="margin-bottom:2px">Shared with every ' + esc(w.name) + ' session</h4>' + sharedRows(w) + '</div>' +
+          '<div><h4 style="margin-bottom:2px">Only this session</h4>' +
+          (c.chips.length ? c.chips.map(function (ch, i) {
+            var f = inIn && i === S.chipI;
+            var ic = { ticket: 'ticket', repo: 'repo', file: 'file', note: 'note', finding: 'link', handoff: 'flow' }[ch.kind];
+            return '<div class="prow cursor' + (f ? ' focus' : '') + '" data-chip="' + i + '"><span class="kind">' + icon(ic) + '</span><span class="lab">' + esc(ch.kind === 'ticket' ? ch.label + ' ticket' : ch.label) + '</span>' +
+              (ch.pinned ? '<span style="color:var(--acc);display:inline-flex">' + icon('pin').replace('class="i"', 'class="i" style="width:14px;height:14px"') + '</span>' : '') +
+              (f ? '<span class="row" style="gap:4px;margin-left:auto">' + kc('p') + kc('x') + '</span>' : '<span class="sz">' + k1(ch.size) + '</span>') + '</div>';
+          }).join('') : '<p class="faint">Nothing of its own yet. Drag something onto it.</p>') + '</div>' +
+          '<div class="total"><div class="row"><span class="grow">Packet</span><strong class="mono">' + k1(shared) + ' + ' + k1(own) + ' = ' + k1(sum([shared, own])) + '</strong></div>' +
+          '<div class="meter' + (c.meter > 70 ? ' hot' : '') + '"><span>Memory used</span><div class="bar"><i style="width:' + c.meter + '%"></i></div><span>' + c.meter + '%</span></div>' +
+          '<div class="faint">Pinned items carry over when you hand off.</div></div>' +
+          '<div class="row" style="gap:6px;flex-wrap:wrap"><span class="btn' + (c.meter > 70 && !c.handed ? '' : ' off') + '" data-k2="h">' + kc('h') + 'Hand off</span><span class="btn" data-k2="@">' + kc('@') + 'Pull findings</span><span class="btn" data-k2="r">' + kc('r') + 'Try it</span></div>' +
+          '</div>';
+      }
+    }
+    h += mapLegend();
+    $('#insp').innerHTML = h;
+  }
+
+  function legendItems() {
+    var A = ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'];
+    var m = S.modal;
+    if (m) {
+      if (m.type === 'keys') return [[['?'], 'Close'], [['Esc'], 'Close']];
+      if (m.type === 'start') return [[['1'], 'Open in a terminal'], [['2'], 'Run in the app'], [['Enter'], 'Terminal, the default'], [['Esc'], 'Cancel']];
+      if (m.type === 'pull') return [[['ArrowUp', 'ArrowDown'], 'Choose a finding'], [['Enter'], 'Pull it in'], [['Esc'], 'Cancel']];
+      if (m.type === 'try') return [[['o'], 'Open in the browser'], [['e'], 'Edit the recipe'], [['Esc'], 'Close']];
+    }
+    if (S.editing) return [[['Esc'], 'Save notes'], [[], 'One note per line. Every session in the workspace gets them.']];
+    if (S.carrying) return [[A, 'Choose a session'], [['Enter'], 'Add it here'], [['Esc'], 'Cancel']];
+    var tail = [[['1', '2', '3'], 'Workspace'], [['/'], 'Search'], [['?'], 'All keys']];
+    if (S.region === 'shelf') return [[['ArrowUp', 'ArrowDown'], 'Move'], [['a'], 'Add to a session'], [['Tab'], 'Back to the map']].concat(tail);
+    if (S.region === 'insp') return [[['ArrowUp', 'ArrowDown'], 'Choose an item'], [['x'], 'Remove'], [['p'], 'Pin'], [['h'], 'Hand off'], [['@'], 'Pull findings'], [['r'], 'Try it'], [['Esc'], 'Back to the map']];
+    if (S.focus === 'hub') return [[A, 'Move'], [['w'], 'Edit shared notes'], [['r'], 'Run the app'], [['Tab'], 'Sources']].concat(tail);
+    if (S.focus === 'ghost') return [[A, 'Move'], [['n'], 'Start from a ticket'], [['Tab'], 'Sources']].concat(tail);
+    return [[A, 'Move'], [['Enter'], 'What Claude knows'], [['h'], 'Hand off'], [['@'], 'Pull findings'], [['r'], 'Try it'], [['Tab'], 'Sources']].concat(tail);
+  }
+  function renderLegend() {
+    $('#legend').innerHTML = legendItems().map(function (it) {
+      return '<span class="row">' + it[0].map(function (k) { return kc(k); }).join('') + '<span>' + esc(it[1]) + '</span></span>';
+    }).join('');
+  }
+
+  function renderModal() {
+    var m = S.modal, h = '';
+    if (!m) { $('#modal').innerHTML = ''; return; }
+    if (m.type === 'keys') {
+      var rows = [
+        ['Arrows', 'Move between nodes on the map'], ['Enter', 'What Claude knows, for the session'], ['Tab', 'Switch between sources and the map'], ['1 2 3', 'Storefront, Payments, Docs & site'],
+        ['a', 'Add the source to a session'], ['n', 'New session from a ticket'], ['h', 'Hand off to a fresh session'], ['@', 'Pull a finding from another session'],
+        ['x', 'Remove an item from the session'], ['p', 'Pin an item so it survives a handoff'], ['w', 'Edit the shared workspace notes'], ['r', 'Try it: run the app for this session'],
+        ['o', 'Open the running app'], ['e', 'Edit the run recipe'], ['/', 'Search sources'], ['Esc', 'Back, cancel or close']
+      ];
+      h = '<div class="overlay" data-close="1"><div class="card"><div class="row"><div class="title grow">All keys</div>' + kc('Esc') + '</div><div class="faint">Mouse works too: drag sources onto sessions, click a node to see what Claude knows.</div><div class="keymap">' +
+        rows.map(function (r) { return '<div class="row"><span>' + esc(r[1]) + '</span><span class="kc sm">' + esc(r[0]) + '</span></div>'; }).join('') + '</div></div></div>';
+    } else if (m.type === 'start') {
+      var w = ws(), s = m.src, shared = sum(w.shared.map(function (x) { return x[2]; }));
+      h = '<div class="overlay" data-close="1"><div class="card narrow"><div class="row"><div class="title grow">Start ' + esc(s.tkey || s.label) + '</div>' + kc('Esc') + '</div>' +
+        '<div class="sub">' + esc(s.label) + '. Claude starts with the ' + esc(w.name) + ' shared context (' + k1(shared) + ') and this ' + (s.kind === 'ticket' ? 'ticket' : 'item') + ' (' + k1(s.size || 0.2) + ').</div>' +
+        '<div class="opt focus" data-opt="terminal">' + kc('1', 'lg') + '<div class="grow"><div class="t2 row" style="gap:8px">' + icon('term') + 'Open in a terminal <span class="pill p-green">default</span></div><div class="sub" style="font-size:14px">Opens a terminal in ' + esc(w.recipe.repo) + ' and runs claude. A SessionStart hook hands it the packet. You talk to Claude there and the map follows along.</div></div></div>' +
+        '<div class="opt" data-opt="in app">' + kc('2', 'lg') + '<div class="grow"><div class="t2 row" style="gap:8px">' + icon('app') + 'Run in the app</div><div class="sub" style="font-size:14px">Runs here, with its own session pane. Anything you add reaches it directly.</div></div></div></div></div>';
+    } else if (m.type === 'pull') {
+      var to = sessById(m.sid);
+      h = '<div class="overlay" data-close="1"><div class="card narrow"><div class="row"><div class="title grow">Pull a finding into ' + esc(to.tkey) + '</div>' + kc('Esc') + '</div><div class="sub">What other sessions worked out. The one you pick becomes part of what ' + esc(to.tkey) + ' knows.</div>' +
+        m.list.map(function (s, i) { return '<div class="opt' + (i === m.i ? ' focus' : '') + '" data-pull="' + i + '">' + tkeyHTML(s) + '<div class="grow"><div class="t2">' + esc(s.finding.charAt(0).toUpperCase() + s.finding.slice(1)) + '</div><div class="faint">' + esc(s.title) + ' · ' + esc(D[wsOf(s.id)].name) + '</div></div>' + (i === m.i ? kc('Enter') : '') + '</div>'; }).join('') + '</div></div>';
+    } else if (m.type === 'try') {
+      var w2 = ws(), rc = w2.recipe, s2 = m.sid ? sessById(m.sid) : null;
+      h = '<div class="overlay" data-close="1"><div class="card narrow"><div class="row"><span style="color:var(--m-green)">' + icon('play') + '</span><div class="title grow">' + (s2 ? 'Try ' + esc(s2.tkey) : 'Run ' + esc(rc.repo)) + '</div>' + kc('Esc') + '</div>' +
+        '<div class="faint">' + (s2 ? 'Branch ' + esc(s2.branch) + ' · ' : '') + esc(rc.repo) + ' recipe, detected from ' + esc(rc.from) + ' · ' + kc('e') + ' edit</div>' +
+        rc.steps.map(function (st, i) {
+          var state = i < m.step ? 'ok' : (i === m.step ? 'run' : 'wait');
+          var last = i === rc.steps.length - 1 && m.done;
+          var mark = (state === 'ok' && !last) ? '<span style="color:var(--m-green)">' + icon('check') + '</span>' : (state === 'run' || last ? '<span class="spin" style="color:var(--m-blue)"></span>' : '<span class="ring"></span>');
+          var txt = last ? 'running' : ({ ok: 'done', run: 'running', wait: 'waiting' })[state];
+          return '<div class="stepline">' + mark + '<span class="mono">' + esc(st) + '</span><span class="st">' + txt + '</span></div>';
+        }).join('') +
+        (m.done ? '<div class="total"><div class="row"><span class="grow">' + esc(rc.repo) + ' is up at <strong class="mono">' + esc(rc.url) + '</strong></span>' + kc('o') + '</div>' +
+          (s2 ? '<div class="sub" style="font-size:14px">What to check, from ' + esc(s2.tkey) + ': ' + esc(s2.check) + '</div>' : '') + '</div>' : '') +
+        '</div></div>';
+    }
+    $('#modal').innerHTML = h;
+  }
+
+  /* ---------- actions ---------- */
+  function toast(t) { Futures.toast(root, t); }
+
+  function switchWs(k) { S.ws = WSKEY[k]; S.focus = ws().sessions[0] ? ws().sessions[0].id : 'hub'; S.region = 'canvas'; S.srcI = 0; S.carrying = null; render(); }
+
+  function startCarry(src) {
+    if (!src) return;
+    if (src.shared) { toast(src.label + ' is already shared with every ' + ws().name + ' session.'); return; }
+    S.carrying = src.id; S.region = 'canvas';
+    if (S.focus === 'hub') { var s0 = ws().sessions.filter(function (s) { return !s.handed; })[0]; S.focus = s0 ? s0.id : 'ghost'; }
+    render();
+  }
+
+  function drop(srcId, nodeId) {
+    var src = sources().filter(function (x) { return x.id === srcId; })[0];
+    S.carrying = null; S.region = 'canvas';
+    if (!src) { render(); return; }
+    if (nodeId === 'hub') {
+      if (src.kind === 'note') { ws().notes.push(src.label + ' (see note)'); S.focus = 'hub'; render(); toast(src.label + ' is now shared with every ' + ws().name + ' session.'); return; }
+      render(); toast('The hub holds shared notes. Drop a note here, or drop this on a session.'); return;
+    }
+    if (nodeId === 'ghost') { S.modal = { type: 'start', src: src }; S.focus = 'ghost'; render(); return; }
+    S.focus = nodeId;
+    addSource(src, sessById(nodeId));
+  }
+
+  function addSource(src, s) {
+    if (!s) return;
+    if (src.shared) { render(); toast(src.label + ' is already shared with every ' + ws().name + ' session.'); return; }
+    if (s.handed) { render(); toast('That session was handed off. Add it to the new one.'); return; }
+    if (src.kind === 'finding') { doPull(src.from, s.id); return; }
+    if (s.chips.some(function (c) { return c.src === src.id; })) { render(); toast(s.tkey + ' already has it.'); return; }
+    s.chips.push({ kind: src.kind, label: src.kind === 'ticket' ? src.tkey : src.label, trello: src.trello, size: src.size, src: src.id });
+    s.meter = Math.min(99, s.meter + Math.max(1, Math.round(src.size * 2)));
+    S.fresh[s.id + ':' + (s.chips.length - 1)] = 1;
+    render();
+    toast((src.tkey || src.label) + ' added. Claude gets it on its next message.');
+  }
+
+  function startSession(origin) {
+    var src = S.modal.src, slot = ghostSlot(); S.modal = null;
+    if (!slot) { render(); toast('The map is full. Hand off or finish a session first.'); return; }
+    var id = 'n' + Date.now();
+    var s = { id: id, tkey: src.tkey || 'New', trello: src.trello, title: src.kind === 'ticket' ? src.label : src.label, origin: origin, status: 'starting', detail: 'Reading ' + ws().recipe.repo + ' and writing a plan', meter: 6, slot: slot,
+      branch: (src.tkey || 'new-work').toLowerCase(), check: 'what the ticket asks for works end to end.', finding: null,
+      chips: [{ kind: src.kind === 'finding' ? 'finding' : src.kind, label: src.kind === 'ticket' ? src.tkey : src.label, trello: src.trello, size: src.size || 0.2, src: src.id }] };
+    ws().sessions.push(s);
+    S.focus = id; S.region = 'canvas'; S.fresh[id + ':0'] = 1;
+    render();
+    toast(origin === 'terminal' ? 'Terminal opened in ' + ws().recipe.repo + '. Claude has the packet.' : 'Started in the app with the packet.');
+  }
+
+  function handoff(s) {
+    if (!s) { toast('Choose a session first.'); return; }
+    if (s.handed) { toast('Already handed off.'); return; }
+    if (s.meter <= 70) { toast(s.tkey + ' has room left (' + s.meter + '%). Hand off when it passes 70%.'); return; }
+    var free = freeSlots(); if (!free.length) { toast('The map is full.'); return; }
+    var p = SLOTS[s.slot];
+    free.sort(function (a, b) { var A = SLOTS[a], B = SLOTS[b]; return Math.hypot(A[0] - p[0], A[1] - p[1]) - Math.hypot(B[0] - p[0], B[1] - p[1]); });
+    var pinned = s.chips.filter(function (c) { return c.pinned; }).map(function (c) { return JSON.parse(JSON.stringify(c)); });
+    var n = { id: s.id + 'b', tkey: s.tkey, trello: s.trello, title: s.title + ' · part 2', origin: s.origin, status: 'fresh', detail: 'Handoff summary: 9 decisions, 6 files, 2 open questions', meter: 9, slot: free[0],
+      branch: s.branch, check: s.check, finding: s.finding, chips: [{ kind: 'handoff', label: 'Handoff summary', size: 1.8, pinned: true }].concat(pinned) };
+    s.handed = true; s.status = 'handed'; s.detail = 'Continued in part 2'; s.finding = null;
+    ws().sessions.push(n);
+    ws().links.push({ from: s.id, to: n.id, kind: 'handoff', label: 'Handoff' });
+    S.fresh['l:' + s.id + ':' + n.id] = 1; S.fresh[n.id + ':0'] = 1;
+    S.focus = n.id; S.region = 'canvas';
+    render();
+    toast('Handed off. Part 2 starts with the summary and ' + pinned.length + ' pinned item' + (pinned.length === 1 ? '' : 's') + '.');
+  }
+
+  function openPull(s) {
+    if (!s) { toast('Choose a session first.'); return; }
+    var list = [];
+    [S.ws].concat(Object.keys(D).filter(function (k) { return k !== S.ws; })).forEach(function (k) {
+      D[k].sessions.forEach(function (o) { if (o.id !== s.id && !o.handed && o.finding) list.push(o); });
+    });
+    if (!list.length) { toast('No other session has a finding yet.'); return; }
+    S.modal = { type: 'pull', sid: s.id, i: 0, list: list }; render();
+  }
+
+  function doPull(fromId, toId) {
+    var from = sessById(fromId), to = sessById(toId);
+    S.modal = null;
+    if (!from || !to) { render(); return; }
+    if (fromId === toId) { render(); toast('That finding is its own.'); return; }
+    if (to.chips.some(function (c) { return c.from === fromId; })) { render(); toast(to.tkey + ' already has that finding.'); return; }
+    to.chips.push({ kind: 'finding', label: 'From ' + from.tkey, size: 0.6, from: fromId });
+    to.meter = Math.min(99, to.meter + 1);
+    S.fresh[to.id + ':' + (to.chips.length - 1)] = 1;
+    if (wsOf(fromId) === S.ws) { ws().links.push({ from: fromId, to: toId, kind: 'finding', label: 'Finding' }); S.fresh['l:' + fromId + ':' + toId] = 1; }
+    S.focus = toId;
+    render();
+    toast(from.tkey + ' found ' + from.finding + '. Pulled into ' + to.tkey + '.');
+  }
+
+  function openTry(s) {
+    clearInterval(timer);
+    S.modal = { type: 'try', sid: s ? s.id : null, step: 0, done: false }; render();
+    var n = ws().recipe.steps.length;
+    timer = setInterval(function () {
+      var m = S.modal; if (!m || m.type !== 'try') { clearInterval(timer); return; }
+      if (m.step < n - 1) m.step++; else { m.done = true; clearInterval(timer); }
+      renderModal(); renderLegend();
+    }, 700);
+  }
+
+  function startEdit() { S.focus = 'hub'; S.region = 'canvas'; S.editing = true; render(); }
+  function saveNotes() {
+    var ta = $('#notes-edit');
+    if (ta) ws().notes = ta.value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+    S.editing = false; render();
+    toast('Saved. New ' + ws().name + ' sessions start with it. Running ones get it through the channel.');
+  }
+
+  function removeChip(s, i) {
+    var ch = s && s.chips[i]; if (!ch) return;
+    s.chips.splice(i, 1);
+    if (ch.from) ws().links = ws().links.filter(function (l) { return !(l.from === ch.from && l.to === s.id); });
+    if (S.chipI >= s.chips.length) S.chipI = Math.max(0, s.chips.length - 1);
+    if (!s.chips.length) S.region = 'canvas';
+    render();
+    toast('Removed ' + ch.label + '. Claude stops getting it from its next message.');
+  }
+  function pinChip(s, i) {
+    var ch = s && s.chips[i]; if (!ch) return;
+    ch.pinned = !ch.pinned; render();
+    toast(ch.pinned ? 'Pinned. It carries over when you hand off.' : 'Unpinned.');
+  }
+
+  function spatial(k, skipHub) {
+    var els = [].slice.call(root.querySelectorAll('#nodes [data-node]')).filter(function (e) { return !(skipHub && e.dataset.node === 'hub') && !(skipHub && e.classList.contains('handed')); });
+    var curEl = root.querySelector('#nodes [data-node="' + S.focus + '"]');
+    if (!curEl) { if (els[0]) { S.focus = els[0].dataset.node; return true; } return false; }
+    var cx = curEl.offsetLeft + curEl.offsetWidth / 2, cy = curEl.offsetTop + curEl.offsetHeight / 2, best = null, bs = 1e9;
+    els.forEach(function (e) {
+      if (e === curEl) return;
+      var x = e.offsetLeft + e.offsetWidth / 2 - cx, y = e.offsetTop + e.offsetHeight / 2 - cy, main, side;
+      if (k === 'ArrowRight') { main = x; side = y; } else if (k === 'ArrowLeft') { main = -x; side = y; } else if (k === 'ArrowDown') { main = y; side = x; } else { main = -y; side = x; }
+      if (main < 20 || main < Math.abs(side) * 0.5) return;
+      var sc = main + 2 * Math.abs(side);
+      if (sc < bs) { bs = sc; best = e; }
+    });
+    if (!best) return false;
+    S.focus = best.dataset.node; return true;
+  }
+
+  /* ---------- keys ---------- */
+  function handle(k) {
+    var ae = document.activeElement;
+    if (S.modal) return modalKey(k);
+    if (S.editing) { if (k === 'Esc') { saveNotes(); return true; } return false; }
+    if (ae && ae.id === 'map-search') { if (k === 'Esc') { S.q = ''; ae.value = ''; ae.blur(); render(); return true; } return false; }
+    if (k === '?') { S.modal = { type: 'keys' }; render(); return true; }
+    if (k === '/') { document.getElementById('map-search').focus(); return true; }
+    if (S.carrying) {
+      if (/^Arrow/.test(k)) { spatial(k, true); render(); return true; }
+      if (k === 'Enter') { drop(S.carrying, S.focus); return true; }
+      if (k === 'Esc') { S.carrying = null; S.region = 'shelf'; render(); return true; }
+      return true;
+    }
+    if (WSKEY[k]) { switchWs(k); return true; }
+    var c = cur();
+    if (S.region === 'shelf') {
+      var list = sources();
+      if (k === 'ArrowDown') { S.srcI = Math.min(list.length - 1, S.srcI + 1); render(); return true; }
+      if (k === 'ArrowUp') { S.srcI = Math.max(0, S.srcI - 1); render(); return true; }
+      if (k === 'a' || k === 'Enter') { startCarry(list[S.srcI]); return true; }
+      if (k === 'ArrowRight' || k === 'Tab' || k === 'Shift+Tab' || k === 'Esc') { S.region = 'canvas'; render(); return true; }
+      return false;
+    }
+    if (S.region === 'insp') {
+      var n = c ? c.chips.length : 0;
+      if (k === 'ArrowDown') { S.chipI = Math.min(n - 1, S.chipI + 1); render(); return true; }
+      if (k === 'ArrowUp') { S.chipI = Math.max(0, S.chipI - 1); render(); return true; }
+      if (k === 'x') { removeChip(c, S.chipI); return true; }
+      if (k === 'p') { pinChip(c, S.chipI); return true; }
+      if (k === 'Esc' || k === 'ArrowLeft') { S.region = 'canvas'; render(); return true; }
+    }
+    if (S.region === 'canvas') {
+      if (/^Arrow/.test(k)) {
+        if (!spatial(k, false)) { if (k === 'ArrowLeft') { S.region = 'shelf'; } else return true; }
+        render(); return true;
+      }
+      if (k === 'Tab' || k === 'Shift+Tab') { S.region = 'shelf'; render(); return true; }
+      if (k === 'Enter') {
+        if (S.focus === 'hub') { startEdit(); return true; }
+        if (S.focus === 'ghost') { return handle('n'); }
+        if (c && c.chips.length) { S.region = 'insp'; S.chipI = 0; render(); }
+        else if (c) toast('Nothing of its own yet. Drag something onto it.');
+        return true;
+      }
+      if (k === 'w') { startEdit(); return true; }
+      if (k === 'n') {
+        var l = sources(), i = -1;
+        l.forEach(function (s, j) { if (i < 0 && s.kind === 'ticket' && s.isNew && !usedBy(s.id).length) i = j; });
+        S.region = 'shelf'; S.srcI = i < 0 ? 0 : i; render();
+        toast('Pick a ticket and press a, then choose New session.');
+        return true;
+      }
+    }
+    if (k === 'h') { handoff(c); return true; }
+    if (k === '@') { openPull(c); return true; }
+    if (k === 'r') { openTry(c); return true; }
+    return false;
+  }
+
+  function modalKey(k) {
+    var m = S.modal;
+    if (k === 'Esc' || (m.type === 'keys' && k === '?')) { S.modal = null; clearInterval(timer); render(); return true; }
+    if (m.type === 'start') {
+      if (k === '1' || k === 'Enter') { startSession('terminal'); return true; }
+      if (k === '2') { startSession('in app'); return true; }
+    }
+    if (m.type === 'pull') {
+      if (k === 'ArrowDown') { m.i = Math.min(m.list.length - 1, m.i + 1); renderModal(); return true; }
+      if (k === 'ArrowUp') { m.i = Math.max(0, m.i - 1); renderModal(); return true; }
+      if (k === 'Enter') { doPull(m.list[m.i].id, m.sid); return true; }
+    }
+    if (m.type === 'try') {
+      if (k === 'o') { toast(m.done ? 'Opens ' + ws().recipe.url + ' in your browser.' : 'Still starting. It opens when the last step is up.'); return true; }
+      if (k === 'e') { toast('The recipe opens for editing. Changes apply to every ' + ws().name + ' session.'); return true; }
+    }
+    return true;
+  }
+
+  Futures.keys(root, handle);
+
+  /* ---------- mouse ---------- */
+  root.addEventListener('click', function (e) {
+    var t = e.target;
+    if (S.editing) { if (t.closest('textarea')) return; var kEsc = t.closest('.kc[data-k="Esc"]'); saveNotes(); if (kEsc) return; }
+    if (S.modal) {
+      var opt = t.closest('[data-opt]'), pl = t.closest('[data-pull]');
+      if (opt) { startSession(opt.dataset.opt); return; }
+      if (pl) { doPull(S.modal.list[+pl.dataset.pull].id, S.modal.sid); return; }
+      if (t.closest('.kc[data-k]')) { var mk = t.closest('.kc[data-k]').dataset.k; if (handle(mk)) Futures.flash(root, mk); return; }
+      if (t.classList.contains('overlay')) { S.modal = null; clearInterval(timer); render(); }
+      return;
+    }
+    var key = t.closest('.kc[data-k]'), btn = t.closest('[data-k2]');
+    var src = t.closest('.src'), node = t.closest('#nodes [data-node]'), chip = t.closest('[data-chip]'), tab = t.closest('[data-ws]');
+    if (tab) { switchWs(D[tab.dataset.ws].key); return; }
+    if (key || btn) {
+      var k = key ? key.dataset.k : btn.dataset.k2;
+      if (src) { S.region = 'shelf'; S.srcI = +src.dataset.i; }
+      else if (node && !S.carrying) { S.focus = node.dataset.node; S.region = 'canvas'; }
+      else if (chip) { S.region = 'insp'; S.chipI = +chip.dataset.chip; }
+      if (handle(k)) Futures.flash(root, k);
+      return;
+    }
+    if (src) { if (S.carrying) return; S.region = 'shelf'; S.srcI = +src.dataset.i; render(); return; }
+    if (node) {
+      var id = node.dataset.node;
+      if (S.carrying) { drop(S.carrying, id); return; }
+      if (S.focus === id && S.region === 'canvas') { handle('Enter'); return; }
+      S.focus = id; S.region = 'canvas'; render(); return;
+    }
+    if (chip) { S.region = 'insp'; S.chipI = +chip.dataset.chip; render(); }
+  });
+
+  root.addEventListener('dragstart', function (e) {
+    var s = e.target.closest && e.target.closest('.src'); if (!s) return;
+    S.drag = s.dataset.src;
+    try { e.dataTransfer.setData('text/plain', S.drag); e.dataTransfer.effectAllowed = 'copy'; } catch (err) {}
+    s.classList.add('carried');
+    root.querySelectorAll('#nodes .sess:not(.handed), #nodes .ghost').forEach(function (n) { n.classList.add('target'); });
+  });
+  root.addEventListener('dragend', function () {
+    S.drag = null;
+    root.querySelectorAll('.target, .drop, .carried').forEach(function (n) { n.classList.remove('target', 'drop', 'carried'); });
+  });
+  root.addEventListener('dragover', function (e) {
+    var n = e.target.closest && e.target.closest('#nodes [data-node]'); if (!n || !S.drag) return;
+    e.preventDefault();
+    try { e.dataTransfer.dropEffect = 'copy'; } catch (err) {}
+    root.querySelectorAll('.drop').forEach(function (x) { if (x !== n) x.classList.remove('drop'); });
+    n.classList.add('drop');
+  });
+  root.addEventListener('dragleave', function (e) {
+    var n = e.target.closest && e.target.closest('#nodes [data-node]');
+    if (n && !n.contains(e.relatedTarget)) n.classList.remove('drop');
+  });
+  root.addEventListener('drop', function (e) {
+    var n = e.target.closest && e.target.closest('#nodes [data-node]'); if (!n || !S.drag) return;
+    e.preventDefault();
+    var id = S.drag; S.drag = null;
+    drop(id, n.dataset.node);
+  });
+
+  var inp = document.getElementById('map-search');
+  inp.addEventListener('input', function () { S.q = inp.value; S.srcI = 0; render(); });
+  inp.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); inp.blur(); S.region = 'shelf'; S.srcI = 0; render(); }
+  });
+
+  document.getElementById('reset').addEventListener('click', reset);
+  window.addEventListener('resize', function () { drawEdges(); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { drawEdges(); });
+
+  reset();
+})();
+</script>
+</body>
+</html>

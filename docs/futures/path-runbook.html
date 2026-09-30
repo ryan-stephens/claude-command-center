@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Runbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="futures.css">
+<style>
+/* Runbook: a rail of jobs, the loop as a stepper, and the focused step's detail. */
+.m .rb-head { padding: 12px 18px; border-bottom: 1px solid var(--m-line); gap: 14px; }
+.m .rb-body { flex: 1; display: flex; min-height: 0; }
+.m .rb-rail { width: 300px; background: var(--m-col); border-right: 1px solid var(--m-line); display: flex; flex-direction: column; gap: 6px; padding: 12px 0; min-height: 0; overflow: hidden; }
+.m .rb-rail h4 { padding: 4px 16px; }
+.m .job { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; padding: 9px 12px; margin: 0 8px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; }
+.m .job:hover { background: var(--m-raise); }
+.m .job.sel { background: var(--m-surface); border-color: var(--m-line); box-shadow: inset 3px 0 0 var(--acc); }
+.m .job .meta { grid-column: 2; display: flex; gap: 8px; align-items: center; }
+.m .inbox { display: flex; align-items: center; gap: 8px; padding: 7px 10px; margin: 0 12px; border-radius: 9px; background: var(--m-surface); border: 1px solid var(--m-line); cursor: grab; font-size: 13.5px; }
+.m .inbox .grip { color: var(--m-faint); font: 700 13px var(--mono); letter-spacing: -2px; }
+.m .dropzone { margin: 4px 12px 0; padding: 12px; border-radius: 10px; border: 2px dashed var(--m-line); color: var(--m-sub); font-size: 13.5px; display: flex; align-items: center; gap: 8px; }
+.m .rb-steps { width: 470px; border-right: 1px solid var(--m-line); display: flex; flex-direction: column; min-height: 0; background: var(--m-bg); }
+.m .rb-steps .top { padding: 16px 20px 12px; display: grid; gap: 8px; border-bottom: 1px solid var(--m-line); }
+.m .steplist { list-style: none; margin: 0; padding: 10px 12px; display: grid; gap: 2px; overflow: hidden; }
+.m .st { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 10px 10px; border-radius: 11px; cursor: pointer; }
+.m .st:hover { background: var(--m-raise); }
+.m .st:not(:last-child)::after { content: ""; position: absolute; left: 26px; top: 44px; bottom: -14px; width: 2px; background: var(--m-line); }
+.m .st.done:not(:last-child)::after { background: color-mix(in srgb, var(--m-green) 55%, var(--m-line)); }
+.m .num { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font: 700 13px var(--mono); background: var(--m-raise); border: 1px solid var(--m-line); color: var(--m-sub); position: relative; z-index: 1; }
+.m .st.done .num { background: var(--m-green-bg); color: var(--m-green); border-color: color-mix(in srgb, var(--m-green) 40%, transparent); }
+.m .st.cur .num { background: var(--acc); color: var(--acc-ink); border-color: var(--acc); }
+.m .st.skip .num { border-style: dashed; }
+.m .st .name { font-weight: 650; font-size: 16px; }
+.m .st.todo .name { color: var(--m-sub); }
+.m .st .out { grid-column: 2 / 4; color: var(--m-sub); font-size: 13.5px; }
+.m .st.cur .out { color: var(--m-text); }
+.m .rb-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--m-surface); }
+.m .rb-detail .dh { padding: 16px 22px 12px; border-bottom: 1px solid var(--m-line); display: flex; align-items: center; gap: 12px; }
+.m .rb-detail.zone { box-shadow: inset 0 3px 0 var(--acc); }
+.m .dbody { padding: 16px 22px; display: grid; gap: 14px; align-content: start; overflow: hidden; }
+.m .explain { background: var(--m-blue-bg); color: var(--m-text); border-radius: 10px; padding: 11px 14px; font-size: 14.5px; display: flex; gap: 10px; }
+.m .explain b { color: var(--m-blue); }
+.m .act { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 7px; border-radius: 9px; background: var(--m-raise); border: 1px solid var(--m-line); color: var(--m-text); font: 600 14px var(--body); cursor: pointer; white-space: nowrap; }
+.m .act:hover { border-color: var(--m-faint); }
+.m .act.primary { background: var(--acc-soft); border-color: color-mix(in srgb, var(--acc) 60%, transparent); }
+.m .sec { display: grid; gap: 8px; }
+.m .rec { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 8px; background: var(--m-bg); border: 1px solid var(--m-line); font: 13px var(--mono); }
+.m .ico { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 700 11px var(--mono); background: var(--m-raise); color: var(--m-faint); }
+.m .ico.ok { background: var(--m-green-bg); color: var(--m-green); }
+.m .ico.bad { background: var(--m-red-bg); color: var(--m-red); }
+.m .ico.run { background: var(--m-blue-bg); color: var(--m-blue); }
+.m .chk { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--m-line); background: var(--m-bg); cursor: pointer; }
+.m .chk .note { grid-column: 2 / 4; font-size: 13.5px; color: var(--m-red); }
+.m .chk .tag { font-size: 12.5px; color: var(--m-blue); }
+.m .mbtn { display: inline-flex; gap: 6px; align-items: center; font: 600 13px var(--body); color: var(--m-sub); background: none; border: 0; cursor: pointer; padding: 2px 4px; }
+.m textarea, .m input.rbi { width: 100%; font: 14px/1.45 var(--body); color: var(--m-text); background: var(--m-bg); border: 1px solid var(--ring); border-radius: 9px; padding: 9px 11px; resize: none; }
+.m input.rbi { border-color: var(--m-line); padding: 6px 9px; }
+.m .chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px 5px 7px; border-radius: 99px; background: var(--m-raise); border: 1px solid var(--m-line); font-size: 13.5px; white-space: nowrap; }
+.m .meter { height: 10px; border-radius: 99px; background: var(--m-raise); overflow: hidden; border: 1px solid var(--m-line); }
+.m .meter > i { display: block; height: 100%; background: var(--m-blue); }
+.m .plan { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 6px; }
+.m .plan li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 14.5px; }
+.m .q { border: 1px solid color-mix(in srgb, var(--m-amber) 50%, transparent); background: var(--m-amber-bg); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; }
+.m .q .opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; background: var(--m-surface); border: 1px solid var(--m-line); cursor: pointer; font-size: 14.5px; }
+.m .files { display: grid; gap: 4px; font: 13px var(--mono); }
+.m .files .row { justify-content: space-between; }
+.m .slack { border-left: 3px solid var(--m-violet); padding: 8px 12px; background: var(--m-bg); border-radius: 0 8px 8px 0; font-size: 14px; }
+.m .kv { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 6px 12px; font-size: 14px; }
+.m .kv > span:nth-child(odd) { color: var(--m-faint); }
+/* recipe editor */
+.m .rcp { flex: 1; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); min-height: 0; background: var(--m-surface); }
+.m .rcp > div { padding: 18px 22px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.m .rcp > div + div { border-left: 1px solid var(--m-line); background: var(--m-bg); }
+.m .lrow { display: grid; grid-template-columns: 30px 150px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--m-line); background: var(--m-surface); }
+.m .lrow.off { opacity: .5; }
+.m .lrow.sub { margin-left: 40px; grid-template-columns: 150px minmax(0, 1fr) auto; }
+.m .lrow.new { border-color: var(--acc); }
+.m .tog { font: 700 12px var(--body); padding: 3px 9px; border-radius: 99px; cursor: pointer; border: 0; }
+.m .tog.on { background: var(--m-green-bg); color: var(--m-green); }
+.m .tog.offb { background: var(--m-raise); color: var(--m-faint); }
+</style>
+</head>
+<body>
+<nav class="pathnav" aria-label="Future paths">
+  <div class="seg">
+    <a href="index.html">Overview</a>
+    <a href="path-line.html">1 Ticket line</a>
+    <a href="path-runbook.html" aria-current="page">2 Runbook</a>
+    <a href="path-recorder.html">3 Flight recorder</a>
+    <a href="path-map.html">4 Context map</a>
+  </div>
+  <span class="hint">The mock takes keys. Press <span class="k">?</span> for all of them.</span>
+</nav>
+
+<div class="wrap">
+  <header class="head">
+    <p class="eyebrow">cc-control futures · path 2 of 4</p>
+    <h1>Runbook: your loop is the interface</h1>
+    <p class="lede">One piece of work at a time, walked through your loop as a checklist in plain words: ticket, context, plan, build, try it, fix, ship. Each step says what happened and what to do next. The loop is a recipe your team can edit, including how your app starts for a smoke test.</p>
+    <div class="facts">
+      <div><span class="lab">Terminal sessions</span><span class="val">Runs its own sessions</span><span class="more">So it can drive each step and undo a round with file checkpoints. <span class="k">o</span> resumes the same session in a terminal when you want one.</span></div>
+      <div><span class="lab">Best for</span><span class="val">Non-developers and repeatable team work</span><span class="more">Experienced devs gain speed from the run recipe and the one-key ship.</span></div>
+      <div><span class="lab">Build size</span><span class="val">L</span><span class="more">Run recipes and ticket/Slack links are the big pieces.</span></div>
+      <div><span class="lab">Drops</span><span class="val">The many-sessions view as home</span><span class="more">Free-form chat is no longer the default screen.</span></div>
+    </div>
+  </header>
+
+  <div class="frame" id="frame" data-w="1440" data-h="880"><div class="m" id="m" style="width:1440px;height:880px;position:relative;display:flex;flex-direction:column">
+    <header class="row rb-head">
+      <strong style="font-size:16px">Command Center</strong>
+      <span class="faint">/</span><span>Runbook</span>
+      <span class="grow"></span>
+      <button class="act" data-act="recipe" type="button"><span class="kc sm" data-k="e">e</span><span id="recipeLabel">Edit the loop</span></button>
+      <button class="act" data-act="explain" type="button"><span class="kc sm" data-k="h">h</span>Explain this step</button>
+      <button class="act" data-act="terminal" type="button"><span class="kc sm" data-k="o">o</span>Open in a terminal</button>
+      <button class="act" data-act="keys" type="button"><span class="kc sm" data-k="?">?</span>All keys</button>
+    </header>
+    <div class="rb-body" id="body"></div>
+    <div class="legend" id="legend"></div>
+    <div class="overlay" id="overlay" hidden>
+      <div class="card">
+        <div class="row"><span class="title grow">Keys</span><span class="kc" data-k="Esc">Esc</span><span class="faint">close</span></div>
+        <div class="keymap">
+          <div class="row"><span>Next / previous job</span><span class="row" style="gap:4px"><span class="kc sm">j</span><span class="kc sm">k</span></span></div>
+          <div class="row"><span>Jump to job</span><span class="kc sm">Alt 1–5</span></div>
+          <div class="row"><span>Move between steps</span><span class="row" style="gap:4px"><span class="kc sm">↑</span><span class="kc sm">↓</span></span></div>
+          <div class="row"><span>Open the step</span><span class="kc sm">Enter</span></div>
+          <div class="row"><span>Back to the steps</span><span class="kc sm">Esc</span></div>
+          <div class="row"><span>Start the next inbox ticket</span><span class="kc sm">n</span></div>
+          <div class="row"><span>Approve the plan / start planning</span><span class="kc sm">a</span></div>
+          <div class="row"><span>Ask for a change to the plan</span><span class="kc sm">c</span></div>
+          <div class="row"><span>Answer Claude's question</span><span class="kc sm">1–3</span></div>
+          <div class="row"><span>Start the app (run recipe)</span><span class="kc sm">r</span></div>
+          <div class="row"><span>Open the app in a browser</span><span class="kc sm">b</span></div>
+          <div class="row"><span>Pass / fail the focused check</span><span class="row" style="gap:4px"><span class="kc sm">p</span><span class="kc sm">x</span></span></div>
+          <div class="row"><span>Send fixes to Claude</span><span class="kc sm">Enter</span></div>
+          <div class="row"><span>Undo the last round</span><span class="kc sm">u</span></div>
+          <div class="row"><span>Ship: commit, PR, Slack</span><span class="kc sm">s</span></div>
+          <div class="row"><span>Edit the loop</span><span class="kc sm">e</span></div>
+          <div class="row"><span>Explain this step</span><span class="kc sm">h</span></div>
+          <div class="row"><span>Open in a terminal</span><span class="kc sm">o</span></div>
+        </div>
+        <p class="faint">In the loop editor: <span class="kc sm">↑</span> <span class="kc sm">↓</span> pick a row, <span class="kc sm">Space</span> turn it on or off, <span class="kc sm">i</span> add a step.</p>
+      </div>
+    </div>
+  </div></div>
+  <div class="below">
+    <span>Try: <span class="k">r</span> start the app, <span class="k">p</span> / <span class="k">x</span> pass or fail checks, <span class="k">Enter</span> send a fix, <span class="k">s</span> ship, <span class="k">j</span> next job, <span class="k">e</span> edit the loop. Drag an inbox ticket onto "Start a job".</span>
+    <button type="button" id="reset">Reset the mock</button>
+  </div>
+  <p class="phone-note">This mock is drawn for a laptop screen. It is easiest to try on a wide window.</p>
+
+  <section class="grid2">
+    <div class="box">
+      <h2>A day with it</h2>
+      <ol class="day">
+        <li><time>08:55</time><p>Two new tickets sit in the inbox, pulled from Jira. Drag SHOP-151 onto Start a job. It lands on Context with web-app and cdn-worker attached, because the ticket belongs to Storefront.</p></li>
+        <li><time>09:00</time><p>Context lists the ticket, the Storefront notes and the repos. The bar says Claude will start 38% full. Press <span class="k">a</span> to start planning.</p></li>
+        <li><time>10:12</time><p>The plan is five plain steps. Press <span class="k">c</span> to add "keep the old image URLs working", then <span class="k">a</span> to approve.</p></li>
+        <li><time>10:20</time><p>Build ticks through the plan while you start PAY-88. When PAY-88 turns amber, Claude is asking 200 or 409. Press <span class="k">1</span> and go back.</p></li>
+        <li><time>10:48</time><p>Try it. Press <span class="k">r</span>: the app installs, seeds and starts on localhost:5173, the way web-app always starts. The checklist comes from the ticket.</p></li>
+        <li><time>10:55</time><p>Three checks pass. The hero image still jumps. Press <span class="k">x</span>, write one line, press <span class="k">Enter</span>. That is round 2.</p></li>
+        <li><time>11:20</time><p>Round 2 is done. Check the one item again. It passes.</p></li>
+        <li><time>11:32</time><p>Ship shows the commit, branch, PR and Slack post, all written from the ticket and plan. Press <span class="k">s</span>. PR #418 is up and #storefront-reviews has the link.</p></li>
+        <li><time>15:00</time><p>The team lead adds "Run e2e tests" after Try it in the Storefront loop. New jobs get it.</p></li>
+      </ol>
+    </div>
+    <div class="box">
+      <h2>What it asks of you</h2>
+      <ul>
+        <li><strong>Only decisions.</strong> Approve a plan, answer a question, pass or fail a check, ship. Everything else is Claude or the recipe.</li>
+        <li><strong>One next action.</strong> The current step is always lit, and the legend shows the keys for it.</li>
+        <li><strong>Smoke testing is a real step.</strong> The run recipe is detected from package.json or compose.yaml, and you can edit it. Monorepos, Docker, seeded logins and VPNs all fit.</li>
+        <li><strong>Rounds you can undo.</strong> Each fix round is a checkpoint. <span class="k">u</span> rewinds the files to before it.</li>
+        <li><strong>A shared loop.</strong> Each workspace keeps its own recipe, so the whole team works the same way.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="grid3">
+    <div class="box"><h3>Good at</h3><ul>
+      <li>Someone new can finish a ticket end to end and say what happened at each step.</li>
+      <li>Smoke tests stop being "spin it up somehow": the recipe starts the app the same way every time.</li>
+      <li>Acceptance criteria turn into the test checklist, and failed checks turn into the fix message.</li>
+      <li>Shipping is one key: commit, PR and the Slack post come from the ticket and plan.</li>
+    </ul></div>
+    <div class="box"><h3>Trade-offs</h3><ul>
+      <li>One job is in focus. Running five at once is possible from the rail but not what the screen is built for.</li>
+      <li>It runs its own sessions. If you live in terminals, <span class="k">o</span> hands off, and the steps then only follow along through hooks.</li>
+      <li>A fixed loop feels slow for a quick question. A "no loop" job would be needed for that.</li>
+      <li>Jira, Trello and Slack each need a token and sometimes an admin's approval.</li>
+    </ul></div>
+    <div class="box"><h3>Drops</h3><ul>
+      <li>The three-column session list as the home screen. The rail replaces it.</li>
+      <li>Chat as the main view. Claude's questions arrive as cards, and a full transcript is one key away.</li>
+      <li>The number pad and mode cycling. Plan-first and the approval style become parts of the recipe.</li>
+    </ul></div>
+  </section>
+
+  <section class="box">
+    <h2>Build size: L</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Piece</th><th>Size</th><th>What exists today</th></tr></thead>
+      <tbody>
+        <tr><td>Jobs and the stepper over sessions</td><td>M</td><td>Sessions, workspaces, the transcript and the to-do list (plan steps) are all there.</td></tr>
+        <tr><td>Ticket import: Jira and Trello, with acceptance criteria</td><td>M</td><td>Nothing yet. Read-only APIs are enough.</td></tr>
+        <tr><td>Plan and Build steps</td><td>S</td><td>Plan-first mode, <code>todos.ts</code> and <code>activity.ts</code> already track this.</td></tr>
+        <tr><td>Run recipes: detect, run, show logs, wait for the port, edit</td><td>L</td><td>Nothing. The hardest piece, because every app starts differently.</td></tr>
+        <tr><td>Smoke checklist and fix rounds, with undo per round</td><td>M</td><td>SDK file checkpoints give undo for sessions the app runs.</td></tr>
+        <tr><td>Ship: commit, branch, <code>gh pr create</code>, Slack post</td><td>M</td><td>Workflows (<code>commands.ts</code>) can already run git steps.</td></tr>
+        <tr><td>Loop editor per workspace</td><td>M</td><td>Workspaces store their own commands, so the recipe has a home.</td></tr>
+        <tr><td>Open in a terminal</td><td>S</td><td><code>claude --resume &lt;id&gt;</code>, then status through hooks.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="lede" style="font-size:15px">What Claude Code allows: this path runs its own SDK sessions, so it gets file checkpoints for undo and full control of each step. There is no supported way to attach to a session already running in a terminal. Once a job is handed to a terminal, documented hooks can report its events and a SessionStart hook can inject the job's context. A channel (research preview, needs a dev flag) could push messages into that terminal and relay its approvals. Transcripts are read through the SDK's <code>getSessionMessages</code>.</p>
+  </section>
+</div>
+
+<script src="futures.js"></script>
+<script>
+(function () {
+  var root = document.getElementById('m');
+  var STEPS = ['Ticket', 'Context', 'Plan', 'Build', 'Try it', 'Fix round', 'Ship'];
+  var EXPLAIN = [
+    'This is the work you picked up. It came from your tracker with its description and the checks that say it is done. Those checks come back later when you try the app.',
+    'This is everything Claude reads before it starts: the repos it may change, the ticket, and your workspace notes. The bar shows how much of Claude’s memory that fills. Less is usually better.',
+    'Claude writes down what it will do before it touches any files. Read it like a to-do list. Approve it, or say what to change.',
+    'Claude is making the changes. You only step in if it asks a question. Each file it touches shows up here as it happens.',
+    'Start the app the way this repo always starts, then check each item from the ticket yourself. Mark it pass or fail. A fail becomes feedback for Claude.',
+    'Everything that failed becomes one message to Claude. It fixes those, then you try the app again. Each round can be undone.',
+    'Save the work, open a pull request and ask for review in Slack. The PR description is written from the ticket and the plan.'
+  ];
+  var RECIPES = {
+    'web-app': { from: 'package.json', url: 'http://localhost:5173', cmds: ['pnpm install', 'pnpm db:seed', 'pnpm dev'] },
+    'payments-api': { from: 'compose.yaml + package.json', url: 'http://localhost:4010', cmds: ['docker compose up -d db', 'pnpm dev', 'pnpm test:webhooks'] },
+    'docs-site': { from: 'package.json', url: 'http://localhost:4000', cmds: ['pnpm docs:dev'] }
+  };
+  var WS = { store: ['S', 'Storefront'], pay: ['P', 'Payments'], docs: ['D', 'Docs & site'] };
+  var NOTES = {
+    store: 'Use design-tokens for colors; reviewers in #storefront-reviews',
+    pay: 'Money values are integer cents; reviewers in #payments-reviews',
+    docs: 'Examples must run against the sandbox; reviewers in #docs'
+  };
+
+  function fresh() {
+    return {
+      sel: 0, zone: 'steps', focus: 4, explain: false, overlay: false, editing: null, draft: '',
+      recipe: false, rrow: 0,
+      loop: [
+        { n: 'Ticket', w: 'Import from Jira or Trello, with acceptance criteria', on: true },
+        { n: 'Context', w: 'Workspace repos, notes and the ticket', on: true },
+        { n: 'Plan', w: 'Claude plans first. You approve.', on: true },
+        { n: 'Build', w: 'Accept edits in the job’s repos. Ask before anything else.', on: true },
+        { n: 'Try it', w: 'Run recipe, then the checklist from the ticket', on: true },
+        { n: 'Fix round', w: 'Failed checks become one message. Up to 5 rounds.', on: true },
+        { n: 'Ship', w: 'Commit, branch shop-<id>-<slug>, open a PR', on: true },
+        { n: 'Ask for review', w: 'Post the PR to #storefront-reviews', on: true, sub: true }
+      ],
+      inbox: [
+        { key: 'SHOP-155', title: 'Save cart for signed-out users', ws: 'store', repos: ['web-app'] },
+        { key: 'PAY-91', title: 'Show refund status to support staff', ws: 'pay', repos: ['payments-api', 'web-app'] }
+      ],
+      jobs: [
+        { key: 'SHOP-151', src: 'jira', title: 'Product images load slowly on mobile', ws: 'store', repos: ['web-app', 'cdn-worker'], step: 4, state: 'ready', mem: 38, round: 1,
+          desc: 'On phones, product pages take over 6 seconds to show images. We send the full desktop image to every device.',
+          ac: ['Product images are under 200 KB on a phone', 'Images below the fold load only when you scroll', 'Nothing jumps when an image loads', 'Desktop images still look sharp'],
+          plan: ['Add a resize helper to cdn-worker that serves 400, 800 and 1600 px widths', 'Use srcset in ProductImage so phones pick the small one', 'Lazy-load images below the fold', 'Reserve each image’s space so the page does not jump', 'Add tests for the resize helper'],
+          files: [['cdn-worker/src/resize.ts', '+48'], ['cdn-worker/test/resize.test.ts', '+31'], ['web-app/src/components/ProductImage.tsx', '+22 −9'], ['web-app/src/lib/imageUrl.ts', '+14'], ['web-app/src/pages/Product.tsx', '+4 −2'], ['web-app/src/styles/product.css', '+6']],
+          out: ['Imported from Jira 09:41', '2 repos, ticket, notes · 38% of memory', 'Plan approved 10:12 · 5 steps', 'Built 6 files, tests pass · 10:47', '', '', ''],
+          run: { st: 'idle', n: 0 }, cf: 0, fixing: false, shipped: false, rounds: [],
+          checks: null },
+        { key: 'SHOP-142', src: 'jira', title: 'Gift card field at checkout', ws: 'store', repos: ['web-app', 'design-tokens'], step: 3, state: 'building', mem: 31, round: 1, built: 2, live: 0,
+          desc: 'Shoppers with a gift card have nowhere to enter it. Add a field on the payment step.',
+          ac: ['A gift card code can be entered at checkout', 'The remaining balance is shown', 'The order total goes down by the card amount'],
+          plan: ['Add a GiftCardField component using design-tokens', 'Check the code format as you type', 'Look up the balance and show what is left', 'Take the gift card off the order total', 'Add tests for the field and the total'],
+          files: [['web-app/src/checkout/GiftCardField.tsx', '+64'], ['web-app/src/checkout/PaymentStep.tsx', '+9 −2'], ['web-app/src/lib/giftCards.ts', '+27'], ['design-tokens/src/input.ts', '+3'], ['web-app/src/checkout/total.ts', '+11 −4'], ['web-app/test/giftCard.test.ts', '+40']],
+          out: ['Imported from Jira 09:05', '2 repos, ticket, notes · 31% of memory', 'Plan approved 09:20 · 5 steps', '', '', '', ''] },
+        { key: 'PAY-88', src: 'jira', title: 'Refund webhook fires twice', ws: 'pay', repos: ['payments-api'], step: 3, state: 'needs', mem: 22, round: 1, built: 1, question: true,
+          desc: 'Some refunds are recorded twice because the provider retries the webhook.',
+          ac: ['The same webhook twice records one refund', 'Retries are logged', 'Existing refund tests still pass'],
+          plan: ['Find where refund webhooks are handled', 'Store each webhook’s event id', 'Skip events already handled', 'Add a test that sends the same event twice'],
+          files: [['payments-api/src/webhooks/refunds.ts', '+18 −3'], ['payments-api/src/db/processedEvents.ts', '+22']],
+          out: ['Imported from Jira 10:02', '1 repo, ticket, notes · 22% of memory', 'Plan approved 10:15 · 4 steps', '', '', '', ''] },
+        { key: 'DOCS-19', src: 'jira', title: 'Document the refunds endpoint', ws: 'docs', repos: ['docs-site'], step: 2, state: 'plan', mem: 18, round: 1,
+          desc: 'Partners keep asking how refunds work. The API reference has no page for them.',
+          ac: ['A Refunds page exists under API', 'It shows a request and a response', 'Error codes are listed'],
+          plan: ['Read the refunds routes in payments-api', 'Write a Refunds page with request and response examples', 'List the error codes and what they mean', 'Add the page to the sidebar under API'],
+          files: [],
+          out: ['Imported from Jira 10:30', '1 repo, ticket, notes · 18% of memory', '', '', '', '', ''] },
+        { key: 'Trello', src: 'trello', title: 'Footer links 404 on /about', ws: 'store', repos: ['web-app'], step: 6, state: 'review', mem: 20, round: 1, shipped: true, pr: 412,
+          desc: 'Three footer links on the About page go to pages that moved.',
+          ac: ['Every footer link on /about opens a page', 'A test catches broken footer links'],
+          plan: ['Find the broken links on /about', 'Point them at the new routes', 'Add a link check to the tests'],
+          files: [['web-app/src/components/Footer.tsx', '+3 −3'], ['web-app/test/links.test.ts', '+25']],
+          out: ['Imported from Trello yesterday', '1 repo, card, notes · 20% of memory', 'Plan approved yesterday · 3 steps', 'Built 2 files, tests pass', '2 of 2 checks pass', 'Nothing to fix', 'PR #412 · posted to #storefront-reviews · 1 approval'] }
+      ]
+    };
+  }
+  var S;
+  function reset() {
+    S = fresh();
+    var j = S.jobs[0];
+    j.checks = j.ac.map(function (t) { return { t: t, st: 'todo', note: '', tag: '' }; });
+    render();
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function kc(k, label, cls) { return '<span class="kc ' + (cls || 'sm') + '" data-k="' + esc(k) + '">' + (label || esc(k)) + '</span>'; }
+  function job() { return S.jobs[S.sel]; }
+  function tkey(j) { return '<span class="tkey' + (j.src === 'trello' ? ' trello' : '') + '">' + esc(j.key) + '</span>'; }
+  function pill(j) {
+    var m = { ready: ['p-green', 'Ready to try'], building: ['p-blue', '<span class="spin"></span>Building'], needs: ['p-amber', 'Needs you'], plan: ['p-violet', 'Plan to review'],
+      review: ['p-grey', 'In review'], fixing: ['p-blue', '<span class="spin"></span>Fixing'], context: ['p-grey', 'Check context'], planning: ['p-blue', '<span class="spin"></span>Planning'], fix: ['p-amber', 'Send fixes'], ship: ['p-green', 'Ready to ship'] }[j.state];
+    return '<span class="pill ' + m[0] + '">' + m[1] + '</span>';
+  }
+  function stepClass(j, i) {
+    if (j.shipped) return 'done';
+    if (i < j.step) return (i === 5 && !j.rounds_used) ? 'done skip' : 'done';
+    if (i === j.step) return 'cur';
+    return 'todo';
+  }
+
+  // ---------- rail ----------
+  function rail() {
+    var h = '<h4 class="row"><span class="grow">Jobs</span>' + kc('j') + kc('k') + '</h4>';
+    S.jobs.forEach(function (j, i) {
+      h += '<div class="job' + (i === S.sel ? ' sel' : '') + '" data-act="job" data-i="' + i + '">' +
+        kc('Alt+' + (i + 1), 'Alt ' + (i + 1)) +
+        '<div class="row" style="gap:8px;min-width:0">' + tkey(j) + '<span class="t2 trunc" style="font-size:14.5px">' + esc(j.title) + '</span></div>' +
+        '<div class="meta">' + pill(j) + '<span class="faint">step ' + (Math.min(j.step, 6) + 1) + '/7</span><span class="grow"></span><span class="faint">in app</span></div></div>';
+    });
+    h += '<div class="hr" style="margin:8px 16px"></div><h4 class="row"><span class="grow">Inbox · Jira and Trello</span></h4>';
+    S.inbox.forEach(function (t, i) {
+      h += '<div class="inbox" draggable="true" data-inbox="' + i + '"><span class="grip">::</span>' + tkey({ key: t.key, src: 'jira' }) + '<span class="trunc grow">' + esc(t.title) + '</span></div>';
+    });
+    if (!S.inbox.length) h += '<p class="faint" style="padding:0 16px">Inbox is empty.</p>';
+    h += '<div class="dropzone" id="dropzone">' + kc('n') + '<span>Start a job: drop a ticket here, or press n for the next one</span></div>';
+    return '<aside class="rb-rail">' + h + '</aside>';
+  }
+
+  // ---------- stepper ----------
+  function stepper() {
+    var j = job(), w = WS[j.ws];
+    var h = '<div class="top"><div class="row">' + tkey(j) + '<span class="title trunc grow" style="font-size:20px">' + esc(j.title) + '</span></div>' +
+      '<div class="row faint"><span class="ic ' + j.ws + '" style="width:20px;height:20px;font-size:10px;border-radius:5px">' + w[0] + '</span>' + esc(w[1]) + ' · ' + j.repos.join(', ') + '<span class="grow"></span>Round ' + j.round + '</div></div>';
+    h += '<ol class="steplist">';
+    STEPS.forEach(function (name, i) {
+      var c = stepClass(j, i), out = j.out[i];
+      if (!out && c === 'cur') out = curLine(j, i);
+      if (!out && c === 'todo') out = i === 5 ? 'Only if a check fails' : '';
+      if (!out && c.indexOf('skip') >= 0) out = 'Nothing to fix';
+      h += '<li class="st ' + c + (i === S.focus && S.zone === 'steps' && !S.recipe ? ' focus' : '') + '" data-act="step" data-i="' + i + '">' +
+        '<span class="num">' + (c.indexOf('done') === 0 ? '✓' : (i + 1)) + '</span><span class="name">' + name + '</span>' +
+        (c === 'cur' ? '<span class="pill p-amber" style="background:var(--acc-soft);color:var(--acc)">You are here</span>' : '<span></span>') +
+        (out ? '<span class="out">' + esc(out) + '</span>' : '') + '</li>';
+    });
+    return '<section class="rb-steps">' + h + '</ol></section>';
+  }
+  function curLine(j, i) {
+    if (i === 1) return 'Check what Claude will know, then start planning';
+    if (i === 2) return j.state === 'planning' ? 'Claude is writing the plan' : 'Plan ready for you to read';
+    if (i === 3) return j.question ? 'Claude has a question' : 'Working on step ' + (j.built + 1) + ' of ' + j.plan.length;
+    if (i === 4) {
+      if (!j.checks) return 'Start the app and check it';
+      var p = j.checks.filter(function (c) { return c.st === 'pass'; }).length;
+      return j.run.st === 'up' ? p + ' of ' + j.checks.length + ' checks pass' : 'Start the app, then check ' + j.checks.length + ' things';
+    }
+    if (i === 5) return j.fixing ? 'Claude is fixing round ' + j.round : 'Fixes ready to send';
+    if (i === 6) return 'Ready to ship';
+    return '';
+  }
+
+  // ---------- detail ----------
+  function detail() {
+    var j = job(), i = S.focus, c = stepClass(j, i);
+    var h = '<div class="dh"><span class="num" style="width:28px;height:28px">' + (i + 1) + '</span><span class="title grow">' + STEPS[i] + '</span>' +
+      (S.zone === 'detail' ? kc('Esc') + '<span class="faint">back to steps</span>' : kc('Enter') + '<span class="faint">open</span>') + '</div><div class="dbody">';
+    if (S.explain) h += '<div class="explain"><b>Explain</b><span>' + EXPLAIN[i] + '</span></div>';
+    h += [dTicket, dContext, dPlan, dBuild, dTry, dFix, dShip][i](j, c);
+    return '<section class="rb-detail' + (S.zone === 'detail' ? ' zone' : '') + '">' + h + '</div></section>';
+  }
+  function notYet(j, i) { return '<p class="sub">Not reached yet. This comes after ' + STEPS[i - 1] + '.</p>'; }
+  function dTicket(j) {
+    return '<div class="sec"><div class="row">' + tkey(j) + '<span class="faint">' + (j.src === 'trello' ? 'Trello card' : 'Jira issue') + '</span></div><p>' + esc(j.desc) + '</p></div>' +
+      '<div class="sec"><h4>Done when</h4><ul class="plan">' + j.ac.map(function (a) { return '<li><span class="ico">•</span><span>' + esc(a) + '</span></li>'; }).join('') + '</ul></div>' +
+      '<p class="faint">These become the checklist in Try it.</p>';
+  }
+  function dContext(j, c) {
+    var h = '<div class="sec"><h4>Claude starts with</h4><div class="row" style="flex-wrap:wrap;gap:8px">' +
+      j.repos.map(function (r) { return '<span class="chip"><span class="ico ok">R</span>' + r + '</span>'; }).join('') +
+      '<span class="chip">' + tkey(j) + 'ticket and checks</span></div></div>' +
+      '<div class="sec"><h4>' + esc(WS[j.ws][1]) + ' notes · every job gets these</h4><div class="code" style="font-family:var(--body);font-size:14px">' + esc(NOTES[j.ws]) + '</div></div>' +
+      (j.key === 'SHOP-151' ? '<div class="sec"><h4>Extra files</h4><div class="row"><span class="chip">web-app/src/components/ProductImage.tsx</span></div></div>' : '') +
+      '<div class="sec"><div class="row"><h4 class="grow">What Claude will know</h4><span class="faint">' + j.mem + '% of its memory</span></div><div class="meter"><i style="width:' + j.mem + '%"></i></div></div>';
+    if (c === 'cur') h += '<div class="row">' + (j.state === 'planning' ? '<span class="pill p-blue"><span class="spin"></span>Claude is planning</span>' : '<button class="act primary" data-act="a" type="button">' + kc('a') + 'Looks right, start planning</button>') + '</div>';
+    return h;
+  }
+  function planList(j, doneN, curI) {
+    return '<ol class="plan">' + j.plan.map(function (p, k) {
+      var ic = k < doneN ? '<span class="ico ok">✓</span>' : (k === curI ? '<span class="ico run"><span class="spin" style="width:10px;height:10px"></span></span>' : '<span class="ico">' + (k + 1) + '</span>');
+      return '<li>' + ic + '<span>' + esc(p) + '</span></li>';
+    }).join('') + '</ol>';
+  }
+  function dPlan(j, c) {
+    if (c === 'todo') return notYet(j, 2);
+    if (c === 'cur' && j.state === 'planning') return '<span class="pill p-blue"><span class="spin"></span>Claude is writing the plan</span>';
+    var h = '<div class="card" style="padding:14px 16px;display:grid;gap:10px"><div class="row"><h4 class="grow">The plan, in plain words</h4>' +
+      (c === 'cur' ? '<span class="pill p-violet">Waiting for you</span>' : '<span class="pill p-green">Approved</span>') + '</div>' + planList(j, 0, -1) + '</div>';
+    if (c === 'cur') {
+      if (S.editing === 'plan') h += '<textarea id="ta" rows="3" placeholder="What should change? Enter sends it to Claude.">' + esc(S.draft) + '</textarea><p class="faint">' + kc('Enter') + ' send · ' + kc('Esc') + ' cancel</p>';
+      else h += '<div class="row"><button class="act primary" data-act="a" type="button">' + kc('a') + 'Approve and build</button><button class="act" data-act="c" type="button">' + kc('c') + 'Ask for a change</button></div>';
+    }
+    return h;
+  }
+  function filesList(j, n, editingIdx) {
+    return '<div class="files">' + j.files.slice(0, n).map(function (f, k) {
+      var parts = f[1].split(' ');
+      return '<div class="row"><span class="trunc">' + esc(f[0]) + (k === editingIdx ? ' <span class="pill p-blue" style="font-family:var(--body)">editing now</span>' : '') + '</span><span>' +
+        parts.map(function (p) { return '<span class="' + (p[0] === '+' ? 'add' : 'del') + '">' + p + '</span>'; }).join(' ') + '</span></div>';
+    }).join('') + '</div>';
+  }
+  var LIVE = ['Writing GiftCardField.tsx: the input and its label', 'Reading design-tokens/src/input.ts for field styles', 'Adding a format check: 16 characters, letters and digits', 'Running the checkout tests: 41 pass'];
+  function dBuild(j, c) {
+    if (c === 'todo') return notYet(j, 3);
+    if (c.indexOf('done') === 0) return '<div class="row"><span class="pill p-green">Done</span><span class="sub">' + esc(j.out[3]) + '</span></div>' + planList(j, j.plan.length, -1) +
+      '<div class="sec"><h4>Files changed · ' + j.files.length + '</h4>' + filesList(j, j.files.length, -1) + '</div>';
+    var h = '';
+    if (j.question) {
+      h += '<div class="q"><div class="row"><span class="pill p-amber">Claude asks</span><span class="faint">the only time you need to reply</span></div>' +
+        '<p class="t2">A duplicate webhook arrives. Return 200 and ignore it, or 409?</p>' +
+        '<div class="opt" data-act="1">' + kc('1') + '<span class="grow">Return 200 and ignore it</span><span class="faint">Claude recommends this: the provider stops retrying</span></div>' +
+        '<div class="opt" data-act="2">' + kc('2') + '<span class="grow">Return 409 Conflict</span></div>' +
+        '<div class="opt" data-act="3">' + kc('3') + '<span class="grow">Type my own answer</span></div></div>';
+    } else {
+      h += '<div class="row"><span class="pill p-blue"><span class="spin"></span>Building</span><span class="sub trunc">' + esc(LIVE[j.live % LIVE.length]) + '</span></div>';
+    }
+    h += '<div class="card" style="padding:12px 14px">' + planList(j, j.built, j.question ? -1 : j.built) + '</div>';
+    var n = j.key === 'SHOP-142' ? Math.min(j.files.length, j.built + 2) : j.files.length;
+    h += '<div class="sec"><h4>Files touched so far · ' + n + '</h4>' + filesList(j, n, j.question ? -1 : 0) + '</div>';
+    return h;
+  }
+  function recipeCard(j) {
+    var r = RECIPES[j.repos[0]], run = j.run || { st: 'idle', n: 0 };
+    var h = '<div class="sec"><div class="row"><h4 class="grow">Run recipe · ' + j.repos[0] + '</h4><span class="faint">detected from ' + r.from + ' · ' + kc('e') + ' edit</span></div>';
+    r.cmds.forEach(function (cmd, k) {
+      var st = run.st === 'idle' ? '' : (k < run.n ? 'ok' : (k === run.n && run.st === 'running' ? 'run' : ''));
+      var icon = st === 'ok' ? '✓' : st === 'run' ? '<span class="spin" style="width:10px;height:10px"></span>' : (k + 1);
+      var right = st === 'ok' ? (k === r.cmds.length - 1 ? 'up' : 'done') : st === 'run' ? 'running' : '';
+      h += '<div class="rec"><span class="ico ' + st + '">' + icon + '</span><span>' + esc(cmd) + '</span><span class="faint">' + right + '</span></div>';
+    });
+    if (run.st === 'up') h += '<div class="row"><span class="pill p-green">Running on ' + r.url.replace('http://', '') + '</span><button class="act" data-act="b" type="button">' + kc('b') + 'Open in browser ↗</button></div>';
+    else if (run.st === 'running') h += '<div class="row"><span class="pill p-blue"><span class="spin"></span>Starting the app</span></div>';
+    else h += '<div class="row"><button class="act primary" data-act="r" type="button">' + kc('r') + 'Start the app</button><span class="faint">Runs the steps above, then waits for ' + r.url.replace('http://', '') + '</span></div>';
+    return h + '</div>';
+  }
+  function dTry(j, c) {
+    if (!j.checks) {
+      if (c.indexOf('done') === 0) return '<div class="row"><span class="pill p-green">Done</span><span class="sub">' + esc(j.out[4]) + '</span></div>' + recipeCard(j);
+      return notYet(j, 4) + '<p class="faint">When it gets here, the app starts like this:</p>' + recipeCard(j);
+    }
+    var h = recipeCard(j);
+    var pass = j.checks.filter(function (x) { return x.st === 'pass'; }).length;
+    h += '<div class="sec"><div class="row"><h4 class="grow">Check it yourself · from the ticket</h4><span class="faint">' + pass + ' of ' + j.checks.length + ' pass</span></div>';
+    j.checks.forEach(function (x, k) {
+      var foc = k === j.cf && c === 'cur';
+      var ic = x.st === 'pass' ? '<span class="ico ok">✓</span>' : x.st === 'fail' ? '<span class="ico bad">✕</span>' : '<span class="ico">' + (k + 1) + '</span>';
+      h += '<div class="chk' + (foc ? ' focus' : '') + '" data-act="check" data-i="' + k + '">' + ic + '<span>' + esc(x.t) + (x.tag ? ' <span class="tag">' + esc(x.tag) + '</span>' : '') + '</span>' +
+        '<span class="row" style="gap:4px"><button class="mbtn" type="button" data-act="p" data-i="' + k + '">' + (foc ? kc('p') : '') + 'Pass</button><button class="mbtn" type="button" data-act="x" data-i="' + k + '">' + (foc ? kc('x') : '') + 'Fail</button></span>' +
+        (x.note ? '<span class="note">' + esc(x.note) + '</span>' : '') + '</div>';
+      if (S.editing === 'note' && k === j.cf) h += '<textarea id="ta" rows="2" placeholder="What’s wrong? One line is enough.">' + esc(S.draft) + '</textarea><p class="faint">' + kc('Enter') + ' save · ' + kc('Esc') + ' cancel</p>';
+    });
+    if (j.rounds.length) h += '<p class="faint">' + kc('u') + ' undo round ' + j.round + ' (rewinds the files to before it)</p>';
+    return h + '</div>';
+  }
+  function dFix(j, c) {
+    var h = '';
+    if (j.fixing) h += '<div class="row"><span class="pill p-blue"><span class="spin"></span>Claude is fixing round ' + j.round + '</span><span class="sub">Editing web-app/src/styles/product.css</span></div>';
+    else if (c === 'cur') {
+      var fails = j.checks.filter(function (x) { return x.st === 'fail'; });
+      h += '<div class="sec"><h4>Round ' + (j.round + 1) + ' message to Claude · built from failed checks</h4><div class="code" style="font-family:var(--body);font-size:14px;display:grid;gap:6px">' +
+        fails.map(function (x) { return '<div><b>Failed:</b> ' + esc(x.t) + '<br><span class="sub">' + esc(x.note) + '</span></div>'; }).join('') + '</div></div>' +
+        '<div class="row"><button class="act primary" data-act="send" type="button">' + kc('Enter') + 'Send to Claude</button><span class="faint">Checks that passed stay passed.</span></div>';
+    } else if (!j.rounds.length) h += '<p class="sub">Only needed when a check fails in Try it. Nothing to fix yet.</p>';
+    if (j.rounds.length) h += '<div class="sec"><h4>Rounds</h4>' + j.rounds.map(function (r) { return '<div class="rec" style="font-family:var(--body)"><span class="ico ok">✓</span><span>' + esc(r) + '</span><span class="faint">' + kc('u') + ' undo</span></div>'; }).join('') + '</div>';
+    return h;
+  }
+  function dShip(j, c) {
+    if (j.key === 'Trello') return '<div class="row"><span class="pill p-green">Shipped</span><span class="sub">PR #412 · posted to #storefront-reviews</span></div>' +
+      '<div class="kv"><span>Reviews</span><span>1 approval from Priya. Waiting for one more.</span><span>Checks</span><span>CI passed</span><span>Card</span><span>Moved to Review on the Trello board</span></div>';
+    if (c === 'todo' && j.key !== 'SHOP-151') return notYet(j, 6);
+    var id = j.key.toLowerCase(), prn = 418;
+    var h = '';
+    if (j.shipped) h += '<div class="row"><span class="pill p-green">Shipped</span><span class="sub">PR #' + prn + ' opened · posted to #storefront-reviews · ' + j.key + ' moved to In review</span></div>';
+    else if (c === 'todo') h += '<p class="sub">This is what will ship once every check passes.</p>';
+    h += '<div class="kv"><span>Branch</span><span class="mono">' + id + '-image-sizes</span><span>Commit</span><span class="mono">perf(images): serve right-sized product images on phones</span>' +
+      '<span>Pull request</span><span><b>' + esc(j.title) + ' (' + j.key + ')</b><br><span class="sub">Serves 400/800/1600 px images, lazy-loads below the fold, reserves image space. 6 files, tests pass. Smoke-tested: 4 of 4 checks.</span></span></div>' +
+      '<div class="sec"><h4>Slack · #storefront-reviews</h4><div class="slack"><b>Review please:</b> ' + esc(j.title) + ' (' + j.key + ') · PR #' + prn + ' · 6 files · smoke-tested</div></div>';
+    if (c === 'cur' && !j.shipped) h += '<div class="row"><button class="act primary" data-act="s" type="button">' + kc('s') + 'Ship it</button><span class="faint">Commits, pushes, opens the PR, posts to Slack</span></div>';
+    return h;
+  }
+
+  // ---------- loop editor ----------
+  function editor() {
+    var h = '<div><div class="row"><span class="title grow">Storefront loop</span><span class="faint">Every new job in Storefront follows this</span></div>';
+    S.loop.forEach(function (r, k) {
+      var foc = k === S.rrow ? ' focus' : '';
+      h += '<div class="lrow' + (r.sub ? ' sub' : '') + (r.on ? '' : ' off') + (r.isNew ? ' new' : '') + foc + '" data-act="lrow" data-i="' + k + '">' +
+        (r.sub ? '' : '<span class="num" style="width:26px;height:26px;font-size:12px">' + (S.loop.filter(function (x, y) { return y <= k && !x.sub; }).length) + '</span>') +
+        '<input class="rbi" id="loop-n-' + k + '" value="' + esc(r.n) + '" aria-label="Step name"><span class="sub trunc" style="font-size:13.5px">' + esc(r.w) + '</span>' +
+        '<button class="tog ' + (r.on ? 'on' : 'offb') + '" type="button" data-act="toggle" data-i="' + k + '">' + (k === S.rrow ? kc('Space') + ' ' : '') + (r.on ? 'On' : 'Off') + '</button></div>';
+    });
+    h += '<div class="row"><button class="act" type="button" data-act="insert">' + kc('i') + 'Add "Run e2e tests" after Try it</button><span class="grow"></span><button class="act primary" type="button" data-act="recipe">' + kc('e') + 'Done</button></div></div>';
+    h += '<div><div class="row"><span class="title grow" style="font-size:18px">Run recipes</span><span class="faint">How each repo starts for Try it</span></div>';
+    Object.keys(RECIPES).forEach(function (name) {
+      var r = RECIPES[name];
+      h += '<div class="card" style="padding:12px 14px;display:grid;gap:8px"><div class="row"><span class="t2 grow">' + name + '</span><span class="faint">detected from ' + r.from + '</span></div>' +
+        '<div class="code">' + r.cmds.map(esc).join('<br>') + '<br><span class="faint">then wait for ' + r.url + '</span></div></div>';
+    });
+    h += '<p class="faint">Detection reads package.json scripts, compose.yaml and a Procfile. Anything it gets wrong, you edit once and the whole team gets the fix.</p></div>';
+    return '<section class="rcp">' + h + '</section>';
+  }
+
+  // ---------- legend ----------
+  function legend() {
+    var L = [], j = job(), i = S.focus, c = stepClass(j, i);
+    function add(keys, label) { L.push('<span class="row">' + keys.map(function (k) { return kc(k[0], k[1]); }).join('') + label + '</span>'); }
+    if (S.overlay) { add([['Esc']], 'Close'); }
+    else if (S.editing) { add([['Enter']], S.editing === 'note' ? 'Save' : 'Send'); add([['Esc']], 'Cancel'); }
+    else if (S.recipe) { add([['ArrowUp', '↑'], ['ArrowDown', '↓']], 'Row'); add([['Space']], 'On / off'); add([['i']], 'Add a step'); add([['e']], 'Done'); add([['?']], 'All keys'); }
+    else {
+      if (S.zone === 'detail' && i === 4 && j.checks) add([['ArrowUp', '↑'], ['ArrowDown', '↓']], 'Check');
+      else add([['ArrowUp', '↑'], ['ArrowDown', '↓']], 'Step');
+      if (S.zone === 'steps') add([['Enter']], 'Open'); else add([['Esc']], 'Back');
+      if (i === 1 && c === 'cur' && j.state === 'context') add([['a']], 'Start planning');
+      if (i === 2 && c === 'cur' && j.state === 'plan') { add([['a']], 'Approve'); add([['c']], 'Change'); }
+      if (i === 3 && j.question) add([['1'], ['2'], ['3']], 'Answer');
+      if (i === 4 && j.checks) { add([['r']], j.run.st === 'up' ? 'Running' : 'Start the app'); if (c === 'cur') add([['p'], ['x']], 'Pass / fail'); }
+      if (i === 5 && c === 'cur' && !j.fixing) add([['Enter']], 'Send fixes');
+      if (i === 6 && c === 'cur' && !j.shipped) add([['s']], 'Ship');
+      add([['j'], ['k']], 'Job');
+      if (S.inbox.length) add([['n']], 'Next ticket');
+      add([['e']], 'Loop'); add([['h']], 'Explain'); add([['?']], 'All keys');
+    }
+    return L.join('');
+  }
+
+  function render() {
+    var ae = document.activeElement;
+    if (ae && root.contains(ae) && /INPUT|TEXTAREA/.test(ae.tagName)) { S.pending = true; renderLegendOnly(); return; }
+    var b = document.getElementById('body');
+    b.innerHTML = rail() + (S.recipe ? editor() : stepper() + detail());
+    renderLegendOnly();
+    document.getElementById('overlay').hidden = !S.overlay;
+    document.getElementById('recipeLabel').textContent = S.recipe ? 'Back to the job' : 'Edit the loop';
+    var ta = document.getElementById('ta');
+    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }
+  function renderLegendOnly() { document.getElementById('legend').innerHTML = legend(); }
+
+  // ---------- actions ----------
+  function toast(t) { Futures.toast(root, t); }
+  function selectJob(i) {
+    if (i < 0 || i >= S.jobs.length) return;
+    S.sel = i; S.zone = 'steps'; S.editing = null; S.recipe = false;
+    var j = job(); S.focus = Math.min(j.step, 6);
+    if (j.question) S.focus = 3;
+    render();
+  }
+  function startInbox(idx) {
+    var t = S.inbox.splice(idx, 1)[0]; if (!t) return;
+    var j = { key: t.key, src: 'jira', title: t.title, ws: t.ws, repos: t.repos, step: 1, state: 'context', mem: t.repos.length > 1 ? 34 : 24, round: 1, built: 0,
+      desc: t.key === 'SHOP-155' ? 'Shoppers who are not signed in lose their cart when they close the tab.' : 'Support staff cannot see whether a refund went through.',
+      ac: t.key === 'SHOP-155' ? ['A signed-out cart is still there after closing the tab', 'Signing in keeps the same cart'] : ['Support can see refund status on an order', 'Failed refunds show the reason'],
+      plan: t.key === 'SHOP-155' ? ['Save the cart in the browser for signed-out shoppers', 'Load it when the page opens', 'Merge it into the account cart on sign-in', 'Add tests for the merge'] : ['Add a refund status field to the order API', 'Show it on the support order page', 'Show the failure reason', 'Add tests'],
+      files: [], out: ['Imported from Jira just now', '', '', '', '', '', ''] };
+    S.jobs.push(j); toast(t.key + ' started. Its repos and workspace notes are attached.');
+    selectJob(S.jobs.length - 1);
+  }
+  function tickRun(j) {
+    var r = RECIPES[j.repos[0]];
+    j.run = { st: 'running', n: 0 }; render();
+    var t = setInterval(function () {
+      j.run.n++;
+      if (j.run.n >= r.cmds.length) { j.run.st = 'up'; clearInterval(t); if (job() === j) toast('The app is up on ' + r.url.replace('http://', '')); }
+      render();
+    }, 650);
+  }
+  function mark(j, k, st) {
+    if (stepClass(j, 4) !== 'cur') { toast('Checks open once the job reaches Try it'); return; }
+    if (j.run.st !== 'up') { toast('Start the app first: press r'); return; }
+    j.cf = k;
+    var x = j.checks[k];
+    if (st === 'pass') {
+      x.st = 'pass'; x.note = ''; x.tag = '';
+      var next = j.checks.findIndex(function (y) { return y.st !== 'pass'; });
+      if (next < 0) {
+        j.out[4] = j.checks.length + ' of ' + j.checks.length + ' checks pass';
+        if (!j.rounds.length) j.out[5] = 'Nothing to fix';
+        j.step = 6; j.state = 'ship'; S.focus = 6; S.zone = 'steps'; toast('Every check passes. Ship is ready.');
+      } else j.cf = next;
+      render();
+    } else {
+      x.st = 'fail'; S.editing = 'note';
+      S.draft = x.note || (k === 2 ? 'The hero image still jumps down the page when it loads.' : '');
+      render();
+    }
+  }
+  function saveNote() {
+    var j = job(), x = j.checks[j.cf];
+    x.note = S.draft.trim() || 'Did not work as described.';
+    S.editing = null; S.draft = '';
+    j.out[4] = j.checks.filter(function (y) { return y.st === 'pass'; }).length + ' pass, ' + j.checks.filter(function (y) { return y.st === 'fail'; }).length + ' failed';
+    j.step = 5; j.state = 'fix'; S.focus = 5; S.zone = 'steps';
+    toast('Saved. The failed check is now in the fix message.');
+    render();
+  }
+  function sendFix() {
+    var j = job();
+    j.fixing = true; j.state = 'fixing'; render();
+    setTimeout(function () {
+      j.fixing = false; j.round++;
+      j.rounds.push('Round ' + j.round + ': reserved image space with aspect-ratio (product.css, +6)');
+      j.rounds_used = true;
+      j.out[5] = 'Round ' + j.round + ' fixed ' + j.checks.filter(function (y) { return y.st === 'fail'; }).length + ' thing';
+      j.checks.forEach(function (y) { if (y.st === 'fail') { y.st = 'todo'; y.note = ''; y.tag = 'fixed in round ' + j.round + ', check again'; } });
+      j.cf = j.checks.findIndex(function (y) { return y.st !== 'pass'; });
+      j.step = 4; j.state = 'ready'; j.out[4] = '';
+      if (job() === j) { S.focus = 4; S.zone = 'detail'; toast('Round ' + j.round + ' is done. Check it again.'); }
+      render();
+    }, 2600);
+  }
+  function answer(n) {
+    var j = job();
+    if (!j.question) return false;
+    if (n === 3) { toast('Type your answer in the terminal or the chat drawer'); return true; }
+    j.question = false; j.state = 'building'; j.built = 2;
+    toast(n === 1 ? 'Answered: return 200 and ignore it' : 'Answered: return 409');
+    render(); return true;
+  }
+  function act(a, arg) {
+    var j = job(), c = stepClass(j, S.focus);
+    switch (a) {
+      case 'keys': S.overlay = !S.overlay; render(); return true;
+      case 'job': selectJob(+arg); return true;
+      case 'step': S.focus = +arg; S.zone = 'detail'; if (S.focus === 4 && j.checks && j.cf < 0) j.cf = 0; render(); return true;
+      case 'check': if (S.focus === 4) { j.cf = +arg; S.zone = 'detail'; render(); } return true;
+      case 'recipe': S.recipe = !S.recipe; S.editing = null; if (!S.recipe) toast('Saved. New Storefront jobs follow this loop.'); render(); return true;
+      case 'explain': S.explain = !S.explain; render(); return true;
+      case 'terminal': toast('Opened a terminal: claude --resume ' + (j.key === 'SHOP-151' ? '7f3c9a' : '2b81e0') + '. Steps keep following it through hooks.'); return true;
+      case 'n': if (!S.inbox.length) { toast('The inbox is empty'); return true; } startInbox(0); return true;
+      case 'a':
+        if (S.focus === 1 && c === 'cur' && j.state === 'context') {
+          j.state = 'planning'; j.out[1] = j.repos.length + (j.repos.length > 1 ? ' repos' : ' repo') + ', ticket, notes · ' + j.mem + '% of memory'; j.step = 2; S.focus = 2; render();
+          setTimeout(function () { j.state = 'plan'; render(); }, 1800); return true;
+        }
+        if (S.focus === 2 && c === 'cur' && j.state === 'plan') {
+          j.out[2] = 'Plan approved just now · ' + j.plan.length + ' steps'; j.step = 3; j.state = 'building'; j.built = 0; j.live = 0; j.files = j.files.length ? j.files : [];
+          S.focus = 3; toast('Approved. Claude is building.'); render(); return true;
+        }
+        return false;
+      case 'c': if (S.focus === 2 && c === 'cur' && j.state === 'plan') { S.editing = 'plan'; S.draft = ''; render(); return true; } return false;
+      case '1': case '2': case '3': return answer(+a);
+      case 'r': if (!j.checks && !(j.run)) { toast('This job has not reached Try it yet'); return true; }
+        if (!j.run) j.run = { st: 'idle', n: 0 };
+        if (j.run.st === 'idle') tickRun(j); else toast(j.run.st === 'up' ? 'Already running' : 'Starting…');
+        if (S.focus !== 4) { S.focus = 4; render(); }
+        return true;
+      case 'b': if (j.run && j.run.st === 'up') { toast('Opened ' + RECIPES[j.repos[0]].url + ' in your browser'); return true; } return false;
+      case 'p': case 'x':
+        if (S.focus !== 4 || !j.checks) return false;
+        mark(j, arg != null ? +arg : Math.max(0, j.cf), a === 'p' ? 'pass' : 'fail'); return true;
+      case 'send': if (S.focus === 5 && c === 'cur' && !j.fixing) { sendFix(); return true; } return false;
+      case 'u': if (j.rounds && j.rounds.length) { toast('Rewound the files to before round ' + j.round + '. Round ' + j.round + ' is kept in history.'); return true; } return false;
+      case 's':
+        if (j.key === 'SHOP-151' && S.focus === 6 && c === 'cur' && !j.shipped) {
+          j.shipped = true; j.state = 'review'; j.out[6] = 'PR #418 · posted to #storefront-reviews'; toast('PR #418 opened and posted to #storefront-reviews'); render(); return true;
+        }
+        if (j.key === 'SHOP-151' && !j.shipped) { toast('Finish the checks in Try it first'); return true; }
+        return false;
+      case 'toggle': var r = S.loop[+arg]; if (r) { r.on = !r.on; S.rrow = +arg; render(); } return true;
+      case 'lrow': S.rrow = +arg; render(); return true;
+      case 'insert':
+        if (S.loop.some(function (x) { return x.isNew; })) { toast('Run e2e tests is already in the loop'); return true; }
+        S.loop.splice(5, 0, { n: 'Run e2e tests', w: 'pnpm test:e2e against the running app', on: true, isNew: true }); S.rrow = 5; render(); return true;
+    }
+    return false;
+  }
+
+  Futures.keys(root, function (k, e) {
+    if (S.overlay) { if (k === 'Esc' || k === '?') { S.overlay = false; render(); return true; } return false; }
+    if (S.editing) {
+      if (k === 'Esc') {
+        if (S.editing === 'note') { var x = job().checks[job().cf]; if (!x.note) x.st = 'todo'; }
+        S.editing = null; S.draft = ''; S.pending = false; document.activeElement.blur(); render(); return true;
+      }
+      return false;
+    }
+    if (k === '?') return act('keys');
+    if (S.recipe) {
+      if (k === 'ArrowDown') { S.rrow = Math.min(S.loop.length - 1, S.rrow + 1); render(); return true; }
+      if (k === 'ArrowUp') { S.rrow = Math.max(0, S.rrow - 1); render(); return true; }
+      if (k === 'Space') return act('toggle', S.rrow);
+      if (k === 'i') return act('insert');
+      if (k === 'e' || k === 'Esc') return act('recipe');
+      if (/^Alt\+[1-9]$/.test(k)) { selectJob(+k.slice(4) - 1); return true; }
+      return false;
+    }
+    var j = job();
+    var inChecks = S.zone === 'detail' && S.focus === 4 && j.checks && stepClass(j, 4) === 'cur';
+    if (k === 'ArrowDown') { if (inChecks) j.cf = Math.min(j.checks.length - 1, j.cf + 1); else S.focus = Math.min(6, S.focus + 1); render(); return true; }
+    if (k === 'ArrowUp') { if (inChecks) j.cf = Math.max(0, j.cf - 1); else S.focus = Math.max(0, S.focus - 1); render(); return true; }
+    if (k === 'Enter') {
+      if (S.focus === 5 && stepClass(j, 5) === 'cur' && !j.fixing) return act('send');
+      if (S.zone === 'steps') { S.zone = 'detail'; if (S.focus === 4 && j.checks && j.cf < 0) j.cf = 0; render(); return true; }
+      return false;
+    }
+    if (k === 'Esc') { if (S.zone === 'detail') { S.zone = 'steps'; render(); return true; } if (S.explain) { S.explain = false; render(); return true; } return false; }
+    if (k === 'j') { selectJob((S.sel + 1) % S.jobs.length); return true; }
+    if (k === 'k') { selectJob((S.sel - 1 + S.jobs.length) % S.jobs.length); return true; }
+    if (/^Alt\+[1-9]$/.test(k)) { selectJob(+k.slice(4) - 1); return true; }
+    var map = { e: 'recipe', h: 'explain', o: 'terminal' };
+    if (map[k]) return act(map[k]);
+    if (/^[nacrbpxsu123]$/.test(k)) return act(k);
+    return false;
+  });
+
+  // Mouse: every [data-act] goes through the same actions as the keys.
+  root.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-act]');
+    if (!t || !root.contains(t)) return;
+    if (e.target.closest('input') && t.dataset.act === 'lrow') { S.rrow = +t.dataset.i; renderLegendOnly(); return; }
+    e.stopPropagation();
+    var a = t.dataset.act;
+    if (a === 'send' && S.focus === 5) { act('send'); return; }
+    act(a, t.dataset.i);
+  });
+  // Typing in the note / plan-change box.
+  root.addEventListener('input', function (e) {
+    if (e.target.id === 'ta') S.draft = e.target.value;
+    var m = /^loop-n-(\d+)$/.exec(e.target.id || '');
+    if (m) S.loop[+m[1]].n = e.target.value;
+  });
+  root.addEventListener('keydown', function (e) {
+    if (e.target.id !== 'ta' || e.key !== 'Enter' || e.shiftKey) return;
+    e.preventDefault(); e.stopPropagation();
+    S.pending = false; e.target.blur();
+    if (S.editing === 'note') saveNote();
+    else { S.editing = null; var j = job(); j.state = 'planning'; toast('Sent. Claude is revising the plan.'); render(); setTimeout(function () { j.plan.push('Keep the old URLs working (your change)'); j.state = 'plan'; render(); }, 1800); }
+  });
+  root.addEventListener('focusout', function (e) { if (S.pending && /INPUT|TEXTAREA/.test(e.target.tagName)) { S.pending = false; setTimeout(render, 0); } });
+  // Drag an inbox ticket onto "Start a job".
+  root.addEventListener('dragstart', function (e) { var t = e.target.closest('[data-inbox]'); if (t) { e.dataTransfer.setData('text/plain', t.dataset.inbox); e.dataTransfer.effectAllowed = 'move'; } });
+  root.addEventListener('dragover', function (e) { var z = e.target.closest('#dropzone'); if (z) { e.preventDefault(); z.classList.add('drop'); } });
+  root.addEventListener('dragleave', function (e) { var z = e.target.closest('#dropzone'); if (z) z.classList.remove('drop'); });
+  root.addEventListener('drop', function (e) { var z = e.target.closest('#dropzone'); if (!z) return; e.preventDefault(); startInbox(+e.dataTransfer.getData('text/plain')); });
+
+  // SHOP-142 keeps building in the background so the rail feels alive.
+  setInterval(function () {
+    var j = S.jobs[1];
+    if (!j || j.state !== 'building') return;
+    j.live++;
+    if (j.live % 2 === 0 && j.built < 3) j.built++;
+    render();
+  }, 2800);
+
+  document.getElementById('reset').addEventListener('click', function () { reset(); });
+  reset();
+})();
+</script>
+</body>
+</html>

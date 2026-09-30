@@ -1,0 +1,1290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ticket Line</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="futures.css">
+<style>
+/* Ticket Line: a board of work cards moving through the loop; a drawer for one card; sheets for start / ship / feedback. */
+[hidden] { display: none !important; }
+.m .fl-top { display: flex; align-items: center; gap: 14px; padding: 11px 18px; border-bottom: 1px solid var(--m-line); background: var(--m-col); }
+.m .fl-brand { font-weight: 700; font-size: 16px; white-space: nowrap; }
+.m .wschip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 9px 4px 5px; border-radius: 9px; border: 1px solid var(--m-line); background: var(--m-surface); font-size: 13.5px; cursor: pointer; white-space: nowrap; }
+.m .wschip.on { border-color: var(--ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 25%, transparent); }
+.m .wschip .ic { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
+.m .fl-stats { display: flex; gap: 16px; font-size: 13.5px; color: var(--m-sub); white-space: nowrap; }
+.m .fl-stats b { color: var(--m-text); font-variant-numeric: tabular-nums; }
+.m .fl-stats .amb b, .m .fl-stats .amb { color: var(--m-amber); }
+.m .fl-search { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; border: 1px solid var(--m-line); border-radius: 9px; background: var(--m-surface); width: 220px; }
+.m .fl-search input { border: 0; background: transparent; color: var(--m-text); font: 14px var(--body); width: 100%; outline: none; }
+.m .fl-search input::placeholder { color: var(--m-faint); }
+.m .fl-main { flex: 1; min-height: 0; position: relative; display: flex; }
+.m .fl-board { flex: 1; display: grid; grid-template-columns: 196px repeat(5, minmax(0, 1fr)) 150px; gap: 10px; padding: 14px 14px 12px; min-height: 0; }
+.m .lane { display: flex; flex-direction: column; min-height: 0; background: var(--m-col); border: 1px solid var(--m-line); border-radius: 12px; }
+.m .lane-h { display: flex; align-items: center; gap: 8px; padding: 10px 12px 4px; }
+.m .lane-h .n { font: 700 12px var(--mono); color: var(--m-faint); }
+.m .lane.needs .lane-h h4 { color: var(--m-amber); }
+.m .gate { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 2px 12px 9px; font-size: 12px; color: var(--m-faint); border-bottom: 1px solid var(--m-line); min-height: 34px; }
+.m .lane-body { flex: 1; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.m .lane.dropok { outline: 2px dashed var(--acc); outline-offset: -3px; background: var(--acc-soft); }
+.m .tc { --wsc: var(--m-line); background: var(--m-surface); border: 1px solid var(--m-line); border-left: 4px solid var(--wsc); border-radius: 10px; padding: 9px 10px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; font-size: 13px; }
+.m .tc[draggable="true"] { cursor: grab; }
+.m .tc .tt { font-weight: 600; font-size: 14px; line-height: 1.3; }
+.m .tc.needs { background: color-mix(in srgb, var(--m-amber-bg) 75%, var(--m-surface)); border-color: color-mix(in srgb, var(--m-amber) 45%, transparent); border-left-color: var(--wsc); }
+.m .tc.dropok { outline: 2px dashed var(--acc); outline-offset: 2px; }
+.m .tc.moved { animation: arrive .5s ease-out; }
+@keyframes arrive { from { transform: translateY(-6px); box-shadow: 0 0 0 4px var(--acc-soft); } to { transform: none; } }
+.m .tc .act { display: flex; align-items: center; gap: 7px; color: var(--m-sub); font-size: 12.5px; min-width: 0; }
+.m .tc.needs .act { color: var(--m-amber); font-weight: 600; }
+.m .prog { display: flex; align-items: center; gap: 7px; font: 600 11px var(--mono); color: var(--m-faint); font-variant-numeric: tabular-nums; }
+.m .prog .bar { flex: 1; height: 5px; border-radius: 9px; background: var(--m-raise); overflow: hidden; }
+.m .prog .bar i { display: block; height: 100%; background: var(--m-green); transition: width .4s; }
+.m .rchip { font: 500 11.5px var(--mono); padding: 1px 6px; border-radius: 5px; background: var(--m-raise); color: var(--m-sub); border: 1px solid var(--m-line); white-space: nowrap; }
+.m .tc .meta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; color: var(--m-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.m .pill.sm { font-size: 11px; padding: 1px 7px; }
+.m .empty { color: var(--m-faint); font-size: 12.5px; padding: 12px 6px; text-align: center; border: 1px dashed var(--m-line); border-radius: 10px; }
+/* drawer */
+.m .fl-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: 620px; background: var(--m-surface); border-left: 1px solid var(--m-line); box-shadow: -24px 0 40px -24px rgb(0 0 0 / .45); display: flex; flex-direction: column; z-index: 10; }
+.m .dr-head { padding: 16px 20px 0; display: grid; gap: 10px; border-bottom: 1px solid var(--m-line); }
+.m .dr-tabs { display: flex; gap: 4px; align-items: center; }
+.m .tab { padding: 7px 12px; font-size: 14px; font-weight: 600; color: var(--m-faint); border-bottom: 2px solid transparent; cursor: pointer; }
+.m .tab.on { color: var(--m-text); border-bottom-color: var(--acc); }
+.m .dr-body { flex: 1; overflow: auto; }
+.m .sec { padding: 14px 20px; border-bottom: 1px solid var(--m-line); display: grid; gap: 9px; }
+.m .sec p.plain { font-size: 14px; color: var(--m-text); max-width: none; }
+.m .steps { display: grid; gap: 7px; }
+.m .st { display: flex; gap: 10px; align-items: center; font-size: 14px; }
+.m .st .mk { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; font: 700 11px var(--mono); }
+.m .st.done .mk { background: var(--m-green-bg); color: var(--m-green); }
+.m .st.now .mk { color: var(--m-blue); }
+.m .st.wait .mk { background: var(--m-amber-bg); color: var(--m-amber); }
+.m .st.todo .mk { border: 2px solid var(--m-line); }
+.m .st.todo { color: var(--m-sub); }
+.m .st .when { margin-left: auto; font: 12px var(--mono); color: var(--m-faint); }
+.m .qbox { border: 1px solid color-mix(in srgb, var(--m-amber) 45%, transparent); background: var(--m-amber-bg); border-radius: 12px; padding: 12px 14px; display: grid; gap: 9px; }
+.m .qbox .q { font-weight: 600; font-size: 15px; color: var(--m-text); }
+.m .opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; background: var(--m-surface); border: 1px solid var(--m-line); cursor: pointer; font-size: 14px; }
+.m .files { display: grid; gap: 4px; font: 12.5px var(--mono); }
+.m .files .row { gap: 8px; }
+.m .files .nums { margin-left: auto; font-variant-numeric: tabular-nums; }
+.m .recipe { display: grid; gap: 5px; }
+.m .rl { display: flex; align-items: center; gap: 10px; font: 13px var(--mono); padding: 5px 10px; border-radius: 8px; background: var(--m-bg); border: 1px solid var(--m-line); }
+.m .rl .mk { width: 16px; text-align: center; color: var(--m-faint); }
+.m .rl.ok .mk { color: var(--m-green); }
+.m .rl.go { color: var(--m-blue); }
+.m .live { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 9px; background: var(--m-green-bg); color: var(--m-green); font-weight: 600; font-size: 14px; }
+.m .ctxs { display: flex; flex-wrap: wrap; gap: 6px; }
+.m .ctx { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px; background: var(--m-raise); border: 1px solid var(--m-line); font-size: 12.5px; white-space: nowrap; }
+.m .dr-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 20px; border-top: 1px solid var(--m-line); background: var(--m-col); }
+.m .btnk { display: inline-flex; align-items: center; gap: 8px; padding: 6px 11px 6px 6px; border-radius: 9px; border: 1px solid var(--m-line); background: var(--m-raise); font-weight: 600; font-size: 13.5px; cursor: pointer; white-space: nowrap; color: var(--m-text); }
+.m .btnk.pri { background: var(--acc-soft); border-color: color-mix(in srgb, var(--acc) 55%, transparent); }
+.m .btnk.off { opacity: .45; cursor: default; }
+.m .msg { display: grid; gap: 3px; font-size: 14px; }
+.m .msg .who { font: 700 11.5px var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--m-faint); }
+.m .msg.tool { font: 12.5px var(--mono); color: var(--m-sub); }
+/* sheets */
+.m .sheet { display: grid; gap: 14px; }
+.m .sheet .lab { font: 700 11.5px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--m-faint); }
+.m .field { background: var(--m-bg); border: 1px solid var(--m-line); border-radius: 9px; padding: 9px 11px; font-size: 14px; }
+.m .field.mono { font: 13px var(--mono); }
+.m .seg2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.m .choice { border: 1px solid var(--m-line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; cursor: pointer; background: var(--m-raise); }
+.m .choice.on { border-color: var(--ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 25%, transparent); background: var(--m-surface); }
+.m .slack { border: 1px solid var(--m-line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; background: var(--m-raise); font-size: 14px; }
+.m textarea.fb { width: 100%; min-height: 110px; resize: none; background: var(--m-bg); color: var(--m-text); border: 1px solid var(--m-line); border-radius: 9px; padding: 10px 12px; font: 14.5px/1.45 var(--body); }
+.m textarea.fb:focus { outline: 2px solid var(--ring); outline-offset: 0; }
+.m .pick { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--m-line); border-radius: 10px; background: var(--m-raise); cursor: pointer; }
+.m .toast[hidden] { display: none; }
+.m .tkey.none { background: var(--m-raise); color: var(--m-sub); }
+.m .sz { font: 600 11.5px var(--mono); color: var(--m-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.m .kind { font: 700 10px var(--mono); text-transform: uppercase; letter-spacing: .05em; color: var(--m-faint); border: 1px solid var(--m-line); border-radius: 4px; padding: 1px 5px; flex-shrink: 0; white-space: nowrap; }
+/* context tab in the drawer */
+.m .boot { display: grid; gap: 6px; font-size: 13.5px; }
+.m .boot .row { gap: 9px; align-items: flex-start; }
+.m .boot time { font: 12px var(--mono); color: var(--m-faint); width: 64px; flex-shrink: 0; padding-top: 1px; font-variant-numeric: tabular-nums; }
+.m .bk { width: 16px; flex-shrink: 0; text-align: center; font: 700 12px var(--mono); }
+.m .bk.ok { color: var(--m-green); } .m .bk.go { color: var(--m-blue); }
+.m .lay-s { display: grid; gap: 6px; }
+.m .lay-t { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
+/* the new-card screen */
+.m .cp-wrap { position: absolute; inset: 0; z-index: 20; background: var(--m-bg); display: flex; flex-direction: column; }
+.m .cp-head { display: flex; align-items: center; gap: 16px; padding: 12px 18px; border-bottom: 1px solid var(--m-line); background: var(--m-surface); }
+.m .cp-title { font: 700 19px var(--body); color: var(--m-text); background: var(--m-bg); border: 1px solid var(--m-line); border-radius: 9px; padding: 6px 10px; width: 100%; }
+.m .cp-title:focus, .m .cp-msg:focus, .m .pk textarea:focus { outline: 2px solid var(--ring); outline-offset: 0; }
+.m .cp-meter { display: flex; align-items: center; gap: 8px; font-size: 13px; white-space: nowrap; }
+.m .cp-meter b { font: 700 15px var(--mono); font-variant-numeric: tabular-nums; }
+.m .cp-meter .bar { width: 110px; height: 6px; border-radius: 9px; background: var(--m-raise); overflow: hidden; }
+.m .cp-meter .bar i { display: block; height: 100%; background: var(--m-blue); }
+.m .cp-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: 390px minmax(0, 1fr) 440px; }
+.m .cp-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-right: 1px solid var(--m-line); background: var(--m-col); }
+.m .cp-pane:last-child { border-right: 0; }
+.m .cp-pane.on { background: var(--m-surface); box-shadow: inset 0 3px 0 var(--acc); }
+.m .cp-ph { display: flex; align-items: center; gap: 7px; padding: 12px 16px 8px; }
+.m .cp-n { font: 700 12px var(--mono); width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--m-raise); color: var(--m-sub); border: 1px solid var(--m-line); }
+.m .cp-pane.on .cp-n { background: var(--acc); color: var(--acc-ink); border-color: var(--acc); }
+.m .cp-tabs { display: flex; align-items: center; flex-wrap: nowrap; gap: 2px; padding: 0 12px 8px; }
+.m .cp-tab { font-size: 12.5px; font-weight: 600; padding: 4px 6px; border-radius: 7px; color: var(--m-sub); cursor: pointer; border: 1px solid transparent; white-space: nowrap; }
+.m .cp-tab.on { background: var(--m-raise); color: var(--m-text); border-color: var(--m-line); }
+.m .cp-search { margin: 0 12px 8px; width: auto; }
+.m .cp-list { flex: 1; overflow: auto; padding: 0 8px 8px; display: flex; flex-direction: column; gap: 3px; }
+.m .cp-item { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 9px; cursor: grab; font-size: 13.5px; }
+.m .cp-item:hover { background: var(--m-raise); }
+.m .cp-item.in { opacity: .62; }
+.m .cp-item .plus { font: 700 17px var(--mono); color: var(--m-faint); width: 18px; text-align: center; }
+.m .cp-foot { padding: 9px 16px 12px; border-top: 1px solid var(--m-line); font-size: 12.5px; line-height: 1.45; }
+.m .cp-body { flex: 1; overflow: auto; padding: 2px 14px 14px; display: flex; flex-direction: column; gap: 12px; }
+.m .cp-pkt.drop-on .cp-body { outline: 2px dashed var(--acc); outline-offset: -6px; background: var(--acc-soft); border-radius: 12px; }
+.m .layer { border: 1px solid var(--m-line); border-radius: 12px; background: var(--m-surface); overflow: hidden; flex-shrink: 0; }
+.m .layer.dim { opacity: .75; }
+.m .layer-h { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--m-raise); border-bottom: 1px solid var(--m-line); font-size: 12.5px; }
+.m .lname { font-weight: 700; font-size: 13.5px; }
+.m .pk { display: flex; align-items: center; gap: 9px; padding: 6px 12px; font-size: 13.5px; cursor: pointer; min-width: 0; }
+.m .pk + .pk { border-top: 1px solid color-mix(in srgb, var(--m-line) 55%, transparent); }
+.m .pk .cb { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--m-line); display: grid; place-items: center; font: 700 11px var(--mono); color: var(--m-green); flex-shrink: 0; }
+.m .pk.off { color: var(--m-faint); }
+.m .pk.off .sz { text-decoration: line-through; }
+.m .fl-top .fl-search { width: 150px; }
+.m .pk.new { animation: arrive .7s ease-out; }
+.m .pk.instr { align-items: flex-start; cursor: default; }
+.m .pk textarea { flex: 1; min-height: 50px; resize: none; background: var(--m-bg); color: var(--m-text); border: 1px solid var(--m-line); border-radius: 8px; padding: 7px 9px; font: 13.5px/1.4 var(--body); }
+.m .pk .xk { display: inline-flex; }
+.m .pk-empty { padding: 10px 12px; font-size: 13px; }
+.m .cp-pre { margin: 0; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; background: var(--m-bg); border: 1px solid var(--m-line); border-radius: 10px; padding: 12px 14px; color: var(--m-text); }
+.m .opt-row { display: grid; gap: 5px; padding: 7px 11px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; }
+.m .opt-row .lab { font: 700 11px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--m-faint); }
+.m .opts { display: flex; flex-wrap: wrap; gap: 5px; }
+.m .opts .o { font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--m-line); background: var(--m-raise); cursor: pointer; color: var(--m-sub); }
+.m .opts .o.on { border-color: var(--ring); color: var(--m-text); background: var(--m-surface); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 22%, transparent); font-weight: 600; }
+.m .cp-msg { width: 100%; background: var(--m-bg); color: var(--m-text); border: 1px solid var(--m-line); border-radius: 8px; padding: 7px 10px; font: 13.5px var(--body); }
+.m .cp-cmd { white-space: pre-wrap; word-break: break-all; font-size: 11.5px; }
+.m .cp-go-foot { padding: 12px 16px; border-top: 1px solid var(--m-line); display: grid; gap: 8px; }
+.m .btnk.big { justify-content: center; padding: 9px 14px 9px 8px; font-size: 15px; }
+.fflow { display: grid; grid-template-columns: minmax(0, 1.1fr) auto minmax(0, .8fr) auto minmax(0, 1.1fr); gap: 12px; align-items: center; }
+.fflow .fcol { display: grid; gap: 10px; }
+.fflow .fb { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 3px; font-size: 14px; color: var(--sub); background: var(--bg); min-width: 0; }
+.fflow .fb b { color: var(--ink); }
+.fflow .fb.hub { border-width: 2px; border-color: var(--ink); }
+.fflow .ar { font-size: 22px; color: var(--sub); text-align: center; }
+@media (max-width: 900px) { .fflow { grid-template-columns: minmax(0, 1fr); } .fflow .ar { transform: rotate(90deg); } }
+</style>
+</head>
+<body>
+<nav class="pathnav" aria-label="Future paths">
+  <div class="seg">
+    <a href="index.html">Overview</a>
+    <a href="path-line.html" aria-current="page">1 Ticket line</a>
+    <a href="path-runbook.html">2 Runbook</a>
+    <a href="path-recorder.html">3 Flight recorder</a>
+    <a href="path-map.html">4 Context map</a>
+  </div>
+  <span class="hint">The mock takes keys: press <span class="k">?</span></span>
+</nav>
+
+<div class="wrap">
+  <header class="head">
+    <p class="eyebrow">cc-control futures · path 1 of 4</p>
+    <h1>Ticket line: your work moves across the screen, one key per gate</h1>
+    <p class="lede">The thing on screen is a piece of work, taken from your tracker. Each ticket is a card that moves left to right through the loop you already run: plan, build, answer questions, try it, ship. Every column's gate is a single key, so the whole day is arrows and a handful of letters. The chat is still there, one tab down.</p>
+    <div class="facts">
+      <div><span class="lab">Terminal sessions</span><span class="val">Both. Terminal by default.</span><span class="more">Start work opens <code>claude</code> in a terminal tab with the ticket loaded by a SessionStart hook. Hooks move the card. "Run in the app" is a toggle.</span></div>
+      <div><span class="lab">Best for</span><span class="val">Anyone juggling several tickets</span><span class="more">Leads and non-developers read it like the tracker they already use. Experienced devs get the gates as single keys.</span></div>
+      <div><span class="lab">Build size</span><span class="val">M–L</span><span class="more">Most of the session plumbing exists. New: ticket import, hooks, run recipes, ship.</span></div>
+      <div><span class="lab">Drops</span><span class="val">Chat as the home screen</span><span class="more">The transcript becomes a tab in the card drawer. Per-message detail and the number pad go.</span></div>
+    </div>
+  </header>
+
+  <div>
+    <div class="frame" data-w="1440" data-h="880">
+      <div class="m" id="M" style="width:1440px;height:880px;display:flex;flex-direction:column">
+        <header class="fl-top">
+          <span class="fl-brand">Command Center</span>
+          <span class="faint">/</span>
+          <span style="font-weight:600;white-space:nowrap">Ticket line</span>
+          <div class="row" id="fl-ws" style="gap:6px;margin-left:10px"></div>
+          <span class="grow"></span>
+          <div class="fl-stats" id="fl-stats"></div>
+          <span class="btnk" data-act="newcard"><span class="kc sm" data-k="c">c</span>New card</span>
+          <label class="fl-search"><span class="kc sm" data-k="/">/</span><input id="fl-filter" type="text" placeholder="Filter tickets" autocomplete="off"></label>
+          <span class="row faint" style="gap:6px;font-size:13.5px;cursor:pointer;white-space:nowrap" data-act="keys">All keys <span class="kc sm" data-k="?">?</span></span>
+        </header>
+        <div class="fl-main">
+          <div class="fl-board" id="fl-board"></div>
+          <aside class="fl-drawer" id="fl-drawer" hidden></aside>
+          <div class="cp-wrap" id="fl-comp" hidden></div>
+        </div>
+        <div class="legend" id="fl-legend"></div>
+        <div class="overlay" id="fl-sheet" hidden><div class="card" id="fl-sheet-card"></div></div>
+        <div class="overlay" id="fl-keys" hidden>
+          <div class="card">
+            <div class="row"><div class="title grow">Keys on the ticket line</div><span class="kc" data-k="Esc">Esc</span></div>
+            <div class="keymap">
+              <div class="row"><span>Move between cards</span><span class="row" style="gap:4px"><span class="kc sm">←</span><span class="kc sm">→</span><span class="kc sm">↑</span><span class="kc sm">↓</span></span></div>
+              <div class="row"><span>Open the card</span><span class="kc sm">Enter</span></div>
+              <div class="row"><span>Start work on a ticket</span><span class="kc sm">n</span></div>
+              <div class="row"><span>New card without a ticket</span><span class="kc sm">c</span></div>
+              <div class="row"><span>Add a ticket to a running card</span><span class="kc sm">x</span></div>
+              <div class="row"><span>Add context to an open card</span><span class="kc sm">c</span></div>
+              <div class="row"><span>New card: next panel</span><span class="kc sm">Tab</span></div>
+              <div class="row"><span>New card: add, or include / leave out</span><span class="kc sm">Space</span></div>
+              <div class="row"><span>New card: preview what Claude gets</span><span class="kc sm">p</span></div>
+              <div class="row"><span>New card: your own note</span><span class="kc sm">e</span></div>
+              <div class="row"><span>New card: start work</span><span class="kc sm">Ctrl Enter</span></div>
+              <div class="row"><span>Approve a plan</span><span class="kc sm">a</span></div>
+              <div class="row"><span>Try it (run the app)</span><span class="kc sm">t</span></div>
+              <div class="row"><span>Send feedback or a fix</span><span class="kc sm">f</span></div>
+              <div class="row"><span>Ship: commit, PR, post for review</span><span class="kc sm">s</span></div>
+              <div class="row"><span>Answer Claude's question</span><span class="row" style="gap:4px"><span class="kc sm">1</span><span class="kc sm">2</span></span></div>
+              <div class="row"><span>Open the running app</span><span class="kc sm">o</span></div>
+              <div class="row"><span>Overview, context, transcript</span><span class="kc sm">Tab</span></div>
+              <div class="row"><span>Show one workspace / all</span><span class="row" style="gap:4px"><span class="kc sm">1–3</span><span class="kc sm">0</span></span></div>
+              <div class="row"><span>Filter tickets</span><span class="kc sm">/</span></div>
+              <div class="row"><span>Close, cancel</span><span class="kc sm">Esc</span></div>
+              <div class="row"><span>Send feedback</span><span class="kc sm">Ctrl Enter</span></div>
+              <div class="row"><span>These keys</span><span class="kc sm">?</span></div>
+            </div>
+            <p class="faint" style="max-width:none">Digits answer a question while a card with one is open. Otherwise they pick a workspace. The bar along the bottom always shows the keys that work right now.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="below" style="margin-top:12px">
+      <span><strong>Try:</strong> drag SHOP-155 onto Plan, or press <span class="k">n</span> on it, to open the new-card screen · <span class="k">Tab</span> between its panels, <span class="k">Space</span> to add, <span class="k">p</span> to preview, <span class="k">Ctrl Enter</span> to start · <span class="k">c</span> for a card with no ticket · open SHOP-142, <span class="k">Tab</span> to Context, <span class="k">c</span> to add more</span>
+      <button type="button" id="reset">Reset the mock</button>
+    </div>
+    <p class="phone-note" style="margin-top:8px">This mock is drawn for a wide screen. On a phone it shrinks to fit; open it on a laptop to use the keys.</p>
+  </div>
+
+  <section class="box">
+    <h2>How a card gets its context</h2>
+    <p style="color:var(--sub)">Three layers go into every card. They're gathered once, shown on the new-card screen so you can change them, and handed to Claude when the session starts.</p>
+    <div class="fflow">
+      <div class="fcol">
+        <div class="fb"><b>Workspace</b>Its repos, team notes and run recipe. You set these once, and every card in the workspace gets them.</div>
+        <div class="fb"><b>Ticket</b>Description and acceptance criteria, plus comments, attachments and linked tickets if you switch them on. Pulled from Jira or Trello.</div>
+        <div class="fb"><b>This card</b>Anything you add: more repos, files, links, saved notes, other cards' findings, and your own note.</div>
+      </div>
+      <div class="ar" aria-hidden="true">→</div>
+      <div class="fb hub"><b>Context packet</b>Checked on the new-card screen, with a size for each piece. Saved on the local server under the card's name.</div>
+      <div class="ar" aria-hidden="true">→</div>
+      <div class="fcol">
+        <div class="fb"><b>Terminal tab</b><code>claude</code> starts in the home repo with <code>--add-dir</code> for each extra repo and <code>CC_CONTROL_CARD</code> set. A SessionStart hook fetches the packet and returns it as context, then reports the session id, which links the card.</div>
+        <div class="fb"><b>In the app</b>The SDK session gets the packet directly, with the extra repos as additional directories.</div>
+      </div>
+    </div>
+    <p style="color:var(--sub)"><strong style="color:var(--ink)">Adding more later:</strong> things you add to a running card wait on it. A UserPromptSubmit hook sends them with your next message in the terminal, or the channel delivers them at once if the tab was started with it. Sessions in the app get them straight away.</p>
+    <p style="color:var(--sub)"><strong style="color:var(--ink)">Check before building:</strong> that SessionStart and UserPromptSubmit accept <code>additionalContext</code> as expected, and that hooks can see the <code>claude</code> process's environment.</p>
+  </section>
+
+  <section class="grid2" style="align-items:start">
+    <div class="box">
+      <h2>A day with it</h2>
+      <ol class="day">
+        <li><time>08:50</time><p>Open cc-control. The Inbox has SHOP-155 and PAY-91 from Jira. Last night's SHOP-151 waits in Try it. PAY-88 is still building in a terminal tab from yesterday.</p></li>
+        <li><time>08:55</time><p><span class="k">t</span> on SHOP-151. The web-app run recipe ticks through <code>pnpm install</code>, <code>pnpm db:seed</code>, <code>pnpm dev</code>. <span class="k">o</span> opens localhost:5173 in a narrow window. The hero image still jumps as it loads.</p></li>
+        <li><time>08:58</time><p><span class="k">f</span>, type "hero image still jumps on a narrow screen", <span class="k">Ctrl Enter</span>. The card slides back to Build as round 2.</p></li>
+        <li><time>09:05</time><p>Drag SHOP-155 onto Plan. The new-card screen opens with the Storefront repos, notes and run recipe, and the ticket's description, criteria and mockup already in. Add CartStore.ts and SHOP-142's finding about cart totals with <span class="k">Space</span>, switch the comments on, and <span class="k">p</span> to read exactly what Claude will get.</p></li>
+        <li><time>09:07</time><p><span class="k">Ctrl Enter</span>. The card's Context tab ticks through the start-up: packet saved, branch made, terminal tab 4 opened, hook delivered, session linked. The card follows that tab from then on.</p></li>
+        <li><time>09:20</time><p>Needs you lights up amber: PAY-88 asks whether a duplicate webhook should get 200 or 409. <span class="k">Enter</span>, <span class="k">1</span>. Back to what you were doing.</p></li>
+        <li><time>09:40</time><p>SHOP-155's plan is ready. Read its three steps in the drawer, then <span class="k">a</span>. It moves to Build and its progress bar starts filling.</p></li>
+        <li><time>10:30</time><p>SHOP-151 round 2 lands in Try it. <span class="k">t</span> again, and it looks right. <span class="k">s</span> shows the commit message, branch, PR body taken from the ticket, and the post for #storefront-reviews. <span class="k">Enter</span>.</p></li>
+        <li><time>11:15</time><p>The Footer links PR gets its second approval. <span class="k">s</span> merges it and the card moves to Done.</p></li>
+        <li><time>17:30</time><p>Close the laptop. Everything still in flight is on the board, not buried in a terminal tab.</p></li>
+      </ol>
+    </div>
+    <div class="box">
+      <h2>Build size</h2>
+      <ul>
+        <li><strong>Board and card drawer</strong> over the existing session list and its Needs you / Working / Done grouping. <strong>M</strong></li>
+        <li><strong>Ticket inbox:</strong> read-only import from Jira and Trello (API token per source), with ticket to workspace mapping. <strong>M</strong></li>
+        <li><strong>New-card screen:</strong> sources (tickets, repo library, files and links, saved notes, other cards' findings), the three-layer packet with sizes, a preview of the exact text, and launch options. <strong>M</strong></li>
+        <li><strong>Start work:</strong> save the packet, make the branch or worktree, open a Windows Terminal tab running <code>claude</code> with <code>--add-dir</code> per extra repo; a SessionStart hook fetches the packet and reports the session id. <strong>M</strong></li>
+        <li><strong>Add context later:</strong> queue on the card, delivered by a UserPromptSubmit hook with your next message, or at once through the channel. <strong>S</strong></li>
+        <li><strong>Stage tracking</strong> from hooks (Stop, Notification, PreToolUse) plus the to-do list for plan progress. <strong>M</strong></li>
+        <li><strong>Run recipes:</strong> detect from <code>package.json</code> / <code>compose.yaml</code>, edit, run as child processes, show ports. <strong>M</strong></li>
+        <li><strong>Ship:</strong> commit, push, <code>gh pr create</code>, post to a Slack webhook. <strong>S–M</strong></li>
+        <li><strong>Answer from the board</strong> for terminal sessions: channel permission relay (preview, dev flag). The spike exists. <strong>S</strong></li>
+      </ul>
+      <p style="color:var(--sub);font-size:14.5px"><strong style="color:var(--ink)">Already in cc-control:</strong> workspaces, the repo library, status grouping, the live terminal mirror, rebindable keys, the legend and <span class="k">?</span>.</p>
+      <p style="color:var(--sub);font-size:14.5px"><strong style="color:var(--ink)">What Claude Code allows:</strong> hooks are the documented, flag-free way to get events and add SessionStart context. Channels (preview, needs <code>--dangerously-load-development-channels</code>) can push into a terminal session and relay its approvals. Nothing can attach to a running terminal session, so the card reads it through the SDK's <code>getSessionMessages</code>. Per-file undo and rewind (SDK file checkpoints) only work for sessions the app runs.</p>
+    </div>
+  </section>
+
+  <section class="grid3">
+    <div class="box">
+      <h3>Good at</h3>
+      <ul>
+        <li>All work in flight on one screen, stage by stage.</li>
+        <li>The loop's gates are single keys: <span class="k">a</span> approve, <span class="k">t</span> try, <span class="k">f</span> fix, <span class="k">s</span> ship.</li>
+        <li>Ticket to PR without retyping context, and the PR body comes from the ticket.</li>
+        <li>Reads like Jira or Trello, so leads and non-developers follow it at once.</li>
+        <li>A stuck session is visible as a card that stopped moving.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Trade-offs</h3>
+      <ul>
+        <li>The columns assume one loop. Other teams need editable stages, which adds settings.</li>
+        <li>How Claude got somewhere is one level down, in the drawer.</li>
+        <li>Terminal sessions are followed through hooks. Answering them from the board needs the channel (dev flag) or a jump to the terminal.</li>
+        <li>Ticket import means Jira and Trello credentials on your machine.</li>
+        <li>Seven columns get tight on a laptop. Inbox and Done may need to collapse.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Drops</h3>
+      <ul>
+        <li>The chat-first session view as home. The transcript is a tab.</li>
+        <li>The number pad of commands.</li>
+        <li>Per-message detail and in-app modes on the main screen.</li>
+        <li>Sessions with no ticket appear in an "Unticketed" row, which is second class.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<script src="futures.js"></script>
+<script>
+(function () {
+  var M = document.getElementById('M');
+  var $ = function (id) { return document.getElementById(id); };
+  var STAGES = [
+    { id: 'inbox', name: 'Inbox', gate: [['n', 'start'], null, 'or drag to Plan'] },
+    { id: 'plan', name: 'Plan', gate: [['a', 'approve plan']] },
+    { id: 'build', name: 'Build', gate: ['watch it work · ', ['Enter', 'open']] },
+    { id: 'needs', name: 'Needs you', gate: [['Enter'], null, 'then', ['1'], ['2', 'answer']] },
+    { id: 'try', name: 'Try it', gate: [['t', 'try'], ['f', 'fix']] },
+    { id: 'ship', name: 'Ship', gate: [['s', 'ship / merge']] },
+    { id: 'done', name: 'Done', gate: ['merged today'] }
+  ];
+  var WS = {
+    S: { name: 'Storefront', cls: 'store', c: 'var(--ws-store)', repos: ['web-app', 'design-tokens', 'cdn-worker'], chan: '#storefront-reviews', notes: ['Colors come from design-tokens, never hex', 'Checkout copy goes through i18n (en.json)'] },
+    P: { name: 'Payments', cls: 'pay', c: 'var(--ws-pay)', repos: ['payments-api', 'web-app'], chan: '#payments-reviews', notes: ['Every webhook handler must be idempotent', 'Run pnpm test:webhooks before a PR'] },
+    D: { name: 'Docs & site', cls: 'docs', c: 'var(--ws-docs)', repos: ['docs-site'], chan: '#docs-reviews', notes: ['Examples use the sandbox API keys'] }
+  };
+  var RECIPES = {
+    'web-app': { src: 'detected from package.json', steps: ['pnpm install', 'pnpm db:seed', 'pnpm dev'], url: 'http://localhost:5173' },
+    'payments-api': { src: 'detected from compose.yaml + package.json', steps: ['docker compose up -d db', 'pnpm dev', 'pnpm test:webhooks'], url: 'http://localhost:4010' },
+    'docs-site': { src: 'detected from package.json', steps: ['pnpm docs:dev'], url: 'http://localhost:4000' }
+  };
+  /* what the new-card screen can pull in */
+  var LIB = ['web-app', 'design-tokens', 'cdn-worker', 'payments-api', 'docs-site', 'mobile-app', 'analytics-etl'];
+  var RSIZE = { 'web-app': 2.4, 'design-tokens': 0.9, 'cdn-worker': 0.6, 'payments-api': 1.8, 'docs-site': 0.7, 'mobile-app': 2.1, 'analytics-etl': 1.2 };
+  var MORE = [
+    { id: 'SHOP-160', ws: 'S', src: 'jira', title: 'Cart badge shows the wrong count after sign-in', desc: 'After signing in, the cart badge shows the guest count until you reload.', ac: ['The badge updates without a reload'], size: 0.4, sub: 'Jira · Storefront · to do' },
+    { id: 'SHOP-98', ws: 'S', src: 'jira', title: 'Guest checkout', desc: 'Let people check out without an account.', ac: ['Guests can pay without signing up'], size: 0.6, sub: 'Jira · Storefront · done in June' },
+    { id: 'PAY-77', ws: 'P', src: 'jira', title: 'Refunds over $500 need a second approver', desc: 'Large refunds need a second person to approve them in the admin.', ac: ['Refunds over $500 wait for a second approver'], size: 0.5, sub: 'Jira · Payments · to do' }
+  ];
+  var FILES = [
+    { id: 'web-app/src/cart/CartStore.ts', sub: 'web-app · where the cart lives', size: 1.6, kind: 'file' },
+    { id: 'web-app/docs/ARCHITECTURE.md', sub: 'web-app · how the app is laid out', size: 2.2, kind: 'doc' },
+    { id: 'design-tokens/README.md', sub: 'design-tokens · how to use tokens', size: 0.8, kind: 'doc' },
+    { id: 'payments-api/openapi.yaml', sub: 'payments-api · API reference', size: 3.1, kind: 'file' },
+    { id: 'Figma: Guest cart flow', sub: 'link · fetched once when you add it', size: 0.4, kind: 'link' }
+  ];
+  var NOTES = [
+    { id: 'Use Vitest for tests, not Jest', sub: 'saved note', size: 0.1 },
+    { id: 'Never touch the legacy /v1 checkout', sub: 'saved note', size: 0.1 },
+    { id: 'Error messages follow the copy guide in docs-site', sub: 'saved note', size: 0.1 },
+    { id: 'Ask before adding a dependency', sub: 'saved note', size: 0.1 }
+  ];
+  var FINDS = [
+    { id: 'Totals are computed in cartTotals.ts, and gift cards apply last', sub: 'from SHOP-142 · 42m ago', size: 0.3, from: 'SHOP-142' },
+    { id: 'Product images are served and cached by cdn-worker', sub: 'from SHOP-151 · yesterday', size: 0.2, from: 'SHOP-151' },
+    { id: 'Webhook event ids are stored in processed_events', sub: 'from PAY-88 · 20m ago', size: 0.2, from: 'PAY-88' }
+  ];
+  var SRC_TABS = [['tickets', 'Tickets'], ['repos', 'Repos'], ['files', 'Files & links'], ['notes', 'Notes'], ['finds', 'Findings']];
+  var SRC_FOOT = {
+    tickets: 'Any Jira or Trello ticket, by key or words. The first one becomes the card\u2019s ticket; later ones go in as related.',
+    repos: 'The repo library, scanned from D:\\repos. Extra repos start with --add-dir, so Claude can read and edit them.',
+    files: 'Files and docs point Claude at the right place. Links are fetched once, when you add them.',
+    notes: 'Notes you saved from earlier cards. Reuse them without retyping.',
+    finds: 'What other cards found out. Saves Claude working it out again.'
+  };
+  var MODES = ['Plan first', 'Ask before edits', 'Auto'], MODE_FLAG = ['plan', 'default', 'auto'];
+
+  function seed() {
+    return [
+      { id: 'SHOP-155', ws: 'S', src: 'jira', title: 'Save cart for signed-out users', stage: 'inbox', age: 'opened today',
+        desc: 'Guests lose their cart when they close the tab. Keep it for 30 days and merge it when they sign in.',
+        ac: ['The cart survives closing the tab', 'It merges on sign-in without duplicates', 'Gift cards in the cart still apply'],
+        comments: ['Keep the 30 days configurable', 'Check the cookie banner covers local storage'], attach: 'cart-merge-flow.png', linkedT: 'SHOP-98 Guest checkout',
+        plan: ['Keep the guest cart in local storage for 30 days', 'Merge it into the account cart on sign-in', 'Tests for merge and expiry'],
+        files: [['src/cart/guestCart.ts', 48, 0], ['src/cart/mergeOnSignIn.ts', 36, 2], ['src/cart/guestCart.test.ts', 61, 0]],
+        summary: 'Guests keep their cart for 30 days. When they sign in it merges into their account cart.' },
+      { id: 'PAY-91', ws: 'P', src: 'jira', title: 'Show refund status to support staff', stage: 'inbox', age: 'opened yesterday',
+        desc: 'Support can\u2019t tell whether a refund went through. Show its status on the order page in the admin.',
+        ac: ['Status shows pending, sent or failed', 'It updates when the webhook arrives'], comments: ['Support wants it on the order list too'],
+        plan: ['Add refund status to the order query', 'Show a status badge on the admin order page', 'Update it from the refund webhook'],
+        files: [['src/refunds/status.ts', 29, 0], ['src/admin/OrderPage.tsx', 22, 4], ['src/webhooks/refund.ts', 9, 1]],
+        summary: 'The admin order page shows each refund as pending, sent or failed, and updates when the webhook arrives.' },
+      { id: 'DOCS-19', ws: 'D', src: 'jira', title: 'Document the refunds endpoint', stage: 'plan', planReady: true, origin: 'app', elapsed: '12m', round: 1,
+        desc: 'The refunds endpoint has no reference page. Partners keep asking support how partial refunds work.',
+        ac: ['A reference page with every field', 'A partial refund example', 'Linked from the API index'],
+        plan: ['Read the refunds routes in payments-api', 'Write the reference page', 'Add request and response examples, including a partial refund', 'Link it from the API index'],
+        done: 0, act: 'Plan ready: 4 steps', repos: ['docs-site', 'payments-api'], extra: [{ k: 'repo', id: 'payments-api', label: 'payments-api', size: 1.8, on: true }],
+        files: [['content/api/refunds.md', 142, 0], ['content/api/index.md', 3, 0]],
+        summary: 'A new reference page for POST /refunds with a partial refund example, linked from the API index.' },
+      { id: 'SHOP-142', ws: 'S', src: 'jira', title: 'Gift card field at checkout', stage: 'build', origin: 'terminal', elapsed: '42m', round: 1, spin: true,
+        desc: 'Customers can\u2019t redeem gift cards online. Add a gift card field under the promo code box.',
+        ac: ['Valid codes reduce the total before payment', 'Invalid and expired codes show a clear message', 'Works with a promo code at the same time'],
+        plan: ['Read the checkout form and the gift card API', 'Add a gift card client in the API layer', 'Build the GiftCardField component', 'Wire it into CheckoutForm and validation', 'Tests for invalid and expired codes'],
+        done: 3, act: 'editing GiftCardField.tsx', repos: ['web-app', 'design-tokens', 'cdn-worker'],
+        later: [{ label: 'Note · Never touch the legacy /v1 checkout', size: 0.1, status: 'delivered', at: '08:31' }],
+        files: [['src/checkout/GiftCardField.tsx', 84, 0], ['src/checkout/CheckoutForm.tsx', 12, 3], ['src/api/giftCard.ts', 31, 0], ['src/checkout/checkout.css', 18, 2], ['src/checkout/GiftCardField.test.tsx', 56, 0], ['src/i18n/en.json', 4, 0]],
+        summary: 'Adds a gift card field under the promo code box. Codes are checked before payment and the total updates.' },
+      { id: 'PAY-88', ws: 'P', src: 'jira', title: 'Refund webhook fires twice', stage: 'needs', origin: 'terminal', elapsed: '28m', round: 1,
+        desc: 'Some refunds are recorded twice because the provider retries the webhook.',
+        ac: ['A repeated webhook doesn\u2019t create a second refund', 'A test covers the duplicate'],
+        plan: ['Find the refund webhook handler', 'Reproduce with a duplicate event', 'Add an idempotency check on the event id', 'Test the duplicate case'],
+        done: 2, act: 'Asking: 200 or 409?', repos: ['payments-api', 'web-app'],
+        question: { q: 'A duplicate webhook arrives. Return 200 and ignore it, or 409?', opts: ['Return 200 and ignore it. The provider stops retrying.', 'Return 409. The provider may keep retrying.'] },
+        files: [['src/webhooks/refund.ts', 21, 6], ['src/db/processedEvents.ts', 27, 0], ['src/webhooks/refund.test.ts', 40, 0]],
+        summary: 'Refund webhooks now remember each event id, so a retried event is ignored instead of recorded twice.' },
+      { id: 'SHOP-151', ws: 'S', src: 'jira', title: 'Product images load slowly on mobile', stage: 'try', origin: 'app', elapsed: '1h 05m', round: 1,
+        desc: 'Product pages take 6 seconds to show images on a phone.',
+        ac: ['Images load under 2 seconds on a mid-range phone', 'No layout shift while they load'],
+        plan: ['Measure image sizes on the product page', 'Serve responsive srcset sizes', 'Lazy-load images below the fold', 'Set width and height to stop layout shift', 'Long cache headers in cdn-worker'],
+        done: 5, act: 'Done. Ready to try', repos: ['web-app', 'cdn-worker'],
+        files: [['src/product/ProductImage.tsx', 38, 11], ['src/product/Gallery.tsx', 9, 4], ['cdn-worker/src/cache.ts', 14, 2], ['src/product/images.test.ts', 25, 0]],
+        summary: 'Product images come in the right size for the screen, load lazily below the fold, and are cached at the edge.' },
+      { id: 'FOOTER', ws: 'S', src: 'trello', title: 'Footer links 404 on /about', stage: 'ship', origin: 'terminal', elapsed: '2h 10m', round: 1,
+        desc: 'Three footer links on /about point to old paths.',
+        ac: ['Every footer link returns 200'],
+        plan: ['Find the broken links', 'Point them at the new paths', 'Add a link check to the footer test'],
+        done: 3, act: 'PR #412 · 1 approval', pr: 412, approvals: 1, repos: ['web-app'],
+        files: [['src/layout/Footer.tsx', 3, 3], ['src/layout/Footer.test.tsx', 14, 0]],
+        summary: 'Fixes three footer links on /about and adds a test that checks every footer link.' }
+    ];
+  }
+
+  var S, timers = [], cycle;
+  function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+  function init() {
+    timers.forEach(clearTimeout); timers = [];
+    S = { cards: seed(), wsf: 'all', q: '', focus: 'SHOP-155', drawer: null, tab: 'over', sheet: null, comp: null, keys: false, nextPr: 413, nextCard: 1, tabN: 4, clock: 9 * 60 + 5, drag: null };
+    $('fl-filter').value = '';
+    renderAll();
+  }
+  function card(id) { return S.cards.find(function (c) { return c.id === id; }); }
+  function moreT(id) { return MORE.find(function (t) { return t.id === id; }); }
+  function label(c) { return c.src === 'trello' ? 'Trello' : c.src === 'none' ? 'Card' : c.id; }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+  function kc(k, text, cls) { return '<span class="kc sm' + (cls ? ' ' + cls : '') + '" data-k="' + k + '">' + (text || k) + '</span>'; }
+  function tkey(c) { return '<span class="tkey' + (c.src === 'trello' ? ' trello' : c.src === 'none' ? ' none' : '') + '">' + label(c) + '</span>'; }
+  function fmtK(n) { return (Math.round(n * 10) / 10).toFixed(1) + 'k'; }
+  function slug(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').split('-').filter(function (w) { return w && ['a', 'an', 'the', 'for', 'to', 'of', 'on', 'in', 'and', 'with'].indexOf(w) < 0; }).slice(0, 3).join('-'); }
+  function clock(add) { var m = S.clock + (add || 0); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+  function stageName(c) { return STAGES.find(function (s) { return s.id === c.stage; }).name; }
+  function visible(c) {
+    if (S.wsf !== 'all' && c.ws !== S.wsf) return false;
+    if (S.q) { var q = S.q.toLowerCase(); return (c.id + ' ' + c.title).toLowerCase().indexOf(q) >= 0; }
+    return true;
+  }
+  function lanes() { return STAGES.map(function (st) { return S.cards.filter(function (c) { return c.stage === st.id && visible(c); }); }); }
+
+  /* ---------- the context packet: workspace + ticket + this card ---------- */
+  function wsItems(wsk) {
+    var w = WS[wsk], a = [];
+    w.repos.forEach(function (r) { a.push({ k: 'repo', id: r, label: r, size: RSIZE[r], on: true }); });
+    w.notes.forEach(function (n) { a.push({ k: 'note', id: n, label: n, size: 0.1, on: true }); });
+    var r = RECIPES[w.repos[0]]; if (r) a.push({ k: 'recipe', id: 'recipe', label: 'Run recipe: ' + r.steps.join(', '), size: 0.1, on: true });
+    return a;
+  }
+  function ticketItems(t) {
+    if (!t) return [];
+    var a = [{ k: 'desc', id: 'desc', label: 'Description', size: 0.3, on: true }];
+    t.ac.forEach(function (x) { a.push({ k: 'ac', id: x, label: x, size: 0.05, on: true }); });
+    if (t.comments && t.comments.length) a.push({ k: 'comments', id: 'comments', label: 'Comments (' + t.comments.length + '), latest: \u201c' + t.comments[0] + '\u201d', size: 0.3 * t.comments.length, on: false });
+    if (t.attach) a.push({ k: 'attach', id: t.attach, label: 'Attachment: ' + t.attach, size: 1.1, on: true });
+    if (t.linkedT) a.push({ k: 'linked', id: t.linkedT, label: 'Linked ticket: ' + t.linkedT, size: 0.5, on: false });
+    return a;
+  }
+  function newPacket(wsk, t) { return { ws: wsItems(wsk), ticket: ticketItems(t), card: [] }; }
+  function sumOn(list) { return list.reduce(function (s, i) { return s + (i.on ? i.size : 0); }, 0); }
+  function total(p, instr) { return sumOn(p.ws) + sumOn(p.ticket) + sumOn(p.card) + (instr && instr.trim() ? 0.1 : 0); }
+  function pct(k) { return Math.max(1, Math.round(k / 200 * 100)); }
+  function includedRepos(p) {
+    return p.ws.concat(p.card).filter(function (i) { return i.k === 'repo' && i.on; }).map(function (i) { return i.id; });
+  }
+  function ensurePacket(c) {
+    if (c.packet) return;
+    c.packet = newPacket(c.ws, c);
+    (c.extra || []).forEach(function (x) { c.packet.card.push(x); });
+    c.later = c.later || [];
+    var t = c.origin === 'terminal', home = c.repos[0], st = [8, 9, 10][S.cards.indexOf(c) % 3], b = ['08:' + st + '0', '08:' + st + '0', '08:' + st + '1', '08:' + st + '1', '08:' + st + '1', '08:' + st + '2'];
+    c.boot = [[b[0], 'Saved the context packet (' + fmtK(total(c.packet)) + ')'], [b[1], 'Made branch ' + c.id.toLowerCase() + '-' + slug(c.title) + ' in ' + home]]
+      .concat(t ? [[b[2], 'Opened Windows Terminal tab ' + (2 + S.cards.indexOf(c) % 3) + ' in D:\\repos\\' + home], [b[3], 'SessionStart hook fetched the packet'], [b[4], 'Linked session ' + ['7c01e2aa', '3f2a9c1e', 'b94d0f37'][S.cards.indexOf(c) % 3] + ' to this card']]
+        : [[b[2], 'Started a session in the app in ' + home], [b[3], 'Passed the packet to the session']])
+      .concat([[b[5], 'Claude started on a plan']]);
+  }
+
+  /* ---------- rendering: header, board ---------- */
+  function renderHeader() {
+    var h = '<span class="wschip' + (S.wsf === 'all' ? ' on' : '') + '" data-ws="all">' + kc('0') + 'All</span>';
+    Object.keys(WS).forEach(function (k, i) {
+      h += '<span class="wschip' + (S.wsf === k ? ' on' : '') + '" data-ws="' + k + '">' + kc(String(i + 1)) + '<span class="ic ' + WS[k].cls + '">' + k + '</span>' + WS[k].name + '</span>';
+    });
+    $('fl-ws').innerHTML = h;
+    var inflight = S.cards.filter(function (c) { return c.stage !== 'inbox' && c.stage !== 'done'; }).length;
+    var needs = S.cards.filter(function (c) { return c.stage === 'needs' || c.planReady; }).length;
+    $('fl-stats').innerHTML = '<span><b>' + inflight + '</b> in flight</span><span class="' + (needs ? 'amb' : '') + '"><b>' + needs + '</b> need you</span><span>ticket → PR <b>2h 10m</b></span>';
+  }
+  function gateHtml(g) {
+    var out = '';
+    g.forEach(function (p) { if (!p) return; if (typeof p === 'string') out += '<span>' + p + '</span>'; else out += kc(p[0]) + (p[1] ? '<span>' + p[1] + '</span>' : ''); });
+    return out;
+  }
+  function cardHtml(c) {
+    var w = WS[c.ws], cls = 'tc' + (c.stage === 'needs' ? ' needs' : '') + (S.focus === c.id ? ' focus' : '') + (c.justMoved ? ' moved' : '');
+    var h = '<div class="' + cls + '" data-id="' + c.id + '" style="--wsc:' + w.c + '"' + (c.stage === 'inbox' ? ' draggable="true"' : '') + '>';
+    h += '<div class="row" style="gap:6px">' + tkey(c) + '<span class="grow"></span>';
+    if (c.stage === 'inbox') h += '<span class="faint" style="font-size:11.5px">' + (c.src === 'trello' ? 'Trello' : 'Jira') + '</span>';
+    else h += '<span class="pill sm ' + (c.origin === 'terminal' ? 'p-grey' : 'p-blue') + '">' + (c.origin === 'terminal' ? 'terminal' : 'in app') + '</span>';
+    h += '</div><div class="tt">' + esc(c.title) + '</div>';
+    if (c.stage === 'inbox') {
+      h += '<div class="meta"><span>' + w.name + '</span><span>·</span><span>' + c.age + '</span></div>';
+    } else {
+      var ic = c.spin ? '<span class="spin" style="color:var(--m-blue)"></span>' : c.stage === 'needs' || c.planReady ? '<span class="dot" style="background:var(--m-amber)"></span>' : '<span class="dot" style="background:var(--m-green)"></span>';
+      h += '<div class="act">' + ic + '<span class="trunc">' + esc(c.act) + '</span></div>';
+      var totalSteps = c.plan.length, p = Math.round(100 * (c.done || 0) / totalSteps);
+      if (c.stage !== 'done') h += '<div class="prog"><span class="bar"><i style="width:' + p + '%"></i></span><span>' + (c.done || 0) + '/' + totalSteps + '</span></div>';
+      var nfiles = (c.done || 0) > 0 ? c.files.length : 0;
+      h += '<div class="meta"><span>' + nfiles + ' files</span><span>·</span><span>' + c.elapsed + '</span>' + (c.round > 1 ? '<span>·</span><span>round ' + c.round + '</span>' : '') + '</div>';
+      var waiting = (c.later || []).filter(function (x) { return x.status === 'waiting'; }).length;
+      h += '<div class="row" style="gap:4px;flex-wrap:wrap">' + c.repos.map(function (r) { return '<span class="rchip">' + r + '</span>'; }).join('') + (waiting ? '<span class="rchip" style="color:var(--m-amber)">+' + waiting + ' waiting</span>' : '') + '</div>';
+    }
+    return h + '</div>';
+  }
+  function renderBoard() {
+    var L = lanes(), h = '';
+    STAGES.forEach(function (st, i) {
+      h += '<section class="lane' + (st.id === 'needs' && L[i].length ? ' needs' : '') + '" data-stage="' + st.id + '">';
+      h += '<div class="lane-h"><h4>' + st.name + '</h4><span class="n">' + L[i].length + '</span></div>';
+      h += '<div class="gate">' + gateHtml(st.gate) + '</div><div class="lane-body">';
+      h += L[i].length ? L[i].map(cardHtml).join('') : '<div class="empty">' + (st.id === 'done' ? 'Merged PRs land here' : st.id === 'needs' ? 'Nothing waiting on you' : 'Empty') + '</div>';
+      h += '</div></section>';
+    });
+    $('fl-board').innerHTML = h;
+    S.cards.forEach(function (c) { c.justMoved = false; });
+  }
+
+  /* ---------- drawer ---------- */
+  function stepState(c, i) {
+    if (i < (c.done || 0)) return 'done';
+    if (i === (c.done || 0)) { if (c.stage === 'needs') return 'wait'; if (c.spin && !c.planReady && !c.booting) return 'now'; }
+    return 'todo';
+  }
+  var TABS = [['over', 'Overview'], ['ctx', 'Context'], ['tx', 'Transcript']];
+  function renderDrawer() {
+    var d = $('fl-drawer');
+    if (!S.drawer) { d.hidden = true; return; }
+    var c = card(S.drawer), w = WS[c.ws];
+    ensurePacket(c);
+    d.hidden = false;
+    var h = '<div class="dr-head"><div class="row" style="align-items:flex-start"><span class="ic ' + w.cls + '">' + c.ws + '</span><div class="grow col" style="gap:4px"><div class="row" style="gap:6px">' + tkey(c) +
+      '<span class="pill sm ' + (c.stage === 'needs' || c.planReady ? 'p-amber' : c.stage === 'done' ? 'p-green' : 'p-grey') + '">' + stageName(c) + '</span>' +
+      (c.origin ? '<span class="pill sm ' + (c.origin === 'terminal' ? 'p-grey' : 'p-blue') + '">' + (c.origin === 'terminal' ? 'terminal · tab ' + (c.tabNo || 3) : 'in app') + '</span>' : '') +
+      '<span class="faint">' + w.name + (c.elapsed ? ' · ' + c.elapsed : '') + (c.round > 1 ? ' · round ' + c.round : '') + '</span></div><div class="title">' + esc(c.title) + '</div></div>' +
+      '<span class="row faint" style="gap:6px;cursor:pointer" data-act="close">Close ' + kc('Esc') + '</span></div>' +
+      '<div class="dr-tabs">' + TABS.map(function (t) { return '<span class="tab' + (S.tab === t[0] ? ' on' : '') + '" data-act="tab" data-t="' + t[0] + '">' + t[1] + '</span>'; }).join('') + kc('Tab') + '</div></div>';
+    h += '<div class="dr-body">' + (S.tab === 'tx' ? transcriptHtml(c) : S.tab === 'ctx' ? contextHtml(c) : overviewHtml(c)) + '</div>';
+    h += '<div class="dr-actions">' + actionsHtml(c) + '</div>';
+    d.innerHTML = h;
+  }
+  function overviewHtml(c) {
+    var h = '';
+    if (c.booting) h += '<div class="sec"><div class="live" style="background:var(--m-blue-bg);color:var(--m-blue)"><span class="spin"></span><span class="grow">' + esc(c.act) + '</span><span style="font-weight:500">see ' + kc('Tab') + ' Context</span></div></div>';
+    if (c.question) {
+      h += '<div class="sec"><div class="qbox"><h4 style="color:var(--m-amber)">Claude is asking</h4><div class="q">' + esc(c.question.q) + '</div>' +
+        c.question.opts.map(function (o, i) { return '<div class="opt" data-act="ans" data-i="' + i + '">' + kc(String(i + 1), null, 'amber') + '<span>' + esc(o) + '</span></div>'; }).join('') +
+        '<div class="faint">Or type your own answer in the terminal tab.</div></div></div>';
+    }
+    if (c.planReady) {
+      h += '<div class="sec"><div class="qbox"><h4 style="color:var(--m-amber)">Plan ready for review</h4><p class="plain">Claude read the ticket and the repos and proposes ' + c.plan.length + ' steps. Nothing has been changed yet.</p>' +
+        '<div class="row" style="gap:8px"><span class="btnk pri" data-act="approve">' + kc('a') + 'Approve plan</span><span class="btnk" data-act="feedback">' + kc('f') + 'Change the plan</span></div></div></div>';
+    }
+    if (!c.booting) h += '<div class="sec"><h4>' + (c.planReady ? 'Proposed steps' : 'Steps') + '</h4><div class="steps">' + c.plan.map(function (p, i) {
+      var st = stepState(c, i), mk = st === 'done' ? '✓' : st === 'now' ? '<span class="spin"></span>' : st === 'wait' ? '?' : '';
+      var when = st === 'done' ? ['09:12', '09:21', '09:30', '09:44', '09:58'][i] : st === 'now' ? 'now' : st === 'wait' ? 'waiting on you' : '';
+      return '<div class="st ' + st + '"><span class="mk">' + mk + '</span><span>' + esc(p) + (st === 'now' && c.act ? ' <span class="faint">· ' + esc(c.act) + '</span>' : '') + '</span><span class="when">' + when + '</span></div>';
+    }).join('') + '</div></div>';
+    if ((c.done || 0) > 0) {
+      h += '<div class="sec"><h4>What changed</h4><p class="plain">' + esc(c.summary) + '</p><div class="files">' + c.files.map(function (f) {
+        return '<div class="row"><span class="trunc">' + f[0] + '</span><span class="nums"><span class="add">+' + f[1] + '</span> <span class="del">−' + f[2] + '</span></span></div>';
+      }).join('') + '</div></div>';
+    }
+    var r = RECIPES[c.repos[0]];
+    if (r && !c.booting) {
+      var run = c.run || { n: -1 };
+      h += '<div class="sec"><div class="row"><h4 class="grow">Try it · ' + c.repos[0] + ' run recipe</h4><span class="faint">' + r.src + ' · <u>edit</u></span></div><div class="recipe">' + r.steps.map(function (s, i) {
+        var cl = run.n > i ? 'ok' : run.n === i ? 'go' : '', mk = run.n > i ? '✓' : run.n === i ? '<span class="spin"></span>' : '$';
+        return '<div class="rl ' + cl + '"><span class="mk">' + mk + '</span>' + s + '</div>';
+      }).join('') + '</div>';
+      if (run.n >= r.steps.length) h += '<div class="live"><span class="dot" style="background:var(--m-green)"></span><span class="grow">Running at ' + r.url + '</span>' + kc('o') + '<span style="font-weight:500">open</span></div>';
+      else if (run.n < 0) h += '<div class="faint">Press ' + kc('t') + ' to start the app and try the change.</div>';
+      h += '</div>';
+    }
+    var k = total(c.packet, c.instr);
+    h += '<div class="sec"><div class="row"><h4 class="grow">Context</h4><span class="faint">' + fmtK(k) + ' · ' + includedRepos(c.packet).length + ' repos · ' + (c.later || []).length + ' added since · ' + kc('Tab') + ' for all of it</span></div></div>';
+    return h;
+  }
+  function contextHtml(c) {
+    var w = WS[c.ws], p = c.packet, k = total(p, c.instr), term = c.origin === 'terminal';
+    var h = '<div class="sec"><h4>How it started</h4><div class="boot">' + c.boot.map(function (b, i) {
+      var last = i === c.boot.length - 1 && c.booting;
+      return '<div class="row"><time>' + b[0] + '</time><span class="bk ' + (last ? 'go' : 'ok') + '">' + (last ? '<span class="spin"></span>' : '✓') + '</span><span>' + esc(b[1]) + '</span></div>';
+    }).join('') + (c.booting ? '' : '') + '</div></div>';
+    function chips(list) { return list.filter(function (i) { return i.on; }).map(function (i) { return '<span class="ctx">' + (i.k === 'repo' ? 'repo · ' : '') + esc(i.label.length > 48 ? i.label.slice(0, 46) + '…' : i.label) + ' <span class="sz">' + fmtK(i.size) + '</span></span>'; }).join(''); }
+    h += '<div class="sec"><div class="row"><h4 class="grow">What Claude was given</h4><span class="faint">' + fmtK(k) + ' · ' + pct(k) + '% of its memory</span></div>' +
+      '<div class="lay-s"><div class="lay-t"><b>Workspace</b><span class="faint">shared by every ' + w.name + ' card</span></div><div class="ctxs">' + chips(p.ws) + '</div></div>' +
+      '<div class="lay-s"><div class="lay-t"><b>Ticket</b><span class="faint">' + (c.src === 'none' ? 'no ticket' : 'from ' + (c.src === 'trello' ? 'Trello' : 'Jira') + ' ' + label(c)) + '</span></div><div class="ctxs">' + (chips(p.ticket) || '<span class="faint">None</span>') + '</div></div>' +
+      '<div class="lay-s"><div class="lay-t"><b>This card</b><span class="faint">added when it started</span></div><div class="ctxs">' + (chips(p.card) || '') + (c.instr && c.instr.trim() ? '<span class="ctx">your note: \u201c' + esc(c.instr.trim().slice(0, 40)) + '\u201d</span>' : '') + ((!chips(p.card) && !(c.instr && c.instr.trim())) ? '<span class="faint">Nothing extra</span>' : '') + '</div></div></div>';
+    h += '<div class="sec"><div class="row"><h4 class="grow">Added since it started</h4><span class="btnk" data-act="addctx">' + kc('c') + 'Add context</span></div>' +
+      ((c.later && c.later.length) ? '<div class="boot">' + c.later.map(function (x) {
+        return '<div class="row"><time>' + x.at + '</time><span class="grow">' + esc(x.label) + ' <span class="sz">' + fmtK(x.size) + '</span></span>' + (x.status === 'waiting' ? '<span class="pill sm p-amber">goes with your next message</span>' : '<span class="pill sm p-green">delivered</span>') + '</div>';
+      }).join('') + '</div>' : '<div class="faint">Nothing yet. Press ' + kc('c') + ', or drag a ticket onto the card.</div>') +
+      '<p class="faint" style="max-width:none">' + (term ? 'This session runs in a terminal. Things you add wait here and go in with your next message in that tab (a UserPromptSubmit hook), or straight away through the channel if the tab was started with it.' : 'This session runs in the app, so things you add reach it straight away.') + '</p></div>';
+    return h;
+  }
+  function transcriptHtml(c) {
+    var lines = [
+      ['you', c.msg || ('Work on ' + label(c) + ': ' + c.title + '. Plan first.')],
+      ['tool', 'SessionStart hook · cc-control packet, ' + fmtK(total(c.packet, c.instr))],
+      ['claude', 'I read the ticket and ' + c.repos.join(', ') + '. Here is a plan in ' + c.plan.length + ' steps.'],
+      ['tool', 'Read ' + c.files[0][0]],
+      ['tool', 'Edit ' + c.files[0][0] + ' (+' + c.files[0][1] + ')'],
+      ['claude', c.question ? c.question.q : 'Step ' + Math.max(1, c.done || 0) + ' is done. Moving on.']
+    ];
+    return '<div class="sec">' + lines.map(function (l) {
+      return l[0] === 'tool' ? '<div class="msg tool">› ' + esc(l[1]) + '</div>' : '<div class="msg"><span class="who">' + (l[0] === 'you' ? 'You' : 'Claude') + '</span><span>' + esc(l[1]) + '</span></div>';
+    }).join('') + '<p class="faint" style="max-width:none">Read through the SDK. To type into this session, switch to its terminal tab.</p></div>';
+  }
+  function actionsHtml(c) {
+    var a = [];
+    if (c.planReady) a.push(['a', 'Approve plan', 'approve', true]);
+    if (c.question) { a.push(['1', 'Answer 1', 'ans0', true]); a.push(['2', 'Answer 2', 'ans1']); }
+    if (c.stage !== 'done' && !c.planReady && !c.booting && RECIPES[c.repos[0]]) a.push(['t', 'Try it', 'try', c.stage === 'try']);
+    if (c.stage !== 'done' && !c.booting) a.push(['f', c.planReady ? 'Change the plan' : 'Feedback or a fix', 'feedback']);
+    if (c.stage !== 'done' && S.tab !== 'ctx') a.push(['c', 'Add context', 'addctx']);
+    if (c.stage === 'ship') a.push(['s', 'Merge #' + c.pr, 'ship', true]);
+    else if (c.stage !== 'done' && !c.planReady && !c.booting) a.push(['s', 'Ship', 'ship', c.stage === 'try']);
+    return a.map(function (x) { return '<span class="btnk' + (x[3] ? ' pri' : '') + '" data-act="' + x[2] + '">' + kc(x[0]) + x[1] + '</span>'; }).join('');
+  }
+
+  /* ---------- the new-card screen ---------- */
+  function openComposer(t, wsk) {
+    var ws = t ? t.ws : (wsk || (S.wsf !== 'all' ? S.wsf : 'S'));
+    S.comp = { mode: 'new', tid: t ? t.id : null, ws: ws, title: '', pkt: newPacket(ws, t), instr: '', v: { where: 0, ws: Object.keys(WS).indexOf(ws), home: 0, branch: 0, pmode: 0 },
+      msg: t ? 'Plan ' + label(t) + '.' : 'Make a plan first.', pane: 'src', tab: t ? 1 : 0, si: 0, pi: 0, gi: 0, preview: false, q: '', fresh: null };
+    S.drawer = null; S.sheet = null;
+    renderAll();
+    if (!t) setTimeout(function () { var el = $('cp-title'); if (el) el.focus(); }, 0);
+  }
+  function openAdd(c) {
+    ensurePacket(c);
+    S.comp = { mode: 'add', cardId: c.id, tid: c.id, ws: c.ws, pkt: { ws: [], ticket: [], card: [] }, instr: '', v: { deliver: 0 }, pane: 'src', tab: 0, si: 0, pi: 0, gi: 0, preview: false, q: '', fresh: null };
+    S.sheet = null;
+    renderAll();
+  }
+  function compTicket(cp) { return cp.tid ? (card(cp.tid) || moreT(cp.tid)) : null; }
+  function srcItems(cp) {
+    var tab = SRC_TABS[cp.tab][0], list = [];
+    if (tab === 'tickets') {
+      S.cards.filter(function (c) { return c.stage === 'inbox'; }).forEach(function (c) { list.push({ kind: 'ticket', id: c.id, title: c.title, t: c, sub: (c.src === 'trello' ? 'Trello' : 'Jira') + ' · ' + WS[c.ws].name + ' · in your inbox', size: 0.6 }); });
+      MORE.forEach(function (m) { list.push({ kind: 'ticket', id: m.id, title: m.title, t: m, sub: m.sub, size: m.size }); });
+    } else if (tab === 'repos') {
+      LIB.forEach(function (r) { list.push({ kind: 'repo', id: r, title: r, sub: WS[cp.ws].repos.indexOf(r) >= 0 ? 'in ' + WS[cp.ws].name : 'from the library', size: RSIZE[r] }); });
+    } else if (tab === 'files') FILES.forEach(function (f) { list.push({ kind: f.kind, id: f.id, title: f.id, sub: f.sub, size: f.size }); });
+    else if (tab === 'notes') NOTES.forEach(function (n) { list.push({ kind: 'note', id: n.id, title: n.id, sub: n.sub, size: n.size }); });
+    else FINDS.forEach(function (f) { list.push({ kind: 'finding', id: f.id, title: f.id, sub: f.sub, size: f.size }); });
+    var q = cp.q.trim().toLowerCase();
+    if (q) list = list.filter(function (it) { return (it.id + ' ' + it.title + ' ' + it.sub).toLowerCase().indexOf(q) >= 0; });
+    return list;
+  }
+  function allPk(p) { return p.ws.concat(p.ticket, p.card); }
+  function inPacket(cp, it) {
+    if (it.kind === 'ticket' && cp.tid === it.id) return true;
+    var lists = allPk(cp.pkt);
+    if (cp.mode === 'add') { var c = card(cp.cardId); lists = lists.concat(allPk(c.packet)); if ((c.later || []).some(function (x) { return x.id === it.id; })) return true; }
+    return lists.some(function (i) { return i.id === it.id && i.on && (i.k === 'repo') === (it.kind === 'repo'); });
+  }
+  function addSrc(cp, it) {
+    if (it.kind === 'ticket' && cp.tid === it.id) { Futures.toast(M, 'That is this card\u2019s ticket'); return; }
+    var found = null;
+    [cp.pkt.ws, cp.pkt.card].forEach(function (L) { L.forEach(function (i) { if (i.id === it.id && (i.k === 'repo') === (it.kind === 'repo')) found = { L: L, i: i }; }); });
+    if (found) {
+      if (found.L === cp.pkt.card) { removeCardItem(cp, found.i); return; }
+      found.i.on = !found.i.on; cp.fresh = found.i.on ? it.id : null; return;
+    }
+    if (cp.mode === 'add' && inPacket(cp, it)) { Futures.toast(M, card(cp.cardId).id + ' already has that'); return; }
+    if (it.kind === 'ticket' && !cp.tid && cp.mode === 'new') {
+      cp.tid = it.id; cp.ws = it.t.ws; cp.v.ws = Object.keys(WS).indexOf(cp.ws); cp.v.home = 0;
+      var extra = cp.pkt.card; cp.pkt = newPacket(cp.ws, it.t); cp.pkt.card = extra;
+      cp.msg = 'Plan ' + label(it.t) + '.'; cp.fresh = 'desc';
+      Futures.toast(M, label(it.t) + ' is now this card\u2019s ticket');
+      return;
+    }
+    var lab = it.kind === 'ticket' ? 'Related ticket: ' + it.id + ' ' + it.title : it.kind === 'finding' ? 'Finding: ' + it.title : it.kind === 'note' ? 'Note: ' + it.title : it.kind === 'repo' ? it.id : it.kind === 'link' ? 'Link: ' + it.title : 'Read: ' + it.title;
+    cp.pkt.card.push({ k: it.kind === 'repo' ? 'repo' : it.kind, id: it.id, label: lab, size: it.size, on: true });
+    cp.fresh = it.id;
+  }
+  function removeCardItem(cp, i) { cp.pkt.card = cp.pkt.card.filter(function (x) { return x !== i; }); }
+  function pkFlat(cp) {
+    var f = [];
+    if (cp.mode === 'new') {
+      cp.pkt.ws.forEach(function (it) { f.push({ l: 'ws', it: it }); });
+      cp.pkt.ticket.forEach(function (it) { f.push({ l: 'ticket', it: it }); });
+    }
+    cp.pkt.card.forEach(function (it) { f.push({ l: 'card', it: it }); });
+    f.push({ l: 'instr' });
+    return f;
+  }
+  function goRows(cp) {
+    if (cp.mode === 'add') {
+      var c = card(cp.cardId);
+      return [{ id: 'deliver', label: 'When it reaches Claude', opts: c.origin === 'terminal' ? ['With your next message', 'Right now, through the channel'] : ['Right away'] }];
+    }
+    var repos = includedRepos(cp.pkt), t = compTicket(cp), br = (t ? t.id.toLowerCase() + '-' + slug(t.title) : 'card-' + (slug(cp.title) || 'new'));
+    var rows = [{ id: 'where', label: 'Where it runs', opts: ['Terminal tab', 'In the app'] }];
+    if (!t) rows.push({ id: 'ws', label: 'Workspace', opts: Object.keys(WS).map(function (k) { return WS[k].name; }) });
+    rows.push({ id: 'home', label: 'Starts in', opts: repos.length ? repos : ['(no repo)'] });
+    rows.push({ id: 'branch', label: 'Branch', opts: ['New: ' + br, 'Current branch', 'New worktree'] });
+    rows.push({ id: 'pmode', label: 'Mode', opts: MODES });
+    rows.push({ id: 'msg', label: 'Opening message', input: true });
+    return rows;
+  }
+  function homeRepo(cp) { var r = includedRepos(cp.pkt); return r[Math.min(cp.v.home, r.length - 1)] || r[0]; }
+  function launchLines(cp) {
+    var t = compTicket(cp), repos = includedRepos(cp.pkt), home = homeRepo(cp), others = repos.filter(function (r) { return r !== home; });
+    var br = goRows(cp).find(function (r) { return r.id === 'branch'; }).opts[0].slice(5), key = t ? label(t) : 'CARD-' + S.nextCard;
+    var L = [];
+    if (cp.v.branch === 0) L.push('git -C D:\\repos\\' + home + ' switch -c ' + br);
+    if (cp.v.branch === 2) L.push('git -C D:\\repos\\' + home + ' worktree add ..\\' + home + '-' + key.toLowerCase() + ' -b ' + br);
+    var dir = 'D:\\repos\\' + home + (cp.v.branch === 2 ? '-' + key.toLowerCase() : '');
+    if (cp.v.where === 0) {
+      L.push('set CC_CONTROL_CARD=' + key);
+      L.push('wt -w 0 nt --title "' + key + '" -d ' + dir + ' claude --permission-mode ' + MODE_FLAG[cp.v.pmode] + others.map(function (r) { return ' --add-dir D:\\repos\\' + r; }).join('') + ' "' + cp.msg + '"');
+    } else {
+      L.push('query({ cwd: "' + dir.replace(/\\/g, '/') + '", additionalDirectories: [' + others.map(function (r) { return '"D:/repos/' + r + '"'; }).join(', ') + '], permissionMode: "' + MODE_FLAG[cp.v.pmode] + '", systemPrompt: { append: packet } })');
+    }
+    return L;
+  }
+  function packetText(cp) {
+    var t = compTicket(cp), w = WS[cp.ws], L = [], on = function (l) { return l.filter(function (i) { return i.on; }); };
+    if (cp.mode === 'add') {
+      var c = card(cp.cardId);
+      L.push('# Added to ' + label(c) + ' by cc-control', '');
+      if (!on(cp.pkt.card).length && !cp.instr.trim()) L.push('(Nothing added yet.)');
+      on(cp.pkt.card).forEach(function (i) { L.push('- ' + (i.k === 'repo' ? 'Another repo you can use: D:\\repos\\' + i.id + ' (repo map attached)' : i.label)); });
+      if (cp.instr.trim()) L.push('', '## From you', cp.instr.trim());
+      return L.join('\n');
+    }
+    L.push('# Context from cc-control · ' + (t ? label(t) + ' ' + t.title : (cp.title.trim() || 'New card')));
+    if (t) {
+      var ti = on(cp.pkt.ticket);
+      L.push('', '## The ticket (' + (t.src === 'trello' ? 'Trello' : 'Jira') + ' ' + label(t) + ')');
+      if (ti.some(function (i) { return i.k === 'desc'; })) L.push(t.desc);
+      var ac = ti.filter(function (i) { return i.k === 'ac'; });
+      if (ac.length) { L.push('', 'Done when:'); ac.forEach(function (i) { L.push('- ' + i.label); }); }
+      if (ti.some(function (i) { return i.k === 'comments'; })) { L.push('', 'Comments:'); t.comments.forEach(function (x) { L.push('- ' + x); }); }
+      ti.filter(function (i) { return i.k === 'attach' || i.k === 'linked'; }).forEach(function (i) { L.push(i.label + (i.k === 'attach' ? ' (image, attached)' : '')); });
+    } else if (cp.title.trim()) L.push('', '## The task', cp.title.trim());
+    var repos = includedRepos(cp.pkt), home = homeRepo(cp);
+    if (repos.length) { L.push('', '## Repos'); repos.forEach(function (r) { L.push('- ' + r + (r === home ? ' (you start here)' : ' (also yours to read and edit)') + ': D:\\repos\\' + r); }); L.push('A short map of each repo is attached.'); }
+    var notes = on(cp.pkt.ws).filter(function (i) { return i.k === 'note'; });
+    if (notes.length) { L.push('', '## Team notes for ' + w.name); notes.forEach(function (i) { L.push('- ' + i.label); }); }
+    var rec = on(cp.pkt.ws).find(function (i) { return i.k === 'recipe'; }), R = RECIPES[w.repos[0]];
+    if (rec && R) L.push('', '## Running the app', R.steps.join(' && ') + '  then open ' + R.url);
+    var extra = on(cp.pkt.card).filter(function (i) { return i.k !== 'repo'; });
+    if (extra.length) { L.push('', '## Also look at'); extra.forEach(function (i) { L.push('- ' + i.label); }); }
+    if (cp.instr.trim()) L.push('', '## From you', cp.instr.trim());
+    if (cp.v.pmode === 0) L.push('', 'Start with a plan. Don\u2019t change any files until the plan is approved.');
+    return L.join('\n');
+  }
+  function renderComp() {
+    var box = $('fl-comp'), cp = S.comp;
+    if (!cp) { box.hidden = true; box.innerHTML = ''; return; }
+    var ae = document.activeElement, aid = ae && ae.id, sel = ae && ae.selectionStart;
+    box.hidden = false;
+    var w = WS[cp.ws], t = compTicket(cp), add = cp.mode === 'add', c = add ? card(cp.cardId) : null;
+    var k = add ? total(cp.pkt, cp.instr) : total(cp.pkt, cp.instr), base = add ? total(c.packet, c.instr) + (c.later || []).reduce(function (s, x) { return s + x.size; }, 0) : 0;
+    /* head */
+    var h = '<div class="cp-head"><span class="ic ' + w.cls + '">' + cp.ws + '</span><div class="grow col" style="gap:3px">' +
+      '<div class="faint">' + (add ? 'Add context to a running card · ' + stageName(c) + ' · ' + (c.origin === 'terminal' ? 'terminal tab ' + (c.tabNo || 3) : 'in the app') : 'New card · ' + w.name + (t ? ' · from ' + (t.src === 'trello' ? 'Trello' : 'Jira') : ' · no ticket yet')) + '</div>' +
+      (t ? '<div class="title">' + tkey(t) + ' ' + esc(t.title) + '</div>' : '<input id="cp-title" class="cp-title" type="text" autocomplete="off" placeholder="What should this card do? e.g. Add a size guide to product pages" value="' + esc(cp.title) + '">') +
+      '</div><div class="cp-meter"><span class="faint">' + (add ? 'Adding' : 'Claude will start knowing') + '</span><b>' + fmtK(k) + '</b>' + (add ? '<span class="faint">on top of ' + fmtK(base) + '</span>' : '<span class="bar"><i style="width:' + pct(k) + '%"></i></span><span class="faint">' + pct(k) + '% of its memory</span>') + '</div>' +
+      '<span class="btnk" data-act="cp-prev">' + kc('p') + (cp.preview ? 'Back to the list' : 'Preview what Claude gets') + '</span><span class="row faint" data-act="cp-close" style="gap:6px;cursor:pointer">Cancel ' + kc('Esc') + '</span></div>';
+    h += '<div class="cp-cols">';
+    /* sources */
+    var items = srcItems(cp); cp.si = Math.max(0, Math.min(cp.si, items.length - 1));
+    h += '<section class="cp-pane' + (cp.pane === 'src' ? ' on' : '') + '" data-pane="src"><div class="cp-ph"><span class="cp-n">1</span><h4 class="grow">Add context</h4><span class="faint">drag it in, or</span>' + kc('Space') + '</div>' +
+      '<div class="cp-tabs">' + SRC_TABS.map(function (tb, i) { return '<span class="cp-tab' + (i === cp.tab ? ' on' : '') + '" data-act="cp-tab" data-i="' + i + '">' + tb[1] + '</span>'; }).join('') + '<span class="grow"></span>' + kc('ArrowLeft', '←') + kc('ArrowRight', '→') + '</div>' +
+      '<label class="fl-search cp-search">' + kc('/') + '<input id="cp-q" type="text" autocomplete="off" placeholder="Search ' + SRC_TABS[cp.tab][1].toLowerCase() + (cp.tab === 0 ? ' or type a key, e.g. SHOP-160' : '') + '" value="' + esc(cp.q) + '"></label>' +
+      '<div class="cp-list">' + (items.length ? items.map(function (it, i) {
+        var inP = inPacket(cp, it), f = cp.pane === 'src' && i === cp.si;
+        var badge = it.kind === 'ticket' ? tkey(it.t) : '<span class="kind">' + (it.kind === 'finding' ? 'found' : it.kind) + '</span>';
+        return '<div class="cp-item' + (f ? ' focus' : '') + (inP ? ' in' : '') + '" draggable="true" data-act="cp-add" data-i="' + i + '">' + badge + '<div class="grow"><div class="trunc">' + esc(it.title) + '</div><div class="faint trunc">' + esc(it.sub) + '</div></div><span class="sz">' + fmtK(it.size) + '</span>' + (inP ? '<span class="pill sm p-green">added</span>' : '<span class="plus">+</span>') + '</div>';
+      }).join('') : '<div class="empty">Nothing matches \u201c' + esc(cp.q) + '\u201d</div>') + '</div>' +
+      '<div class="cp-foot faint">' + SRC_FOOT[SRC_TABS[cp.tab][0]] + '</div></section>';
+    /* packet */
+    h += '<section class="cp-pane cp-pkt' + (cp.pane === 'pkt' ? ' on' : '') + '" data-pane="pkt"><div class="cp-ph"><span class="cp-n">2</span><h4 class="grow">' + (cp.preview ? 'Exactly what Claude receives' : add ? 'What you are adding' : 'What Claude will know') + '</h4>' + (cp.preview ? '<span class="faint">' + (add ? (c.origin === 'terminal' ? 'sent by a UserPromptSubmit hook' : 'sent to the session') : cp.v.where === 0 ? 'returned by the SessionStart hook as additionalContext' : 'appended to the session\u2019s system prompt') + '</span>' : kc('Space') + '<span class="faint">include or leave out</span>') + '</div><div class="cp-body">';
+    if (cp.preview) h += '<pre class="cp-pre">' + esc(packetText(cp)) + '</pre>';
+    else {
+      var flat = pkFlat(cp); cp.pi = Math.max(0, Math.min(cp.pi, flat.length - 1));
+      var idx = 0;
+      var row = function (l, it) {
+        var f = cp.pane === 'pkt' && idx === cp.pi; idx++;
+        var home = it.k === 'repo' && it.on && it.id === homeRepo(cp);
+        return '<div class="pk' + (it.on ? '' : ' off') + (f ? ' focus' : '') + (cp.fresh === it.id ? ' new' : '') + '" data-act="cp-tog" data-f="' + (idx - 1) + '"><span class="cb">' + (it.on ? '✓' : '') + '</span>' +
+          (it.k === 'repo' ? '<span class="kind">repo</span>' : it.k === 'ac' ? '<span class="kind">done when</span>' : it.k === 'note' ? '<span class="kind">note</span>' : it.k === 'finding' ? '<span class="kind">found</span>' : it.k === 'recipe' ? '<span class="kind">run</span>' : '') +
+          '<span class="grow trunc">' + esc(it.label) + '</span>' + (home ? '<span class="pill sm p-blue">starts here</span>' : '') + (it.k === 'repo' && !home && it.on && !add ? '<span class="faint">--add-dir</span>' : '') +
+          '<span class="sz">' + fmtK(it.size) + '</span>' + (l === 'card' ? '<span class="xk" data-act="cp-x" data-f="' + (idx - 1) + '">' + kc('x') + '</span>' : '') + '</div>';
+      };
+      var layer = function (name, note, list, l, empty) {
+        return '<div class="layer"><div class="layer-h"><span class="lname">' + name + '</span><span class="faint grow">' + note + '</span><span class="sz">' + fmtK(sumOn(list)) + '</span></div>' +
+          (list.length ? list.map(function (it) { return row(l, it); }).join('') : '<div class="pk-empty faint">' + empty + '</div>') + '</div>';
+      };
+      if (!add) {
+        h += layer('Workspace', 'shared by every ' + w.name + ' card · set once', cp.pkt.ws, 'ws', '');
+        h += layer('Ticket', t ? 'from ' + (t.src === 'trello' ? 'Trello' : 'Jira') + ' ' + label(t) + ', refreshed when it changes' : 'none yet', cp.pkt.ticket, 'ticket', 'No ticket. Pick one under Tickets, or describe the work in the title.');
+      }
+      var instrF = cp.pane === 'pkt' && cp.pi === flat.length - 1;
+      h += '<div class="layer"><div class="layer-h"><span class="lname">' + (add ? 'Adding now' : 'This card') + '</span><span class="faint grow">' + (add ? 'only ' + label(c) + ' gets these' : 'only this card gets these') + '</span><span class="sz">' + fmtK(sumOn(cp.pkt.card)) + '</span></div>' +
+        (cp.pkt.card.length ? cp.pkt.card.map(function (it) { return row('card', it); }).join('') : '<div class="pk-empty faint">Drag repos, files, notes or other tickets here, or press ' + kc('Space') + ' on them.</div>') +
+        '<div class="pk instr' + (instrF ? ' focus' : '') + '"><span class="kind">you</span><textarea id="cp-instr" placeholder="Anything else Claude should know? e.g. Keep it behind the guest_cart flag.">' + esc(cp.instr) + '</textarea>' + kc('e') + '</div></div>';
+      if (add) {
+        h += '<div class="layer dim"><div class="layer-h"><span class="lname">Already has</span><span class="faint grow">given when it started, and added since</span><span class="sz">' + fmtK(base) + '</span></div><div class="ctxs" style="padding:10px 12px">' +
+          allPk(c.packet).filter(function (i) { return i.on; }).map(function (i) { return '<span class="ctx">' + esc(i.k === 'repo' ? 'repo · ' + i.label : i.label.length > 40 ? i.label.slice(0, 38) + '…' : i.label) + '</span>'; }).join('') +
+          (c.later || []).map(function (x) { return '<span class="ctx">' + esc(x.label.slice(0, 40)) + (x.status === 'waiting' ? ' · waiting' : '') + '</span>'; }).join('') + '</div></div>';
+      }
+    }
+    h += '</div></section>';
+    /* how it starts */
+    var rows = goRows(cp); cp.gi = Math.max(0, Math.min(cp.gi, rows.length - 1));
+    h += '<section class="cp-pane cp-go' + (cp.pane === 'go' ? ' on' : '') + '" data-pane="go"><div class="cp-ph"><span class="cp-n">3</span><h4 class="grow">' + (add ? 'Deliver' : 'How it starts') + '</h4>' + kc('ArrowUp', '↑') + kc('ArrowDown', '↓') + '<span class="faint">then</span>' + kc('ArrowLeft', '←') + kc('ArrowRight', '→') + '</div><div class="cp-body">';
+    rows.forEach(function (r, i) {
+      var f = cp.pane === 'go' && i === cp.gi;
+      h += '<div class="opt-row' + (f ? ' focus' : '') + '" data-act="cp-row" data-g="' + i + '"><div class="lab">' + r.label + '</div>';
+      if (r.input) h += '<input id="cp-msg" class="cp-msg" type="text" autocomplete="off" value="' + esc(cp.msg) + '">';
+      else h += '<div class="opts">' + r.opts.map(function (o, j) { return '<span class="o' + (j === (cp.v[r.id] || 0) ? ' on' : '') + '" data-act="cp-opt" data-g="' + i + '" data-j="' + j + '">' + esc(o) + '</span>'; }).join('') + '</div>';
+      if (r.id === 'where') h += '<div class="faint">' + (cp.v.where === 0 ? 'A new Windows Terminal tab runs claude. A SessionStart hook hands it the packet. The card follows it through hooks.' : 'Runs inside cc-control. Answer and steer from the card; per-file undo works.') + '</div>';
+      if (r.id === 'pmode' && cp.v.pmode === 2) h += '<div class="faint">Auto isn\u2019t offered on every model.</div>';
+      if (r.id === 'deliver') h += '<div class="faint">' + (c.origin === 'terminal' ? (cp.v.deliver === 0 ? 'Waits on the card. A UserPromptSubmit hook adds it to the next thing you type in tab ' + (c.tabNo || 3) + '. No special flags.' : 'Pushed in now through the cc-control channel. Needs the tab to have been started with it (a preview feature).') : 'The app session gets it before its next step.') + '</div>';
+      h += '</div>';
+    });
+    if (!add) h += '<div class="opt-row"><div class="lab">What happens</div><div class="code cp-cmd">' + launchLines(cp).map(esc).join('\n') + '</div></div>';
+    else h += '<div class="opt-row"><div class="lab">Good to know</div><div class="faint">A repo added now reaches Claude as its path and a short map. A terminal session may ask once before reading outside its folder.</div></div>';
+    h += '</div><div class="cp-go-foot"><span class="btnk pri big" data-act="cp-go">' + kc('Ctrl+Enter', 'Ctrl Enter', 'acc') + (add ? 'Add to ' + label(c) : 'Start work') + '</span><span class="faint">' + (add ? 'Shows under Added since, on the card\u2019s Context tab.' : cp.v.pmode === 0 ? 'The card moves to Plan. Nothing changes until you approve the plan.' : 'The card moves straight to Build.') + '</span></div></section>';
+    h += '</div>';
+    box.innerHTML = h;
+    cp.fresh = null;
+    if (aid && (aid === 'cp-q' || aid === 'cp-title' || aid === 'cp-instr' || aid === 'cp-msg')) { var el = $(aid); if (el) { el.focus(); try { el.setSelectionRange(sel, sel); } catch (e) {} } }
+  }
+  function launch() {
+    var cp = S.comp;
+    if (cp.mode === 'add') return addLater();
+    var t = compTicket(cp), c = cp.tid ? card(cp.tid) : null;
+    if (!cp.tid && !cp.title.trim()) { Futures.toast(M, 'Give the card a title, or pick a ticket'); var el = $('cp-title'); if (el) el.focus(); return; }
+    if (!includedRepos(cp.pkt).length) { Futures.toast(M, 'A card needs at least one repo'); return; }
+    if (!c) {
+      var m = t, ttl = m ? m.title : cp.title.trim();
+      c = { id: m ? m.id : 'CARD-' + S.nextCard++, ws: cp.ws, src: m ? m.src : 'none', title: ttl, desc: m ? m.desc : ttl, ac: m ? m.ac : [],
+        plan: ['Read the code this touches', 'Make the change', 'Add or update tests'], files: [['src/' + slug(ttl) + '.ts', 40, 2], ['src/' + slug(ttl) + '.test.ts', 30, 0]],
+        summary: ttl + '.' };
+      S.cards.push(c);
+    }
+    var repos = includedRepos(cp.pkt), home = homeRepo(cp), term = cp.v.where === 0;
+    c.stage = 'plan'; c.origin = term ? 'terminal' : 'app'; c.ws = cp.ws; c.repos = [home].concat(repos.filter(function (r) { return r !== home; }));
+    c.packet = cp.pkt; c.instr = cp.instr; c.msg = cp.msg; c.later = []; c.boot = []; c.booting = true; c.spin = true; c.done = 0; c.round = 1; c.elapsed = 'just now'; c.justMoved = true; c.planReady = false;
+    if (term) c.tabNo = S.tabN++;
+    var br = goRows(cp).find(function (r) { return r.id === 'branch'; }).opts[0].slice(5), k = total(cp.pkt, cp.instr);
+    var steps = ['Saved the context packet (' + fmtK(k) + ')',
+      cp.v.branch === 0 ? 'Made branch ' + br + ' in ' + home : cp.v.branch === 1 ? 'Stayed on the current branch of ' + home : 'Made a worktree ' + home + '-' + c.id.toLowerCase() + ' on ' + br]
+      .concat(term ? ['Opened Windows Terminal tab ' + c.tabNo + ' in D:\\repos\\' + home + (repos.length > 1 ? ' with ' + (repos.length - 1) + ' more repo' + (repos.length > 2 ? 's' : '') : ''), 'SessionStart hook fetched the packet from 127.0.0.1:7777', 'Linked session ' + ['5e8b21d0', 'a07c9f43', 'd3316b8e'][S.tabN % 3] + ' to this card']
+        : ['Started a session in the app in ' + home, 'Passed the packet to the session'])
+      .concat([cp.v.pmode === 0 ? 'Claude is writing a plan' : 'Claude is working']);
+    var pm = cp.v.pmode;
+    S.comp = null; S.focus = c.id; S.drawer = c.id; S.tab = 'ctx';
+    c.act = steps[0];
+    Futures.toast(M, term ? 'Starting ' + label(c) + ' in a terminal tab' : 'Starting ' + label(c) + ' in the app');
+    steps.forEach(function (s, i) { later(function () { c.boot.push([clock(i === 0 ? 0 : 0) + ':' + String(2 * i).padStart(2, '0'), s]); c.act = s; renderAll(); }, 600 * i + 50); });
+    later(function () {
+      c.booting = false;
+      if (pm === 0) { c.spin = false; c.planReady = true; c.act = 'Plan ready: ' + c.plan.length + ' steps'; c.elapsed = '1m'; Futures.toast(M, label(c) + ': plan ready. Press a to approve.'); renderAll(); }
+      else { c.stage = 'build'; c.act = 'step 1: ' + c.plan[0].toLowerCase(); c.justMoved = true; renderAll(); advance(c); }
+    }, 600 * steps.length + 2400);
+    renderAll();
+  }
+  function addLater() {
+    var cp = S.comp, c = card(cp.cardId), items = cp.pkt.card.filter(function (i) { return i.on; }), waiting = c.origin === 'terminal' && cp.v.deliver === 0;
+    if (cp.instr.trim()) items = items.concat([{ id: 'instr' + Date.now(), label: 'Your note: ' + cp.instr.trim(), size: 0.1 }]);
+    if (!items.length) { Futures.toast(M, 'Add something first'); return; }
+    items.forEach(function (i) { c.later.push({ id: i.id, label: i.k === 'repo' ? 'Repo: ' + i.id : i.label, size: i.size, status: waiting ? 'waiting' : 'delivered', at: clock(12) }); if (i.k === 'repo' && c.repos.indexOf(i.id) < 0) c.repos.push(i.id); });
+    S.comp = null; S.drawer = c.id; S.tab = 'ctx';
+    Futures.toast(M, waiting ? items.length + ' item' + (items.length > 1 ? 's' : '') + ' will go with your next message in tab ' + (c.tabNo || 3) : 'Delivered to ' + label(c));
+    renderAll();
+    if (waiting) later(function () {
+      c.later.forEach(function (x) { if (x.status === 'waiting') { x.status = 'delivered'; x.at = clock(14); } });
+      Futures.toast(M, 'You typed in tab ' + (c.tabNo || 3) + '. The added context went with it.'); renderAll();
+    }, 9000);
+  }
+
+  /* ---------- sheets (ship, feedback, attach) ---------- */
+  function renderSheet() {
+    var o = $('fl-sheet'), box = $('fl-sheet-card');
+    if (!S.sheet) { o.hidden = true; return; }
+    o.hidden = false;
+    var c = card(S.sheet.id), w = WS[c.ws], h = '';
+    if (S.sheet.type === 'ship') {
+      var pr = c.stage === 'ship' ? c.pr : S.nextPr, br = c.id.toLowerCase() + '-' + slug(c.title);
+      if (c.stage === 'ship') {
+        h = '<div class="sheet"><div class="row"><div class="title grow">Merge PR #' + pr + '</div>' + kc('Esc') + '</div><div class="slack"><strong>#' + pr + ' ' + esc(c.title) + '</strong><span class="faint">2 approvals · checks passed · ' + c.repos[0] + '</span></div>' +
+          '<div class="row"><span class="grow faint">Squash-merges, deletes the branch and moves ' + label(c) + ' to Done in ' + (c.src === 'trello' ? 'Trello' : 'Jira') + '.</span><span class="btnk pri" data-act="doship">' + kc('Enter', null, 'acc') + 'Merge</span></div></div>';
+      } else {
+        h = '<div class="sheet"><div class="row"><div class="grow"><div class="faint">Ship · ' + w.name + '</div><div class="title">' + tkey(c) + ' ' + esc(c.title) + '</div></div>' + kc('Esc') + '</div>' +
+          '<div class="seg2"><div><div class="lab">Commit</div><div class="field mono">feat: ' + esc(c.title.toLowerCase()) + ' (' + c.id + ')</div></div><div><div class="lab">Branch</div><div class="field mono">' + br + '</div></div></div>' +
+          '<div><div class="lab">Pull request, written from the ticket</div><div class="field"><strong>' + esc(c.title) + '</strong><div class="sub" style="margin-top:4px">' + esc(c.summary) + '</div><ul style="margin:6px 0 0;padding-left:18px;color:var(--m-sub)">' + c.ac.map(function (a) { return '<li>' + esc(a) + '</li>'; }).join('') + '</ul><div class="faint" style="margin-top:6px">' + c.files.length + ' files · tried locally · closes ' + label(c) + '</div></div></div>' +
+          '<div><div class="lab">Then post to Slack</div><div class="slack"><span class="faint">' + w.chan + '</span><span>Review please: <strong>PR #' + pr + ' ' + esc(c.title) + '</strong> · ' + c.repos[0] + ' · ' + c.files.length + ' files</span></div></div>' +
+          '<div class="row"><span class="grow faint">Commits, pushes, opens the PR and posts. The card moves to Ship.</span><span class="btnk pri" data-act="doship">' + kc('Enter', null, 'acc') + 'Ship it</span></div></div>';
+      }
+    } else if (S.sheet.type === 'feedback') {
+      h = '<div class="sheet"><div class="row"><div class="grow"><div class="faint">Feedback · round ' + (c.round + (c.planReady ? 0 : 1)) + '</div><div class="title">' + tkey(c) + ' ' + esc(c.title) + '</div></div>' + kc('Esc') + '</div>' +
+        '<textarea class="fb" id="fl-fb" placeholder="What\u2019s wrong, or what should change? e.g. The hero image still jumps on a narrow screen."></textarea>' +
+        '<div class="row"><span class="grow faint">Sent to the ' + (c.origin === 'terminal' ? 'terminal session through the cc-control channel' : 'session') + '. The card goes back to Build.</span><span class="btnk pri" data-act="sendfb">' + kc('Ctrl+Enter', 'Ctrl Enter', 'acc') + 'Send</span></div></div>';
+    } else if (S.sheet.type === 'attach') {
+      var targets = S.cards.filter(function (x) { return ['plan', 'build', 'needs', 'try'].indexOf(x.stage) >= 0; });
+      S.sheet.targets = targets.map(function (x) { return x.id; });
+      h = '<div class="sheet"><div class="row"><div class="title grow">Add ' + label(c) + ' to a running card</div>' + kc('Esc') + '</div><p class="faint" style="max-width:none">The ticket goes in as extra context. Handy when two tickets touch the same code.</p>' +
+        targets.map(function (x, i) { return '<div class="pick" data-act="attachto" data-id="' + x.id + '">' + kc(String(i + 1)) + tkey(x) + '<span class="grow">' + esc(x.title) + '</span><span class="faint">' + stageName(x) + '</span></div>'; }).join('') + '</div>';
+    }
+    box.innerHTML = h;
+    if (S.sheet.type === 'feedback') setTimeout(function () { var t = $('fl-fb'); if (t) t.focus(); }, 0);
+  }
+
+  /* ---------- legend ---------- */
+  function legendHtml() {
+    var L = [];
+    if (S.keys) L = [[['Esc'], 'Close']];
+    else if (S.comp) {
+      var cp = S.comp, go = [['Ctrl+Enter|Ctrl Enter'], cp.mode === 'add' ? 'Add' : 'Start work'];
+      L = [[['Tab'], 'Next panel']];
+      if (cp.pane === 'src') L.push([['ArrowLeft|←', 'ArrowRight|→'], 'Kind'], [['ArrowUp|↑', 'ArrowDown|↓'], 'Move'], [['Space'], 'Add or remove'], [['/'], 'Search']);
+      else if (cp.pane === 'pkt') L.push([['ArrowUp|↑', 'ArrowDown|↓'], 'Move'], [['Space'], 'Include or leave out'], [['x'], 'Remove'], [['e'], 'Your note']);
+      else L.push([['ArrowUp|↑', 'ArrowDown|↓'], 'Option'], [['ArrowLeft|←', 'ArrowRight|→'], 'Change']);
+      L.push([['p'], cp.preview ? 'Back to the list' : 'Preview'], go, [['Esc'], 'Cancel']);
+    } else if (S.sheet) {
+      var t = S.sheet.type;
+      if (t === 'ship') L = [[['Enter'], card(S.sheet.id).stage === 'ship' ? 'Merge' : 'Commit, open PR, post'], [['Esc'], 'Cancel']];
+      else if (t === 'feedback') L = [[['Ctrl+Enter|Ctrl Enter'], 'Send'], [['Esc'], 'Cancel']];
+      else L = [[['1', '2', '3'], 'Pick a card'], [['Esc'], 'Cancel']];
+    } else if (S.drawer) {
+      var c = card(S.drawer);
+      L = [[['Esc'], 'Back to the board']];
+      if (c.question) L.push([['1', '2'], 'Answer']);
+      if (c.planReady) L.push([['a'], 'Approve plan']);
+      if (c.stage !== 'done' && !c.planReady && !c.booting) L.push([['t'], 'Try it']);
+      if (c.run && c.run.n >= 3) L.push([['o'], 'Open app']);
+      if (c.stage !== 'done' && !c.booting) L.push([['f'], 'Feedback']);
+      if (c.stage !== 'done') L.push([['c'], 'Add context']);
+      if (c.stage !== 'done' && !c.planReady && !c.booting) L.push([['s'], c.stage === 'ship' ? 'Merge' : 'Ship']);
+      L.push([['Tab'], 'Overview · Context · Transcript']);
+    } else {
+      var f = card(S.focus);
+      L = [[['ArrowLeft|←', 'ArrowRight|→', 'ArrowUp|↑', 'ArrowDown|↓'], 'Move']];
+      if (f && f.stage === 'inbox') { L.push([['Enter', 'n'], 'Start work']); L.push([['x'], 'Add to a card']); }
+      else if (f) {
+        L.push([['Enter'], 'Open']);
+        if (f.planReady) L.push([['a'], 'Approve plan']);
+        if (f.stage === 'try') { L.push([['t'], 'Try it']); L.push([['f'], 'Fix']); L.push([['s'], 'Ship']); }
+        if (f.stage === 'ship') L.push([['s'], 'Merge']);
+      }
+      L.push([['c'], 'New card']); L.push([['1', '2', '3'], 'Workspace']); L.push([['/'], 'Filter']);
+    }
+    L.push([['?'], 'All keys']);
+    return L.map(function (it) {
+      return '<span class="row">' + it[0].map(function (k) { var p = k.split('|'); return kc(p[0], p[1]); }).join('') + '<span>' + it[1] + '</span></span>';
+    }).join('');
+  }
+  function renderAll() {
+    renderHeader(); renderBoard(); renderDrawer(); renderSheet(); renderComp();
+    $('fl-keys').hidden = !S.keys;
+    $('fl-legend').innerHTML = legendHtml();
+  }
+
+  /* ---------- simulated progress ---------- */
+  function advance(c, speed) {
+    later(function () {
+      if (c.stage !== 'build') return;
+      c.done = Math.min(c.plan.length, (c.done || 0) + 1);
+      if (c.done >= c.plan.length) { c.stage = 'try'; c.spin = false; c.act = c.round > 1 ? 'Round ' + c.round + ' done. Ready to try' : 'Done. Ready to try'; c.justMoved = true; c.run = null; Futures.toast(M, label(c) + ' is ready to try'); }
+      else { c.act = 'step ' + (c.done + 1) + ': ' + c.plan[c.done].toLowerCase(); advance(c, speed); }
+      renderAll();
+    }, speed || 2200);
+  }
+  function approve(c) {
+    c.planReady = false; c.stage = 'build'; c.spin = true; c.act = 'step 1: ' + c.plan[0].toLowerCase(); c.justMoved = true;
+    Futures.toast(M, 'Plan approved. ' + label(c) + ' is building.');
+    renderAll(); advance(c);
+  }
+  function answer(c, i) {
+    var pick = i === 0 ? '200' : '409';
+    c.question = null; c.stage = 'build'; c.spin = true; c.act = 'adding the idempotency check (you chose ' + pick + ')'; c.justMoved = true;
+    Futures.toast(M, 'Answer sent to ' + label(c) + '\u2019s terminal');
+    S.drawer = null; renderAll(); advance(c, 2600);
+  }
+  function tryIt(c) {
+    var r = RECIPES[c.repos[0]]; if (!r || c.planReady || c.booting) return;
+    S.drawer = c.id; S.tab = 'over'; c.run = { n: 0 }; renderAll();
+    r.steps.forEach(function (_, i) { later(function () { c.run.n = i + 1; renderAll(); }, 700 * (i + 1)); });
+  }
+  function sendFeedback() {
+    var c = card(S.sheet.id), t = ($('fl-fb') || {}).value || '';
+    t = t.trim() || 'Hero image still jumps on a narrow screen';
+    if (c.planReady) { c.act = 'Revising the plan'; c.spin = true; c.planReady = false; S.sheet = null; renderAll(); later(function () { c.spin = false; c.planReady = true; c.act = 'Plan ready: ' + c.plan.length + ' steps (revised)'; renderAll(); }, 2500); Futures.toast(M, 'Sent. Claude is revising the plan.'); return; }
+    c.round += 1; c.stage = 'build'; c.spin = true; c.run = null; c.justMoved = true;
+    c.act = 'round ' + c.round + ': ' + t.toLowerCase().slice(0, 60);
+    c.done = Math.max(0, c.plan.length - 1);
+    S.sheet = null; S.drawer = null;
+    Futures.toast(M, 'Sent. ' + label(c) + ' is back in Build, round ' + c.round + '.');
+    renderAll(); advance(c, 3500);
+  }
+  function doShip() {
+    var c = card(S.sheet.id), w = WS[c.ws];
+    S.sheet = null;
+    if (c.stage === 'ship') { c.stage = 'done'; c.act = 'Merged #' + c.pr; c.justMoved = true; S.drawer = null; Futures.toast(M, 'Merged #' + c.pr); renderAll(); return; }
+    c.pr = S.nextPr++; c.stage = 'ship'; c.spin = false; c.done = c.plan.length; c.approvals = 0; c.run = null; c.justMoved = true;
+    c.act = 'PR #' + c.pr + ' · posted to ' + w.chan; S.drawer = null;
+    Futures.toast(M, 'PR #' + c.pr + ' opened and posted to ' + w.chan);
+    renderAll();
+    later(function () { if (c.stage === 'ship') { c.approvals = 1; c.act = 'PR #' + c.pr + ' · 1 approval'; renderAll(); } }, 6000);
+  }
+  function attach(srcId, targetId) {
+    var s = card(srcId), t = card(targetId), waiting = t.origin === 'terminal';
+    ensurePacket(t);
+    t.later.push({ id: s.id, label: 'Related ticket: ' + label(s) + ' ' + s.title, size: 0.6, status: waiting ? 'waiting' : 'delivered', at: clock(12) });
+    S.cards = S.cards.filter(function (c) { return c.id !== srcId; });
+    S.sheet = null; S.focus = targetId;
+    Futures.toast(M, label(s) + (waiting ? ' will go to ' + label(t) + ' with your next message in its tab' : ' added to ' + label(t)));
+    renderAll();
+  }
+
+  /* ---------- keyboard ---------- */
+  function moveFocus(dx, dy) {
+    var L = lanes(), ci = -1, ri = 0;
+    L.forEach(function (l, i) { var j = l.findIndex(function (c) { return c.id === S.focus; }); if (j >= 0) { ci = i; ri = j; } });
+    if (ci < 0) { for (var i = 0; i < L.length; i++) if (L[i].length) { S.focus = L[i][0].id; return; } return; }
+    if (dy) { var n = L[ci][ri + dy]; if (n) S.focus = n.id; return; }
+    for (var c = ci + dx; c >= 0 && c < L.length; c += dx) if (L[c].length) { S.focus = L[c][Math.min(ri, L[c].length - 1)].id; return; }
+  }
+  function ensureFocus() { var f = card(S.focus); if (!f || !visible(f)) { S.focus = null; moveFocus(1, 0); } }
+  function openCard(c) {
+    if (c.stage === 'inbox') openComposer(c);
+    else { S.drawer = c.id; S.tab = 'over'; renderAll(); }
+  }
+  function act(c, k) {
+    if (k === 't') { tryIt(c); return true; }
+    if (k === 'c' && c.stage !== 'done' && c.stage !== 'inbox') { openAdd(c); return true; }
+    if (k === 'f' && c.stage !== 'done' && !c.booting) { S.sheet = { type: 'feedback', id: c.id }; renderAll(); return true; }
+    if (k === 's' && c.stage !== 'done' && !c.booting) {
+      if (c.planReady) { Futures.toast(M, 'Approve the plan first'); return true; }
+      S.sheet = { type: 'ship', id: c.id }; renderAll(); return true;
+    }
+    if (k === 'a' && c.planReady) { approve(c); return true; }
+    return false;
+  }
+  function setOpt(cp, gi, j) {
+    var r = goRows(cp)[gi]; if (!r || r.input) return;
+    j = (j + r.opts.length) % r.opts.length;
+    if (r.id === 'ws') { cp.ws = Object.keys(WS)[j]; var extra = cp.pkt.card; cp.pkt = newPacket(cp.ws, null); cp.pkt.card = extra; cp.v.home = 0; }
+    cp.v[r.id] = j;
+  }
+  function togglePk(cp, fi, remove) {
+    var e = pkFlat(cp)[fi]; if (!e) return;
+    if (e.l === 'instr') { var el = $('cp-instr'); if (el) el.focus(); return; }
+    if (remove && e.l === 'card') { removeCardItem(cp, e.it); return; }
+    if (e.it.k === 'repo' && e.it.on && includedRepos(cp.pkt).length === 1) { Futures.toast(M, 'A card needs at least one repo'); return; }
+    e.it.on = !e.it.on;
+  }
+  function compKey(k) {
+    var cp = S.comp;
+    if (k === 'Esc') { S.comp = null; renderAll(); return true; }
+    if (k === 'Ctrl+Enter') { launch(); return true; }
+    if (k === 'p') { cp.preview = !cp.preview; renderAll(); return true; }
+    if (k === 'e') { cp.pane = 'pkt'; cp.preview = false; renderAll(); var el = $('cp-instr'); if (el) el.focus(); return true; }
+    if (k === 'Tab' || k === 'Shift+Tab') { var P = ['src', 'pkt', 'go'], i = P.indexOf(cp.pane); cp.pane = P[(i + (k === 'Tab' ? 1 : 2)) % 3]; renderAll(); return true; }
+    var up = k === 'ArrowUp', dn = k === 'ArrowDown', lf = k === 'ArrowLeft', rt = k === 'ArrowRight';
+    if (cp.pane === 'src') {
+      var items = srcItems(cp);
+      if (lf || rt) { cp.tab = (cp.tab + (rt ? 1 : SRC_TABS.length - 1)) % SRC_TABS.length; cp.si = 0; cp.q = ''; renderAll(); return true; }
+      if (up || dn) { cp.si = Math.max(0, Math.min(items.length - 1, cp.si + (dn ? 1 : -1))); renderAll(); return true; }
+      if (k === 'Space' || k === 'Enter') { if (items[cp.si]) addSrc(cp, items[cp.si]); renderAll(); return true; }
+      if (k === '/') { var q = $('cp-q'); if (q) q.focus(); return true; }
+    } else if (cp.pane === 'pkt') {
+      if (cp.preview) return false;
+      var n = pkFlat(cp).length;
+      if (up || dn) { cp.pi = Math.max(0, Math.min(n - 1, cp.pi + (dn ? 1 : -1))); renderAll(); return true; }
+      if (k === 'Space' || k === 'Enter') { togglePk(cp, cp.pi, false); renderAll(); return true; }
+      if (k === 'x') { togglePk(cp, cp.pi, true); renderAll(); return true; }
+    } else {
+      var rows = goRows(cp);
+      if (up || dn) { cp.gi = Math.max(0, Math.min(rows.length - 1, cp.gi + (dn ? 1 : -1))); renderAll(); return true; }
+      if (lf || rt) { setOpt(cp, cp.gi, (cp.v[rows[cp.gi].id] || 0) + (rt ? 1 : -1)); renderAll(); return true; }
+      if (k === 'Enter' && rows[cp.gi].input) { var m = $('cp-msg'); if (m) m.focus(); return true; }
+    }
+    return false;
+  }
+  Futures.keys(M, function (k) {
+    var filter = $('fl-filter');
+    if (document.activeElement === filter) { if (k === 'Esc') { filter.blur(); return true; } return false; }
+    var ae = document.activeElement;
+    if (S.comp && ae && M.contains(ae) && /INPUT|TEXTAREA/.test(ae.tagName)) { if (k === 'Esc') { ae.blur(); return true; } return false; }
+    if (S.keys) { if (k === 'Esc' || k === '?') { S.keys = false; renderAll(); return true; } return false; }
+    if (k === '?') { S.keys = true; renderAll(); return true; }
+    if (S.comp) return compKey(k);
+    if (S.sheet) {
+      var sh = S.sheet;
+      if (k === 'Esc') { S.sheet = null; renderAll(); return true; }
+      if (sh.type === 'ship' && k === 'Enter') { doShip(); return true; }
+      if (sh.type === 'feedback' && k === 'Ctrl+Enter') { sendFeedback(); return true; }
+      if (sh.type === 'attach' && /^[1-9]$/.test(k)) { var t = sh.targets[+k - 1]; if (t) attach(sh.id, t); return true; }
+      return false;
+    }
+    if (S.drawer) {
+      var c = card(S.drawer);
+      if (k === 'Esc') { S.drawer = null; renderAll(); return true; }
+      if (k === 'Tab' || k === 'Shift+Tab') { var ti = TABS.findIndex(function (x) { return x[0] === S.tab; }); S.tab = TABS[(ti + (k === 'Tab' ? 1 : 2)) % 3][0]; renderAll(); return true; }
+      if (c.question && (k === '1' || k === '2')) { answer(c, +k - 1); return true; }
+      if (k === 'o' && c.run && c.run.n >= RECIPES[c.repos[0]].steps.length) { Futures.toast(M, 'Opens ' + RECIPES[c.repos[0]].url + ' in your browser'); return true; }
+      return act(c, k);
+    }
+    var map = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    if (map[k]) { moveFocus(map[k][0], map[k][1]); renderAll(); return true; }
+    if (/^[0-3]$/.test(k)) { S.wsf = k === '0' ? 'all' : Object.keys(WS)[+k - 1]; ensureFocus(); renderAll(); return true; }
+    if (k === '/') { filter.focus(); return true; }
+    if (k === 'c') { openComposer(null); return true; }
+    var f = card(S.focus);
+    if (!f) return false;
+    if (k === 'Enter') { openCard(f); return true; }
+    if (f.stage === 'inbox') {
+      if (k === 'n') { openCard(f); return true; }
+      if (k === 'x') { S.sheet = { type: 'attach', id: f.id }; renderAll(); return true; }
+      return false;
+    }
+    return act(f, k);
+  });
+  $('fl-filter').addEventListener('input', function (e) { S.q = e.target.value; ensureFocus(); renderBoard(); renderHeader(); $('fl-legend').innerHTML = legendHtml(); });
+  $('fl-filter').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
+  M.addEventListener('keydown', function (e) {
+    if (e.target.id === 'fl-fb' && e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); sendFeedback(); }
+    if (S.comp && /^cp-/.test(e.target.id || '')) {
+      if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); e.target.blur(); launch(); }
+      else if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+        e.preventDefault();
+        if (e.target.id === 'cp-q') { var it = srcItems(S.comp)[0]; if (it) { addSrc(S.comp, it); S.comp.q = ''; e.target.blur(); renderAll(); } }
+        else e.target.blur();
+      } else if (e.key === 'Tab') { e.preventDefault(); e.target.blur(); compKey(e.shiftKey ? 'Shift+Tab' : 'Tab'); }
+    }
+  });
+  M.addEventListener('input', function (e) {
+    var cp = S.comp; if (!cp) return;
+    if (e.target.id === 'cp-q') { cp.q = e.target.value; cp.si = 0; }
+    else if (e.target.id === 'cp-title') cp.title = e.target.value;
+    else if (e.target.id === 'cp-instr') cp.instr = e.target.value;
+    else if (e.target.id === 'cp-msg') cp.msg = e.target.value;
+    else return;
+    renderAll();
+  });
+  /* ---------- mouse ---------- */
+  M.addEventListener('click', function (e) {
+    if (S.comp) {
+      var cp = S.comp, p = e.target.closest('[data-pane]');
+      var ca = e.target.closest('[data-act]');
+      if (p && p.dataset.pane !== cp.pane && !(ca && /^cp-(go|close|prev)$/.test(ca.dataset.act))) { cp.pane = p.dataset.pane; }
+      if (!ca) { if (p && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') renderAll(); return; }
+      var a = ca.dataset.act;
+      if (a === 'cp-close') S.comp = null;
+      else if (a === 'cp-prev') cp.preview = !cp.preview;
+      else if (a === 'cp-go') { launch(); return; }
+      else if (a === 'cp-tab') { cp.tab = +ca.dataset.i; cp.si = 0; cp.q = ''; }
+      else if (a === 'cp-add') { cp.si = +ca.dataset.i; addSrc(cp, srcItems(cp)[cp.si]); }
+      else if (a === 'cp-x') { cp.pi = +ca.dataset.f; togglePk(cp, cp.pi, true); }
+      else if (a === 'cp-tog') { cp.pi = +ca.dataset.f; if (e.target.tagName !== 'TEXTAREA') togglePk(cp, cp.pi, false); }
+      else if (a === 'cp-opt') { cp.gi = +ca.dataset.g; setOpt(cp, cp.gi, +ca.dataset.j); }
+      else if (a === 'cp-row') { cp.gi = +ca.dataset.g; if (e.target.tagName === 'INPUT') return; }
+      renderAll(); return;
+    }
+    var t = e.target.closest('[data-act],[data-ws],.tc,.overlay');
+    if (!t) return;
+    if (t.dataset.ws) { S.wsf = t.dataset.ws; ensureFocus(); renderAll(); return; }
+    if (t.classList.contains('tc')) { S.focus = t.dataset.id; openCard(card(t.dataset.id)); return; }
+    if (t.classList.contains('overlay')) { if (e.target === t) { S.sheet = null; S.keys = false; renderAll(); } return; }
+    var a2 = t.dataset.act, c = card(S.drawer || (S.sheet && S.sheet.id) || S.focus);
+    if (a2 === 'keys') { S.keys = true; renderAll(); }
+    else if (a2 === 'newcard') openComposer(null);
+    else if (a2 === 'close') { S.drawer = null; renderAll(); }
+    else if (a2 === 'tab') { S.tab = t.dataset.t; renderAll(); }
+    else if (a2 === 'ans') answer(c, +t.dataset.i);
+    else if (a2 === 'ans0' || a2 === 'ans1') answer(c, +a2.slice(3));
+    else if (a2 === 'approve') approve(c);
+    else if (a2 === 'addctx') openAdd(c);
+    else if (a2 === 'doship') doShip();
+    else if (a2 === 'sendfb') sendFeedback();
+    else if (a2 === 'attachto') attach(S.sheet.id, t.dataset.id);
+    else if (a2 === 'try' || a2 === 'feedback' || a2 === 'ship') act(c, a2[0]);
+  });
+  var board = $('fl-board');
+  board.addEventListener('dragstart', function (e) {
+    var t = e.target.closest('.tc'); if (!t) return;
+    S.drag = t.dataset.id; e.dataTransfer.setData('text/plain', t.dataset.id); e.dataTransfer.effectAllowed = 'move';
+  });
+  function dropTarget(e) {
+    var tc = e.target.closest('.tc'), lane = e.target.closest('.lane');
+    if (tc && tc.dataset.id !== S.drag && card(tc.dataset.id).stage !== 'inbox' && card(tc.dataset.id).stage !== 'done') return tc;
+    if (lane && lane.dataset.stage === 'plan') return lane;
+    return null;
+  }
+  board.addEventListener('dragover', function (e) {
+    if (!S.drag) return;
+    board.querySelectorAll('.dropok').forEach(function (x) { x.classList.remove('dropok'); });
+    var t = dropTarget(e); if (t) { e.preventDefault(); t.classList.add('dropok'); }
+  });
+  board.addEventListener('dragleave', function (e) { if (e.target === board) board.querySelectorAll('.dropok').forEach(function (x) { x.classList.remove('dropok'); }); });
+  board.addEventListener('drop', function (e) {
+    var t = dropTarget(e), id = S.drag; S.drag = null;
+    board.querySelectorAll('.dropok').forEach(function (x) { x.classList.remove('dropok'); });
+    if (!t || !id) return; e.preventDefault();
+    if (t.classList.contains('tc')) attach(id, t.dataset.id);
+    else { S.focus = id; openComposer(card(id)); }
+  });
+  board.addEventListener('dragend', function () { S.drag = null; board.querySelectorAll('.dropok').forEach(function (x) { x.classList.remove('dropok'); }); });
+  /* drag from the new-card sources into the packet */
+  var comp = $('fl-comp'), cdrag = null;
+  comp.addEventListener('dragstart', function (e) { var it = e.target.closest('.cp-item'); if (!it) return; cdrag = +it.dataset.i; e.dataTransfer.setData('text/plain', 'src'); e.dataTransfer.effectAllowed = 'copy'; });
+  comp.addEventListener('dragover', function (e) { if (cdrag === null) return; var p = e.target.closest('.cp-pkt'); comp.querySelectorAll('.drop-on').forEach(function (x) { if (x !== p) x.classList.remove('drop-on'); }); if (p) { e.preventDefault(); p.classList.add('drop-on'); } });
+  comp.addEventListener('drop', function (e) {
+    var p = e.target.closest('.cp-pkt'), i = cdrag; cdrag = null;
+    comp.querySelectorAll('.drop-on').forEach(function (x) { x.classList.remove('drop-on'); });
+    if (!p || i === null || !S.comp) return; e.preventDefault();
+    var it = srcItems(S.comp)[i]; if (it && !inPacket(S.comp, it)) addSrc(S.comp, it);
+    S.comp.pane = 'pkt'; S.comp.preview = false; renderAll();
+  });
+  comp.addEventListener('dragend', function () { cdrag = null; comp.querySelectorAll('.drop-on').forEach(function (x) { x.classList.remove('drop-on'); }); });
+
+  /* live one-liner for the card that is building in a terminal */
+  var acts = ['editing GiftCardField.tsx', 'running pnpm test checkout', 'editing checkout.css', 'reading design-tokens/colors.ts', 'editing GiftCardField.tsx'], ai = 0;
+  cycle = setInterval(function () {
+    var c = card('SHOP-142'); if (!c || c.stage !== 'build' || c.round > 1 || c.done !== 3) return;
+    ai = (ai + 1) % acts.length; c.act = acts[ai];
+    var el = M.querySelector('.tc[data-id="SHOP-142"] .act .trunc'); if (el) el.textContent = c.act;
+    if (S.drawer === 'SHOP-142' && S.tab === 'over') renderDrawer();
+  }, 2600);
+
+  $('reset').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

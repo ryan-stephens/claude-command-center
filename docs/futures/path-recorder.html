@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flight Recorder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="futures.css">
+<style>
+[hidden] { display: none !important; }
+/* Flight Recorder: a time axis across the top, one swimlane per session grouped by workspace, an inspector for the step under the playhead. */
+.m .hdr { padding: 11px 18px; border-bottom: 1px solid var(--m-line); gap: 14px; height: 52px; }
+.m .flt { display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; height: 32px; border-radius: 9px; border: 1px solid var(--m-line); background: var(--m-surface); color: var(--m-faint); font-size: 14px; }
+.m .flt input { border: 0; background: transparent; color: var(--m-text); font: 14px var(--body); width: 170px; outline: none; }
+.m .flt:focus-within { outline: 2px solid var(--ring); outline-offset: -1px; }
+.m .strip { height: 50px; padding: 0 18px; border-bottom: 1px solid var(--m-line); background: var(--m-col); gap: 10px; }
+.m .chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; border-radius: 10px; background: var(--m-amber-bg); color: var(--m-amber); font-weight: 600; font-size: 13.5px; cursor: pointer; border: 1px solid color-mix(in srgb, var(--m-amber) 35%, transparent); }
+.m .kinds { gap: 14px; font-size: 12.5px; color: var(--m-sub); }
+.m .kinds .sw { width: 14px; height: 10px; border-radius: 3px; border: 1px solid; display: inline-block; }
+.m .main { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.m .tlwrap { position: relative; flex: 1; min-height: 0; padding: 0 24px 0 16px; overflow: hidden; }
+.m .axis { height: 40px; display: flex; }
+.m .axis .lab { width: 300px; flex-shrink: 0; display: flex; align-items: center; }
+.m .axis .ticks { position: relative; width: 1100px; cursor: ew-resize; }
+.m .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--m-line); padding: 5px 0 0 5px; font: 500 11.5px var(--mono); color: var(--m-faint); font-variant-numeric: tabular-nums; }
+.m .grp { height: 26px; display: flex; align-items: center; gap: 8px; font: 700 11.5px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--m-faint); border-top: 1px solid var(--m-line); }
+.m .grp .ic { width: 18px; height: 18px; font-size: 10px; border-radius: 5px; }
+.m .lane { display: flex; height: 62px; border-radius: 10px; cursor: pointer; }
+.m .lane.cur { background: var(--m-surface); box-shadow: inset 3px 0 0 var(--acc); }
+.m .lane .who { width: 300px; flex-shrink: 0; padding: 8px 14px 8px 12px; display: flex; flex-direction: column; justify-content: center; gap: 5px; min-width: 0; }
+.m .lane .trk { position: relative; width: 1100px; flex-shrink: 0; background-image: repeating-linear-gradient(90deg, color-mix(in srgb, var(--m-line) 55%, transparent) 0 1px, transparent 1px 103.125px); }
+.m .blk { position: absolute; top: 11px; height: 40px; border-radius: 7px; border: 1px solid; padding: 0 8px; display: flex; align-items: center; gap: 6px; font: 600 12.5px var(--body); overflow: hidden; white-space: nowrap; cursor: pointer; }
+.m .blk span { overflow: hidden; text-overflow: ellipsis; }
+.m .k-read { background: var(--m-raise); border-color: var(--m-line); color: var(--m-sub); }
+.m .k-plan { background: var(--m-violet-bg); color: var(--m-violet); border-color: color-mix(in srgb, var(--m-violet) 40%, transparent); }
+.m .k-edit { background: var(--m-blue-bg); color: var(--m-blue); border-color: color-mix(in srgb, var(--m-blue) 40%, transparent); }
+.m .k-pass { background: var(--m-green-bg); color: var(--m-green); border-color: color-mix(in srgb, var(--m-green) 40%, transparent); }
+.m .k-fail { background: var(--m-red-bg); color: var(--m-red); border-color: color-mix(in srgb, var(--m-red) 45%, transparent); }
+.m .k-wait { background: var(--m-amber-bg); color: var(--m-amber); border-color: color-mix(in srgb, var(--m-amber) 50%, transparent); }
+.m .blk.undone { opacity: .4; background-image: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--m-text) 14%, transparent) 6px 8px); text-decoration: line-through; }
+.m .blk.pulse { animation: fpulse 1.4s ease-in-out infinite; }
+@keyframes fpulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--m-amber) 55%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--m-amber) 0%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .m .blk.pulse { animation: none; } }
+.m .commit { position: absolute; top: 5px; width: 10px; height: 10px; transform: translateX(-5px) rotate(45deg); background: var(--m-text); border: 2px solid var(--m-bg); z-index: 2; }
+.m .flag { position: absolute; top: 20px; font: 700 11.5px var(--body); padding: 3px 8px; border-radius: 99px; white-space: nowrap; }
+.m .nowline { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px dashed var(--m-faint); pointer-events: none; }
+.m .nowline b { position: absolute; top: 21px; left: -64px; font: 700 11.5px var(--mono); color: var(--m-sub); background: var(--m-bg); padding: 1px 4px; }
+.m .ph { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--acc); z-index: 5; cursor: ew-resize; }
+.m .ph::after { content: ""; position: absolute; top: 0; bottom: 0; left: -8px; width: 14px; }
+.m .ph b { position: absolute; top: 4px; left: -26px; font: 700 12px var(--mono); background: var(--acc); color: var(--acc-ink); padding: 2px 6px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+.m .insp { height: 258px; flex-shrink: 0; border-top: 1px solid var(--m-line); background: var(--m-col); display: flex; flex-direction: column; }
+.m .insp .top { height: 50px; padding: 0 18px; gap: 12px; border-bottom: 1px solid var(--m-line); }
+.m .insp .top.confirm { background: var(--m-amber-bg); color: var(--m-amber); }
+.m .act { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; color: var(--m-sub); cursor: pointer; padding: 4px 8px 4px 4px; border-radius: 8px; }
+.m .act:hover { background: var(--m-raise); }
+.m .insp .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 380px minmax(0, 1fr) 320px; gap: 20px; padding: 16px 18px; }
+.m .insp .say { font-size: 19px; font-weight: 650; line-height: 1.3; letter-spacing: -0.01em; }
+.m .diff { font: 12.5px/1.6 var(--mono); background: var(--m-bg); border: 1px solid var(--m-line); border-radius: 8px; padding: 9px 12px; white-space: pre; overflow: hidden; }
+.m .opt { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 10px; background: var(--m-surface); border: 1px solid var(--m-line); cursor: pointer; font-weight: 600; }
+.m .opt:hover { border-color: var(--ring); }
+.m .files { flex: 1; min-height: 0; overflow: hidden; padding: 16px 24px 0 16px; display: flex; flex-direction: column; gap: 10px; }
+.m table.fm { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 0; font-size: 13.5px; }
+.m .fm th, .m .fm td { border-bottom: 1px solid var(--m-line); padding: 6px 8px; text-align: center; vertical-align: middle; }
+.m .fm th:first-child, .m .fm td:first-child { text-align: left; font: 500 13px var(--mono); color: var(--m-text); width: 430px; }
+.m .fm th { color: var(--m-sub); font-weight: 600; }
+.m .fm tr.clash td { background: color-mix(in srgb, var(--m-amber-bg) 70%, transparent); }
+.m .cell { display: inline-flex; align-items: center; justify-content: center; min-width: 92px; height: 26px; border-radius: 7px; font: 600 12.5px var(--body); cursor: pointer; }
+.m .cell.none { color: var(--m-faint); cursor: default; }
+.m .cell.e { background: var(--m-blue-bg); color: var(--m-blue); }
+.m .cell.r { background: var(--m-raise); color: var(--m-sub); }
+.m .try { position: absolute; right: 24px; top: 40px; width: 470px; z-index: 30; padding: 16px 18px; display: grid; gap: 12px; box-shadow: 0 20px 50px -12px rgb(0 0 0 / .45); }
+.m .try .st { display: flex; align-items: center; gap: 10px; font: 13px var(--mono); }
+.m .try input { flex: 1; font: 13px var(--mono); color: var(--m-text); background: var(--m-bg); border: 1px solid var(--m-line); border-radius: 6px; padding: 4px 8px; }
+.m .try input:focus { outline: 2px solid var(--ring); outline-offset: -1px; }
+.m .ok { color: var(--m-green); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+</svg>
+
+<div class="wrap">
+  <nav class="pathnav" aria-label="Futures">
+    <div class="seg">
+      <a href="index.html">Overview</a>
+      <a href="path-line.html">1 Ticket line</a>
+      <a href="path-runbook.html">2 Runbook</a>
+      <a href="path-recorder.html" aria-current="page">3 Flight recorder</a>
+      <a href="path-map.html">4 Context map</a>
+    </div>
+    <span class="hint">The mock takes keys: try <span class="k">↑</span> <span class="k">→</span> <span class="k">Enter</span> <span class="k">?</span></span>
+  </nav>
+
+  <header class="head">
+    <p class="eyebrow">cc-control futures · path 3 of 4</p>
+    <h1>Flight Recorder: keep your terminals, and see every step they take</h1>
+    <p class="lede">You keep talking to Claude in your terminals, exactly as you do today. The app becomes the instrument panel. It records every step every session takes on one timeline, so you can see what happened, scrub back to any step, compare sessions side by side and undo to a point that worked.</p>
+    <div class="facts">
+      <div><span class="lab">Terminal sessions</span><span class="val">On top of them, only</span><span class="more">It never starts or chats with a session. Hooks report each step; answers go back through a channel.</span></div>
+      <div><span class="lab">Best for</span><span class="val">Experienced developers</span><span class="more">Running 3 to 6 terminals at once, who want to watch and undo, and steer in the terminal.</span></div>
+      <div><span class="lab">Build size</span><span class="val">Medium</span><span class="more">A hooks endpoint, an event store, the timeline and inspector, snapshots for undo.</span></div>
+      <div><span class="lab">Drops</span><span class="val">Intake, shipping, the composer</span><span class="more">Tickets and PRs stay where they are today. No in-app chat, no guided first run.</span></div>
+    </div>
+  </header>
+
+  <div class="frame" id="frame" data-w="1440" data-h="880"><div class="m" id="m" style="width:1440px;height:880px;position:relative;display:flex;flex-direction:column">
+    <header class="row hdr">
+      <strong style="font-size:16px">Command Center</strong>
+      <span class="faint">/</span><strong style="font-size:15px">Flight recorder</strong>
+      <span class="pill p-green"><span class="dot" style="background:var(--m-green)"></span>Hooks connected · 5 terminals</span>
+      <span class="grow"></span>
+      <label class="flt" for="flt"><svg class="i"><use href="#i-search"/></svg><input id="flt" placeholder="Filter sessions" autocomplete="off"><span class="kc sm" data-k="/">/</span></label>
+      <span class="act" data-key="f"><span class="kc sm" data-k="f">f</span><span id="fLabel">Files view</span></span>
+      <span class="act" data-key="?"><span class="kc sm" data-k="?">?</span>All keys</span>
+    </header>
+    <div class="row strip">
+      <h4>Needs you</h4>
+      <div class="row" id="chips" style="gap:8px"></div>
+      <span class="grow"></span>
+      <div class="row kinds">
+        <span class="row" style="gap:6px"><i class="sw k-read"></i>Explore</span>
+        <span class="row" style="gap:6px"><i class="sw k-plan"></i>Plan</span>
+        <span class="row" style="gap:6px"><i class="sw k-edit"></i>Edit</span>
+        <span class="row" style="gap:6px"><i class="sw k-pass"></i>Test passed</span>
+        <span class="row" style="gap:6px"><i class="sw k-fail"></i>Test failed</span>
+        <span class="row" style="gap:6px"><i class="sw k-wait"></i>Waiting on you</span>
+        <span class="row" style="gap:6px"><i class="commit" style="position:static;transform:rotate(45deg);display:inline-block"></i>Commit</span>
+      </div>
+    </div>
+    <div class="main" id="main">
+      <div class="tlwrap" id="tl">
+        <div class="axis"><div class="lab"><h4>Today · 09:00 to now</h4></div><div class="ticks" id="ticks"></div></div>
+        <div id="lanes"></div>
+        <div class="nowline" id="now"><b>now 11:40</b></div>
+        <div class="ph" id="ph"><b id="phT">10:58</b></div>
+      </div>
+      <div class="files" id="files" hidden></div>
+      <div class="card try" id="try" hidden></div>
+      <div class="insp" id="insp"></div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="overlay" id="help" hidden><div class="card">
+      <div class="row"><strong class="title grow">Keys</strong><span class="act" data-key="Esc"><span class="kc sm" data-k="Esc">Esc</span>Close</span></div>
+      <div class="keymap">
+        <div class="row"><span>Next or previous session</span><span class="row" style="gap:4px"><span class="kc sm">↑</span><span class="kc sm">↓</span></span></div>
+        <div class="row"><span>Step back or forward</span><span class="row" style="gap:4px"><span class="kc sm">←</span><span class="kc sm">→</span></span></div>
+        <div class="row"><span>Jump 15 minutes</span><span class="kc sm">Shift ← →</span></div>
+        <div class="row"><span>Open or close the inspector</span><span class="kc sm">Enter</span></div>
+        <div class="row"><span>Undo back to this step</span><span class="kc sm">u</span></div>
+        <div class="row"><span>Go to its terminal</span><span class="kc sm">t</span></div>
+        <div class="row"><span>Try it (run the app)</span><span class="kc sm">r</span></div>
+        <div class="row"><span>Files view</span><span class="kc sm">f</span></div>
+        <div class="row"><span>Filter sessions</span><span class="kc sm">/</span></div>
+        <div class="row"><span>Jump to what needs you</span><span class="kc sm">Alt 1–2</span></div>
+        <div class="row"><span>Answer a question</span><span class="kc sm">1–2</span></div>
+        <div class="row"><span>Approve a plan</span><span class="kc sm">a</span></div>
+        <div class="row"><span>Close, cancel</span><span class="kc sm">Esc</span></div>
+        <div class="row"><span>This list</span><span class="kc sm">?</span></div>
+      </div>
+      <p class="faint">Mouse works too: click a step, drag the orange playhead, click a lane or a file cell.</p>
+    </div></div>
+  </div></div>
+  <div class="below">
+    <span>Try: <span class="k">↓</span> to PAY-88, <span class="k">→</span> to its question, <span class="k">1</span> to answer. <span class="k">u</span> on SHOP-142, <span class="k">f</span> for files, <span class="k">r</span> to run the app.</span>
+    <button type="button" id="reset">Reset the mock</button>
+  </div>
+  <p class="phone-note">The mock is drawn for a wide screen. On a phone, read the sections below and come back on a laptop.</p>
+
+  <section class="head">
+    <h2>A day with it</h2>
+    <ol class="day">
+      <li><time>09:00</time><p>You pick up SHOP-142 in Jira and start <code>claude</code> in a terminal in web-app, pasting the ticket like you do today. The SessionStart hook reports it and a lane appears under Storefront within a second. Two older terminals are already recording.</p></li>
+      <li><time>09:20</time><p>The lane turns violet while Claude plans. You read and approve the plan in the terminal. The recorder keeps the plan as a step you can come back to.</p></li>
+      <li><time>10:18</time><p>A red block: two cart tests fail. You don't switch windows. By 10:52 the lane is green again, and the inspector shows the one-line fix to the total.</p></li>
+      <li><time>11:08</time><p>PAY-88 turns amber and pulses. <span class="k">Alt 1</span> jumps to it. The inspector shows the question next to the diff that led to it. You press <span class="k">1</span> and the answer goes to its terminal through the channel.</p></li>
+      <li><time>11:15</time><p>Files view flags <code>Cart.tsx</code>: SHOP-142 and PAY-88 both changed it. You tell PAY-88, in its terminal, to leave the cart to SHOP-142.</p></li>
+      <li><time>11:30</time><p>SHOP-151 is flagged ready to try. <span class="k">r</span> runs web-app's recipe: install, seed, dev, then opens localhost:5173. The images are faster, but the product grid now jumps as they load.</p></li>
+      <li><time>11:35</time><p>You scrub SHOP-151 back to the lazy-loading edit, press <span class="k">u</span> to undo the steps after it, and tell Claude in the terminal what you saw. That is feedback round 1.</p></li>
+      <li><time>14:00</time><p>Round 2 is green. You commit, push and open the PR from the terminal, and the lane gets a PR marker. Posting to #storefront-reviews stays manual in this path.</p></li>
+    </ol>
+  </section>
+
+  <section class="grid3">
+    <div class="box"><h3>Good at</h3><ul>
+      <li>Seeing several sessions at once, with each step's type visible from across the room.</li>
+      <li>Finding the step where things went wrong, with its diff and outcome one key away.</li>
+      <li>Undoing back to a step that worked, per session.</li>
+      <li>Catching two sessions editing the same file before it becomes a merge problem.</li>
+      <li>No change at all to how you talk to Claude.</li>
+    </ul></div>
+    <div class="box"><h3>Trade-offs</h3><ul>
+      <li>A timeline is dense. Newcomers need a minute to read it.</li>
+      <li>Hooks must be installed once per machine. One command writes them to <code>~/.claude/settings.json</code>.</li>
+      <li>Answering from the app needs the terminal started with the channel flag. Without it, the app shows the question and <span class="k">t</span> takes you there.</li>
+      <li>Undo in terminal sessions relies on our own snapshots, because file checkpoints are only available to app-run sessions.</li>
+      <li>Plain-language step lines cost a small model call each, or fall back to Claude's own tool descriptions.</li>
+    </ul></div>
+    <div class="box"><h3>Drops</h3><ul>
+      <li>Ticket intake. You still copy the ticket into the terminal.</li>
+      <li>Shipping: push, PR and the Slack post. Could come back as an add-on.</li>
+      <li>The in-app message box, modes and number pad.</li>
+      <li>A guided first run for non-developers.</li>
+    </ul></div>
+  </section>
+
+  <section class="box">
+    <h3>Build size: medium</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Piece</th><th>Size</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Hooks installer and local endpoint</td><td>S</td><td>PreToolUse, PostToolUse, Notification, Stop and SessionStart hooks POST to 127.0.0.1:7777. Hooks are the documented, flag-free way to get these events.</td></tr>
+        <tr><td>Event store and step classifier</td><td>M</td><td>A SQLite table. Read/Grep become Explore, Edit/Write become Edit, a Bash test run is passed or failed by exit code, ExitPlanMode is Plan, a Notification is Waiting.</td></tr>
+        <tr><td>Timeline, playhead and inspector</td><td>M</td><td>The main screen. Reuses the key legend, <code>?</code> overlay and workspace colours that exist today.</td></tr>
+        <tr><td>Files view</td><td>S</td><td>Built from the same events: file path by session.</td></tr>
+        <tr><td>Undo for terminal sessions</td><td>M</td><td>A snapshot per edit step (like <code>git stash create</code>) taken in PostToolUse, restored on undo. App-run sessions use the SDK's file checkpoints instead.</td></tr>
+        <tr><td>Answering from the app</td><td>S</td><td>A channel relays questions and approvals. Already proven in <code>spike/channel.mjs</code>; needs <code>--dangerously-load-development-channels</code>.</td></tr>
+        <tr><td>Run recipes</td><td>S to M</td><td>Detected from package.json scripts and compose.yaml, editable per repo.</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><strong>Already in cc-control:</strong> the history watcher that sees every session on the machine, the live transcript mirror (<code>mirror.ts</code>), workspaces, the legend and <code>?</code> keys.</li>
+      <li><strong>What Claude Code allows:</strong> there is no supported way to attach to a running terminal session, so everything here is observed through hooks and the transcript (read with the SDK's <code>getSessionMessages</code>). Pushing into a terminal needs a channel, which is a research preview behind a flag.</li>
+    </ul>
+  </section>
+</div>
+
+<script src="futures.js"></script>
+<script>
+(function () {
+  var root = document.getElementById('m');
+  var T0 = 540, NOW = 700, TW = 1100, PPM = TW / 160;
+  function t(s) { var p = s.split(':'); return +p[0] * 60 + +p[1]; }
+  function hm(m) { m = Math.round(m); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+  function x(m) { return (m - T0) * PPM; }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function kc(k, label, sm) { return '<span class="kc' + (sm === false ? '' : ' sm') + '" data-k="' + esc(k) + '">' + esc(label || k) + '</span>'; }
+  var ARROW = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→' };
+
+  var WS = { S: { name: 'Storefront', cls: 'store' }, P: { name: 'Payments', cls: 'pay' }, D: { name: 'Docs & site', cls: 'docs' } };
+  var GC = 'web-app/src/checkout/';
+  function fresh() {
+    return [
+      { id: 's142', ws: 'S', key: 'SHOP-142', title: 'Gift card field at checkout', status: ['Building', 'p-blue', true], repo: 'web-app', tab: 3, blocks: [
+        { a: '09:05', b: '09:20', k: 'read', l: 'Read the checkout flow', s: 'Read how checkout builds the order total and where discounts apply.', tool: 'Read ×9 · Grep "applyDiscount" ×3', out: 'No changes', files: [GC + 'Checkout.tsx', GC + 'Cart.tsx', 'web-app/src/lib/money.ts'] },
+        { a: '09:20', b: '09:35', k: 'plan', l: 'Plan: 4 steps', s: 'Planned four steps: add a gift card field, check the code with the API, take it off the total, cover it with tests.', tool: 'ExitPlanMode · approved in the terminal', out: 'Plan approved at 09:35', plan: ['Add GiftCardField under the promo code box', 'Check the code against /api/gift-cards', 'Subtract the balance after tax', 'Add cart total tests'] },
+        { a: '09:35', b: '10:18', k: 'edit', l: 'Added GiftCardField', s: 'Added a gift card field under the promo code box.', tool: 'Write GiftCardField.tsx · Edit Checkout.tsx', diff: ['+ export function GiftCardField({ onApply }: Props) {', '+   const [code, setCode] = useState("")', '+   return <Field label="Gift card" value={code} />', '  <PromoCodeField />', '+ <GiftCardField onApply={applyGiftCard} />'], out: 'Compiles', files: [GC + 'GiftCardField.tsx', GC + 'Checkout.tsx'], commit: true },
+        { a: '10:18', b: '10:26', k: 'fail', l: '2 tests fail', s: 'Ran the tests. Two cart total tests failed: the gift card came off before tax.', tool: 'Bash · pnpm test checkout', diff: ['✕ Cart total › applies gift card after tax', '✕ Cart total › never goes below zero', '✓ 12 passed'], out: '12 of 14 pass', files: [GC + 'Cart.test.tsx'] },
+        { a: '10:26', b: '10:52', k: 'edit', l: 'Fixed the total in Cart.tsx', s: 'Moved the gift card after tax and stopped the total going below zero.', tool: 'Edit Cart.tsx · Edit money.ts', diff: ['- const total = subtotal - giftCard + tax', '+ const total = Math.max(0, subtotal + tax - giftCard)'], out: 'Compiles', files: [GC + 'Cart.tsx', 'web-app/src/lib/money.ts'] },
+        { a: '10:52', b: '10:58', k: 'pass', l: 'Tests 14/14', s: 'Ran the tests again. All 14 pass.', tool: 'Bash · pnpm test checkout', diff: ['✓ 14 passed (2.1 s)'], out: '14 of 14 pass', files: [], commit: true },
+        { a: '10:58', b: '11:24', k: 'edit', l: 'Validate on blur', s: 'Changed the gift card input to validate on blur.', tool: 'Edit GiftCardField.tsx · Edit GiftCardField.test.tsx', diff: ['- onChange={e => validate(e.target.value)}', '+ onChange={e => setCode(e.target.value)}', '+ onBlur={() => validate(code)}'], out: 'Tests 14 of 14 pass', files: [GC + 'GiftCardField.tsx', GC + 'GiftCardField.test.tsx'] },
+        { a: '11:24', b: '11:40', k: 'edit', live: true, l: 'Editing now', s: 'Adding an error message for expired gift cards.', tool: 'Edit GiftCardField.tsx (in progress)', diff: ['+ if (card.expired) return error("This gift card has expired")'], out: 'In progress', files: [GC + 'GiftCardField.tsx'] }
+      ] },
+      { id: 's151', ws: 'S', key: 'SHOP-151', title: 'Product images load slowly on mobile', status: ['Ready to try', 'p-green'], repo: 'web-app', tab: 4, ready: '10:16', blocks: [
+        { a: '09:00', b: '09:12', k: 'read', l: 'Read image loading', s: 'Looked at how product images load and how the CDN resizes them.', tool: 'Read ×6', out: 'No changes', files: ['web-app/src/components/ProductImage.tsx', 'cdn-worker/src/resize.ts'] },
+        { a: '09:12', b: '09:22', k: 'plan', l: 'Plan: 3 steps', s: 'Planned: lazy-load images below the fold, serve WebP from the CDN, add width hints.', tool: 'ExitPlanMode · approved in the terminal', out: 'Plan approved at 09:22', plan: ['Lazy-load below the fold', 'WebP from the CDN worker', 'Width and height hints'] },
+        { a: '09:22', b: '09:48', k: 'edit', l: 'Lazy-load below the fold', s: 'Made product images below the fold load lazily.', tool: 'Edit ProductImage.tsx', diff: ['- <img src={src} alt={alt} />', '+ <img src={src} alt={alt} loading="lazy" width={w} height={h} />'], out: 'Compiles', files: ['web-app/src/components/ProductImage.tsx'] },
+        { a: '09:48', b: '10:08', k: 'edit', l: 'WebP from the CDN', s: 'The CDN worker now returns WebP when the browser accepts it.', tool: 'Edit resize.ts · Edit vite.config.ts', diff: ['+ if (accept.includes("image/webp")) format = "webp"', '+ headers.set("Vary", "Accept")'], out: 'Compiles', files: ['cdn-worker/src/resize.ts', 'web-app/vite.config.ts'] },
+        { a: '10:08', b: '10:16', k: 'pass', l: 'Tests pass', s: 'Ran the unit tests and a mobile Lighthouse check. Largest image paint went from 3.1 s to 1.2 s.', tool: 'Bash · pnpm test && pnpm lighthouse:mobile', diff: ['✓ 31 passed', '  LCP  3.1 s → 1.2 s'], out: 'All pass · LCP 1.2 s', files: [], commit: true }
+      ] },
+      { id: 'foot', ws: 'S', key: 'Footer links', trello: true, title: 'Footer links 404 on /about', status: ['In review · 1 approval', 'p-grey'], repo: 'web-app', tab: 1, pr: '09:36', blocks: [
+        { a: '09:00', b: '09:06', k: 'read', l: 'Found 3 links', s: 'Found three footer links pointing at /about-us, which no longer exists.', tool: 'Grep "/about-us" ×1', out: 'No changes', files: ['web-app/src/components/Footer.tsx'] },
+        { a: '09:06', b: '09:26', k: 'edit', l: 'Fixed footer links', s: 'Pointed the three footer links at /about.', tool: 'Edit Footer.tsx', diff: ['- href="/about-us"', '+ href="/about"'], out: 'Compiles', files: ['web-app/src/components/Footer.tsx'] },
+        { a: '09:26', b: '09:33', k: 'pass', l: 'Links OK', s: 'Ran the link check. No broken links left.', tool: 'Bash · pnpm test:links', diff: ['✓ 0 broken links (212 checked)'], out: '0 broken links', files: [], commit: true }
+      ] },
+      { id: 'pay88', ws: 'P', key: 'PAY-88', title: 'Refund webhook fires twice', status: ['Needs you', 'p-amber'], repo: 'payments-api', tab: 5, blocks: [
+        { a: '09:40', b: '09:55', k: 'read', l: 'Read the webhook handler', s: 'Read the refund webhook handler and its retry settings.', tool: 'Read ×5', out: 'No changes', files: ['payments-api/src/webhooks/refund.ts'] },
+        { a: '09:55', b: '10:05', k: 'plan', l: 'Plan', s: 'Planned: remember each webhook event ID and skip ones already handled.', tool: 'ExitPlanMode · approved in the terminal', out: 'Plan approved at 10:05', plan: ['Store event IDs', 'Skip duplicates', 'Show a refund notice in the cart'] },
+        { a: '10:05', b: '10:38', k: 'edit', l: 'Store webhook event IDs', s: 'Stored each webhook event ID and skipped ones already seen.', tool: 'Edit refund.ts · Write idempotency.ts', diff: ['+ if (await seen(event.id)) return duplicate(event)', '+ await remember(event.id)'], out: 'Compiles', files: ['payments-api/src/webhooks/refund.ts', 'payments-api/src/db/idempotency.ts'] },
+        { a: '10:38', b: '10:46', k: 'pass', l: 'Webhook tests 9/9', s: 'Ran the webhook tests. All 9 pass.', tool: 'Bash · pnpm test:webhooks', diff: ['✓ 9 passed'], out: '9 of 9 pass', files: [] },
+        { a: '10:46', b: '11:08', k: 'edit', l: 'Refund notice in cart', s: 'Showed a "refund on its way" notice in the cart.', tool: 'Edit web-app Cart.tsx', diff: ['+ {refund?.pending && <Notice>Refund on its way</Notice>}'], out: 'Compiles', files: [GC + 'Cart.tsx'] },
+        { a: '11:08', b: '11:40', k: 'wait', ask: true, l: 'Asks you a question', s: 'Claude is waiting for your answer.', tool: 'AskUserQuestion', out: 'Waiting 32 min', files: [] }
+      ] },
+      { id: 'docs19', ws: 'D', key: 'DOCS-19', title: 'Document the refunds endpoint', status: ['Plan ready', 'p-amber'], repo: 'docs-site', tab: 6, blocks: [
+        { a: '10:30', b: '11:00', k: 'read', l: 'Read the refunds API', s: 'Read the refunds routes in payments-api and the existing API pages.', tool: 'Read ×11', out: 'No changes', files: ['payments-api/src/routes/refunds.ts', 'docs-site/api/index.md'] },
+        { a: '11:00', b: '11:22', k: 'plan', l: 'Plan: 5 sections', s: 'Planned a new page for the refunds endpoint.', tool: 'ExitPlanMode', out: 'Waiting for approval', plan: ['Overview', 'Create a refund', 'Webhook events', 'Errors', 'Examples in curl and JS'] },
+        { a: '11:22', b: '11:40', k: 'wait', planWait: true, l: 'Plan ready for review', s: 'The plan for the refunds page is ready. Claude is waiting for approval.', tool: 'ExitPlanMode', out: 'Waiting 18 min', files: [], plan: ['Overview', 'Create a refund', 'Webhook events', 'Errors', 'Examples in curl and JS'] }
+      ] }
+    ];
+  }
+  var FILES = [
+    [GC + 'GiftCardField.tsx', { s142: '3 edits' }],
+    [GC + 'Cart.tsx', { s142: '1 edit', pay88: '1 edit' }, true],
+    [GC + 'Checkout.tsx', { s142: '1 edit' }],
+    ['web-app/src/lib/money.ts', { s142: '1 edit' }],
+    ['web-app/src/components/ProductImage.tsx', { s151: '1 edit' }],
+    ['web-app/vite.config.ts', { s151: '1 edit' }],
+    ['cdn-worker/src/resize.ts', { s151: '1 edit' }],
+    ['web-app/src/components/Footer.tsx', { foot: '1 edit' }],
+    ['payments-api/src/webhooks/refund.ts', { pay88: '1 edit' }],
+    ['payments-api/src/db/idempotency.ts', { pay88: '1 edit' }],
+    ['docs-site/api/index.md', { docs19: 'read' }]
+  ];
+  var RECIPES = {
+    'web-app': { from: 'package.json', steps: ['pnpm install', 'pnpm db:seed', 'pnpm dev'], url: 'http://localhost:5173' },
+    'payments-api': { from: 'compose.yaml + package.json', steps: ['docker compose up -d db', 'pnpm dev', 'pnpm test:webhooks'], url: 'http://localhost:4010' },
+    'docs-site': { from: 'package.json', steps: ['pnpm docs:dev'], url: 'http://localhost:4000' }
+  };
+  var KIND = { read: 'Explore', plan: 'Plan', edit: 'Edit', pass: 'Test passed', fail: 'Test failed', wait: 'Waiting on you' };
+  var KPILL = { read: 'p-grey', plan: 'p-violet', edit: 'p-blue', pass: 'p-green', fail: 'p-red', wait: 'p-amber' };
+
+  var S, st;
+  function reset() {
+    S = fresh();
+    st = { lane: 0, bi: 6, ph: t('10:58'), insp: true, confirm: false, mode: 'tl', fr: 1, fc: 0, tryOpen: false, tryEdit: false, tryStep: 0, help: false, filter: '' };
+    clearInterval(tryTimer);
+    render();
+  }
+
+  function visible() { return S.map(function (s, i) { return i; }).filter(function (i) { var s = S[i]; var q = st.filter.toLowerCase(); return !q || (s.key + ' ' + s.title + ' ' + WS[s.ws].name).toLowerCase().indexOf(q) >= 0; }); }
+  function cur() { return S[st.lane]; }
+  function blk() { return cur().blocks[st.bi]; }
+  function blockAt(s, m) { for (var i = 0; i < s.blocks.length; i++) { var b = s.blocks[i]; if (m >= t(b.a) && m < t(b.b)) return i; } var best = 0; s.blocks.forEach(function (b, i) { if (t(b.a) <= m) best = i; }); return best; }
+
+  // ---------- render ----------
+  var ticks = document.getElementById('ticks');
+  (function () { var h = ''; for (var m = T0; m < NOW; m += 15) h += '<div class="tick" style="left:' + x(m) + 'px">' + hm(m) + '</div>'; ticks.innerHTML = h; })();
+  document.getElementById('now').style.left = (316 + x(NOW)) + 'px';
+
+  function renderChips() {
+    var h = '', n = 0;
+    S.forEach(function (s, i) {
+      var last = s.blocks[s.blocks.length - 1];
+      if (last.k === 'wait') { n++; h += '<span class="chip" data-jump="' + i + '">' + (s.trello ? '' : '<span class="tkey">' + s.key + '</span>') + (last.ask ? 'Duplicate webhook: 200 or 409?' : 'Plan ready for review') + kc('Alt+' + n, 'Alt ' + n) + '</span>'; }
+    });
+    document.getElementById('chips').innerHTML = h || '<span class="faint">Nothing. Every session is working or done.</span>';
+  }
+
+  function renderLanes() {
+    var vis = visible(), h = '', lastWs = null;
+    vis.forEach(function (i) {
+      var s = S[i];
+      if (s.ws !== lastWs) { lastWs = s.ws; h += '<div class="grp"><span class="ic ' + WS[s.ws].cls + '">' + s.ws + '</span>' + esc(WS[s.ws].name) + '</div>'; }
+      h += '<div class="lane' + (i === st.lane ? ' cur' : '') + '" data-lane="' + i + '"><div class="who">';
+      h += '<div class="row" style="gap:8px;min-width:0"><span class="tkey' + (s.trello ? ' trello' : '') + '">' + esc(s.key) + '</span><span class="t2 trunc" style="font-size:14px">' + esc(s.title) + '</span></div>';
+      h += '<div class="row" style="gap:6px"><span class="pill p-grey">terminal</span><span class="pill ' + s.status[1] + '">' + (s.status[2] ? '<span class="spin"></span>' : '') + esc(s.status[0]) + '</span></div></div><div class="trk">';
+      s.blocks.forEach(function (b, bi) {
+        var l = x(t(b.a)), w = x(t(b.b)) - l - 2;
+        var cls = 'blk k-' + b.k + (b.undone ? ' undone' : '') + (b.ask ? ' pulse' : '') + (i === st.lane && bi === st.bi ? ' focus' : '');
+        h += '<div class="' + cls + '" data-lane="' + i + '" data-bi="' + bi + '" style="left:' + l + 'px;width:' + w + 'px" title="' + esc(hm(t(b.a)) + ' ' + b.l) + '">' + (b.live ? '<span class="spin"></span>' : '') + (w > 56 ? '<span>' + esc(b.l) + '</span>' : b.k === 'fail' ? '<span>✕</span>' : b.k === 'pass' ? '<span>✓</span>' : '') + '</div>';
+        if (b.commit && !b.undone) h += '<i class="commit" style="left:' + (x(t(b.b)) - 2) + 'px"></i>';
+      });
+      if (s.pr) h += '<span class="flag p-violet" style="left:' + (x(t(s.pr)) + 4) + 'px">PR #412 · #storefront-reviews · 1 approval</span>';
+      if (s.ready && !s.blocks.some(function (b) { return b.undone; })) h += '<span class="flag p-green" style="left:' + (x(t(s.ready)) + 6) + 'px">Ready to try ' + kc('r') + '</span>';
+      h += '</div></div>';
+    });
+    if (!vis.length) h = '<p class="faint" style="padding:20px 0">No session matches "' + esc(st.filter) + '". ' + kc('Esc') + ' clears the filter.</p>';
+    document.getElementById('lanes').innerHTML = h;
+    var ph = document.getElementById('ph');
+    ph.style.left = (316 + x(st.ph)) + 'px';
+    document.getElementById('phT').textContent = hm(st.ph);
+  }
+
+  function diffHtml(lines) {
+    return (lines || []).map(function (l) {
+      var c = l[0] === '+' || l[0] === '✓' ? 'add' : (l[0] === '-' || l[0] === '✕') ? 'del' : 'sub';
+      return '<div class="' + c + '">' + esc(l) + '</div>';
+    }).join('');
+  }
+
+  function renderInsp() {
+    var el = document.getElementById('insp');
+    el.hidden = !st.insp || st.mode !== 'tl';
+    if (el.hidden) return;
+    var s = cur(), b = blk(), dur = t(b.b) - t(b.a), h = '';
+    if (st.confirm) {
+      var later = s.blocks.slice(st.bi + 1).filter(function (x) { return !x.undone; });
+      var files = {}; later.forEach(function (x) { (x.files || []).forEach(function (f) { files[f] = 1; }); });
+      var nf = Object.keys(files).length;
+      h += '<div class="row top confirm"><svg class="i"><use href="#i-undo"/></svg><strong>Undo ' + esc(s.key) + ' back to ' + hm(t(b.b)) + '?</strong><span>Rewinds ' + later.length + ' later step' + (later.length === 1 ? '' : 's') + ' and restores ' + nf + ' file' + (nf === 1 ? '' : 's') + '.</span><span class="grow"></span>'
+        + '<span class="act" data-key="Enter">' + kc('Enter') + '<strong>Undo</strong></span><span class="act" data-key="Esc">' + kc('Esc') + 'Keep everything</span></div>';
+    } else {
+      h += '<div class="row top"><span class="mono sub" style="font-variant-numeric:tabular-nums">' + hm(t(b.a)) + '–' + hm(t(b.b)) + ' · ' + dur + ' min</span><span class="pill ' + KPILL[b.k] + '">' + KIND[b.k] + (b.live ? ' · live' : '') + '</span>'
+        + '<span class="tkey' + (s.trello ? ' trello' : '') + '">' + esc(s.key) + '</span><span class="sub trunc">' + esc(s.title) + '</span><span class="grow"></span>'
+        + '<span class="act" data-key="u">' + kc('u') + 'Undo back to here</span><span class="act" data-key="t">' + kc('t') + 'Go to its terminal</span><span class="act" data-key="r">' + kc('r') + 'Try it</span><span class="act" data-key="Esc">' + kc('Esc') + 'Close</span></div>';
+    }
+    h += '<div class="body"><div class="col" style="gap:12px;min-width:0"><div class="say">' + esc(b.s) + '</div>'
+      + '<div class="col" style="gap:4px"><h4>Tool</h4><span class="mono sub">' + esc(b.tool) + '</span></div>'
+      + '<div class="col" style="gap:4px"><h4>Outcome</h4><span><span class="pill ' + (b.k === 'fail' ? 'p-red' : b.k === 'wait' ? 'p-amber' : b.k === 'pass' ? 'p-green' : 'p-grey') + '">' + esc(b.out) + '</span></span></div></div>';
+    if (st.confirm) {
+      h += '<div class="col" style="gap:8px;min-width:0"><h4>How undo works</h4><p class="sub" style="font-size:14px">This session runs in a terminal. cc-control took a snapshot of the files after every edit step (like <span class="mono">git stash create</span>), so it restores the one taken at ' + hm(t(b.b)) + '. Sessions started in the app use Claude Code\'s own file checkpoints instead.</p><p class="sub" style="font-size:14px">The conversation is not rewound. Tell Claude in its terminal what you undid and why.</p></div>';
+    } else if (b.ask) {
+      h += '<div class="col" style="gap:8px;min-width:0"><h4>Claude asks</h4><div class="t2">A duplicate webhook arrives. Return 200 and ignore it, or 409?</div>'
+        + '<div class="opt" data-key="1">' + kc('1', '1', false) + 'Return 200 and ignore it<span class="faint">Stripe stops retrying</span></div>'
+        + '<div class="opt" data-key="2">' + kc('2', '2', false) + 'Return 409 Conflict<span class="faint">Stripe keeps retrying for 3 days</span></div>'
+        + '<span class="faint">Your answer goes to its terminal through the cc-control channel.</span></div>';
+    } else if (b.plan) {
+      h += '<div class="col" style="gap:8px;min-width:0"><h4>' + (b.planWait ? 'Plan waiting for you' : 'The plan') + '</h4><ol class="sub" style="margin:0;padding-left:20px;display:grid;gap:3px;font-size:14px">' + b.plan.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ol>'
+        + (b.planWait ? '<div class="row" style="gap:14px"><span class="act" data-key="a">' + kc('a') + '<strong>Approve plan</strong></span><span class="faint">Or give feedback in its terminal ' + kc('t') + '</span></div>' : '') + '</div>';
+    } else {
+      h += '<div class="col" style="gap:8px;min-width:0"><h4>What changed</h4><div class="diff">' + (b.diff ? diffHtml(b.diff) : '<span class="sub">Nothing changed. This step only read files.</span>') + '</div></div>';
+    }
+    h += '<div class="col" style="gap:6px;min-width:0"><h4>Files touched</h4>' + ((b.files && b.files.length) ? b.files.map(function (f) { return '<span class="mono trunc sub" title="' + esc(f) + '">' + esc(f) + '</span>'; }).join('') : '<span class="faint">None</span>')
+      + '<span class="faint" style="margin-top:auto">' + kc('ArrowLeft', '←') + ' ' + kc('ArrowRight', '→') + ' step · ' + kc('Shift+ArrowRight', 'Shift →') + ' 15 min</span></div></div>';
+    el.innerHTML = h;
+  }
+
+  function renderFiles() {
+    var el = document.getElementById('files');
+    el.hidden = st.mode !== 'files';
+    document.getElementById('tl').hidden = st.mode === 'files';
+    document.getElementById('fLabel').textContent = st.mode === 'files' ? 'Timeline' : 'Files view';
+    if (el.hidden) return;
+    var cols = S;
+    var h = '<div class="row"><strong class="t2">Files by session</strong><span class="faint">Who changed what today. ' + kc('Enter') + ' on a cell jumps to that step.</span></div>';
+    h += '<table class="fm"><thead><tr><th>File</th>' + cols.map(function (s) { return '<th><span class="tkey' + (s.trello ? ' trello' : '') + '">' + esc(s.key) + '</span></th>'; }).join('') + '</tr></thead><tbody>';
+    FILES.forEach(function (f, r) {
+      h += '<tr' + (f[2] ? ' class="clash"' : '') + '><td>' + (f[2] ? '<svg class="i" style="color:var(--m-amber);vertical-align:-4px;margin-right:6px"><use href="#i-warn"/></svg>' : '') + esc(f[0]) + '</td>';
+      cols.forEach(function (s, c) {
+        var v = f[1][s.id];
+        var foc = r === st.fr && c === st.fc ? ' focus' : '';
+        h += '<td><span class="cell ' + (v ? (v === 'read' ? 'r' : 'e') : 'none') + foc + '" data-fr="' + r + '" data-fc="' + c + '">' + (v || '·') + '</span></td>';
+      });
+      h += '</tr>';
+      if (f[2]) h += '<tr class="clash"><td colspan="' + (cols.length + 1) + '" style="text-align:left;color:var(--m-amber);font:600 13px var(--body)">Both sessions changed this file. Merge order matters. Tell one of them to leave it alone, or ship SHOP-142 first.</td></tr>';
+    });
+    el.innerHTML = h + '</tbody></table>';
+  }
+
+  var tryTimer;
+  function renderTry() {
+    var el = document.getElementById('try');
+    el.hidden = !st.tryOpen;
+    if (el.hidden) return;
+    var s = cur(), r = RECIPES[s.repo], done = st.tryStep >= r.steps.length;
+    var h = '<div class="row"><svg class="i"><use href="#i-play"/></svg><strong class="t2 grow">Try it · ' + esc(s.repo) + '</strong><span class="act" data-key="Esc">' + kc('Esc') + 'Close</span></div>'
+      + '<div class="faint">Run recipe detected from ' + esc(r.from) + ' · ' + '<span class="act" data-key="e" style="padding:0 4px 0 0">' + kc('e') + (st.tryEdit ? 'Done editing' : 'Edit') + '</span></div><div class="col" style="gap:8px">';
+    r.steps.forEach(function (c, i) {
+      var icon = i < st.tryStep ? '<svg class="i ok"><use href="#i-check"/></svg>' : i === st.tryStep && !st.tryEdit ? '<span class="spin" style="color:var(--m-blue);margin:3px"></span>' : '<span class="dot" style="background:var(--m-line);margin:5px"></span>';
+      h += '<div class="st">' + icon + (st.tryEdit ? '<input id="step' + i + '" value="' + esc(c) + '" data-si="' + i + '">' : '<span>' + esc(c) + '</span>') + '</div>';
+    });
+    h += '</div>';
+    if (done && !st.tryEdit) h += '<div class="row" style="padding:10px 12px;border-radius:10px;background:var(--m-green-bg);color:var(--m-green);font-weight:600"><span class="grow">Ready on ' + esc(r.url) + '</span><span class="act" data-key="Enter" style="color:inherit">' + kc('Enter') + 'Open</span></div>';
+    else if (!st.tryEdit) h += '<div class="faint">Starting. The log stays in the recorder under this session.</div>';
+    el.innerHTML = h;
+  }
+  function runTry() {
+    clearInterval(tryTimer); st.tryStep = 0; st.tryOpen = true; st.tryEdit = false; renderTry();
+    tryTimer = setInterval(function () { st.tryStep++; renderTry(); renderLegend(); if (st.tryStep >= RECIPES[cur().repo].steps.length) clearInterval(tryTimer); }, 700);
+  }
+
+  function renderLegend() {
+    var L;
+    if (st.help) L = [['Esc', 'Close'], ['?', 'Close']];
+    else if (st.confirm) L = [['Enter', 'Undo back to here'], ['Esc', 'Keep everything']];
+    else if (st.tryOpen) L = st.tryEdit ? [['Esc', 'Done editing'], ['Tab', 'Next command']] : [['Enter', 'Open in browser'], ['e', 'Edit the recipe'], ['r', 'Run again'], ['Esc', 'Close']];
+    else if (st.mode === 'files') L = [['ArrowUp', 'File'], ['ArrowLeft', 'Session'], ['Enter', 'Jump to that step'], ['f', 'Back to timeline'], ['Esc', 'Back'], ['?', 'All keys']];
+    else {
+      var b = blk();
+      L = [['ArrowUp', 'Session'], ['ArrowLeft', 'Step'], ['Shift+ArrowRight', '15 min'], ['Enter', st.insp ? 'Close inspector' : 'Inspect']];
+      if (b.ask) L.push(['1', 'Answer 200'], ['2', 'Answer 409']);
+      else if (b.planWait) L.push(['a', 'Approve plan']);
+      else L.push(['u', 'Undo to here']);
+      L.push(['t', 'Terminal'], ['r', 'Try it'], ['f', 'Files'], ['/', 'Filter'], ['?', 'All keys']);
+    }
+    document.getElementById('legend').innerHTML = L.map(function (p) {
+      var k = p[0], lab = ARROW[k] ? (k === 'ArrowUp' ? '↑↓' : k === 'ArrowLeft' ? '←→' : ARROW[k]) : k === 'Shift+ArrowRight' ? 'Shift ←→' : k;
+      return '<span class="row" data-key="' + esc(k) + '" style="cursor:pointer">' + kc(k, lab, false) + esc(p[1]) + '</span>';
+    }).join('');
+  }
+
+  function render() {
+    renderChips(); renderLanes(); renderInsp(); renderFiles(); renderTry(); renderLegend();
+    document.getElementById('help').hidden = !st.help;
+  }
+
+  // ---------- actions ----------
+  function focusBlock(lane, bi, open) {
+    st.lane = lane; st.bi = Math.max(0, Math.min(bi, S[lane].blocks.length - 1));
+    st.ph = t(S[lane].blocks[st.bi].a); st.confirm = false;
+    if (open) st.insp = true;
+    render();
+  }
+  function lastIdx(i) { return S[i].blocks.length - 1; }
+  function jumpNeed(n) {
+    var c = 0;
+    for (var i = 0; i < S.length; i++) { if (S[i].blocks[lastIdx(i)].k === 'wait') { c++; if (c === n) { st.mode = 'tl'; st.filter = ''; document.getElementById('flt').value = ''; focusBlock(i, lastIdx(i), true); return true; } } }
+    Futures.toast(root, 'Nothing else needs you'); return true;
+  }
+  function answer(opt) {
+    var b = blk();
+    b.k = 'edit'; b.ask = false; b.live = true; b.l = opt === 1 ? 'Answered: 200, ignore' : 'Answered: 409';
+    b.b = '11:40'; b.s = opt === 1 ? 'You answered: return 200 and ignore duplicates. Claude is updating the handler.' : 'You answered: return 409 Conflict. Claude is updating the handler.';
+    b.tool = 'Edit refund.ts (in progress)'; b.out = 'In progress'; b.diff = ['+ return duplicate(event, { status: ' + (opt === 1 ? '200' : '409') + ' })'];
+    b.files = ['payments-api/src/webhooks/refund.ts'];
+    cur().status = ['Building', 'p-blue', true];
+    Futures.toast(root, 'Sent to the PAY-88 terminal through the cc-control channel');
+    render();
+  }
+  function approvePlan() {
+    var b = blk();
+    b.k = 'edit'; b.planWait = false; b.live = true; b.l = 'Writing the page'; b.s = 'You approved the plan. Claude is writing docs-site/api/refunds.md.';
+    b.tool = 'Write refunds.md (in progress)'; b.out = 'In progress'; b.diff = ['+ # Refunds', '+ Create a refund for a charge that has settled.']; b.files = ['docs-site/api/refunds.md']; b.plan = null;
+    cur().status = ['Building', 'p-blue', true];
+    Futures.toast(root, 'Plan approved in the DOCS-19 terminal');
+    render();
+  }
+  function doUndo() {
+    var s = cur(), n = 0;
+    s.blocks.forEach(function (b, i) { if (i > st.bi && !b.undone) { b.undone = true; b.live = false; n++; } });
+    if (s.id === 's142') s.status = ['Paused after undo', 'p-grey'];
+    if (s.id === 's151') s.status = ['Undone to ' + hm(t(blk().b)), 'p-grey'];
+    st.confirm = false;
+    Futures.toast(root, 'Undid ' + n + ' step' + (n === 1 ? '' : 's') + ' in ' + s.key + '. Files are back to ' + hm(t(blk().b)) + '.');
+    render();
+  }
+  function moveLane(d) {
+    var vis = visible(); if (!vis.length) return;
+    var p = vis.indexOf(st.lane); p = p < 0 ? 0 : Math.max(0, Math.min(vis.length - 1, p + d));
+    st.lane = vis[p]; st.bi = blockAt(cur(), st.ph); st.confirm = false; render();
+  }
+  function setPh(m) {
+    st.ph = Math.max(T0, Math.min(NOW - 1, m)); st.bi = blockAt(cur(), st.ph); st.confirm = false; render();
+  }
+  function cellJump() {
+    var f = FILES[st.fr], s = S[st.fc], v = f[1][s.id];
+    if (!v) { Futures.toast(root, s.key + ' did not touch this file'); return; }
+    var want = v === 'read' ? 'read' : 'edit', idx = -1;
+    s.blocks.forEach(function (b, i) { if (idx < 0 && b.k === want && (b.files || []).indexOf(f[0]) >= 0) idx = i; });
+    st.mode = 'tl'; focusBlock(st.fc, idx < 0 ? 0 : idx, true);
+  }
+
+  function act(k) {
+    if (st.help) { if (k === 'Esc' || k === '?') { st.help = false; render(); return true; } return false; }
+    if (k === '?') { st.help = true; render(); return true; }
+    if (st.confirm) { if (k === 'Enter') { doUndo(); return true; } if (k === 'Esc') { st.confirm = false; render(); return true; } return false; }
+    if (st.tryOpen) {
+      if (k === 'Esc') { if (st.tryEdit) { st.tryEdit = false; if (document.activeElement) document.activeElement.blur(); renderTry(); renderLegend(); } else { st.tryOpen = false; clearInterval(tryTimer); render(); } return true; }
+      if (k === 'e') { st.tryEdit = !st.tryEdit; clearInterval(tryTimer); if (!st.tryEdit) st.tryStep = RECIPES[cur().repo].steps.length; renderTry(); renderLegend(); if (st.tryEdit) { var i0 = document.getElementById('step0'); if (i0) i0.focus(); } return true; }
+      if (k === 'r') { runTry(); return true; }
+      if (k === 'Enter' && st.tryStep >= RECIPES[cur().repo].steps.length) { Futures.toast(root, 'Opened ' + RECIPES[cur().repo].url + ' in your browser'); return true; }
+      return false;
+    }
+    if (k === 'Alt+1') return jumpNeed(1);
+    if (k === 'Alt+2') return jumpNeed(2);
+    if (k === '/') { var f = document.getElementById('flt'); f.focus(); f.select(); return true; }
+    if (k === 'f') { st.mode = st.mode === 'files' ? 'tl' : 'files'; render(); return true; }
+    if (st.mode === 'files') {
+      if (k === 'ArrowUp') { st.fr = Math.max(0, st.fr - 1); renderFiles(); return true; }
+      if (k === 'ArrowDown') { st.fr = Math.min(FILES.length - 1, st.fr + 1); renderFiles(); return true; }
+      if (k === 'ArrowLeft') { st.fc = Math.max(0, st.fc - 1); renderFiles(); return true; }
+      if (k === 'ArrowRight') { st.fc = Math.min(S.length - 1, st.fc + 1); renderFiles(); return true; }
+      if (k === 'Enter') { cellJump(); return true; }
+      if (k === 'Esc') { st.mode = 'tl'; render(); return true; }
+      return false;
+    }
+    if (!visible().length) { if (k === 'Esc') { st.filter = ''; document.getElementById('flt').value = ''; render(); return true; } return false; }
+    var b = blk();
+    switch (k) {
+      case 'ArrowUp': moveLane(-1); return true;
+      case 'ArrowDown': moveLane(1); return true;
+      case 'ArrowLeft': focusBlock(st.lane, st.bi - 1); return true;
+      case 'ArrowRight': focusBlock(st.lane, st.bi + 1); return true;
+      case 'Shift+ArrowLeft': setPh(st.ph - 15); return true;
+      case 'Shift+ArrowRight': setPh(st.ph + 15); return true;
+      case 'Enter': st.insp = !st.insp; render(); return true;
+      case 'Esc': if (st.filter) { st.filter = ''; document.getElementById('flt').value = ''; render(); } else { st.insp = false; render(); } return true;
+      case 'u':
+        if (b.ask || b.planWait) { Futures.toast(root, 'Nothing to undo while it waits for you'); return true; }
+        if (b.undone) { Futures.toast(root, 'This step is already undone'); return true; }
+        if (st.bi >= lastIdx(st.lane) || cur().blocks.slice(st.bi + 1).every(function (x) { return x.undone; })) { Futures.toast(root, 'Nothing after this step to undo'); return true; }
+        st.insp = true; st.confirm = true; render(); return true;
+      case 't': Futures.toast(root, 'Focused Windows Terminal tab ' + cur().tab + ' (' + cur().key + ')'); return true;
+      case 'r': runTry(); renderLegend(); return true;
+      case '1': case '2': if (b.ask) { answer(+k); return true; } return false;
+      case 'a': if (b.planWait) { approvePlan(); return true; } return false;
+    }
+    return false;
+  }
+
+  Futures.keys(root, act);
+  root.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-key]');
+    if (el) { var k = el.dataset.key; act(k); Futures.flash(root, k); return; }
+    var bl = e.target.closest('.blk');
+    if (bl) { focusBlock(+bl.dataset.lane, +bl.dataset.bi, true); return; }
+    var ch = e.target.closest('[data-jump]');
+    if (ch) { var i = +ch.dataset.jump; st.mode = 'tl'; focusBlock(i, lastIdx(i), true); return; }
+    var cell = e.target.closest('.cell[data-fr]');
+    if (cell) { st.fr = +cell.dataset.fr; st.fc = +cell.dataset.fc; cellJump(); return; }
+    var ln = e.target.closest('.lane');
+    if (ln && !e.target.closest('.trk .flag')) { st.lane = +ln.dataset.lane; st.bi = blockAt(cur(), st.ph); render(); }
+  });
+
+  // playhead drag and axis click (pointer events; the frame is scaled, so convert from screen pixels)
+  var tl = document.getElementById('tl'), dragging = false;
+  function minuteAt(clientX) { var r = ticks.getBoundingClientRect(); var sc = r.width / TW; return T0 + ((clientX - r.left) / sc) / PPM; }
+  tl.addEventListener('pointerdown', function (e) {
+    if (!(e.target.closest('#ph') || e.target.closest('#ticks'))) return;
+    dragging = true; tl.setPointerCapture(e.pointerId); setPh(Math.round(minuteAt(e.clientX))); e.preventDefault();
+  });
+  tl.addEventListener('pointermove', function (e) { if (dragging) setPh(Math.round(minuteAt(e.clientX))); });
+  tl.addEventListener('pointerup', function () { dragging = false; });
+  tl.addEventListener('pointercancel', function () { dragging = false; });
+
+  var flt = document.getElementById('flt');
+  flt.addEventListener('input', function () { st.filter = flt.value; var v = visible(); if (v.length && v.indexOf(st.lane) < 0) { st.lane = v[0]; st.bi = blockAt(cur(), st.ph); } render(); });
+  flt.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); flt.blur(); } });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.activeElement === flt) { e.stopImmediatePropagation(); e.preventDefault(); st.filter = ''; flt.value = ''; flt.blur(); render(); }
+  }, true);
+  root.addEventListener('input', function (e) { var si = e.target.dataset && e.target.dataset.si; if (si != null) RECIPES[cur().repo].steps[+si] = e.target.value; });
+
+  document.getElementById('reset').addEventListener('click', function () { flt.value = ''; reset(); Futures.toast(root, 'Mock reset'); });
+  reset();
+})();
+</script>
+</body>
+</html>
