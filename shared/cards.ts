@@ -2,6 +2,7 @@
 // Pure and erasable TS, shared by the server (what the hook returns, what gets launched) and the
 // web app (the new-card screen's preview and command), so both always say the same thing.
 
+import { ticketText, type Ticket } from './tickets.ts';
 import { repoName, samePath } from './workspaces.ts';
 
 /** The columns of the line, left to right. */
@@ -49,19 +50,26 @@ export function modelName(id: string | undefined): string {
 /** new: a branch named after the card · current: stay where the repo is · worktree: a new folder on a new branch. */
 export type BranchChoice = 'new' | 'current' | 'worktree';
 
-/** One thing in the packet. Repos carry their absolute path as the id. */
+/**
+ * One thing in the packet. Repos carry their absolute path as the id. The ticket layer holds the
+ * ticket's parts (desc, ac, comments, attach, linked); a 'ticket' in the card layer is a related one.
+ * `text` is what Claude gets when it differs from the label (a description, the comments).
+ */
 export interface PacketItem {
-  kind: 'repo' | 'note';
+  kind: PacketKind;
   id: string;
   label: string;
+  text?: string;
   on: boolean;
 }
+export type PacketKind = 'repo' | 'note' | 'desc' | 'ac' | 'comments' | 'attach' | 'linked' | 'ticket';
+export const PACKET_KINDS: PacketKind[] = ['repo', 'note', 'desc', 'ac', 'comments', 'attach', 'linked', 'ticket'];
 
 /** What Claude starts with, in three layers, plus your own note. */
 export interface Packet {
   /** Shared by every card in the workspace: its repos (later: notes, run recipe). */
   workspace: PacketItem[];
-  /** From the card's ticket (Jira / Trello, later). */
+  /** From the card's ticket (Jira / Trello). */
   ticket: PacketItem[];
   /** Only this card: repos from the library and other extras. */
   card: PacketItem[];
@@ -85,6 +93,8 @@ export interface CardDraft {
   workspaceId: string | null;
   packet: Packet;
   launch: CardLaunch;
+  /** The card's ticket, when it has one: the page sends its key, the server fills in the ticket. */
+  ticketKey?: string;
 }
 
 /** One line of "How it started" on the card's Context tab. */
@@ -120,8 +130,10 @@ export interface CardTodo {
 
 export interface Card extends CardDraft {
   id: string;
-  /** "CARD-3": what the board and the terminal tab show. Later a ticket key, e.g. SHOP-155. */
+  /** "CARD-3", or the ticket's key (SHOP-155): what the board and the terminal tab show. */
   key: string;
+  /** The ticket as it was when the card started. */
+  ticket?: Ticket;
   stage: Stage;
   createdAt: number;
   /** The branch it made or stayed on. */
@@ -181,11 +193,12 @@ export function defaultMessage(key: string, mode: LaunchMode): string {
  * Exactly what Claude receives: the SessionStart hook returns this as additionalContext.
  * `key` and `branch` are known once the card exists; the preview passes what they will be.
  */
-export function packetText(d: Pick<CardDraft, 'title' | 'packet' | 'launch'>, key: string, branch?: string): string {
+export function packetText(d: Pick<CardDraft, 'title' | 'packet' | 'launch'> & { ticket?: Pick<Ticket, 'key' | 'source'> | null }, key: string, branch?: string): string {
   const L: string[] = [];
   const title = d.title.trim() || 'New card';
   L.push(`# Context from cc-control · ${key} ${title}`);
-  L.push('', '## The task', title);
+  if (d.ticket) L.push(...ticketText(d.ticket, d.packet.ticket));
+  else L.push('', '## The task', title);
   const repos = includedRepos(d.packet);
   const home = homeOf(d.packet, d.launch);
   if (repos.length) {
@@ -197,6 +210,11 @@ export function packetText(d: Pick<CardDraft, 'title' | 'packet' | 'launch'>, ke
   if (notes.length) {
     L.push('', '## Notes');
     for (const n of notes) L.push(`- ${n.label}`);
+  }
+  const extra = d.packet.card.filter((i) => i.on && i.kind === 'ticket');
+  if (extra.length) {
+    L.push('', '## Also look at');
+    for (const i of extra) L.push(`- ${(i.text ?? i.label).replace(/\n/g, '\n  ')}`);
   }
   if (d.packet.note.trim()) L.push('', '## From you', d.packet.note.trim());
   if (d.launch.mode === 'plan') L.push('', 'Start with a plan. Don’t change any files until the plan is approved.');
@@ -220,7 +238,7 @@ export function memoryPct(n: number): number {
 
 /** What one packet item adds to the text, for the size beside it. */
 export function itemTokens(i: PacketItem): number {
-  return tokens(i.kind === 'repo' ? `- ${i.label} (also yours to read and edit): ${i.id}\n` : `- ${i.label}\n`);
+  return tokens(i.kind === 'repo' ? `- ${i.label} (also yours to read and edit): ${i.id}\n` : `- ${i.text ?? i.label}\n`);
 }
 
 /**

@@ -3,11 +3,13 @@
 // expanding a session. Every key here has a row in LINE_SECTIONS (the ? overlay) and in
 // lineLegendFor (the bar at the bottom).
 
+import { inbox, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
 import { openSession } from './keys.ts';
 import { currentWorkspace, flash, get, set, setFilter, type WorkspaceAction } from './store.ts';
 import {
-  cycleModel, draftOf, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, sources, stepOption, togglePacketRow, toggleSource,
+  composerKey, cycleModel, draftOf, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
+  sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
 import { send, startCard } from './ws.ts';
@@ -18,6 +20,8 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ['← → ↑ ↓', 'Move between cards'],
       ['Enter', 'Open the card: Overview, Context (how it started, what Claude was given), Transcript'],
+      ['n / Enter (a ticket in the Inbox)', 'Start work on it: the new-card screen, with the ticket as its context'],
+      ['Shift+T', 'Tickets: demo tickets, Jira and Trello, and which workspace each project goes to'],
       ['Ctrl+Enter', 'The card’s session full screen, to read and type there (Esc comes back)'],
       ['c', 'New card: build its context and start work in a terminal tab'],
       ['1–9  /  0', 'Show one workspace’s cards / all of them'],
@@ -43,9 +47,10 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ['Tab / Shift+Tab', 'Next / previous panel: add context → what Claude will know → how it starts'],
       ['↑ ↓', 'Move in the panel'],
-      ['Space', 'Add a repo from the library, or take it out; include or leave out a line of the context'],
-      ['/', 'Search the repo library'],
-      ['x', 'Remove something you added to this card'],
+      ['← → (add context)', 'Tickets or Repos'],
+      ['Space', 'Pick a ticket (the first is the card’s, later ones are related) or a repo; include or leave out a line of the context'],
+      ['/', 'Search the tickets (by key or words) or the repo library'],
+      ['x', 'Remove something you added to this card (on the card’s ticket: take it off)'],
       ['w (what Claude will know)', 'Keep a repo you added to this card for the whole workspace'],
       ['e', 'Write your own note for Claude'],
       ['← → (how it starts)', 'Change the option: workspace, the repo it starts in, branch, mode, model'],
@@ -57,10 +62,21 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
   },
 ];
 
+/** The Inbox: tickets no card has started, in the workspace shown. */
+export function inboxOf(s: ReturnType<typeof get>): Ticket[] {
+  return inbox(s.tickets, new Set(s.cards.map((c) => c.key)), s.line.filter);
+}
+
+/** The board's columns, with the Inbox's tickets. */
+export function boardOf(s: ReturnType<typeof get>) {
+  return lanes(s.cards, s.line.filter, s.line.q, inboxOf(s));
+}
+
 export function openLine(): void {
   const s = get();
-  const cols = lanes(s.cards, s.line.filter, s.line.q);
-  const focus = s.cards.some((c) => c.id === s.line.focus) ? s.line.focus : moveFocus(cols, null, 1, 0);
+  const cols = boardOf(s);
+  const known = cols.some((l) => l.cards.some((c) => c.id === s.line.focus) || l.tickets.some((t) => ticketFocus(t.key) === s.line.focus));
+  const focus = known ? s.line.focus : moveFocus(cols, null, 1, 0);
   set({ screen: 'line', line: { ...s.line, focus }, modal: null });
 }
 
@@ -76,6 +92,7 @@ export function expandFromLine(): void {
   if (s.screen !== 'line' || s.composer) return;
   const id = s.line.drawer ?? s.line.focus;
   const card = s.cards.find((c) => c.id === id);
+  if (focusedTicket(id)) { flash(`${focusedTicket(id)} has no session yet: n starts work on it`); return; }
   if (!card) { flash('Pick a card first'); return; }
   if (!card.sessionId) { flash(`${card.key} has no session yet: it links once its terminal tab starts`); return; }
   openSession(card.sessionId);
@@ -110,11 +127,13 @@ export function runWorkspaceAction(then: WorkspaceAction, id: string): void {
   }
 }
 
-export function openComposer(): void {
+/** The new-card screen: blank (c), or for a ticket (n on it in the Inbox), in its project's workspace. */
+export function openComposer(ticket: Ticket | null = null): void {
   const s = get();
-  const ws = s.line.filter !== 'all' ? s.workspaces.find((w) => w.id === s.line.filter) ?? null : s.workspaces[0] ?? null;
-  set({ composer: newComposer(ws, s.nextKey), line: { ...s.line, drawer: null } });
-  setTimeout(() => document.getElementById('cp-title')?.focus(), 0);
+  const mapped = ticket?.workspaceId ? s.workspaces.find((w) => w.id === ticket.workspaceId) : undefined;
+  const ws = mapped ?? (s.line.filter !== 'all' ? s.workspaces.find((w) => w.id === s.line.filter) ?? null : s.workspaces[0] ?? null);
+  set({ composer: newComposer(ws, s.nextKey, ticket), line: { ...s.line, drawer: null } });
+  if (!ticket) setTimeout(() => document.getElementById('cp-title')?.focus(), 0);
 }
 
 export function updateComposer(change: (c: Composer) => Composer | string): void {
@@ -171,8 +190,14 @@ function composerTyping(e: KeyboardEvent, c: Composer): boolean {
   if (e.key === 'Enter' && el.tagName === 'INPUT') {
     el.blur();
     if (el.id === 'cp-q') {
-      const first = sources(c, get().library.repos)[0];
-      if (first) updateComposer((x) => ({ ...toggleSource(x, first.path), q: '', si: 0 }));
+      const s = get();
+      if (c.tab === 'tickets') {
+        const first = ticketSources(c, s.tickets, started(s))[0];
+        if (first) updateComposer((x) => { const r = pickTicket(x, first, s.workspaces, started(s)); return typeof r === 'string' ? r : { ...r, q: '', si: 0 }; });
+      } else {
+        const first = sources(c, s.library.repos)[0];
+        if (first) updateComposer((x) => ({ ...toggleSource(x, first.path), q: '', si: 0 }));
+      }
     }
     return true;
   }
@@ -198,6 +223,20 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
   const down = e.key === 'ArrowDown';
   const step = up ? -1 : down ? 1 : 0;
   if (c.pane === 'src') {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { updateComposer((x) => ({ ...x, tab: x.tab === 'tickets' ? 'repos' : 'tickets', si: 0 })); return true; }
+    if (e.key === '/') { focusField('cp-q'); return true; }
+    if (c.tab === 'tickets') {
+      const list = ticketSources(c, s.tickets, started(s));
+      const t = list[Math.min(c.si, list.length - 1)];
+      if (step) { updateComposer((x) => ({ ...x, si: Math.max(0, Math.min(list.length - 1, x.si + step)) })); return true; }
+      if (e.key === ' ' || e.key === 'Enter') {
+        if (t) updateComposer((x) => pickTicket(x, t, s.workspaces, started(s)));
+        else if (!s.tickets.length) flash('No tickets yet. Shift+T on the board connects them, or shows demo tickets.');
+        return true;
+      }
+      if ((e.key === 'x' || e.key === 'Delete') && t && c.ticket?.key === t.key) { updateComposer((x) => dropTicket(x, s.nextKey)); return true; }
+      return false;
+    }
     const list = sources(c, s.library.repos);
     if (step) { updateComposer((x) => ({ ...x, si: Math.max(0, Math.min(list.length - 1, x.si + step)) })); return true; }
     if (e.key === ' ' || e.key === 'Enter') {
@@ -206,7 +245,6 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
       else if (!s.library.repos.length) flash('The repo library is empty. On the board, F picks the folders it scans.');
       return true;
     }
-    if (e.key === '/') { focusField('cp-q'); return true; }
     return false;
   }
   if (c.pane === 'pkt') {
@@ -222,11 +260,12 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
     if (e.key === 'w') { keepRepo(c.pi); return true; }
     return false;
   }
-  const rows = goRows(c, s.workspaces, s.nextKey, { pinned: s.cardModel, user: s.userModel });
+  const key = composerKey(c, s.nextKey);
+  const rows = goRows(c, s.workspaces, key, { pinned: s.cardModel, user: s.userModel });
   if (step) { updateComposer((x) => ({ ...x, gi: Math.max(0, Math.min(rows.length - 1, x.gi + step)) })); return true; }
   const row = rows[Math.min(c.gi, rows.length - 1)];
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-    updateComposer((x) => stepOption(x, row, e.key === 'ArrowRight' ? 1 : -1, s.workspaces, s.nextKey));
+    updateComposer((x) => stepOption(x, row, e.key === 'ArrowRight' ? 1 : -1, s.workspaces, key));
     return true;
   }
   if (e.key === 'Enter' && row.id === 'msg') { focusField('cp-msg'); return true; }
@@ -243,6 +282,11 @@ export function keepRepo(index: number): void {
   set({ composer: { ...r.composer, error: null } });
   const ws = get().workspaces.find((w) => w.id === c.workspaceId);
   flash(`Kept for ${ws?.name ?? 'the workspace'}: every card there gets it`);
+}
+
+/** The keys of cards already on the line: a ticket gets one card. */
+function started(s: ReturnType<typeof get>): Set<string> {
+  return new Set(s.cards.map((c) => c.key));
 }
 
 function drawerKeys(e: KeyboardEvent): boolean {
@@ -285,14 +329,20 @@ function boardKeys(e: KeyboardEvent): boolean {
     if (n && !ws) { flash(s.workspaces.length ? `There is no workspace ${n}` : 'No workspaces yet. W makes one.'); return true; }
     const filter = n === 0 ? 'all' : ws.id;
     setFilter(filter);
-    set({ line: { ...get().line, focus: moveFocus(lanes(s.cards, filter, s.line.q), null, 1, 0) } });
+    set({ line: { ...get().line, focus: moveFocus(boardOf(get()), null, 1, 0) } });
     flash(n === 0 ? 'Every workspace' : ws.name);
     return true;
   }
   if (workspaceKeys(e)) return true;
   if (e.key === '/' && !e.shiftKey) { set({ line: { ...s.line, searching: true } }); focusField('line-q'); return true; }
-  const cols = lanes(s.cards, s.line.filter, s.line.q);
-  const focused = cols.some((l) => l.cards.some((c) => c.id === s.line.focus)) ? s.line.focus : null;
+  if (e.key === 'T') { set({ modal: { kind: 'tickets' } }); return true; }
+  const cols = boardOf(s);
+  const focused = cols.some((l) => l.cards.some((c) => c.id === s.line.focus) || l.tickets.some((t) => ticketFocus(t.key) === s.line.focus)) ? s.line.focus : null;
+  const ticket = cols[0].tickets.find((t) => ticketFocus(t.key) === focused);
+  if (ticket) {
+    if (e.key === 'Enter' || e.key === 'n') { openComposer(ticket); return true; }
+    if (e.key === 'Delete') { flash(`${ticket.key} stays in ${ticket.source === 'jira' ? 'Jira' : 'Trello'}; n starts work on it`); return true; }
+  }
   const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   if (arrows[e.key]) {
     const [dx, dy] = arrows[e.key];
@@ -302,6 +352,7 @@ function boardKeys(e: KeyboardEvent): boolean {
   switch (e.key) {
     case 'Enter': if (focused) openCard(focused); return true;
     case 'c': openComposer(); return true;
+    case 'n': flash('n starts work on a ticket in the Inbox; c makes a card without one'); return true;
     case 'Delete': if (focused) set({ modal: { kind: 'deleteCard', id: focused } }); return true;
     case 'Escape': if (s.line.q) set({ line: { ...s.line, q: '' } }); return true;
   }
@@ -330,6 +381,6 @@ export function lineKeys(e: KeyboardEvent, typing: boolean): boolean {
 export function deleteCard(id: string): void {
   send({ type: 'card.delete', id });
   const s = get();
-  const cols = lanes(s.cards.filter((c) => c.id !== id), s.line.filter, s.line.q);
+  const cols = lanes(s.cards.filter((c) => c.id !== id), s.line.filter, s.line.q, inboxOf(s));
   set({ line: { ...s.line, drawer: s.line.drawer === id ? null : s.line.drawer, focus: s.line.focus === id ? moveFocus(cols, null, 1, 0) : s.line.focus } });
 }

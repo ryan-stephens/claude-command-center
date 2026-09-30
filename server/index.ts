@@ -10,6 +10,7 @@ import { addPath, removePath, samePath, suggestSources, WORKSPACE_COLORS } from 
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { CardService, cleanDraft, userModel } from './cards.ts';
 import { CommandService } from './commands.ts';
+import { TicketService } from './tickets.ts';
 import { PermissionBroker } from './permission-broker.ts';
 import { Mirror } from './mirror.ts';
 import { COOKIE, cookieToken, findRemoteIp, remoteHostAllowed, remoteToken, remoteUpgradeAllowed, tokenMatches } from './remote.ts';
@@ -50,6 +51,13 @@ const broker = new PermissionBroker(
 const store = new Store();
 const commands = new CommandService(store);
 const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, changed: () => broadcast(cardsMsg()) });
+
+const tickets = new TicketService(store, () => broadcast(ticketsMsg()));
+
+function ticketsMsg(): ServerMsg {
+  const ids = store.loadWorkspaces().map((w) => w.id);
+  return { type: 'tickets', tickets: tickets.list(ids), projects: tickets.projects(ids), sources: tickets.sources() };
+}
 
 function cardsMsg(): ServerMsg {
   const mine = userModel();
@@ -153,6 +161,7 @@ function workspacesChanged(): void {
   broadcast({ type: 'workspaces', workspaces });
   broadcast(snapshot());
   broadcast({ type: 'commands.changed' }); // workspace workflows follow the workspace's repos
+  broadcast(ticketsMsg()); // a deleted workspace maps no tickets any more
 }
 
 /** The last scan; scanning stats every repo, so it runs on request, not on every connection. */
@@ -323,12 +332,28 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     }
     case 'card.start': {
-      const card = await cards.start(cleanDraft(msg.draft, store.loadWorkspaces()));
+      const workspaces = store.loadWorkspaces();
+      const draft = cleanDraft(msg.draft, workspaces);
+      const ticket = draft.ticketKey ? tickets.get(draft.ticketKey, workspaces.map((w) => w.id)) : undefined;
+      if (draft.ticketKey && !ticket) throw new Error(`${draft.ticketKey} isn’t in the tickets any more. Refresh them and try again.`);
+      const card = await cards.start(draft, ticket);
       send(ws, { type: 'card.started', reqId: msg.reqId, id: card.id });
       return;
     }
     case 'card.delete':
       cards.delete(String(msg.id));
+      return;
+    case 'tickets.demo':
+      tickets.setDemo(msg.on === true);
+      return;
+    case 'tickets.map': {
+      const project = String(msg.project ?? '').slice(0, 100);
+      const ws = typeof msg.workspaceId === 'string' && store.loadWorkspaces().some((w) => w.id === msg.workspaceId) ? msg.workspaceId : null;
+      if (project) tickets.setMapping(project, ws);
+      return;
+    }
+    case 'tickets.refresh':
+      await tickets.refresh();
       return;
     case 'workspace.import': {
       const r = workspaceFromFile(msg.file, (library(true) as Extract<ServerMsg, { type: 'library' }>).repos);
@@ -419,6 +444,7 @@ wss.on('connection', (ws) => {
   send(ws, { type: 'workspaces', workspaces: store.loadWorkspaces() });
   send(ws, library());
   send(ws, cardsMsg());
+  send(ws, ticketsMsg());
   for (const request of broker.list()) send(ws, { type: 'permission.request', request });
   for (const [id, activity] of manager.activities()) send(ws, { type: 'session.activity', id, activity });
   for (const [id, todos] of manager.allTodos()) send(ws, { type: 'session.todos', id, todos });
@@ -426,6 +452,7 @@ wss.on('connection', (ws) => {
 
 manager.setWorkspaces(store.loadWorkspaces());
 await manager.history.start();
+tickets.start();
 
 function listen(hostname: string, app: Hono, trusted: (req: IncomingMessage) => boolean, onReady: () => void) {
   const server = serve({ fetch: app.fetch, hostname, port: PORT }, onReady);
@@ -485,6 +512,7 @@ process.on('unhandledRejection', (reason) => {
 function shutdown(): void {
   manager.stopAll();
   cards.stop();
+  tickets.stop();
   manager.history.stop();
   mirror.stop();
   for (const server of servers) server.close();

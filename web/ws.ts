@@ -246,6 +246,9 @@ function receive(msg: ServerMsg): void {
       for (const c of msg.cards) onCardChange(before.get(c.id), c);
       return;
     }
+    case 'tickets':
+      set({ tickets: msg.tickets, ticketProjects: msg.projects, ticketSources: msg.sources });
+      return;
     case 'card.started':
       return; // answered to the new-card screen, which waits on it
     case 'workspace.file':

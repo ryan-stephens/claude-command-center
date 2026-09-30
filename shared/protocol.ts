@@ -1,13 +1,14 @@
 // WebSocket protocol shared by server and web. Plain types only (erasable TS, runs under Node type stripping).
 
 import type { Card, CardDraft } from './cards.ts';
+import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 
 /**
  * Bump when the client starts relying on a message an older server doesn't handle. The server
  * says `hello` first; a page that hears anything else first is talking to a server from before
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
-export const PROTOCOL = 4;
+export const PROTOCOL = 5;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -325,7 +326,11 @@ export type ClientMsg =
   /** Ticket Line: save the card and start its session in a terminal tab. Answered with card.started or an error. */
   | { type: 'card.start'; reqId: string; draft: CardDraft }
   /** Take a card off the line (its terminal session keeps running). */
-  | { type: 'card.delete'; id: string };
+  | { type: 'card.delete'; id: string }
+  /** Tickets: show the demo set, map a project (Jira key / Trello board) to a workspace, fetch again. */
+  | { type: 'tickets.demo'; on: boolean }
+  | { type: 'tickets.map'; project: string; workspaceId: string | null }
+  | { type: 'tickets.refresh' };
 
 export type ServerMsg =
   /** Always the first message on a connection. */
@@ -362,4 +367,5 @@ export type ServerMsg =
   | { type: 'error'; message: string; reqId?: string }
   /** Every card on the Ticket Line, on connect and whenever one changes. */
   | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string; /** The model in the user's Claude Code settings (a card's default otherwise). */ userModel?: string }
-  | { type: 'card.started'; reqId: string; id: string };
+  | { type: 'card.started'; reqId: string; id: string }
+  | { type: 'tickets'; tickets: Ticket[]; projects: TicketProject[]; sources: TicketSources };

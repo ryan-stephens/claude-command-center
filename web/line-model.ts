@@ -7,6 +7,7 @@ import {
   type Card, type CardDraft, type Packet, type PacketItem, type Stage,
 } from '../shared/cards.ts';
 import type { RepoInfo, Workspace } from '../shared/protocol.ts';
+import { relatedItem, ticketItems, ticketSub, type Ticket } from '../shared/tickets.ts';
 import { homeRepo, repoName, samePath } from '../shared/workspaces.ts';
 
 /** Which workspace's cards the board shows. */
@@ -18,13 +19,24 @@ export function matches(q: string, hay: string): boolean {
   return q.trim().toLowerCase().split(/\s+/).every((w) => !w || h.includes(w));
 }
 
-export function lanes(cards: Card[], filter: LineFilter, q = ''): { stage: Stage; name: string; cards: Card[] }[] {
+/** A column of the board: its cards, and for the Inbox, the tickets no card has started yet. */
+export interface Lane { stage: Stage; name: string; cards: Card[]; tickets: Ticket[] }
+
+export function lanes(cards: Card[], filter: LineFilter, q = '', inbox: Ticket[] = []): Lane[] {
   return STAGES.map((s) => ({
     stage: s.id,
     name: s.name,
     cards: cards.filter((c) => c.stage === s.id && (filter === 'all' || c.workspaceId === filter) && matches(q, `${c.key} ${c.title} ${c.branchName ?? ''}`)),
+    tickets: s.id === 'inbox' ? inbox.filter((t) => matches(q, `${t.key} ${t.title}`)) : [],
   }));
 }
+
+/** A ticket in the Inbox has the board's focus as "t:SHOP-155". */
+export const ticketFocus = (key: string) => `t:${key}`;
+export const focusedTicket = (focus: string | null) => (focus?.startsWith('t:') ? focus.slice(2) : null);
+
+/** What arrows walk in a column: its tickets, then its cards. */
+const laneIds = (l: { cards: { id: string }[]; tickets?: { key: string }[] }) => [...(l.tickets ?? []).map((t) => ticketFocus(t.key)), ...l.cards.map((c) => c.id)];
 
 /** The cards' sessions, column by column: what Alt+↑ ↓ walk. */
 export function lineSessions(cols: { cards: Card[] }[]): string[] {
@@ -32,14 +44,15 @@ export function lineSessions(cols: { cards: Card[] }[]): string[] {
 }
 
 /** Arrows on the board: ↑ ↓ within a column, ← → to the nearest column that has cards, keeping the row. */
-export function moveFocus(cols: { cards: Card[] }[], focus: string | null, dx: number, dy: number): string | null {
+export function moveFocus(cols: { cards: Card[]; tickets?: Ticket[] }[], focus: string | null, dx: number, dy: number): string | null {
+  const ids = cols.map(laneIds);
   let ci = -1;
   let ri = 0;
-  cols.forEach((c, i) => { const j = c.cards.findIndex((x) => x.id === focus); if (j >= 0) { ci = i; ri = j; } });
-  if (ci < 0) return cols.find((c) => c.cards.length)?.cards[0].id ?? null;
-  if (dy) return cols[ci].cards[Math.max(0, Math.min(cols[ci].cards.length - 1, ri + dy))].id;
-  for (let c = ci + dx; c >= 0 && c < cols.length; c += dx) {
-    if (cols[c].cards.length) return cols[c].cards[Math.min(ri, cols[c].cards.length - 1)].id;
+  ids.forEach((c, i) => { const j = c.indexOf(focus ?? ''); if (j >= 0) { ci = i; ri = j; } });
+  if (ci < 0) return ids.find((c) => c.length)?.[0] ?? null;
+  if (dy) return ids[ci][Math.max(0, Math.min(ids[ci].length - 1, ri + dy))];
+  for (let c = ci + dx; c >= 0 && c < ids.length; c += dx) {
+    if (ids[c].length) return ids[c][Math.min(ri, ids[c].length - 1)];
   }
   return focus;
 }
@@ -95,6 +108,10 @@ export type Pane = 'src' | 'pkt' | 'go';
 export const PANES: Pane[] = ['src', 'pkt', 'go'];
 
 export interface Composer {
+  /** The card's ticket, if it has one: its title is the card's, its parts are the ticket layer. */
+  ticket: Ticket | null;
+  /** Panel 1 shows tickets or the repo library (← → switch). */
+  tab: 'tickets' | 'repos';
   title: string;
   workspaceId: string | null;
   packet: Packet;
@@ -120,14 +137,61 @@ function workspaceLayer(ws: Workspace | null): PacketItem[] {
   return ws ? ws.repos.map(repoItem) : [];
 }
 
-export function newComposer(ws: Workspace | null, key: string): Composer {
+export function newComposer(ws: Workspace | null, key: string, ticket: Ticket | null = null): Composer {
   return {
-    title: '',
+    ticket,
+    // From a ticket, the ticket is settled, so panel 1 opens on the repos; otherwise on the tickets.
+    tab: ticket ? 'repos' : 'tickets',
+    title: ticket?.title ?? '',
     workspaceId: ws?.id ?? null,
-    packet: { workspace: workspaceLayer(ws), ticket: [], card: [], note: '' },
-    launch: { home: (ws && homeRepo(ws)) ?? '', branch: 'new', mode: 'plan', message: defaultMessage(key, 'plan') },
+    packet: { workspace: workspaceLayer(ws), ticket: ticket ? ticketItems(ticket) : [], card: [], note: '' },
+    launch: { home: (ws && homeRepo(ws)) ?? '', branch: 'new', mode: 'plan', message: defaultMessage(ticket?.key ?? key, 'plan') },
     pane: 'src', si: 0, pi: 0, gi: 0, preview: false, q: '', msgTouched: false, starting: false, error: null,
   };
+}
+
+/** What the card will be called: its ticket's key, or the next CARD-n. */
+export function composerKey(c: Composer, nextKey: string): string {
+  return c.ticket?.key ?? nextKey;
+}
+
+/**
+ * Panel 1's Tickets tab: every ticket, filtered by the search. Open ones without a card come first
+ * (newest first), then those already on the line, then done ones.
+ */
+export function ticketSources(c: Composer, tickets: Ticket[], started: Set<string> = new Set()): Ticket[] {
+  const q = c.q.trim().toLowerCase();
+  const rank = (t: Ticket) => (t.done ? 2 : started.has(t.key) ? 1 : 0);
+  return tickets
+    .filter((t) => !q || `${t.key} ${t.title} ${ticketSub(t)}`.toLowerCase().includes(q))
+    .sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt);
+}
+
+/**
+ * Space on a ticket in panel 1. The first becomes the card's ticket (its title, its parts, its
+ * workspace when the project is mapped); later ones go in as related tickets, and Space again
+ * takes a related one back out.
+ */
+export function pickTicket(c: Composer, t: Ticket, workspaces: Workspace[], started: Set<string>): Composer | string {
+  if (c.ticket?.key === t.key) return 'That is this card’s ticket. x takes it off.';
+  if (!c.ticket) {
+    if (started.has(t.key)) return `${t.key} already has a card on the line.`;
+    const ws = t.workspaceId ? workspaces.find((w) => w.id === t.workspaceId) ?? null : null;
+    const base = ws && ws.id !== c.workspaceId ? setWorkspace(c, ws) : c;
+    return {
+      ...base, ticket: t, title: t.title, packet: { ...base.packet, ticket: ticketItems(t) },
+      launch: { ...base.launch, message: c.msgTouched ? c.launch.message : defaultMessage(t.key, c.launch.mode) },
+    };
+  }
+  const id = relatedItem(t).id;
+  const has = c.packet.card.some((i) => i.id === id);
+  return { ...c, packet: { ...c.packet, card: has ? c.packet.card.filter((i) => i.id !== id) : [...c.packet.card, relatedItem(t)] } };
+}
+
+/** x on the card's ticket in panel 1: a card without a ticket again. */
+export function dropTicket(c: Composer, nextKey: string): Composer {
+  if (!c.ticket) return c;
+  return { ...c, ticket: null, title: '', packet: { ...c.packet, ticket: [] }, launch: { ...c.launch, message: c.msgTouched ? c.launch.message : defaultMessage(nextKey, c.launch.mode) } };
 }
 
 /** Switch workspace: its repos replace the workspace layer; what you added to the card stays. */
@@ -283,7 +347,8 @@ export function pickOption(c: Composer, id: GoRow['id'], at: number, workspaces:
 
 /** What Ctrl+Enter sends, or why it can't yet. */
 export function draftOf(c: Composer): CardDraft | string {
-  if (!c.title.trim()) return 'Give the card a title first.';
+  const title = (c.ticket?.title ?? c.title).trim();
+  if (!title) return 'Give the card a title first, or pick a ticket.';
   if (!includedRepos(c.packet).length) return 'A card needs at least one repo.';
-  return { title: c.title.trim(), workspaceId: c.workspaceId, packet: c.packet, launch: { ...c.launch, home: homeOf(c.packet, c.launch)! } };
+  return { title, workspaceId: c.workspaceId, packet: c.packet, launch: { ...c.launch, home: homeOf(c.packet, c.launch)! }, ...(c.ticket ? { ticketKey: c.ticket.key } : {}) };
 }

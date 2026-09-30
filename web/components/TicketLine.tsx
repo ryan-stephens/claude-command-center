@@ -11,14 +11,16 @@ import { homeRepo, repoName, samePath } from '../../shared/workspaces.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { importWorkspace } from '../commands.ts';
 import { openSession } from '../keys.ts';
-import { booting, cardActivity, elapsed, lanes, needsYou, progress, shortPath } from '../line-model.ts';
-import { openCard, openComposer, workspaceKey } from '../line-keys.ts';
+import { SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
+import { age } from '../home-model.ts';
+import { booting, cardActivity, elapsed, needsYou, progress, shortPath, ticketFocus } from '../line-model.ts';
+import { boardOf, openCard, openComposer, workspaceKey } from '../line-keys.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { NewCard } from './NewCard.tsx';
 import { Transcript } from './Transcript.tsx';
-import { Icon, Key, Pill, SWATCH, WsBadge } from './ui.tsx';
+import { Icon, Key, Pill, SWATCH, TicketKey, WsBadge } from './ui.tsx';
 
 /** The expand key's current binding, as a keycap label. */
 function useExpandKey(): string {
@@ -68,7 +70,8 @@ function LineBar() {
       <span className="whitespace-nowrap text-[13.5px] text-sub"><b className="text-ink tabular-nums">{inFlight}</b> in flight</span>
       <span className={`whitespace-nowrap text-[13.5px] ${needs ? 'text-attn' : 'text-sub'}`}><b className={`tabular-nums ${needs ? '' : 'text-ink'}`}>{needs}</b> need{needs === 1 ? 's' : ''} you</span>
       {starting > 0 && <span className="whitespace-nowrap text-[13.5px] text-busy"><b className="tabular-nums">{starting}</b> starting</span>}
-      <button className="btn whitespace-nowrap py-1" onClick={openComposer}><Key k="c" size="sm" />New card</button>
+      <button className="btn whitespace-nowrap py-1" onClick={() => set({ modal: { kind: 'tickets' } })} title="Demo tickets, Jira and Trello, and which workspace each project goes to"><Key k="⇧T" size="sm" />Tickets</button>
+      <button className="btn whitespace-nowrap py-1" onClick={() => openComposer()}><Key k="c" size="sm" />New card</button>
     </div>
   );
 }
@@ -136,12 +139,15 @@ function WorkspaceBar() {
 }
 
 function Board() {
-  const cards = useStore((s) => s.cards);
-  const filter = useStore((s) => s.line.filter);
-  const q = useStore((s) => s.line.q);
+  // Re-rendered when any of these change; boardOf reads them from the store.
+  useStore((s) => s.cards);
+  useStore((s) => s.tickets);
+  useStore((s) => s.line.filter);
+  useStore((s) => s.line.q);
   const focus = useStore((s) => s.line.focus);
   const workspaces = useStore((s) => s.workspaces);
-  const cols = lanes(cards, filter, q);
+  const cols = boardOf(get());
+  const color = (id: string | null | undefined) => SWATCH[workspaces.find((w) => w.id === id)?.color ?? ''] ?? 'var(--c-line)';
   useEffect(() => {
     if (focus) document.getElementById(`card-${focus}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [focus]);
@@ -151,12 +157,13 @@ function Board() {
         <section key={l.stage} aria-label={l.name} className="flex min-h-0 flex-col rounded-xl border border-line bg-col">
           <div className="flex items-center gap-2 px-3 pb-1 pt-2.5">
             <h4 className={`text-[13px] font-bold ${l.stage === 'needs' && l.cards.length ? 'text-attn' : ''}`}>{l.name}</h4>
-            <span className="font-mono text-xs font-bold text-faint">{l.cards.length}</span>
+            <span className="font-mono text-xs font-bold text-faint">{l.cards.length + l.tickets.length}</span>
           </div>
           <div className="min-h-[30px] border-b border-line px-3 pb-2 text-xs text-faint">{GATE[l.stage]}</div>
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
-            {l.cards.length
-              ? l.cards.map((c) => <CardTile key={c.id} card={c} focused={c.id === focus} color={SWATCH[workspaces.find((w) => w.id === c.workspaceId)?.color ?? ''] ?? 'var(--c-line)'} />)
+            {l.tickets.map((tk) => <TicketTile key={tk.key} t={tk} focused={ticketFocus(tk.key) === focus} color={color(tk.workspaceId)} />)}
+            {l.cards.length || l.tickets.length
+              ? l.cards.map((c) => <CardTile key={c.id} card={c} focused={c.id === focus} color={color(c.workspaceId)} />)
               : <div className="rounded-xl border border-dashed border-line px-1.5 py-3 text-center text-[12.5px] text-faint">{EMPTY[l.stage]}</div>}
           </div>
         </section>
@@ -165,9 +172,33 @@ function Board() {
   );
 }
 
+/** A ticket waiting in the Inbox: n (or Enter, or a click) starts work on it. */
+function TicketTile({ t, focused, color }: { t: Ticket; focused: boolean; color: string }) {
+  const ws = useStore((s) => s.workspaces.find((w) => w.id === t.workspaceId));
+  return (
+    <button
+      id={`card-${ticketFocus(t.key)}`}
+      onClick={() => openComposer(t)}
+      title={`${t.key} ${t.title}\n${SOURCE_NAME[t.source]} · ${t.projectName} · ${t.status}${t.demo ? '\nA demo ticket' : ''}\nn starts work on it`}
+      className={`flex flex-col gap-1.5 rounded-xl border border-l-4 bg-surface px-2.5 py-2 text-left text-[13px] ${focused ? 'is-focus' : 'border-line hover:bg-raise'}`}
+      style={{ borderLeftColor: color }}
+    >
+      <span className="flex items-center gap-1.5">
+        <TicketKey k={t.key} source={t.source} />
+        <span className="grow" />
+        <span className="text-[11.5px] text-faint">{t.demo ? 'demo · ' : ''}{SOURCE_NAME[t.source]}</span>
+      </span>
+      <span className="text-[14px] font-semibold leading-snug">{t.title}</span>
+      <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-faint">
+        <span>{ws?.name ?? `${t.projectName} · no workspace`}</span><span>·</span><span>{t.status}</span><span>·</span><span>{age(t.updatedAt)}</span>
+      </span>
+    </button>
+  );
+}
+
 /** What moves a card on from each column. Only Start work exists yet; the rest arrive with their milestones. */
 const GATE: Record<Card['stage'], string> = {
-  inbox: 'Tickets from Jira and Trello land here',
+  inbox: 'n starts work on a ticket',
   plan: 'Claude plans; approve it in its tab',
   build: 'Watch it work',
   needs: 'Answer in its terminal tab',
@@ -176,7 +207,7 @@ const GATE: Record<Card['stage'], string> = {
   done: 'Merged',
 };
 const EMPTY: Record<Card['stage'], ReactNode> = {
-  inbox: <>Ticket import comes next. <Key k="c" size="sm" /> starts a card without one.</>,
+  inbox: <>No tickets here. <Key k="⇧T" size="sm" /> connects Jira or Trello (or shows demo tickets); <Key k="c" size="sm" /> starts a card without one.</>,
   plan: 'Empty', build: 'Empty', needs: 'Nothing waiting on you', try: 'Empty', ship: 'Empty', done: 'Merged PRs land here',
 };
 
@@ -203,7 +234,7 @@ function CardTile({ card, focused, color }: { card: Card; focused: boolean; colo
       style={{ borderLeftColor: color }}
     >
       <span className="flex items-center gap-1.5">
-        <span className="rounded-md bg-raise px-1.5 font-mono text-[11.5px] font-bold text-sub">{card.key}</span>
+        <TicketKey k={card.key} source={card.ticket?.source} />
         <span className="grow" />
         <Pill tone="grey">terminal</Pill>
       </span>
@@ -241,7 +272,7 @@ function Drawer({ id }: { id: string }) {
           <WsBadge ws={ws} size={28} />
           <div className="flex min-w-0 grow flex-col gap-1">
             <div className="flex flex-wrap items-center gap-1.5 text-sm">
-              <span className="rounded-md bg-raise px-1.5 font-mono text-[11.5px] font-bold text-sub">{card.key}</span>
+              <TicketKey k={card.key} source={card.ticket?.source} />
               <Pill tone={needsYou(card) ? 'amber' : 'grey'}>{stage}</Pill>
               <Pill tone="grey">terminal · tab {card.key}</Pill>
               <span className="text-faint">{ws?.name ?? 'No workspace'}</span>
@@ -333,6 +364,7 @@ function Overview({ card }: { card: Card }) {
       )}
       <Sec title="Where it runs">
         <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1.5 text-sm">
+          {card.ticket && <><dt className="text-faint">Ticket</dt><dd>{card.ticket.url ? <a className="underline hover:text-acc" href={card.ticket.url} target="_blank" rel="noreferrer">{card.ticket.key} in {SOURCE_NAME[card.ticket.source]}</a> : `${card.ticket.key}${card.ticket.demo ? ' (a demo ticket)' : ''}`} · {card.ticket.status}</dd></>}
           <dt className="text-faint">Terminal tab</dt><dd>Titled <b>{card.key}</b> in Windows Terminal. Type to Claude there.</dd>
           <dt className="text-faint">Folder</dt><dd className="break-all font-mono text-[12.5px]">{card.cwd}</dd>
           {card.branchName && <><dt className="text-faint">Branch</dt><dd className="font-mono text-[12.5px]">{card.branchName}</dd></>}
@@ -415,7 +447,10 @@ function ContextTab({ card, wsName }: { card: Card; wsName?: string }) {
       </Sec>
       <Sec title="What Claude was given" right={<span className="text-sm text-faint">{fmtK(size)} · {memoryPct(size)}% of its memory</span>}>
         <div className="grid gap-1.5"><div className="flex gap-2 text-[13px]"><b>Workspace</b><span className="text-faint">{wsName ? `shared by every ${wsName} card` : 'no workspace'}</span></div><Chips items={card.packet.workspace} /></div>
-        <div className="grid gap-1.5"><div className="flex gap-2 text-[13px]"><b>Ticket</b><span className="text-faint">no ticket</span></div></div>
+        <div className="grid gap-1.5">
+          <div className="flex gap-2 text-[13px]"><b>Ticket</b><span className="text-faint">{card.ticket ? `from ${SOURCE_NAME[card.ticket.source]} ${card.ticket.key}${card.ticket.demo ? ' (a demo ticket)' : ''}` : 'no ticket'}</span></div>
+          {card.ticket && <Chips items={card.packet.ticket} />}
+        </div>
         <div className="grid gap-1.5">
           <div className="flex gap-2 text-[13px]"><b>This card</b><span className="text-faint">added when it started</span></div>
           {card.packet.card.some((i) => i.on) || card.packet.note.trim()

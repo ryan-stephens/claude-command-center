@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Card } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
+import type { Ticket } from '../shared/tickets.ts';
 import {
-  cardActivity, cycleModel, draftOf, elapsed, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin,
+  cardActivity, composerKey, ticketSources, cycleModel, draftOf, dropTicket, pickTicket, ticketFocus, elapsed, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin,
   setWorkspace, sources, stepOption, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
@@ -158,4 +159,47 @@ test('the model: the default is named, ← → or m pick Opus, Sonnet, Haiku and
   assert.deepEqual(seen, ['opus', 'sonnet', 'haiku', 'default']);
   assert.ok(!('model' in m.launch), 'back to the default drops the flag');
   assert.equal((draftOf({ ...cycleModel(c), title: 'x' }) as { launch: { model?: string } }).launch.model, 'opus');
+});
+
+const ticket = (key: string, over: Partial<Ticket> = {}): Ticket => ({
+  key, source: 'jira', project: key.split('-')[0], projectName: 'Storefront', title: `Title of ${key}`, description: 'Desc', acceptance: ['Works'],
+  comments: [], attachments: [], links: [], status: 'To Do', done: false, updatedAt: 0, workspaceId: 'w2', ...over,
+});
+
+test('Inbox tickets come first in their column for the arrows', () => {
+  const cols = lanes([card('a', 'inbox'), card('b', 'plan')], 'all', '', [ticket('SHOP-1'), ticket('SHOP-2')]);
+  assert.equal(moveFocus(cols, null, 1, 0), ticketFocus('SHOP-1'));
+  assert.equal(moveFocus(cols, ticketFocus('SHOP-1'), 0, 1), ticketFocus('SHOP-2'));
+  assert.equal(moveFocus(cols, ticketFocus('SHOP-2'), 1, 0), 'b');
+  assert.deepEqual(lanes([], 'all', 'shop-2', [ticket('SHOP-1'), ticket('SHOP-2')])[0].tickets.map((t) => t.key), ['SHOP-2'], 'the filter reaches tickets');
+});
+
+test('picking tickets: the first is the card’s (its title, parts and mapped workspace), later ones related', () => {
+  const c = newComposer(W1, 'CARD-3');
+  assert.equal(c.tab, 'tickets');
+  const r = pickTicket(c, ticket('PAY-9'), [W1, W2], new Set()) as Composer;
+  assert.equal(r.ticket!.key, 'PAY-9');
+  assert.equal(r.title, 'Title of PAY-9');
+  assert.equal(r.workspaceId, 'w2', 'the project maps to Payments');
+  assert.deepEqual(r.packet.workspace.map((i) => i.label), ['pay']);
+  assert.deepEqual(r.packet.ticket.map((i) => i.kind), ['desc', 'ac']);
+  assert.equal(r.launch.message, 'Plan PAY-9.');
+  assert.equal(composerKey(r, 'CARD-3'), 'PAY-9');
+  assert.match(String(pickTicket(r, ticket('PAY-9'), [W1, W2], new Set())), /this card’s ticket/);
+  const rel = pickTicket(r, ticket('SHOP-4'), [W1, W2], new Set()) as Composer;
+  assert.deepEqual(rel.packet.card.map((i) => i.label), ['Related ticket: SHOP-4 Title of SHOP-4']);
+  assert.equal((pickTicket(rel, ticket('SHOP-4'), [W1, W2], new Set()) as Composer).packet.card.length, 0, 'Space again takes it out');
+  assert.match(String(pickTicket(c, ticket('PAY-9'), [W1, W2], new Set(['PAY-9']))), /already has a card/);
+  const d = draftOf(r) as { title: string; ticketKey?: string };
+  assert.equal(d.ticketKey, 'PAY-9');
+  assert.equal(d.title, 'Title of PAY-9');
+  const back = dropTicket(r, 'CARD-3');
+  assert.equal(back.ticket, null);
+  assert.equal(back.packet.ticket.length, 0);
+  assert.equal(back.launch.message, 'Plan CARD-3.');
+  const order = ticketSources(c, [ticket('A-1', { done: true, updatedAt: 9 }), ticket('A-2', { updatedAt: 1 }), ticket('A-3', { updatedAt: 5 }), ticket('A-4', { updatedAt: 8 })], new Set(['A-4']));
+  assert.deepEqual(order.map((t) => t.key), ['A-3', 'A-2', 'A-4', 'A-1'], 'open first, then on the line, then done');
+  const fromTicket = newComposer(W2, 'CARD-3', ticket('PAY-9'));
+  assert.equal(fromTicket.tab, 'repos', 'from a ticket, panel 1 opens on the repos');
+  assert.equal(fromTicket.title, 'Title of PAY-9');
 });

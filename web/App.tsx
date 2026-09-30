@@ -38,11 +38,12 @@ function Legend() {
     return row?.layer === 'card' && row.item.kind === 'repo';
   });
   const lineFocus = useStore((s) => Boolean(s.line.focus && s.cards.some((c) => c.id === s.line.focus)));
+  const onTicket = useStore((s) => Boolean(s.line.focus?.startsWith('t:')));
   const hasSession = useStore((s) => Boolean(s.cards.find((c) => c.id === (s.line.drawer ?? s.line.focus))?.sessionId));
   const filtered = useStore((s) => Boolean(s.line.q.trim()));
   if (modal) return null;
   const items = screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, hasSession, filtered, pane, preview, cardRepo, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings });
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (

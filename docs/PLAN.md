@@ -51,6 +51,8 @@ Target: going from "a session needs me" to "handled" should take **3 keystrokes 
 | `+` / `−` | Add a repo from the library to the workspace shown / remove one |
 | `Shift+E` / `Shift+I` | Share the workspace as a file / import one |
 | `F` | The folders the repo library lists |
+| `n` / `Enter` (a ticket in the Inbox) | Start work on it: the new-card screen with the ticket as context (§31) |
+| `Shift+T` | Tickets: demo set, Jira, Trello, project → workspace (§31) |
 | `Delete` | Take the card off the line |
 
 ### Folder picker
@@ -734,3 +736,36 @@ Not planned: more Claude Code parity for its own sake (`!` shell, model pickers)
 **Amended the same day: the Unticketed row is gone.** The owner didn't want it: not every session belongs on the line, so a row of the ones without a card is noise. Removed with its keys (`u`, `R` / `X` there, `↓` into it). Sessions without a card are found with `Ctrl+K`, as before; `Alt+↑ ↓` now walk the cards' sessions only, and `/` filters the cards.
 
 **Next:** Jira/Trello import against mock tickets (the Inbox, `n` on a ticket, the ticket layer of the packet), then adding context later.
+
+## 31. Ticket Line, milestone 4: tickets from Jira and Trello (against demo tickets)
+
+2026-09-29. The Inbox fills with tickets, and a ticket becomes a card with its context. The owner has no Jira credentials yet, so it was built against a demo set in the real shape, with the Jira and Trello clients written and tested against the APIs' JSON but not yet against a live site.
+
+**How tickets get in** (`server/tickets.ts`, read-only, nothing is ever written back):
+- **Jira Cloud:** `CC_CONTROL_JIRA_SITE`, `CC_CONTROL_JIRA_EMAIL`, `CC_CONTROL_JIRA_TOKEN` (an API token), optional `CC_CONTROL_JIRA_JQL` (default: assigned to me, not done). It POSTs `/rest/api/3/search/jql` with basic auth. `fromJira` flattens the description from Atlassian Document Format and splits out the **acceptance criteria**: the list under a heading or bold line called "Acceptance criteria", "Done when" or "Definition of done" (Jira has no standard field; this is the common convention). It also maps comments, attachments, issue links (with their relation), status and done.
+- **Trello:** `CC_CONTROL_TRELLO_KEY`, `CC_CONTROL_TRELLO_TOKEN`, `CC_CONTROL_TRELLO_BOARDS` (board ids). `fromTrello`: the key is the board's initials and the card number (Web board → `WB-12`); the acceptance criteria come from the checklist called "Acceptance criteria" / "Done when", else the first checklist; the status is the card's list, and it's done when that list is called Done or the card is archived.
+- **Tokens stay on the server** (environment variables; the page only sees whether a source is connected, or why it failed). The server fetches on start and every 5 minutes while a source is connected; `R` in the Tickets dialog fetches again.
+- **Demo tickets:** the mock's (SHOP-155, PAY-91, SHOP-160, PAY-77, DOCS-19, SHOP-98 done, and a Trello WB-12), switched on with `D` in the Tickets dialog. Off by default.
+- **Project → workspace:** `Shift+T` opens Tickets: each source's state, the demo switch, and each project (Jira key / Trello board) with the workspace it goes to (`↑ ↓` project, `← →` workspace). Saved on the server. An unmapped project's tickets show under All only.
+
+**On the line:**
+- **The Inbox** shows open tickets that no card has started, in the workspace shown, newest first. Tiles carry the key (Jira blue, Trello violet), source, workspace, status and age.
+- **`n` or `Enter` on a ticket** opens the new-card screen with it: its title, its workspace (from the mapping), "Plan SHOP-155." as the opening message, and a branch named after the key. The card is called after the ticket (the tab title too), and a ticket gets one card.
+- **Panel 1 has Tickets and Repos** (`← →`). On Tickets, `/` searches by key or words. `Space` on the first ticket makes it the card's; later ones go in as **related tickets** (card layer), and `Space` again takes one out. `x` on the card's own ticket takes it off.
+- **The ticket layer** follows the mock: the description and each acceptance criterion on; the comments (with the latest quoted) and linked tickets there but off; attachments on, by name. `p` shows it as Claude gets it, under `## The ticket (Jira SHOP-155)` with a "Done when" list.
+- The card's drawer shows the ticket (a link to it when it's real) and its layer on the Context tab.
+- `PROTOCOL` 5 (`tickets`, `tickets.demo`, `tickets.map`, `tickets.refresh`, and the draft's `ticketKey`; the server fills in the ticket itself).
+
+**Found and fixed on the way (milestone 2's hooks):** when two helper agents ran in parallel and one stopped at a permission prompt, the other's next tool call reset the card to "working" while the prompt still waited. A helper's tool call no longer clears a waiting prompt (tested).
+
+**Verified** (isolated server, Demo workspace, scripted with Playwright; 23 checks, and a real card):
+- The Inbox started empty, saying how to get tickets; `Shift+T` said Jira and Trello were not connected; `D` brought in the demo tickets and their projects; `→` mapped Storefront to Demo.
+- Demo's Inbox showed SHOP-155 and SHOP-160 only (not the done SHOP-98, not Payments'); All showed the unmapped ones, marked "no workspace".
+- `n` on SHOP-155 opened the new-card screen with the ticket and every part of its layer; `←` switched to Tickets; `/ SHOP-160 Enter` added it as related; `p` showed the ticket section with "Done when" and "Also look at", and no comments (off).
+- Started with Haiku on the current branch, tab titled SHOP-155: it linked, the Context tab said "from Jira SHOP-155 (a demo ticket)", SHOP-155 left the Inbox and its card went on the board. **Claude was only told "Plan SHOP-155." and started exploring the cart code**, so the ticket reached it through the hook.
+- `c` opens on Tickets; `Space` made the first open ticket the card's (tickets already on the line sort after open ones, found by this check); `x` took it off. `?` has the new rows.
+- No console errors. `pnpm typecheck`, `pnpm test` (159) and the Vite build pass.
+
+**Not yet:** a live Jira site and Trello board (the owner sends the site, email and token when ready; the mapping and ADF parsing are the likely places to adjust); dragging a ticket onto Plan (mouse); `x` on a ticket to add it to a running card (that is "adding context later", next); the Files, Notes and Findings tabs.
+
+**Next:** adding context later (a UserPromptSubmit hook sends queued extras with the next message), then run recipes (Try it), then Ship.

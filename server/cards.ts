@@ -11,10 +11,11 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  branchFor, CARD_MODELS, defaultMessage, homeOf, includedRepos, LAUNCH_MODES, modelFor, packetText, tokens, fmtK, worktreeFor, wtArg,
+  branchFor, CARD_MODELS, defaultMessage, PACKET_KINDS, homeOf, includedRepos, LAUNCH_MODES, modelFor, packetText, tokens, fmtK, worktreeFor, wtArg,
   type BranchChoice, type BootStep, type Card, type CardDraft, type LaunchMode, type Packet, type PacketItem,
 } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
+import type { Ticket } from '../shared/tickets.ts';
 import { repoName, samePath } from '../shared/workspaces.ts';
 import { applyEvent, TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { normalizeFolder } from './fs-browse.ts';
@@ -41,9 +42,10 @@ function cleanItems(raw: unknown): PacketItem[] {
       const path = normalizeFolder(i.id);
       if (!path || !isDir(path)) throw new Error(`Not a folder: ${str(i.id, 200)}`);
       out.push({ kind: 'repo', id: path, label: repoName(path), on: i.on !== false });
-    } else if (i.kind === 'note') {
+    } else if (i.kind && PACKET_KINDS.includes(i.kind)) {
       const label = str(i.label, 500).trim();
-      if (label) out.push({ kind: 'note', id: str(i.id, 200) || label, label, on: i.on !== false });
+      const text = str(i.text, 20_000);
+      if (label) out.push({ kind: i.kind, id: str(i.id, 200) || label, label, ...(text ? { text } : {}), on: i.on !== false });
     }
   }
   return out;
@@ -62,7 +64,11 @@ export function cleanDraft(raw: unknown, workspaces: Workspace[]): CardDraft {
   const mode: LaunchMode = LAUNCH_MODES.some((m) => m.id === l.mode) ? l.mode! : 'plan';
   const branch: BranchChoice = l.branch === 'current' || l.branch === 'worktree' ? l.branch : 'new';
   const model = CARD_MODELS.find((m) => m.id === l.model)?.id;
-  return { title, workspaceId, packet, launch: { home, mode, branch, ...(model ? { model } : {}), message: str(l.message, 1000).replace(/[\r\n]+/g, ' ').trim() } };
+  const ticketKey = str(d.ticketKey, 60).trim();
+  return {
+    title, workspaceId, packet, ...(ticketKey ? { ticketKey } : {}),
+    launch: { home, mode, branch, ...(model ? { model } : {}), message: str(l.message, 1000).replace(/[\r\n]+/g, ' ').trim() },
+  };
 }
 
 function git(cwd: string, args: string[]): Promise<string> {
@@ -173,10 +179,15 @@ export class CardService {
   }
 
   /** Branch, then the terminal tab. Fails before saving anything if either can't be done, so the new-card screen can be fixed and retried. */
-  async start(draft: CardDraft): Promise<Card> {
+  async start(draft: CardDraft, ticket?: Ticket): Promise<Card> {
     const home = homeOf(draft.packet, draft.launch)!;
-    const key = this.store.nextCardKey();
-    const card: Card = { ...draft, id: crypto.randomUUID(), key, stage: draft.launch.mode === 'plan' ? 'plan' : 'build', createdAt: Date.now(), boot: [] };
+    if (ticket && this.list().some((c) => c.key === ticket.key)) throw new Error(`${ticket.key} already has a card on the line.`);
+    // A ticket's card is called after the ticket; the rest are numbered.
+    const key = ticket?.key ?? this.store.nextCardKey();
+    const card: Card = {
+      ...draft, ...(ticket ? { title: ticket.title, ticket } : {}),
+      id: crypto.randomUUID(), key, stage: draft.launch.mode === 'plan' ? 'plan' : 'build', createdAt: Date.now(), boot: [],
+    };
     if (!card.launch.message) card.launch.message = defaultMessage(key, card.launch.mode);
     const size = tokens(packetText(card, key, branchFor(key, card.title)));
     this.step(card, `Saved the context packet (${fmtK(size)})`);

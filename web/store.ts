@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Card } from '../shared/cards.ts';
+import type { Ticket, TicketProject, TicketSources } from '../shared/tickets.ts';
 import type { Command, CommandGroup, ModelChoice, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, Todo, TranscriptItem, Workspace } from '../shared/protocol.ts';
 import { loadFolds, saveFolds, toggled, type FoldKey, type Folds } from './folds.ts';
 import type { QaState } from './questions.ts';
@@ -32,6 +33,8 @@ export type Modal =
   | { kind: 'sources' }
   /** Take a card off the Ticket Line. */
   | { kind: 'deleteCard'; id: string }
+  /** Where tickets come from, and which workspace each project goes to. */
+  | { kind: 'tickets' }
   /** "All" is showing: which workspace a workspace key (+ − E ⇧E ⇧Delete) is for. */
   | { kind: 'pickWorkspace'; then: WorkspaceAction }
   | null;
@@ -75,6 +78,10 @@ interface State {
   nextKey: string;
   cardModel: string | null;
   userModel: string | null;
+  /** Tickets from Jira and Trello (and the demo set), the projects they come from, and how each source is doing. */
+  tickets: Ticket[];
+  ticketProjects: TicketProject[];
+  ticketSources: TicketSources | null;
   /**
    * The board: the focused card, the card open in the drawer and its tab, the workspace shown, and
    * the text filter (/).
@@ -138,6 +145,9 @@ export const useStore = create<State>(() => ({
   nextKey: 'CARD-1',
   cardModel: null,
   userModel: null,
+  tickets: [],
+  ticketProjects: [],
+  ticketSources: null,
   line: { focus: null, drawer: null, tab: 'over', filter: loadFilter(), q: '', searching: false },
   composer: null,
   openId: null,

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import type { Workspace } from '../../shared/protocol.ts';
+import type { TicketSource } from '../../shared/tickets.ts';
 import type { Tone } from '../home-model.ts';
 
 export function Key({ k, size, tone, className = '' }: { k: ReactNode; size?: 'sm' | 'lg'; tone?: 'acc' | 'attn' | 'bad' | 'ghost'; className?: string }) {
@@ -101,4 +102,9 @@ export function Pill({ tone, children, spin }: { tone: Tone; children: ReactNode
       {children}
     </span>
   );
+}
+
+/** A card's or ticket's key as a badge: Jira keys in blue, Trello in its own colour, plain cards grey. */
+export function TicketKey({ k, source }: { k: string; source?: TicketSource }) {
+  return <span className={`whitespace-nowrap rounded-md px-1.5 font-mono text-[11.5px] font-bold ${source === 'trello' ? 'bg-calm-bg text-calm' : source === 'jira' ? 'bg-busy-bg text-busy' : 'bg-raise text-sub'}`}>{k}</span>;
 }

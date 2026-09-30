@@ -2,6 +2,7 @@ import { listStep } from '../list-step.ts';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { addPath, homeRepo, isInside, removePath, repoName, samePath, WORKSPACE_COLORS, workspaceRepos, workspacesFor } from '../../shared/workspaces.ts';
 import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
+import type { SourceState } from '../../shared/tickets.ts';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
 import { keymap, openSession } from '../keys.ts';
@@ -38,6 +39,7 @@ export function Dialogs() {
     case 'sources': return <SourcesDialog />;
     case 'deleteCard': return <DeleteCardDialog id={modal.id} />;
     case 'pickWorkspace': return <PickWorkspaceDialog then={modal.then} />;
+    case 'tickets': return <TicketsDialog />;
   }
 }
 
@@ -496,6 +498,86 @@ function DeleteCardDialog({ id }: { id: string }) {
         <button className="btn" onClick={close}>Keep it<Key k="N" size="sm" /></button>
         <button className="btn btn-primary" onClick={doIt}>Remove<Key k="Y" size="sm" tone="ghost" /></button>
       </div>
+    </Overlay>
+  );
+}
+
+/** One source's state in the Tickets dialog. */
+function SourceLine({ name, state, setup }: { name: string; state: SourceState | undefined; setup: string }) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-line px-3 py-2">
+      <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${state?.state === 'ok' ? 'bg-ok' : state?.state === 'error' ? 'bg-bad' : 'bg-faint'}`} />
+      <div className="min-w-0 grow">
+        <div className="font-semibold">{name}</div>
+        <div className="text-sm text-sub">
+          {state?.state === 'ok' ? `Connected: ${state.count} ticket${state.count === 1 ? '' : 's'}.`
+            : state?.state === 'error' ? <span className="text-bad">{state.message}</span>
+            : <>Not connected. {setup} Tokens stay on the server; the page never sees them.</>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Shift+T on the line: where tickets come from (Jira, Trello, the demo set) and which workspace
+ * each project goes to. Read-only: nothing is ever written back to Jira or Trello.
+ */
+function TicketsDialog() {
+  const sources = useStore((s) => s.ticketSources);
+  const projects = useStore((s) => s.ticketProjects);
+  const workspaces = useStore((s) => s.workspaces);
+  const [index, setIndex] = useState(0);
+  const at = Math.min(index, projects.length - 1);
+  const map = (i: number, delta: number) => {
+    const p = projects[i];
+    if (!p) return;
+    const opts = [null, ...workspaces.map((w) => w.id)];
+    const next = opts[(opts.indexOf(p.workspaceId) + delta + opts.length) % opts.length];
+    send({ type: 'tickets.map', project: p.id, workspaceId: next });
+  };
+  useDialogKeys((e) => {
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowDown') setIndex(Math.min(projects.length - 1, at + 1));
+    else if (e.key === 'ArrowUp') setIndex(Math.max(0, at - 1));
+    else if (e.key === 'ArrowRight') map(at, 1);
+    else if (e.key === 'ArrowLeft') map(at, -1);
+    else if (e.key === 'd' || e.key === 'D') send({ type: 'tickets.demo', on: !sources?.demo });
+    else if (e.key === 'r' || e.key === 'R') send({ type: 'tickets.refresh' });
+    else return false;
+    return true;
+  });
+  return (
+    <Overlay label="Tickets" wide>
+      <DialogTitle>Tickets</DialogTitle>
+      <div className="grid gap-2">
+        <SourceLine name="Jira" state={sources?.jira} setup="Set CC_CONTROL_JIRA_SITE, CC_CONTROL_JIRA_EMAIL and CC_CONTROL_JIRA_TOKEN (an API token) where the server starts, and restart it." />
+        <SourceLine name="Trello" state={sources?.trello} setup="Set CC_CONTROL_TRELLO_KEY, CC_CONTROL_TRELLO_TOKEN and CC_CONTROL_TRELLO_BOARDS (board ids) where the server starts, and restart it." />
+        <button onClick={() => send({ type: 'tickets.demo', on: !sources?.demo })} className="flex items-center gap-3 rounded-xl border border-line px-3 py-2 text-left hover:bg-raise">
+          <span className={`grid h-5 w-5 shrink-0 place-items-center rounded border-[1.5px] border-line font-mono text-xs font-bold text-ok`}>{sources?.demo ? '✓' : ''}</span>
+          <span className="grow"><span className="font-semibold">Demo tickets</span><span className="block text-sm text-sub">Made-up Jira and Trello tickets, to try the Inbox before a real site is connected.</span></span>
+          <Key k="D" size="sm" />
+        </button>
+      </div>
+      <h3 className="eyebrow mb-2 mt-5">Which workspace each project goes to</h3>
+      {projects.length ? (
+        <ul className="space-y-1" role="listbox" aria-label="Projects">
+          {projects.map((p, i) => {
+            const ws = workspaces.find((w) => w.id === p.workspaceId) ?? null;
+            return (
+              <li key={p.id} role="option" aria-selected={i === at} onMouseEnter={() => setIndex(i)}
+                className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 ${i === at ? 'is-focus bg-raise' : ''}`}>
+                <span className="w-14 shrink-0 text-xs text-faint">{p.source === 'jira' ? 'Jira' : 'Trello'}</span>
+                <span className="min-w-0 grow truncate font-semibold">{p.name}<span className="ml-2 font-normal text-faint">{p.source === 'jira' ? p.id : ''} · {p.count} ticket{p.count === 1 ? '' : 's'}</span></span>
+                <button className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-surface hover:text-ink" onClick={() => map(i, -1)} aria-label="Previous workspace"><Icon name="back" size={14} /></button>
+                <span className="flex w-40 items-center gap-2 truncate text-sm">{ws ? <><WsBadge ws={ws} size={18} />{ws.name}</> : <span className="text-faint">No workspace (All only)</span>}</span>
+                <button className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-surface hover:text-ink" onClick={() => map(i, 1)} aria-label="Next workspace"><Icon name="right" size={14} /></button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : <p className="text-sm text-faint">No tickets yet, so no projects to map. Connect a source above, or switch on the demo tickets.</p>}
+      <DialogKeys items={[['↑ ↓', 'Project'], ['← →', 'Workspace'], ['D', 'Demo tickets'], ['R', 'Fetch again'], ['Esc', 'Close']]} />
     </Overlay>
   );
 }

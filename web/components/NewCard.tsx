@@ -4,20 +4,25 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { fmtK, HOOK_CONTEXT_LIMIT, homeOf, itemTokens, launchLines, memoryPct, modelFor, modelName, packetText, tokens } from '../../shared/cards.ts';
+import { SOURCE_NAME, ticketSub } from '../../shared/tickets.ts';
 import { samePath } from '../../shared/workspaces.ts';
-import { goRows, packetRows, pickOption, repoOrigin, sources, toggleSource, togglePacketRow, type Composer, type Pane } from '../line-model.ts';
+import { composerKey, goRows, packetRows, pickOption, pickTicket, repoOrigin, sources, ticketSources, toggleSource, togglePacketRow, type Composer, type Pane } from '../line-model.ts';
 import { keepRepo, startWork, updateComposer } from '../line-keys.ts';
-import { set, useStore } from '../store.ts';
-import { Key, WsBadge } from './ui.tsx';
+import { get, set, useStore } from '../store.ts';
+import { Key, TicketKey, WsBadge } from './ui.tsx';
+
+/** The small kind badge on a packet row. */
+const KIND: Record<string, string> = { repo: 'repo', note: 'note', desc: 'ticket', ac: 'done when', comments: 'talk', attach: 'file', linked: 'link', ticket: 'ticket' };
 
 export function NewCard() {
   const c = useStore((s) => s.composer)!;
   const workspaces = useStore((s) => s.workspaces);
-  const key = useStore((s) => s.nextKey);
+  const key = useStore((s) => composerKey(s.composer!, s.nextKey));
   const pinned = useStore((s) => s.cardModel);
   const user = useStore((s) => s.userModel);
   const ws = workspaces.find((w) => w.id === c.workspaceId) ?? null;
   const text = packetText(c, key);
+  const t = c.ticket;
   const model = modelFor(c.launch, pinned ?? undefined, user ?? undefined);
   const size = tokens(text);
   return (
@@ -26,18 +31,20 @@ export function NewCard() {
         <WsBadge ws={ws} size={30} />
         <div className="flex min-w-0 grow flex-col gap-1">
           <div className="flex items-center gap-1.5 text-sm text-faint">
-            New card · {key} · {ws?.name ?? 'no workspace'} · no ticket yet ·
+            New card · {key} · {ws?.name ?? 'no workspace'} · {t ? `from ${SOURCE_NAME[t.source]}${t.demo ? ' (demo)' : ''}` : 'no ticket yet'} ·
             <button className="flex items-center gap-1.5 rounded-md border border-line bg-raise px-1.5 font-semibold text-ink hover:border-ring" onClick={() => updateComposer((x) => ({ ...x, pane: 'go' }))}
               title="The model Claude runs in this card. m changes it; so does Model under How it starts.">
               {modelName(model)}{!c.launch.model && <span className="font-normal text-faint">default</span>}<Key k="m" size="sm" />
             </button>
           </div>
-          <input
-            id="cp-title" type="text" autoComplete="off" value={c.title}
-            placeholder="What should this card do? e.g. Add a size guide to product pages"
-            onChange={(e) => updateComposer((x) => ({ ...x, title: e.target.value }))}
-            className="w-full rounded-lg border border-line bg-bg px-2.5 py-1.5 text-[19px] font-bold outline-none focus:border-ring focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--c-ring)_20%,transparent)]"
-          />
+          {t
+            ? <div className="flex min-w-0 items-center gap-2 py-1.5 text-[19px] font-bold"><TicketKey k={t.key} source={t.source} /><span className="truncate">{t.title}</span></div>
+            : <input
+                id="cp-title" type="text" autoComplete="off" value={c.title}
+                placeholder="What should this card do? e.g. Add a size guide to product pages, or pick a ticket"
+                onChange={(e) => updateComposer((x) => ({ ...x, title: e.target.value }))}
+                className="w-full rounded-lg border border-line bg-bg px-2.5 py-1.5 text-[19px] font-bold outline-none focus:border-ring focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--c-ring)_20%,transparent)]"
+              />}
         </div>
         <div className="hidden items-center gap-2 whitespace-nowrap text-[13px] lg:flex" title="About 4 characters per token">
           <span className="text-faint">Claude will start knowing</span>
@@ -76,26 +83,54 @@ function PaneBox({ pane, n, title, right, children, c }: { pane: Pane; n: number
 
 function Sources({ c }: { c: Composer }) {
   const repos = useStore((s) => s.library.repos);
+  const tickets = useStore((s) => s.tickets);
+  const cards = useStore((s) => s.cards);
+  const onTickets = c.tab === 'tickets';
   const list = sources(c, repos);
-  const si = Math.min(c.si, list.length - 1);
+  const started = new Set(cards.map((x) => x.key));
+  const tlist = ticketSources(c, tickets, started);
+  const si = Math.min(c.si, (onTickets ? tlist.length : list.length) - 1);
   const focused = c.pane === 'src';
   useEffect(() => {
-    if (focused && list[si]) document.getElementById(`src-${si}`)?.scrollIntoView({ block: 'nearest' });
-  }, [focused, si, list]);
+    if (focused && si >= 0) document.getElementById(`src-${si}`)?.scrollIntoView({ block: 'nearest' });
+  }, [focused, si, c.tab]);
+  const tab = (id: Composer['tab'], name: string) => (
+    <button onClick={() => updateComposer((x) => ({ ...x, tab: id, si: 0, pane: 'src' }))}
+      className={`rounded-md border px-1.5 py-0.5 text-[12.5px] ${c.tab === id ? 'border-line bg-raise font-semibold' : 'border-transparent text-faint hover:text-ink'}`}>{name}</button>
+  );
   return (
     <PaneBox pane="src" n={1} title="Add context" c={c} right={<><span className="text-xs text-faint">click, or</span><Key k="Space" size="sm" /></>}>
       <div className="flex items-center gap-1 px-3 pb-2">
-        <span className="rounded-md border border-line bg-raise px-1.5 py-0.5 text-[12.5px] font-semibold">Repos</span>
-        <span className="ml-1 text-xs text-faint">Tickets, files, notes and findings come with later milestones.</span>
+        {tab('tickets', 'Tickets')}{tab('repos', 'Repos')}
+        <span className="grow" />
+        <Key k="←" size="sm" /><Key k="→" size="sm" />
       </div>
       <label className="mx-3 mb-2 flex items-center gap-2 rounded-lg border border-line bg-surface py-1 pl-2.5 pr-1.5">
         <Key k="/" size="sm" />
-        <input id="cp-q" type="text" autoComplete="off" value={c.q} placeholder="Search the repo library"
+        <input id="cp-q" type="text" autoComplete="off" value={c.q} placeholder={onTickets ? 'Search tickets, or type a key, e.g. SHOP-160' : 'Search the repo library'}
           onChange={(e) => updateComposer((x) => ({ ...x, q: e.target.value, si: 0 }))}
           className="w-full bg-transparent text-sm outline-none placeholder:text-faint" />
       </label>
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
-        {list.length ? list.map((r, i) => {
+        {onTickets ? (tlist.length ? tlist.map((tk, i) => {
+          const own = c.ticket?.key === tk.key;
+          const related = c.packet.card.some((x) => x.id === `ticket:${tk.key}`);
+          const taken = !own && started.has(tk.key);
+          return (
+            <button key={tk.key} id={`src-${i}`} onClick={() => updateComposer((x) => { const r = pickTicket({ ...x, pane: 'src', si: i }, tk, get().workspaces, started); return typeof r === 'string' ? r : { ...r, pane: 'src', si: i }; })}
+              className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${focused && i === si ? 'is-focus bg-raise' : 'hover:bg-raise'} ${own || related ? 'opacity-70' : ''}`}>
+              <TicketKey k={tk.key} source={tk.source} />
+              <span className="min-w-0 grow">
+                <span className="block truncate">{tk.title}</span>
+                <span className="block truncate text-xs text-faint">{ticketSub(tk)}{taken ? ' · has a card' : ''}{tk.demo ? ' · demo' : ''}</span>
+              </span>
+              {own ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">this card’s</span>
+                : related ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">related</span>
+                : <span className="w-4 text-center font-mono text-[17px] font-bold text-faint">+</span>}
+            </button>
+          );
+        }) : <div className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{tickets.length ? `Nothing matches “${c.q}”` : <>No tickets yet. <Key k="⇧T" size="sm" /> on the board connects Jira or Trello, or shows demo tickets.</>}</div>)
+        : list.length ? list.map((r, i) => {
           const where = repoOrigin(c, r.path);
           const inPacket = where === 'workspace' ? c.packet.workspace.find((x) => samePath(x.id, r.path))?.on : where === 'card';
           return (
@@ -111,7 +146,9 @@ function Sources({ c }: { c: Composer }) {
           );
         }) : <div className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{repos.length ? `Nothing matches “${c.q}”` : 'The repo library is empty. F on the board picks the folders it scans.'}</div>}
       </div>
-      <div className="border-t border-line px-4 pb-3 pt-2 text-[12.5px] leading-snug text-faint">The repo library. Extra repos start with --add-dir, so Claude can read and edit them.</div>
+      <div className="border-t border-line px-4 pb-3 pt-2 text-[12.5px] leading-snug text-faint">{onTickets
+        ? 'Jira and Trello tickets, read-only. The first you pick becomes the card’s ticket; later ones go in as related.'
+        : 'The repo library. Extra repos start with --add-dir, so Claude can read and edit them.'}</div>
     </PaneBox>
   );
 }
@@ -132,7 +169,7 @@ function PacketPane({ c, text }: { c: Composer; text: string }) {
       <div key={layer + item.id} onClick={() => updateComposer((x) => { const r = togglePacketRow({ ...x, pi: at }, at); return typeof r === 'string' ? r : { ...r, pi: at }; })}
         className={`flex min-w-0 cursor-pointer items-center gap-2.5 px-3 py-1.5 text-[13.5px] [&+&]:border-t [&+&]:border-line/60 ${item.on ? '' : 'text-faint'} ${focused && at === pi ? 'is-focus' : ''}`}>
         <span className="grid h-4 w-4 shrink-0 place-items-center rounded border-[1.5px] border-line font-mono text-[11px] font-bold text-ok">{item.on ? '✓' : ''}</span>
-        <span className="rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">{item.kind}</span>
+        <span className="whitespace-nowrap rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">{KIND[item.kind] ?? item.kind}</span>
         <span className="min-w-0 grow truncate">{item.label}</span>
         {isHome && <span className="rounded-full bg-busy-bg px-2 text-[11px] font-semibold text-busy">starts here</span>}
         {item.kind === 'repo' && item.on && !isHome && <span className="text-xs text-faint">--add-dir</span>}
@@ -169,7 +206,7 @@ function PacketPane({ c, text }: { c: Composer; text: string }) {
           ? <pre className="m-0 whitespace-pre-wrap break-words rounded-xl border border-line bg-bg px-3.5 py-3 font-mono text-[12.5px] leading-relaxed">{text}</pre>
           : <>
             {layer('Workspace', wsName ? `shared by every ${wsName} card · set once` : 'no workspace', 'workspace', 'Pick a workspace under How it starts, or add repos from the library.')}
-            {layer('Ticket', 'none yet', 'ticket', 'No ticket. Describe the work in the title. Jira and Trello import comes next.')}
+            {layer('Ticket', c.ticket ? `from ${SOURCE_NAME[c.ticket.source]} ${c.ticket.key}` : 'none yet', 'ticket', 'No ticket. Pick one under Tickets, or describe the work in the title.')}
             {layer('This card', 'only this card gets these', 'card', <>Add repos from the library with <Key k="Space" size="sm" />. <Key k="w" size="sm" /> on one keeps it for the whole workspace.</>,
               <div className={`flex items-start gap-2.5 border-t border-line/60 px-3 py-1.5 ${noteFocused ? 'is-focus' : ''}`}>
                 <span className="mt-1.5 rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">you</span>

@@ -85,6 +85,8 @@ export interface LineLegendInput {
   view: 'board' | 'drawer' | 'composer';
   /** Board: a card is focused. */
   hasFocus?: boolean;
+  /** Board: a ticket in the Inbox is focused (n starts work on it). */
+  onTicket?: boolean;
   /** The focused card's session has linked (the expand key opens it). */
   hasSession?: boolean;
   /** The / filter has text in it. */
@@ -111,7 +113,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     return [
       { keys: ['Tab'], label: 'Next panel' },
       ...(x.pane === 'src'
-        ? [{ keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Add or remove' }, { keys: ['/'], label: 'Search' }]
+        ? [{ keys: ['←', '→'], label: 'Tickets / Repos' }, { keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Add or remove' }, { keys: ['/'], label: 'Search' }]
         : x.pane === 'pkt'
           ? (x.preview ? [] : [
             { keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Include or leave out' }, { keys: ['x'], label: 'Remove' },
@@ -136,9 +138,11 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   }
   return [
     { keys: ['←', '→', '↑', '↓'], label: 'Move' },
+    ...(x.onTicket ? [{ keys: ['n', 'Enter'], label: 'Start work', tone: 'acc' as const }] : []),
     ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open' }] : []),
     ...(x.hasSession ? [full] : []),
     { keys: ['c'], label: 'New card', tone: 'acc' },
+    { keys: ['⇧T'], label: 'Tickets' },
     { keys: ['1–9', '0'], label: 'Workspace / all' },
     { keys: ['/'], label: 'Filter' },
     ...(x.filtered ? [{ keys: ['Esc'], label: 'Clear filter' }] : []),
