@@ -7,7 +7,10 @@ import type { Card } from './cards.ts';
 /** The pull request a card opened, as last seen through gh. */
 export interface PullRequest {
   number: number;
+  /** Its page on the host. */
   url: string;
+  /** Where it lives (older cards: GitHub). */
+  host?: 'github' | 'azure';
   state?: 'OPEN' | 'MERGED' | 'CLOSED';
   /** gh's reviewDecision: APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, or empty. */
   review?: string;
@@ -33,6 +36,8 @@ export interface ShipPlan {
   newBranch?: string;
   /** The branch the PR goes into. */
   base: string;
+  /** Where the PR will open ("GitHub", "Azure DevOps"); empty when there is no host for the remote. */
+  host: string;
   files: ShipFile[];
   /** Commits already on the branch that the base doesn't have. */
   ahead: number;

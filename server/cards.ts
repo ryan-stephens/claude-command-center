@@ -81,7 +81,7 @@ function git(cwd: string, args: string[]): Promise<string> {
 }
 
 /** claude.exe on PATH, so Windows Terminal starts the same one a terminal would. */
-function findClaude(): string {
+export function findClaude(): string {
   if (process.env.CC_CONTROL_CLAUDE) return process.env.CC_CONTROL_CLAUDE;
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
     const exe = join(dir, 'claude.exe');

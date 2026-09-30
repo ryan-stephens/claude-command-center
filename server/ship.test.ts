@@ -87,7 +87,7 @@ test('ships only the files it ticked: branch off main, commit, push, PR; then fo
   writeFileSync(join(work, 'notes.txt'), 'mine, not the card’s\n');
   const card = seed(work);
   const cards = new CardService(store, { port: 7788, changed: () => {} });
-  const ship = new ShipService(cards, new RunService(() => {}, process.env), { gh: stub });
+  const ship = new ShipService(cards, new RunService(() => {}, process.env), { env: { ...process.env, CC_CONTROL_GH: stub } });
   try {
     const plan = await ship.plan(card);
     assert.equal(plan.branch, 'main');
@@ -99,7 +99,7 @@ test('ships only the files it ticked: branch off main, commit, push, PR; then fo
     assert.match(plan.body, /- `cart\.js`/);
 
     const pr = await ship.ship(card.id, { commit: plan.commit, title: plan.title, body: plan.body, paths: ['cart.js', 'not-a-change.js'] });
-    assert.deepEqual(pr, { number: 12, url: 'https://github.com/acme/web/pull/12', state: 'OPEN', checks: 'none', checkedAt: pr.checkedAt });
+    assert.deepEqual(pr, { number: 12, url: 'https://github.com/acme/web/pull/12', host: 'github', state: 'OPEN', checks: 'none', checkedAt: pr!.checkedAt });
     assert.equal(git(work, 'branch', '--show-current'), 'shop-155-save-cart-signed-out');
     assert.equal(git(work, 'log', '-1', '--format=%s'), 'feat: save cart for signed-out users (SHOP-155)');
     assert.equal(git(work, 'show', '--name-only', '--format=', 'HEAD'), 'cart.js', 'only the ticked file');
@@ -128,6 +128,22 @@ test('ships only the files it ticked: branch off main, commit, push, PR; then fo
   }
 });
 
+test('a changed tracked file listed first keeps its whole name (git status starts it with a space)', async () => {
+  const { work } = repo();
+  writeFileSync(join(work, 'README.md'), '# web, changed\n');
+  writeFileSync(join(work, 'zeta.txt'), 'new\n');
+  const card = { ...seed(work), files: [join(work, 'README.md')] };
+  store.saveCard(card, 'tok');
+  const cards = new CardService(store, { port: 7788, changed: () => {} });
+  const ship = new ShipService(cards, new RunService(() => {}, process.env), { env: { ...process.env, CC_CONTROL_GH: stub } });
+  try {
+    const plan = await ship.plan(card);
+    assert.deepEqual(plan.files, [{ path: 'README.md', status: ' M', mine: true }, { path: 'zeta.txt', status: '??', mine: false }]);
+  } finally {
+    ship.stop();
+  }
+});
+
 test('what stops it is said up front: no remote, nothing ticked', async () => {
   const work = join(dir, 'lonely');
   mkdirSync(work);
@@ -137,14 +153,37 @@ test('what stops it is said up front: no remote, nothing ticked', async () => {
   git(work, 'commit', '-m', 'init');
   const card = seed(work);
   const cards = new CardService(store, { port: 7788, changed: () => {} });
-  const ship = new ShipService(cards, new RunService(() => {}, process.env), { gh: stub });
+  const ship = new ShipService(cards, new RunService(() => {}, process.env), { env: { ...process.env, CC_CONTROL_GH: stub } });
   try {
     const plan = await ship.plan(card);
     assert.deepEqual(plan.blockers, ['The repo has no remote to push to.']);
+    assert.equal(plan.notes.some((n) => /doesn’t know/.test(n)), false, 'no remote: nothing about hosts');
     await assert.rejects(ship.ship(card.id, { commit: 'x', title: 'x', body: '', paths: [] }), /no remote/);
     const { work: w2 } = repo();
     const c2 = seed(w2);
     await assert.rejects(ship.ship(c2.id, { commit: 'x', title: 'x', body: '', paths: [] }), /Nothing to ship/);
+  } finally {
+    ship.stop();
+  }
+});
+
+test('a host cc-control doesn’t know: it still commits and pushes, and says to open the PR by hand', async () => {
+  const { work, remote } = repo();
+  writeFileSync(join(work, 'cart.js'), 'x\n');
+  const card = seed(work);
+  const cards = new CardService(store, { port: 7788, changed: () => {} });
+  const ship = new ShipService(cards, new RunService(() => {}, process.env), { env: {} });
+  try {
+    const plan = await ship.plan(card);
+    assert.deepEqual(plan.blockers, []);
+    assert.equal(plan.host, '');
+    assert.match(plan.notes.join(' '), /doesn’t know how to open a pull request on .*remote-.*\.git yet/);
+    const pr = await ship.ship(card.id, { commit: plan.commit, title: plan.title, body: plan.body, paths: ['cart.js'] });
+    assert.equal(pr, undefined);
+    assert.match(git(remote, 'branch', '--list'), /shop-155-save-cart-signed-out/, 'pushed');
+    const saved = cards.get(card.id)!;
+    assert.equal(saved.stage, 'ship');
+    assert.match(saved.ship!.steps.at(-1)!.text, /Open the pull request for shop-155-save-cart-signed-out in the browser/);
   } finally {
     ship.stop();
   }

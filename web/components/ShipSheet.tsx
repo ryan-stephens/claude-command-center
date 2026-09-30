@@ -132,7 +132,7 @@ function ShipForm({ id }: { id: string }) {
       <Steps id={id} />
       {error && <div className="mt-3 rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
       <div className="mt-4 flex items-center gap-3">
-        <span className="grow text-[13px] text-faint">{plan?.newBranch ? `Makes ${plan.newBranch}, commits` : 'Commits'} the ticked files by name, pushes, and opens the PR with gh. The card moves to Ship.</span>
+        <span className="grow text-[13px] text-faint">{plan?.newBranch ? `Makes ${plan.newBranch}, commits` : 'Commits'} the ticked files by name, pushes, and {plan && !plan.host ? 'then you open the PR in the browser' : `opens the PR${plan?.host ? ` on ${plan.host}` : ''}`}. The card moves to Ship.</span>
         <button className="btn" onClick={close} disabled={busy}>Cancel<Key k="Esc" size="sm" /></button>
         <button className="btn btn-primary" onClick={go} disabled={!plan || busy || Boolean(plan?.blockers.length)}>{busy ? 'Shipping…' : 'Ship it'}<Key k="Enter" size="sm" tone="ghost" /></button>
       </div>
@@ -170,7 +170,7 @@ function MergeSheet({ id }: { id: string }) {
       <Steps id={id} />
       {error && <div className="mt-3 rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
       <div className="mt-4 flex items-center gap-3">
-        <span className="grow text-[13px] text-faint">{merged ? 'The card is in Done.' : `Squash-merges it with gh and deletes ${card.branchName ?? 'the branch'} on the remote (your local branch stays). ${card.key} moves to Done.`}</span>
+        <span className="grow text-[13px] text-faint">{merged ? 'The card is in Done.' : `Squash-merges it on ${pr.host === 'azure' ? 'Azure DevOps' : 'GitHub'} and deletes ${card.branchName ?? 'the branch'} on the remote (your local branch stays). ${card.key} moves to Done.`}</span>
         <button className="btn" onClick={close} disabled={busy}>Cancel<Key k="Esc" size="sm" /></button>
         {!merged && <button className="btn btn-primary" onClick={go} disabled={busy}>{busy ? 'Merging…' : 'Merge'}<Key k="Enter" size="sm" tone="ghost" /></button>}
       </div>

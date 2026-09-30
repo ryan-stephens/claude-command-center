@@ -221,7 +221,7 @@ export function homeOf(p: Packet, launch: Pick<CardLaunch, 'home'>): string | un
   return repos.find((r) => samePath(r, launch.home)) ?? repos[0];
 }
 
-const STOP_WORDS = new Set(['a', 'an', 'the', 'for', 'to', 'of', 'on', 'in', 'and', 'with']);
+const STOP_WORDS = new Set(['a', 'an', 'the', 'for', 'to', 'of', 'on', 'in', 'and', 'with', 'at', 'by', 'from', 'into', 'is']);
 
 /** "card-3-size-guide-product" for CARD-3 "Add a size guide to product pages": short, git-safe. */
 export function branchFor(key: string, title: string): string {

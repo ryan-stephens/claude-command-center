@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { test } from 'node:test';
 import type { Store } from './store.ts';
-import { adfText, boardPrefix, demoTickets, fromJira, fromTrello, splitAcceptance, TicketService } from './tickets.ts';
+import { adfText, boardPrefix, demoTickets, fetchJira, fromJira, fromTrello, jiraConfig, jiraSearch, splitAcceptance, TicketService } from './tickets.ts';
 
 const text = (t: string) => ({ type: 'text', text: t });
 const para = (...c: object[]) => ({ type: 'paragraph', content: c });
@@ -115,4 +116,69 @@ test('a source that fails says why, and the others still load', async () => {
   await svc.refresh();
   assert.equal(svc.sources().jira.state, 'error');
   assert.equal(svc.list([]).length, demoTickets().length);
+});
+
+test('Jira Cloud or Data Center, from the site; the request each needs', () => {
+  assert.equal(jiraConfig({ CC_CONTROL_JIRA_SITE: 'https://acme.atlassian.net', CC_CONTROL_JIRA_TOKEN: 't' }), undefined, 'Cloud needs the email');
+  const cloud = jiraConfig({ CC_CONTROL_JIRA_SITE: 'https://acme.atlassian.net/', CC_CONTROL_JIRA_EMAIL: 'me@acme.com', CC_CONTROL_JIRA_TOKEN: 't' })!;
+  assert.equal(cloud.kind, 'cloud');
+  const c = jiraSearch(cloud);
+  assert.equal(c.url, 'https://acme.atlassian.net/rest/api/3/search/jql');
+  assert.equal((c.init.headers as Record<string, string>).Authorization, `Basic ${Buffer.from('me@acme.com:t').toString('base64')}`);
+  const dc = jiraConfig({ CC_CONTROL_JIRA_SITE: 'https://jira.vu.local/jira', CC_CONTROL_JIRA_TOKEN: 'pat', CC_CONTROL_JIRA_AC_FIELD: 'customfield_10500' })!;
+  assert.equal(dc.kind, 'server');
+  const s = jiraSearch(dc);
+  assert.equal(s.url, 'https://jira.vu.local/jira/rest/api/2/search', 'the context path is kept');
+  assert.equal((s.init.headers as Record<string, string>).Authorization, 'Bearer pat', 'a personal access token');
+  assert.ok((JSON.parse(String(s.init.body)).fields as string[]).includes('customfield_10500'));
+  const basic = jiraSearch(jiraConfig({ CC_CONTROL_JIRA_SITE: 'https://jira.vu.local', CC_CONTROL_JIRA_EMAIL: 'rstephens', CC_CONTROL_JIRA_TOKEN: 'pw' })!);
+  assert.match((basic.init.headers as Record<string, string>).Authorization, /^Basic /, 'username and password');
+  assert.equal(jiraConfig({ CC_CONTROL_JIRA_SITE: 'https://jira.example.com', CC_CONTROL_JIRA_TOKEN: 't', CC_CONTROL_JIRA_EMAIL: 'a@b', CC_CONTROL_JIRA_KIND: 'cloud' })!.kind, 'cloud', 'the kind can be said outright');
+});
+
+test('Data Center descriptions are wiki markup: headings, bold lines and # lists', () => {
+  assert.deepEqual(splitAcceptance('Guests lose the cart.\n\nh3. Acceptance Criteria\n# Survives closing the tab\n# Merges on sign-in\n\nh3. Notes\nSee PAY-9.'),
+    { description: 'Guests lose the cart.\n\nh3. Notes\nSee PAY-9.', acceptance: ['Survives closing the tab', 'Merges on sign-in'] });
+  assert.deepEqual(splitAcceptance('Fix it.\n*Acceptance criteria:*\n* One\n** Nested'), { description: 'Fix it.', acceptance: ['One', 'Nested'] });
+});
+
+test('acceptance criteria from their own field win over the description', () => {
+  const issue = { key: 'WS-7', fields: { summary: 'Proxy to Okteto', description: 'Point the UI at the backend.\n\nh3. Acceptance Criteria\n# not this', customfield_10500: '* Calls go to the Okteto URL\n* Local mode still works' } };
+  const t = fromJira(issue, 'https://jira.vu.local', 'customfield_10500');
+  assert.deepEqual(t.acceptance, ['Calls go to the Okteto URL', 'Local mode still works']);
+  assert.equal(t.url, 'https://jira.vu.local/browse/WS-7');
+});
+
+test('a real request to a Data Center-shaped server: Bearer token, v2 search, wiki markup; and what a 401 means', async () => {
+  let seen: { url?: string; auth?: string; body?: string } = {};
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => { body += d; });
+    req.on('end', () => {
+      seen = { url: req.url, auth: req.headers.authorization, body };
+      if (req.headers.authorization !== 'Bearer good') { res.statusCode = 401; res.statusMessage = 'Unauthorized'; res.end(); return; }
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ total: 1, issues: [{ key: 'WS-12', fields: {
+        summary: 'Workspaces UI talks to Okteto', description: 'The UI should proxy /api.\n\nh3. Acceptance Criteria\n# /api goes to the Okteto namespace',
+        status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } }, project: { key: 'WS', name: 'Workspaces' }, updated: '2026-09-30T10:00:00.000-0500',
+        comment: { comments: [{ author: { displayName: 'Pat' }, body: 'Use *okteto up* first', created: '2026-09-30T09:00:00.000-0500' }] },
+      } }] }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const site = `http://127.0.0.1:${(server.address() as { port: number }).port}/jira`;
+  try {
+    const tickets = await fetchJira(jiraConfig({ CC_CONTROL_JIRA_SITE: site, CC_CONTROL_JIRA_TOKEN: 'good' })!);
+    assert.equal(seen.url, '/jira/rest/api/2/search');
+    assert.equal(seen.auth, 'Bearer good');
+    assert.equal(JSON.parse(seen.body!).jql, 'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC');
+    assert.equal(tickets.length, 1);
+    assert.deepEqual([tickets[0].key, tickets[0].project, tickets[0].status, tickets[0].done], ['WS-12', 'WS', 'In Progress', false]);
+    assert.deepEqual(tickets[0].acceptance, ['/api goes to the Okteto namespace']);
+    assert.equal(tickets[0].comments[0].body, 'Use *okteto up* first');
+    await assert.rejects(fetchJira(jiraConfig({ CC_CONTROL_JIRA_SITE: site, CC_CONTROL_JIRA_TOKEN: 'bad' })!), /Jira said 401 Unauthorized: check the personal access token/);
+    await assert.rejects(fetchJira(jiraConfig({ CC_CONTROL_JIRA_SITE: 'https://127.0.0.1:1', CC_CONTROL_JIRA_TOKEN: 'x' })!), /Couldn't reach Jira at https:\/\/127\.0\.0\.1:1/);
+  } finally {
+    server.close();
+  }
 });

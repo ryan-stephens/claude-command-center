@@ -1,3 +1,4 @@
+import './boot.ts'; // first: the settings file and certificates, before anything reads CC_CONTROL_*
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type MiddlewareHandler } from 'hono';
@@ -66,7 +67,7 @@ function ticketsMsg(): ServerMsg {
 }
 
 const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env);
-const ship = new ShipService(cards, runs, { gh: process.env.CC_CONTROL_GH });
+const ship = new ShipService(cards, runs);
 
 /** Recipes for every repo the page may show one for: the library's, the workspaces' and the cards'. */
 function recipesMsg(): ServerMsg {

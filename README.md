@@ -27,14 +27,17 @@ Running several Claude Code sessions across several repos means a lot of termina
 
 ## Quick start
 
-You need **Node 24+**, **pnpm**, and the **Claude Code CLI, logged in**. Command Center runs on your existing Claude login; no API key needed.
+You need **Node 24+**, **pnpm**, **git**, **Windows Terminal** and the **Claude Code CLI, logged in**. Command Center runs on your existing Claude login; no API key needed.
 
 ```sh
 git clone https://github.com/ryan-stephens/claude-command-center.git
 cd claude-command-center
 pnpm install
+pnpm doctor         # checks this machine: Claude Code, Windows Terminal, git, settings, Jira, PR hosts
 pnpm start          # builds the app and serves http://localhost:7777
 ```
+
+**Settings and tokens** go in `%USERPROFILE%\.cc-control\config.env`, one `NAME=value` per line; [`docs/config.env.example`](docs/config.env.example) lists them all. The certificates Windows trusts are trusted too, so company servers with an internal certificate authority (an on-prem Jira or TFS) work without extra setup. Run `pnpm doctor` after changing settings: it signs in to Jira and reaches each workspace repo's PR host for real, and says what to fix.
 
 Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four groups of keys, then helps you pick your repo folder and make your first workspace. It follows your Windows light or dark setting (`Alt+T` switches).
 
@@ -72,16 +75,20 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `C` (number pad) | Fold the number pad away; `Tab` still opens it |
 | | `/` (start of a message) | Suggests commands and skills as you type, like Claude Code (`/cl` → `/clear`): `↑ ↓` `Tab` `Enter` `Esc` |
 
-## Connecting Jira or Trello
+## Connecting Jira, Trello and pull-request hosts
 
-Set these where you start the server, then restart it. The tokens never leave the server, and nothing is written back.
+Put these in `config.env` (or set them where you start the server), then restart it. The tokens never leave the server, and nothing is written back to the trackers.
 
 | Source | Variables |
 |---|---|
-| Jira Cloud | `CC_CONTROL_JIRA_SITE` (`https://you.atlassian.net`), `CC_CONTROL_JIRA_EMAIL`, `CC_CONTROL_JIRA_TOKEN` (an [API token](https://id.atlassian.com/manage-profile/security/api-tokens)), optional `CC_CONTROL_JIRA_JQL` (default: assigned to you, not done) |
+| Jira Data Center / Server | `CC_CONTROL_JIRA_SITE` (`https://jira.company.local`, with any context path), `CC_CONTROL_JIRA_TOKEN` (a personal access token) |
+| Jira Cloud | `CC_CONTROL_JIRA_SITE` (`https://you.atlassian.net`), `CC_CONTROL_JIRA_EMAIL`, `CC_CONTROL_JIRA_TOKEN` (an [API token](https://id.atlassian.com/manage-profile/security/api-tokens)) |
+| Jira, both | optional `CC_CONTROL_JIRA_JQL` (default: assigned to you, not done), `CC_CONTROL_JIRA_AC_FIELD` (a custom field holding the acceptance criteria) |
 | Trello | `CC_CONTROL_TRELLO_KEY`, `CC_CONTROL_TRELLO_TOKEN`, `CC_CONTROL_TRELLO_BOARDS` (board ids, comma-separated) |
 
-Then `Shift+T` on the line shows whether each is connected, and maps each project or board to a workspace. Acceptance criteria come from an "Acceptance criteria" (or "Done when") section in a Jira description, or a checklist of that name on a Trello card.
+Then `Shift+T` on the line shows whether each is connected, and maps each project or board to a workspace. Acceptance criteria come from an "Acceptance criteria" (or "Done when") section in a Jira description (rich text on Cloud, wiki markup such as `h3. Acceptance Criteria` and `# item` on Data Center), the field `CC_CONTROL_JIRA_AC_FIELD` names, or a checklist of that name on a Trello card.
+
+**Where Ship opens pull requests** is read from each repo's `origin`: GitHub remotes use the `gh` CLI (run `gh auth login` once); Azure DevOps remotes (dev.azure.com, `*.visualstudio.com`, or an on-prem server such as `https://tfs.company.local/tfs/DefaultCollection/Project/_git/Repo`) use the REST API with `CC_CONTROL_ADO_TOKEN`, a personal access token with *Code: read & write*. The API version an on-prem server speaks is found on the first request. Other hosts get as far as the push, and the sheet says so.
 
 ## Sharing with your team
 

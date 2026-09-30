@@ -2,8 +2,13 @@
 // on the server (environment variables; they never reach the page). Until the owner connects a
 // real site, a demo set in the real shape stands in (the mock's tickets), switched on in the app.
 //
-// Jira: CC_CONTROL_JIRA_SITE (https://you.atlassian.net), CC_CONTROL_JIRA_EMAIL, CC_CONTROL_JIRA_TOKEN
-//   (an API token), optional CC_CONTROL_JIRA_JQL.
+// Jira Cloud: CC_CONTROL_JIRA_SITE (https://you.atlassian.net), CC_CONTROL_JIRA_EMAIL,
+//   CC_CONTROL_JIRA_TOKEN (an API token).
+// Jira Data Center / Server (any other site, or CC_CONTROL_JIRA_KIND=server): CC_CONTROL_JIRA_SITE
+//   (https://jira.company.local, with any context path), CC_CONTROL_JIRA_TOKEN (a personal access
+//   token, sent as Bearer); or CC_CONTROL_JIRA_EMAIL (the username) with a password in the token.
+// Both: optional CC_CONTROL_JIRA_JQL, and CC_CONTROL_JIRA_AC_FIELD (customfield_12345) when the
+//   acceptance criteria live in their own field rather than in the description.
 // Trello: CC_CONTROL_TRELLO_KEY, CC_CONTROL_TRELLO_TOKEN, CC_CONTROL_TRELLO_BOARDS (board ids, commas).
 //
 // fromJira / fromTrello turn each API's JSON into a Ticket and are tested against recorded shapes;
@@ -63,6 +68,10 @@ export function adfText(doc: unknown): string {
 }
 
 const AC_HEADING = /^(acceptance criteria|done when|definition of done)\b/i;
+/** A list item: markdown (- * 1.), Jira wiki markup (* ** # ##), or a bullet. */
+const ITEM = /^\s*([-•]|\*+|#+|\d+[.)])\s+/;
+/** A heading or bold line's text: markdown (#), wiki (h3.), bold (*…*). */
+const headingText = (l: string) => l.replace(/^\s*h[1-6]\.\s*/i, '').replace(/^[#*_\s]+/, '').replace(/[:*_\s]+$/, '').trim();
 
 /**
  * Split a description into its text and its acceptance criteria: the list under a heading (or a
@@ -72,11 +81,11 @@ const AC_HEADING = /^(acceptance criteria|done when|definition of done)\b/i;
 export function splitAcceptance(doc: unknown): { description: string; acceptance: string[] } {
   if (typeof doc === 'string') {
     const lines = doc.split(/\r?\n/);
-    const at = lines.findIndex((l) => AC_HEADING.test(l.replace(/^[#*\s]+/, '').trim()));
+    const at = lines.findIndex((l) => AC_HEADING.test(headingText(l)));
     if (at < 0) return { description: doc.trim(), acceptance: [] };
     const rest = lines.slice(at + 1);
-    const end = rest.findIndex((l) => l.trim() && !/^\s*([-*•]|\d+[.)])\s+/.test(l));
-    const items = (end < 0 ? rest : rest.slice(0, end)).map((l) => l.replace(/^\s*([-*•]|\d+[.)])\s+/, '').trim()).filter(Boolean);
+    const end = rest.findIndex((l) => l.trim() && !ITEM.test(l));
+    const items = (end < 0 ? rest : rest.slice(0, end)).map((l) => l.replace(ITEM, '').trim()).filter(Boolean);
     return { description: [...lines.slice(0, at), ...(end < 0 ? [] : rest.slice(end))].join('\n').trim(), acceptance: items };
   }
   const all = blocks(doc as AdfNode);
@@ -105,10 +114,19 @@ interface JiraIssue {
   };
 }
 
-/** A Jira Cloud issue (REST API v3) as a Ticket. */
-export function fromJira(issue: JiraIssue, site?: string): Ticket {
+/** The acceptance criteria in their own field: a list, or text with one per line. */
+function acceptanceField(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((x) => (typeof x === 'string' ? x : (x as { value?: string })?.value ?? '')).map((x) => x.trim()).filter(Boolean);
+  const text = adfText(v ?? '');
+  return text.split(/\r?\n/).map((l) => l.replace(ITEM, '').trim()).filter(Boolean);
+}
+
+/** A Jira issue (Cloud API v3 or Data Center API v2) as a Ticket. `acField` names a custom field holding the acceptance criteria. */
+export function fromJira(issue: JiraIssue, site?: string, acField?: string): Ticket {
   const f = issue.fields ?? {};
-  const { description, acceptance } = splitAcceptance(f.description ?? '');
+  const split = splitAcceptance(f.description ?? '');
+  const own = acField ? acceptanceField((f as Record<string, unknown>)[acField]) : [];
+  const { description, acceptance } = own.length ? { description: adfText(f.description ?? '').trim(), acceptance: own } : split;
   const comments: TicketComment[] = (f.comment?.comments ?? []).map((c) => ({
     author: c.author?.displayName ?? 'someone', body: adfText(c.body ?? '').trim(), at: Date.parse(c.created ?? '') || 0,
   })).filter((c) => c.body);
@@ -138,16 +156,54 @@ export function fromJira(issue: JiraIssue, site?: string): Ticket {
 const JIRA_FIELDS = ['summary', 'description', 'status', 'project', 'updated', 'comment', 'attachment', 'issuelinks'];
 const DEFAULT_JQL = 'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC';
 
-async function fetchJira(site: string, email: string, token: string, jql: string): Promise<Ticket[]> {
-  const res = await fetch(`${site.replace(/\/+$/, '')}/rest/api/3/search/jql`, {
-    method: 'POST',
-    headers: { Authorization: `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jql, fields: JIRA_FIELDS, maxResults: 50 }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`Jira said ${res.status} ${res.statusText}${res.status === 401 ? ': check the email and API token' : ''}`);
+/** Jira settings from the environment, or why they aren't enough. */
+export interface JiraConfig { site: string; kind: 'cloud' | 'server'; email?: string; token: string; jql: string; acField?: string }
+
+export function jiraConfig(e: NodeJS.ProcessEnv): JiraConfig | undefined {
+  const site = e.CC_CONTROL_JIRA_SITE?.trim().replace(/\/+$/, '');
+  const token = e.CC_CONTROL_JIRA_TOKEN?.trim();
+  if (!site || !token) return undefined;
+  const kind = e.CC_CONTROL_JIRA_KIND === 'server' || e.CC_CONTROL_JIRA_KIND === 'cloud' ? e.CC_CONTROL_JIRA_KIND
+    : /\.atlassian\.net$/i.test(new URL(site).hostname) ? 'cloud' : 'server';
+  const email = e.CC_CONTROL_JIRA_EMAIL?.trim() || undefined;
+  if (kind === 'cloud' && !email) return undefined;
+  return { site, kind, ...(email ? { email } : {}), token, jql: e.CC_CONTROL_JIRA_JQL || DEFAULT_JQL, ...(e.CC_CONTROL_JIRA_AC_FIELD ? { acField: e.CC_CONTROL_JIRA_AC_FIELD.trim() } : {}) };
+}
+
+/** The search request: Cloud's /rest/api/3/search/jql with email + API token; Data Center's /rest/api/2/search with a PAT (Bearer) or username + password. */
+export function jiraSearch(c: JiraConfig): { url: string; init: RequestInit } {
+  const auth = c.kind === 'server' && !c.email ? `Bearer ${c.token}` : `Basic ${Buffer.from(`${c.email}:${c.token}`).toString('base64')}`;
+  return {
+    url: `${c.site}${c.kind === 'cloud' ? '/rest/api/3/search/jql' : '/rest/api/2/search'}`,
+    init: {
+      method: 'POST',
+      headers: { Authorization: auth, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jql: c.jql, fields: [...JIRA_FIELDS, ...(c.acField ? [c.acField] : [])], maxResults: 50 }),
+    },
+  };
+}
+
+/** What a failed request means, in words. */
+export function jiraProblem(status: number, c: JiraConfig): string {
+  if (status === 401) return c.kind === 'cloud' ? 'check CC_CONTROL_JIRA_EMAIL and the API token' : 'check the personal access token (Profile → Personal Access Tokens in Jira)';
+  if (status === 403) return 'the token can’t search (or CAPTCHA is on for the account: sign in once in the browser)';
+  if (status === 404) return c.kind === 'server' ? 'check the site address, including any context path such as /jira' : 'check the site address';
+  if (status === 400) return 'check CC_CONTROL_JIRA_JQL';
+  return '';
+}
+
+export async function fetchJira(c: JiraConfig): Promise<Ticket[]> {
+  const { url, init } = jiraSearch(c);
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, signal: AbortSignal.timeout(20_000) });
+  } catch (e) {
+    const code = (e as { cause?: { code?: string } }).cause?.code ?? (e as Error).message;
+    throw new Error(`Couldn't reach Jira at ${c.site} (${code})${/CERT|ISSUER|SELF_SIGNED/.test(code) ? ': the server’s certificate isn’t trusted; see CC_CONTROL_CA_FILE' : ''}`);
+  }
+  if (!res.ok) { const why = jiraProblem(res.status, c); throw new Error(`Jira said ${res.status} ${res.statusText}${why ? `: ${why}` : ''}`); }
   const body = await res.json() as { issues?: JiraIssue[] };
-  return (body.issues ?? []).map((i) => fromJira(i, site));
+  return (body.issues ?? []).map((i) => fromJira(i, c.site, c.acField));
 }
 
 // ---- Trello -------------------------------------------------------------------------------------
@@ -302,8 +358,7 @@ export class TicketService {
       }
     };
     [this.jira, this.trello] = await Promise.all([
-      run(Boolean(e.CC_CONTROL_JIRA_SITE && e.CC_CONTROL_JIRA_EMAIL && e.CC_CONTROL_JIRA_TOKEN),
-        () => fetchJira(e.CC_CONTROL_JIRA_SITE!, e.CC_CONTROL_JIRA_EMAIL!, e.CC_CONTROL_JIRA_TOKEN!, e.CC_CONTROL_JIRA_JQL || DEFAULT_JQL)),
+      run(Boolean(jiraConfig(e)), () => fetchJira(jiraConfig(e)!)),
       run(Boolean(e.CC_CONTROL_TRELLO_KEY && e.CC_CONTROL_TRELLO_TOKEN && e.CC_CONTROL_TRELLO_BOARDS),
         () => fetchTrello(e.CC_CONTROL_TRELLO_KEY!, e.CC_CONTROL_TRELLO_TOKEN!, e.CC_CONTROL_TRELLO_BOARDS!.split(',').map((s) => s.trim()).filter(Boolean))),
     ]);
