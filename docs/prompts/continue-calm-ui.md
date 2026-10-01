@@ -2,6 +2,11 @@
 
 Paste this into a new Claude Code session opened in the cc-control repo (on either laptop), followed by whatever you want to start with.
 
+**Where this stands (2026-09-30, end of the day):**
+- **Done, on main:** §45 the key-hints setting (`H` in `?`, first row of `B`: always / on hover / off) and the audit that nothing dangles with hints off; §46 `g` brings the card's terminal tab forward; §47 `Shift+D` shows the card's changes with diffs; §48 a half-built card is kept and `c` picks it up; §49 `j` / `m` on the report sheet post to Jira and move the ticket (asked first; demo tickets take both; **not yet tried against a real Jira**, the VU laptop's is the test).
+- **Waiting on the owner's OK (§2 below):** the trims. The proposal (button bar on the open card; panel 3 of the new card folded to Kind + Branch; token counts and the three explanatory paragraphs; column subtitles and the repo bar following the hints setting; the "terminal" pill) was put to them with screenshots; build it only once they say yes.
+- **Next in §3's list:** PR comments and checks inline on the Ship card, and posting review findings to the PR (`gh pr view --json comments,reviews`, ADO threads); Trello comments and list moves with the same shape as §49; orphaned Try it processes and leftover worktrees; TFS builds.
+
 ---
 
 You're continuing development of **cc-control** ("Command Center", GitHub `ryan-stephens/claude-command-center`): a local web app that sits on top of Claude Code terminal sessions. Its home is the **Ticket Line**, a board of cards moving through the loop (Inbox → Plan → Build → Needs you → Try it → Ship → Done); each card follows a Claude Code session in a Windows Terminal tab. The owner uses it daily at Veterans United (VU) and is rolling it out to coworkers, developers and non-developers alike. The product aim: **a one-stop shop for the daily development loop**, so people leave the app as rarely as possible (for Claude Code, Jira, GitHub, TFS), stay effective, and don't feel overwhelmed.

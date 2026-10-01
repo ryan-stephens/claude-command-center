@@ -88,7 +88,7 @@ This first milestone proves the mechanism end to end. Leave the board polish, Ji
    - The Context tab shows the start-up log and what Claude was given.
    - Add a key and a `?` row for every action.
 
-**Then, in order:** ~~the board and drawer over the existing session list~~ (done, §29–§30) → ~~Jira/Trello import~~ (done against demo tickets, §31) (read-only, tokens kept on the server) with a ticket-to-workspace mapping → ~~adding context later~~ (done, §32) → ~~run recipes (Try it)~~ (done, §33) → ~~Ship~~ (done, §34; Slack later) (commit, `gh pr create`, Slack post). Add a PLAN section for each piece, in the same commit.
+**Then, in order:** ~~the board and drawer over the existing session list~~ (done, §29–§30) → ~~Jira/Trello import~~ (done against demo tickets, §31) (read-only, tokens kept on the server) with a ticket-to-workspace mapping → ~~adding context later~~ (done, §32) → ~~run recipes (Try it)~~ (done, §33) → ~~Ship~~ (done, §34; Slack later) (commit, `gh pr create`, Slack post). Add a PLAN section for each piece, in the same commit. **Since then (2026-09-30):** §43–§49 (review before rollout, the channel, key hints, g to the tab, Shift+D changes, the kept draft, Jira writes from the report sheet); what is next is at the top of `docs/prompts/continue-calm-ui.md`.
 
 ## The owner's answers (2026-09-29)
 - **Hooks:** per launch with `claude --settings`. Nothing goes into `~/.claude/settings.json`. The UserPromptSubmit hook for adding context later goes in the same file (`writeHookSettings` in `server/cards.ts`).
