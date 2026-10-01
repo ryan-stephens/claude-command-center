@@ -1,16 +1,24 @@
 import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ACTIONS, bindingsFor, comboOf, displayCombo, validateBinding, type ActionId } from '../bindings.ts';
+import { HINTS_LABEL } from '../hints.ts';
+import { cycleHints } from '../keys.ts';
 import { flash, get, NO_BINDINGS, set, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { DialogKeys, Overlay } from './Overlay.tsx';
 import { Key } from './ui.tsx';
 
-/** Rebind global shortcuts: ↑↓ pick, Enter then press the new combo, Backspace resets to default. */
+/**
+ * B: key hints (the first row: Enter, Space or ← → cycle it), then the rebindable shortcuts:
+ * ↑↓ pick, Enter then press the new combo, Backspace resets to default.
+ */
 export function BindingsDialog() {
   const overrides = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
+  const hints = useStore((s) => s.settings.keyHints ?? 'always');
+  // Row 0 is the hints setting; the actions follow.
   const [index, setIndex] = useState(0);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState('');
+  const rows = ACTIONS.length + 1;
 
   function save(id: ActionId, combos: string[] | undefined) {
     const next = { ...overrides };
@@ -21,8 +29,8 @@ export function BindingsDialog() {
 
   function onKeyDown(e: ReactKeyboardEvent) {
     e.preventDefault();
-    const action = ACTIONS[index];
-    if (capturing) {
+    const action = ACTIONS[index - 1];
+    if (capturing && action) {
       if (e.key === 'Escape') { setCapturing(false); setError(''); return; }
       const combo = comboOf(e.nativeEvent);
       if (!combo) return; // waiting for a non-modifier key
@@ -35,37 +43,44 @@ export function BindingsDialog() {
       return;
     }
     switch (e.key) {
-      case 'ArrowDown': setIndex(Math.min(ACTIONS.length - 1, index + 1)); break;
+      case 'ArrowDown': setIndex(Math.min(rows - 1, index + 1)); break;
       case 'ArrowUp': setIndex(Math.max(0, index - 1)); break;
-      case 'Enter': setCapturing(true); setError(''); break;
+      case 'ArrowLeft': case 'ArrowRight': case ' ': if (index === 0) cycleHints(); break;
+      case 'Enter': if (index === 0) cycleHints(); else { setCapturing(true); setError(''); } break;
       case 'Backspace':
-      case 'Delete': save(action.id, undefined); flash(`${action.label}: back to default`); break;
+      case 'Delete': if (action) { save(action.id, undefined); flash(`${action.label}: back to default`); } break;
       case 'Escape': set({ modal: { kind: 'help' } }); break;
     }
   }
 
   return (
-    <Overlay label="Keyboard shortcuts">
+    <Overlay label="Keyboard shortcuts" keepKeys>
       {/* Focusable wrapper so every key lands here, including ones the app would otherwise act on. */}
       <div tabIndex={0} autoFocus ref={(el) => el?.focus()} onKeyDown={onKeyDown} className="outline-none">
-        <h2 className="mb-1 text-[19px] font-bold tracking-tight">Change shortcuts</h2>
+        <h2 className="mb-1 text-[19px] font-bold tracking-tight">Keys and hints</h2>
         <p className="mb-4 text-sm text-sub">Saved on this computer, for every browser you open Command Center in.</p>
         <ul className="space-y-0.5">
+          <li onClick={() => { setIndex(0); cycleHints(); }} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${index === 0 ? 'is-focus bg-raise' : ''}`} title="The keycaps on buttons, chips and headers, and the key bar at the bottom. The keys work whatever you pick; ? always lists them.">
+            <span className="grow text-sub">Key hints on the screens</span>
+            <span className="font-semibold">{HINTS_LABEL[hints]}</span>
+            <span className="text-xs text-faint">always · on hover · off</span>
+          </li>
           {ACTIONS.map((a, i) => {
+            const at = i + 1;
             const custom = Boolean(overrides[a.id]);
             return (
-              <li key={a.id} onClick={() => setIndex(i)} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${i === index ? 'is-focus bg-raise' : ''}`}>
+              <li key={a.id} onClick={() => setIndex(at)} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${at === index ? 'is-focus bg-raise' : ''}`}>
                 <span className="grow text-sub">{a.label}</span>
-                {capturing && i === index
+                {capturing && at === index
                   ? <span className="pulse font-semibold text-acc">press the new keys…</span>
                   : bindingsFor(a.id, overrides).map((c) => <Key key={c} k={displayCombo(c)} size="sm" />)}
-                {custom && !(capturing && i === index) && <span className="rounded bg-acc-soft px-1.5 text-[11px] font-semibold text-acc">yours</span>}
+                {custom && !(capturing && at === index) && <span className="rounded bg-acc-soft px-1.5 text-[11px] font-semibold text-acc">yours</span>}
               </li>
             );
           })}
         </ul>
         {error && <p className="mt-2 text-sm text-bad">{error}</p>}
-        <DialogKeys items={[['↑ ↓', 'choose'], ['Enter', 'change, then press the new keys'], ['Backspace', 'back to default'], ['Esc', 'back']]} />
+        <DialogKeys items={[['↑ ↓', 'choose'], ['Enter', 'change, then press the new keys (on the first row: next hints setting)'], ['Backspace', 'back to default'], ['Esc', 'back']]} />
       </div>
     </Overlay>
   );

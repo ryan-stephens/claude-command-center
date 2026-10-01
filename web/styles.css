@@ -88,6 +88,12 @@ body { margin: 0; background: var(--c-bg); color: var(--c-ink); font: 15px/1.5 u
 .kc-ghost { background: transparent; color: inherit; border-color: currentColor; box-shadow: none; }
 kbd:not(.kc) { font: 600 12px var(--font-mono); padding: 0 5px; border: 1px solid var(--c-kc-line); border-bottom-width: 2px; border-radius: 5px; background: var(--c-kc-top); color: var(--c-kc-ink); }
 
+/* Key hints (web/hints.ts): data-hints on <html> is "hover" or "never"; unset means always. Large
+   keycaps are content and a .kc-keep container (?, the shortcuts dialog, the tour) keeps its keys. */
+[data-hints] .kc:not(.kc-lg, .kc-inline, .kc-keep *) { display: none !important; } /* over md:inline-flex on a few keys */
+[data-hints="hover"] :is(button, a, label, li, [role="option"], [role="radio"]):hover .kc { display: inline-flex !important; }
+[data-hints="never"] .kc-inline { display: inline; min-width: 0; height: auto; padding: 0 1px; border: 0; box-shadow: none; background: transparent; color: inherit; font: 700 inherit var(--font-mono); }
+
 /* A focused row or tile: lifted with the accent ring, so where the keys go is obvious. */
 .is-focus { outline: 2px solid var(--c-ring); outline-offset: -2px; box-shadow: 0 0 0 5px color-mix(in srgb, var(--c-ring) 16%, transparent); }
 

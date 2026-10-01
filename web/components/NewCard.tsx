@@ -232,7 +232,7 @@ function Sources({ c }: { c: Composer }) {
                 : <span className="w-4 text-center font-mono text-[17px] font-bold text-faint">+</span>}
             </button>
           );
-        }) : <div className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{c.q.trim() ? (found.looking ? 'Searching…' : `Nothing matches “${c.q}”`) : tickets.length ? 'No tickets' : <>No tickets yet. <Key k="⇧T" size="sm" /> on the board connects Jira or Trello, or shows demo tickets.</>}</div>)
+        }) : <div className="rounded-xl border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{c.q.trim() ? (found.looking ? 'Searching…' : `Nothing matches “${c.q}”`) : tickets.length ? 'No tickets' : <>No tickets yet. <Key k="⇧T" size="sm" inline /> on the board connects Jira or Trello, or shows demo tickets.</>}</div>)
         : list.length ? list.map((r, i) => {
           const where = repoOrigin(c, r.path);
           const had = cardHasRepo(c, r.path);
@@ -324,13 +324,13 @@ function PacketPane({ c, text, card }: { c: Composer; text: string; card?: Card 
         {c.preview
           ? <pre className="m-0 whitespace-pre-wrap break-words rounded-xl border border-line bg-bg px-3.5 py-3 font-mono text-[12.5px] leading-relaxed">{text}</pre>
           : card ? <>
-            {layer('Adding now', `only ${card.key} gets these`, 'card', <>Pick repos or tickets in panel 1 with <Key k="Space" size="sm" />, or write a note with <Key k="e" size="sm" />.</>, noteRow('Anything Claude should know from here on? e.g. The totals must round down, not to nearest.'))}
+            {layer('Adding now', `only ${card.key} gets these`, 'card', <>Pick repos or tickets in panel 1 with <Key k="Space" size="sm" inline />, or write a note with <Key k="e" size="sm" inline />.</>, noteRow('Anything Claude should know from here on? e.g. The totals must round down, not to nearest.'))}
             <AlreadyHas card={card} />
           </>
           : <>
             {layer('Workspace', wsName ? `shared by every ${wsName} card · set once` : 'no workspace', 'workspace', 'Pick a workspace under How it starts, or add repos from the library.')}
             {layer('Ticket', c.ticket ? `from ${SOURCE_NAME[c.ticket.source]} ${c.ticket.key}` : 'none yet', 'ticket', 'No ticket. Pick one under Tickets, or describe the work in the title.')}
-            {layer('This card', 'only this card gets these', 'card', <>Add repos from the library with <Key k="Space" size="sm" />. <Key k="w" size="sm" /> on one keeps it for the whole workspace.</>,
+            {layer('This card', 'only this card gets these', 'card', <>Add repos from the library with <Key k="Space" size="sm" inline />. <Key k="w" size="sm" inline /> on one keeps it for the whole workspace.</>,
               noteRow('Anything else Claude should know? e.g. Keep it behind the size_guide flag.'))}
           </>}
       </div>
@@ -363,7 +363,7 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
                       className={`rounded-lg border px-2.5 py-1 text-[13px] ${j === r.at ? 'border-ring bg-surface font-semibold text-ink shadow-[0_0_0_2px_color-mix(in_srgb,var(--c-ring)_22%,transparent)]' : 'border-line bg-raise text-sub'} disabled:cursor-default disabled:opacity-50`}>{o}</button>
                   ))}
                 </div>}
-            {r.id === 'kind' && <div className="text-[12.5px] text-faint">{CARD_KINDS.find((k) => k.id === c.kind)!.blurb} <Key k="k" size="sm" /> changes it from anywhere on this screen.</div>}
+            {r.id === 'kind' && <div className="text-[12.5px] text-faint">{CARD_KINDS.find((k) => k.id === c.kind)!.blurb} <Key k="k" size="sm" inline /> changes it from anywhere on this screen.</div>}
             {r.id === 'branch' && c.kind !== 'build' && <div className="text-[12.5px] text-faint">{c.pr
               ? <>Found <a className="underline hover:text-ink" href={c.pr.url} target="_blank" rel="noreferrer">PR #{c.pr.number} {c.pr.title}</a>: {c.pr.source} → {c.pr.target}. The copy is a detached worktree, so your own checkout stays as it is.</>
               : c.prLooking ? 'Looking for the ticket’s pull request…'
@@ -371,7 +371,7 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
               : 'Pick the ticket first: its pull request is looked up by its key.'}</div>}
             {r.id === 'where' && <div className="text-[12.5px] text-faint">A Windows Terminal tab runs claude with this context. The first time in a folder it asks whether to trust it: answer in the tab.</div>}
             {r.id === 'mode' && c.launch.mode === 'auto' && <div className="text-[12.5px] text-faint">Auto isn’t offered on every model{c.launch.model === 'haiku' ? ' (Haiku refuses it)' : ''}.</div>}
-            {r.id === 'model' && <div className="text-[12.5px] text-faint">{c.launch.model ? `Starts with --model ${c.launch.model}.` : model ? `The default is ${model}, pinned by this server (CC_CONTROL_MODEL).` : user ? `The default is ${user}, from your Claude Code settings.` : 'Claude Code picks, as in a plain terminal.'} <Key k="m" size="sm" /> changes it from anywhere on this screen.</div>}
+            {r.id === 'model' && <div className="text-[12.5px] text-faint">{c.launch.model ? `Starts with --model ${c.launch.model}.` : model ? `The default is ${model}, pinned by this server (CC_CONTROL_MODEL).` : user ? `The default is ${user}, from your Claude Code settings.` : 'Claude Code picks, as in a plain terminal.'} <Key k="m" size="sm" inline /> changes it from anywhere on this screen.</div>}
           </div>
         ))}
         <div className="grid gap-1.5 px-2.5 py-2">

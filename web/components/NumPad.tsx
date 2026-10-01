@@ -60,7 +60,7 @@ export function NumPad({ focused, compact = false }: { focused: boolean; compact
 
       {!compact && (
         <div className="mt-auto space-y-1.5 text-[12.5px] text-faint">
-          <div className="flex flex-wrap items-center gap-1.5">No number pad? <Key k="Alt 0–9" size="sm" /> does the same.</div>
+          <div className="flex flex-wrap items-center gap-1.5">No number pad? <Key k="Alt 0–9" size="sm" inline /> does the same.</div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="flex items-center gap-1"><Key k="E" size="sm" />edit a key</span>
             <button className="flex items-center gap-1 hover:text-ink" onClick={exportPack}><Key k="⇧E" size="sm" />export</button>

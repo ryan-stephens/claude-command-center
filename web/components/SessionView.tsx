@@ -375,7 +375,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
       {voice && (
         <div className={`mx-auto mb-2 flex max-w-3xl items-center gap-2 text-sm ${voice.state === 'listening' ? 'text-bad' : 'text-sub'}`}>
           <span className={`h-2.5 w-2.5 rounded-full ${voice.state === 'listening' ? 'pulse bg-bad' : 'bg-faint'}`} />
-          {voice.state === 'listening' ? <>Listening… release to send · <Key k="Esc" size="sm" /> cancels</> : 'Finishing…'}
+          {voice.state === 'listening' ? <>Listening… release to send · <Key k="Esc" size="sm" inline /> cancels</> : 'Finishing…'}
         </div>
       )}
       {suggestions.length > 0 && focused && (

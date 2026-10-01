@@ -175,7 +175,7 @@ function Board() {
             {l.tickets.map((tk) => <TicketTile key={tk.key} t={tk} focused={ticketFocus(tk.key) === focus} color={color(tk.workspaceId)} />)}
             {l.cards.length || l.tickets.length
               ? l.cards.map((c) => <CardTile key={c.id} card={c} focused={c.id === focus} color={color(c.workspaceId)} />)
-              : <div className="rounded-xl border border-dashed border-line px-1.5 py-3 text-center text-[12.5px] text-faint">{l.stage === 'inbox' && view === 'qa' ? <>Nothing Ready for QA in your projects. <Key k="c" size="sm" /> then <Key k="/" size="sm" /> searches Jira for any ticket.</> : EMPTY[l.stage]}</div>}
+              : <div className="rounded-xl border border-dashed border-line px-1.5 py-3 text-center text-[12.5px] text-faint">{l.stage === 'inbox' && view === 'qa' ? <>Nothing Ready for QA in your projects. <Key k="c" size="sm" inline /> then <Key k="/" size="sm" inline /> searches Jira for any ticket.</> : EMPTY[l.stage]}</div>}
           </div>
         </section>
       ))}
@@ -218,7 +218,7 @@ const GATE: Record<Card['stage'], string> = {
   done: 'Merged',
 };
 const EMPTY: Record<Card['stage'], ReactNode> = {
-  inbox: <>No tickets here. <Key k="⇧T" size="sm" /> connects Jira or Trello (or shows demo tickets); <Key k="c" size="sm" /> starts a card without one.</>,
+  inbox: <>No tickets here. <Key k="⇧T" size="sm" inline /> connects Jira or Trello (or shows demo tickets); <Key k="c" size="sm" inline /> starts a card without one.</>,
   plan: 'Empty', build: 'Empty', needs: 'Nothing waiting on you', try: 'Empty', ship: 'Empty', done: 'Merged PRs land here',
 };
 
@@ -462,7 +462,7 @@ function Overview({ card }: { card: Card }) {
           <div className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold ${act.state === 'bad' ? 'bg-attn-bg text-attn' : 'bg-busy-bg text-busy'}`}>
             {act.state === 'go' && <span className="spinner" />}
             <span className="grow">{act.text}</span>
-            <span className="font-medium">see <Key k="Tab" size="sm" /> Context</span>
+            <span className="font-medium">see <Key k="Tab" size="sm" inline /> Context</span>
           </div>
         </Sec>
       )}
@@ -519,7 +519,7 @@ function Overview({ card }: { card: Card }) {
       <Sec>
         <div className="flex items-center gap-2 text-sm">
           <h4 className="grow font-bold">Context</h4>
-          <span className="text-faint">{fmtK(size)} · {cardRepos(card).length} repos · {card.later?.length ?? 0} added since · <Key k="Tab" size="sm" /> for all of it</span>
+          <span className="text-faint">{fmtK(size)} · {cardRepos(card).length} repos · {card.later?.length ?? 0} added since · <Key k="Tab" size="sm" inline /> for all of it</span>
         </div>
       </Sec>
     </>
@@ -614,7 +614,7 @@ function TryIt({ card }: { card: Card }) {
           <div><span className="eyebrow mr-2">APIs</span><span className="font-mono">{stack.apis.map((a) => a.repo).join(', ') || 'none set up'}</span></div>
           {stack.ui && <div><span className="eyebrow mr-2">Then</span><span className="font-mono">{stack.ui.repo}</span>{stack.ui.proxyFile ? <span className="text-faint">, its {stack.ui.proxyFile} pointed at the APIs you pick</span> : null}</div>}
         </div>
-      ) : <p className="text-sm text-faint">No run recipe for {name}: nothing to go on in its package.json or compose file. Press <Key k="e" size="sm" /> to write one.</p>}
+      ) : <p className="text-sm text-faint">No run recipe for {name}: nothing to go on in its package.json or compose file. Press <Key k="e" size="sm" inline /> to write one.</p>}
       {run?.state === 'up' && (
         <div className="flex items-center gap-2.5 rounded-lg bg-ok-bg px-3 py-2 text-sm font-semibold text-ok">
           <span className="h-2 w-2 rounded-full bg-ok" />
@@ -623,15 +623,15 @@ function TryIt({ card }: { card: Card }) {
         </div>
       )}
       {run && run.state !== 'up' && run.state !== 'running' && (
-        <div className={`rounded-lg px-3 py-2 text-sm font-semibold ${run.state === 'failed' ? 'bg-bad-bg text-bad' : 'bg-raise text-sub'}`}>{run.text}. <Key k="t" size="sm" /> runs it again.</div>
+        <div className={`rounded-lg px-3 py-2 text-sm font-semibold ${run.state === 'failed' ? 'bg-bad-bg text-bad' : 'bg-raise text-sub'}`}>{run.text}. <Key k="t" size="sm" inline /> runs it again.</div>
       )}
-      {recipe?.source.startsWith('from the workspace file') && !run && <div className="rounded-lg bg-attn-bg px-3 py-2 text-sm text-attn">This recipe came with a workspace file someone shared. Read the commands before pressing <Key k="t" size="sm" />: they run on this machine.</div>}
+      {recipe?.source.startsWith('from the workspace file') && !run && <div className="rounded-lg bg-attn-bg px-3 py-2 text-sm text-attn">This recipe came with a workspace file someone shared. Read the commands before pressing <Key k="t" size="sm" inline />: they run on this machine.</div>}
       {shown && shown.tail.length > 0 && (
         <pre className="m-0 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-snug text-sub">{shown.tail.join('\n')}</pre>
       )}
       {!run && recipe && <p className="text-sm text-faint">{stack
-        ? <>Press <Key k="t" size="sm" /> to pick the environment and the APIs to run, then start them and the UI.</>
-        : <>Press <Key k="t" size="sm" /> to start the app in the card’s folder and try the change.</>}</p>}
+        ? <>Press <Key k="t" size="sm" inline /> to pick the environment and the APIs to run, then start them and the UI.</>
+        : <>Press <Key k="t" size="sm" inline /> to start the app in the card’s folder and try the change.</>}</p>}
     </Sec>
   );
 }
@@ -653,7 +653,7 @@ function LiveNow({ card }: { card: Card }) {
           {ask.kind === 'plan' && ask.plan
             ? <div className="md max-h-80 overflow-y-auto rounded-lg border border-line bg-surface px-3 py-2 text-sm"><Markdown remarkPlugins={[remarkGfm]}>{ask.plan}</Markdown></div>
             : <p className="text-[15px] font-semibold">{ask.kind === 'question' ? ask.detail : `Allow ${ask.detail ?? ask.tool}?`}</p>}
-          <p className="text-sm text-sub">{ask.requestId ? <><Key k="y" size="sm" /> allows, <Key k="n" size="sm" /> denies, straight to its terminal.</> : card.channel && ask.kind === 'question' ? <>Answer in the message box (<Key k="Enter" size="sm" />): it goes into the session.</> : <>Answer it in the terminal tab <b>{card.key}</b>. Nothing changes until you do.</>}</p>
+          <p className="text-sm text-sub">{ask.requestId ? <><Key k="y" size="sm" inline /> allows, <Key k="n" size="sm" inline /> denies, straight to its terminal.</> : card.channel && ask.kind === 'question' ? <>Answer in the message box (<Key k="Enter" size="sm" inline />): it goes into the session.</> : <>Answer it in the terminal tab <b>{card.key}</b>. Nothing changes until you do.</>}</p>
         </div>
       </Sec>
     );
@@ -738,8 +738,8 @@ function AddedSince({ card }: { card: Card }) {
             </li>
           ))}
         </ol>
-      ) : <p className="text-sm text-faint">Nothing yet. Press <Key k="c" size="sm" /> to add a repo, a related ticket or a note.</p>}
-      {left.length > 0 && <p className="text-sm text-faint"><Key k="x" size="sm" /> takes back the last one still waiting.</p>}
+      ) : <p className="text-sm text-faint">Nothing yet. Press <Key k="c" size="sm" inline /> to add a repo, a related ticket or a note.</p>}
+      {left.length > 0 && <p className="text-sm text-faint"><Key k="x" size="sm" inline /> takes back the last one still waiting.</p>}
       <p className="text-sm text-faint">What you add goes in with your next message in its tab, {card.key}.</p>
     </Sec>
   );

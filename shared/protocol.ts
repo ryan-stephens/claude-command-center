@@ -11,7 +11,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  * says `hello` first; a page that hears anything else first is talking to a server from before
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
-export const PROTOCOL = 12;
+export const PROTOCOL = 13;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -230,9 +230,15 @@ export interface PermissionRequest {
 export type PermissionDecision = 'allow' | 'always' | 'deny';
 
 /** Per-install preferences, stored in SQLite and shared by every browser. */
+/** Where the keycaps show: everywhere (the cockpit), only while hovering (and in ?), or nowhere but ?. */
+export type KeyHints = 'always' | 'hover' | 'never';
+export const KEY_HINTS: KeyHints[] = ['always', 'hover', 'never'];
+
 export interface Settings {
   /** Key binding overrides: action id → combos (see web/bindings.ts). */
   bindings?: Record<string, string[]>;
+  /** Key hints on the screens (web/hints.ts). Unset: always. */
+  keyHints?: KeyHints;
 }
 
 // ---- Command board ---------------------------------------------------------

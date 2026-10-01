@@ -42,7 +42,7 @@ function TabHint() {
   if (!typing) return null;
   return (
     <p className="mt-3 flex items-center gap-1.5 text-sm text-attn">
-      You’re in the message box: press <Key k="Tab" size="sm" tone="attn" /> to answer with keys, or type a different instruction.
+      You’re in the message box: press <Key k="Tab" size="sm" tone="attn" inline /> to answer with keys, or type a different instruction.
     </p>
   );
 }
@@ -200,7 +200,7 @@ function ToolApproval({ p, cwd, compact, sessionId }: { p: PermissionRequest; cw
       </div>
       {typing && !compact && (
         <p className="mt-3 flex items-center gap-1.5 text-sm text-attn">
-          You’re in the message box: press <Key k="Tab" size="sm" tone="attn" /> to answer with keys, or type a different instruction.
+          You’re in the message box: press <Key k="Tab" size="sm" tone="attn" inline /> to answer with keys, or type a different instruction.
         </p>
       )}
     </div>

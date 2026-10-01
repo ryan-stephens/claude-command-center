@@ -77,7 +77,7 @@ If you don't write code: ask a developer to do steps 1 to 6 once on your machine
 |---|---|---|
 | Anywhere | `Alt+N` | Jump to the next session that needs you |
 | | `Ctrl+K` | Search actions, workflows, workspaces and sessions |
-| | `?` | Every key (`B` there to rebind) |
+| | `?` | Every key (`B` there to rebind; `H` there sets the key hints: always, on hover, or off. The keycaps on the screens and the key bar go, the keys keep working, `?` still lists them) |
 | | `Alt+↑` / `Alt+↓` | Previous / next session |
 | | `Alt+L` (or click the logo) | Home: the Ticket Line board, from anywhere (a session, a card, the new-card screen, a dialog) |
 | Ticket Line | `n` / `Enter` (a ticket in the Inbox) | Start work on it: the new-card screen with the ticket as context |

@@ -7,7 +7,8 @@ import { parseSteps, recipeFor, wsRecipeKey } from '../../shared/recipes.ts';
 import { STACK_EXAMPLE } from '../../shared/stack.ts';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
-import { keymap, openSession } from '../keys.ts';
+import { HINTS_LABEL } from '../hints.ts';
+import { cycleHints, keymap, openSession } from '../keys.ts';
 import { deleteCard, runWorkspaceAction, updateComposer } from '../line-keys.ts';
 import { addFolder } from '../line-model.ts';
 import { get, NO_BINDINGS, sessionById, set, setFilter as showWorkspace, useStore, type RepoTarget, type WorkspaceAction } from '../store.ts';
@@ -56,10 +57,12 @@ export function Dialogs() {
 
 function HelpOverlay() {
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
+  const hints = useStore((s) => s.settings.keyHints ?? 'always');
   return (
-    <Overlay label="Every key" wide="xl">
+    <Overlay label="Every key" wide="xl" keepKeys>
       <div className="mb-4 flex items-center gap-3">
         <h2 className="grow text-[19px] font-bold tracking-tight">Every key</h2>
+        <button className="flex items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={cycleHints} title="Keycaps on the screens: always, only while hovering, or off (? always lists them)"><Key k="H" size="sm" />key hints: <b className="text-sub">{HINTS_LABEL[hints]}</b></button>
         <span className="flex items-center gap-1.5 text-sm text-faint"><Key k="B" size="sm" />change shortcuts</span>
         <span className="flex items-center gap-1.5 text-sm text-faint"><Key k="Esc" size="sm" />close</span>
       </div>
@@ -405,7 +408,7 @@ function WorkspaceDialog({ id }: { id: string | null }) {
           </div>
           {(editSources || (library.sources.length === 0 && !repos.length)) && (
             <div className="mb-3 rounded-xl border border-line p-3">
-              <p className="mb-2 text-sm text-sub">Walk to the folder that holds your repos (for example D:\repos) and press <Key k="Space" size="sm" />. Every git repo inside it appears below.</p>
+              <p className="mb-2 text-sm text-sub">Walk to the folder that holds your repos (for example D:\repos) and press <Key k="Space" size="sm" inline />. Every git repo inside it appears below.</p>
               <FolderPicker
                 autoFocus={editSources}
                 listClass="max-h-[26vh]"
@@ -610,7 +613,7 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
       </div>
       <p className="mb-3 text-sm text-sub">
         {scope === 'stack'
-          ? <>Every {wsName ?? ''} card’s <Key k="t" size="sm" /> asks which values to use (<code>choose</code>: dev or uat) and which APIs to run. It runs <code>api.steps</code> in each picked API’s repo, with <code>{'{{env}}'}</code>, <code>{'{{branch}}'}</code> and the API’s <code>values</code> filled in. Then it starts the UI with <code>{'{{proxy}}'}</code>: a copy of <code>ui.proxyFile</code> with each picked API’s proxy rules put first. The repo’s file isn’t touched (<code>"proxyMode": "edit"</code> changes it in place and puts it back on stop). <code>stop:</code> steps run when you stop it.{stack ? ` Now: ${wsEntry?.source}.` : ' The workspace has none yet: this is an example to change.'}</>
+          ? <>Every {wsName ?? ''} card’s <Key k="t" size="sm" inline /> asks which values to use (<code>choose</code>: dev or uat) and which APIs to run. It runs <code>api.steps</code> in each picked API’s repo, with <code>{'{{env}}'}</code>, <code>{'{{branch}}'}</code> and the API’s <code>values</code> filled in. Then it starts the UI with <code>{'{{proxy}}'}</code>: a copy of <code>ui.proxyFile</code> with each picked API’s proxy rules put first. The repo’s file isn’t touched (<code>"proxyMode": "edit"</code> changes it in place and puts it back on stop). <code>stop:</code> steps run when you stop it.{stack ? ` Now: ${wsEntry?.source}.` : ' The workspace has none yet: this is an example to change.'}</>
           : scope === 'workspace'
             ? <>Every {wsName ?? ''} card runs this instead of its repo’s, so it can start several repos: a backend, then the UI pointed at it.{stack ? ' The workspace has a stack, which is what its cards run; this recipe is kept but not used.' : ''}</>
             : 'Try it runs these in the card’s folder.'}
@@ -1013,7 +1016,7 @@ function SourcesDialog() {
       {added && (
         <p className="mb-3 flex items-center gap-2 rounded-xl bg-ok-bg px-3 py-2 text-sm text-ok" role="status">
           <Icon name="check" size={15} />
-          <span><span className="font-mono">{added}</span> is in your library: {count(added)} repo{count(added) === 1 ? '' : 's'}. Add another, or press <Key k="Esc" size="sm" /> when you’re done.</span>
+          <span><span className="font-mono">{added}</span> is in your library: {count(added)} repo{count(added) === 1 ? '' : 's'}. Add another, or press <Key k="Esc" size="sm" inline /> when you’re done.</span>
         </p>
       )}
       <FolderPicker onUse={add} onEscape={close} inputRef={pickerInput} onTab={library.sources.length ? () => rows.current[0]?.focus() : undefined} />

@@ -35,7 +35,7 @@ export function Welcome() {
   });
 
   return (
-    <Overlay label="Welcome to Command Center" wide>
+    <Overlay label="Welcome to Command Center" wide keepKeys>
       <div className="text-center">
         <h2 className="text-[26px] font-bold tracking-tight">Your keyboard runs Claude Code</h2>
         <p className="mx-auto mt-1.5 max-w-xl text-sub">Everything works with the mouse too, but these keys get you through the day. The ones that work right now are always shown along the bottom of the screen.</p>

@@ -6,6 +6,7 @@
 import type { PermissionDecision, PermissionRequest } from '../shared/protocol.ts';
 import { ACTIONS, actionFor, bindingsFor, comboOf, displayCombo, type ActionId, type Bindings } from './bindings.ts';
 import { cycleGroup, exportPack, fireSlot, importPack } from './commands.ts';
+import { HINTS_LABEL, nextHints } from './hints.ts';
 import { nextTheme, applyTheme, THEME_LABEL } from './theme.ts';
 import { cancelVoice, isListening, startVoice, stopVoice } from './voice.ts';
 import {
@@ -118,7 +119,7 @@ export function keymap(overrides: Bindings): { title: string; keys: [string, str
     ACTION_HELP[id] ?? ACTIONS.find((a) => a.id === id)!.label,
   ];
   const global = ACTIONS.filter((a) => a.id !== 'pushToTalk').map((a) => row(a.id));
-  global.push(['B (in this overlay)', 'Change these shortcuts']);
+  global.push(['B (in this overlay)', 'Change these shortcuts'], ['H (in this overlay)', 'Key hints on the screens: always, on hover, or off. The keys work either way']);
   const sections = [{ title: 'Anywhere', keys: global }, ...[...LINE_SECTIONS, ...FIXED_SECTIONS].map((s) => ({ ...s, keys: [...s.keys] }))];
   const voice = sections.find((x) => x.title.startsWith('Voice'))!;
   voice.keys = [row('pushToTalk'), ...voice.keys];
@@ -291,6 +292,13 @@ export function cycleTheme(): void {
   applyTheme(theme);
   set({ theme });
   flash(THEME_LABEL[theme]);
+}
+
+/** H in the ? overlay (and the shortcuts dialog): key hints always → on hover → off. Saved with the settings. */
+export function cycleHints(): void {
+  const keyHints = nextHints(get().settings.keyHints ?? 'always');
+  send({ type: 'settings.set', settings: { ...get().settings, keyHints } });
+  flash(`Key hints: ${HINTS_LABEL[keyHints]}`);
 }
 
 /** Alt+N: open the next session that needs you, cycling past the one already open. */
@@ -541,6 +549,7 @@ export function onKeyDown(e: KeyboardEvent): void {
       const combo = comboOf(e);
       if (e.key === 'Escape' || (combo && actionFor(combo, s.settings.bindings ?? {}) === 'help')) set({ modal: null });
       else if (e.code === 'KeyB' && !e.ctrlKey && !e.altKey) set({ modal: { kind: 'bindings' } });
+      else if (e.code === 'KeyH' && !e.ctrlKey && !e.altKey) cycleHints();
       else return;
       e.preventDefault();
     }

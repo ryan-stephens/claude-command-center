@@ -7,6 +7,7 @@ import { Icon, Key, KeyHint, WsBadge } from './components/ui.tsx';
 import { armOnFirstGesture, setNotificationHandler } from './attention.ts';
 import { bindingsFor, displayCombo, type ActionId } from './bindings.ts';
 import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession } from './keys.ts';
+import { applyHints, trimLegend } from './hints.ts';
 import { legendFor, lineLegendFor } from './legend.ts';
 import { packetRows } from './line-model.ts';
 import { goHome } from './line-keys.ts';
@@ -62,13 +63,15 @@ function Legend() {
   const hasPr = Boolean(pr ?? shown?.pr);
   const tab = useStore((s) => s.composer?.tab);
   const hasWaiting = Boolean(drawerCard && waiting(drawerCard).length);
+  const hints = useStore((s) => s.settings.keyHints ?? 'always');
   if (modal) return null;
-  const items = screen === 'line'
+  const items = trimLegend(screen === 'line'
     ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, canSay, asking, tab, bindings })
-    : legendFor({ zone, pending, pendingKind, busy, drafting, bindings });
+    : legendFor({ zone, pending, pendingKind, busy, drafting, bindings }), hints);
+  if (!items) return null;
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
-    <footer className="hidden items-center gap-x-6 gap-y-2 border-t border-line bg-col px-4 py-2.5 text-[13.5px] text-sub md:flex md:flex-wrap" aria-label="Keys you can press now">
+    <footer className="kc-keep hidden items-center gap-x-6 gap-y-2 border-t border-line bg-col px-4 py-2.5 text-[13.5px] text-sub md:flex md:flex-wrap" aria-label="Keys you can press now">
       {items.map((it) => <KeyHint key={it.label} k={it.keys} tone={it.tone}>{it.label}</KeyHint>)}
       <span className="ml-auto flex items-center gap-5">
         <KeyHint k={k('nextAttention')}>Next that needs you</KeyHint>
@@ -149,6 +152,8 @@ function OutdatedBanner() {
 export function App() {
   const screen = useStore((s) => s.screen);
   const needYou = useStore((s) => attention(s).length);
+  const hints = useStore((s) => s.settings.keyHints ?? 'always');
+  useEffect(() => applyHints(hints), [hints]);
 
   useEffect(() => {
     window.addEventListener('keydown', onKeyDown);

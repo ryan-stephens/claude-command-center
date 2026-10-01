@@ -5,8 +5,13 @@ import type { Workspace } from '../../shared/protocol.ts';
 import type { TicketSource } from '../../shared/tickets.ts';
 import type { Tone } from '../home-model.ts';
 
-export function Key({ k, size, tone, className = '' }: { k: ReactNode; size?: 'sm' | 'lg'; tone?: 'acc' | 'attn' | 'bad' | 'ghost'; className?: string }) {
-  return <kbd className={`kc ${size ? `kc-${size}` : ''} ${tone ? `kc-${tone}` : ''} ${className}`}>{k}</kbd>;
+/**
+ * A keycap. With key hints off (web/hints.ts) the hint ones disappear; `inline` marks a key named
+ * inside a sentence ("Press t to try it"), which then reads as bold text instead. Large keycaps are
+ * content (the answer buttons, the tour) and always show.
+ */
+export function Key({ k, size, tone, inline, className = '' }: { k: ReactNode; size?: 'sm' | 'lg'; tone?: 'acc' | 'attn' | 'bad' | 'ghost'; inline?: boolean; className?: string }) {
+  return <kbd className={`kc ${size ? `kc-${size}` : ''} ${tone ? `kc-${tone}` : ''} ${inline ? 'kc-inline' : ''} ${className}`}>{k}</kbd>;
 }
 
 /** A labelled key, as used in the legend and on buttons: [K] Label. */

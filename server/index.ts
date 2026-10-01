@@ -6,7 +6,7 @@ import type { IncomingMessage } from 'node:http';
 import { existsSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
+import { KEY_HINTS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { cardRepos, type Card } from '../shared/cards.ts';
@@ -156,6 +156,8 @@ function cleanSettings(raw: unknown): Settings {
       }
     }
   }
+  const h = (raw as Settings)?.keyHints;
+  if (h && KEY_HINTS.includes(h)) out.keyHints = h;
   return out;
 }
 
