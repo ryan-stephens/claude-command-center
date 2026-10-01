@@ -81,7 +81,7 @@ export function TryPick({ id, detect = false }: { id: string; detect?: boolean }
   };
   const edit = () => {
     if (!card) return;
-    set({ modal: { kind: 'recipe', repo: cardRepos(card)[0], ...(card.workspaceId ? { workspaceId: card.workspaceId } : {}), scope: 'stack' } });
+    set({ modal: { kind: 'recipe', repo: cardRepos(card)[0], ...(card.workspaceId ? { workspaceId: card.workspaceId } : {}), scope: 'table' } });
   };
 
   useDialogKeys((e) => {

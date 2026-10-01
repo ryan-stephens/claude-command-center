@@ -19,7 +19,7 @@ Read before changing anything:
 
 ## Where this stands (2026-10-01)
 Everything in §54 is built and verified against stand-ins only: a stand-in `okteto` that starts an API on the port its `-f` manifest forwards, a stand-in `gh`, a stub TFS, stand-in repos. The real Okteto, kubectl, the team's helper, nx, `gh` and TFS are on the VU laptop. The open items, in the order the smoke test will meet them:
-1. `t` on a workspace with no stack: does detection read the real `angular.json` / nx serve target, the real proxy file, and the manifest the helper generates? What came out as `?` that should have been `✓`?
+1. `t` on a workspace with no stack: does detection read the real `angular.json` / nx serve target, the real proxy file, and the manifest the helper generates? What came out as `?` that should have been `✓`? (`e` then shows the same as a table, a row per part with the files each was read from; `e` on a row fixes a value.)
 2. The real `okteto up -f okteto.cc-control.yml`: does a sibling copy keep the sync folder and the dev name? If not, the fallback is the `${CC_PORT:-8080}:8080` edit to the team's manifest with `CC_PORT={{port}}` on the step (§54, milestone 2).
 3. Two cards on the same stack at once: ports, deployments, the namespace's room.
 4. A real multi-repo ship to TFS: two blocks, two PRs linking each other. If it stops part-way, `s` again ships the rest (built and tried against stand-ins, 2026-10-01).
@@ -50,7 +50,7 @@ Two threads, both yours:
 **1. Act on what comes back from VU.** When I paste a handoff or a few lines of what I saw: reproduce it against a stand-in first (the walkthrough seeds in §54 show how: real git repos in a temp folder, a stand-in okteto or gh on PATH, an isolated server on a free port), fix the app where the app is wrong, and say what to try next in a short "To check at VU" list. If what I saw means a design assumption in §54 was wrong (the manifest's shape, the helper's naming, the proxy file), change the design, not just the symptom, and write it into §54. Keep fixes small and commit each with its own verification.
 
 **2. Keep improving the app between handoffs.** Pick from these, in this order, unless a handoff needs you:
-- The stack editor's confirmation table that §54 milestone 3 left out: the found values as a table (repo, role, container port, command, proxy rule, found in which file), `↑` `↓` to a row, `e` to change a value, `Enter` to save, `Alt+W` to the JSON as now. The JSON stays as the escape hatch.
+- ~~The stack editor's confirmation table that §54 milestone 3 left out~~ (done 2026-10-01, written into §54 milestone 3: a row per part with the files it was read from, `e` changes a row, `Delete` drops an API, `Enter` saves, `Alt+W` to the JSON; a saved stack shows where the repos now differ).
 - ~~Ship after a part-way failure~~ (done 2026-10-01, §54 milestone 4: `s` again ships only the repos left; the shipped block says *Shipped already*).
 - `Shift+D` changes on a worktree card across every repo, not just the home one.
 - The trust prompt for `--add-dir` folders: check whether Claude Code asks for those too; if it does, the trust setting should cover them (it marks every worktree already, so it may already be fine).
