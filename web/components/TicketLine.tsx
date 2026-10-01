@@ -487,7 +487,7 @@ function Overview({ card, wide }: { card: Card; wide?: boolean }) {
       {card.files?.length ? (
         <Sec title="What changed" right={<button className="flex items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={() => openChanges(card.id)} title="The diffs, file by file">{card.files.length} file{card.files.length === 1 ? '' : 's'} written or edited · diffs <Key k="⇧D" size="sm" /></button>}>
           <ul className="grid gap-1 font-mono text-[12.5px]">
-            {card.files.map((f) => <li key={f} className="truncate" title={f}>{shortPath(f, card.cwd)}</li>)}
+            {card.files.map((f) => <li key={f} className="truncate" title={f}>{shortPath(f, card.cwd, card.folders)}</li>)}
           </ul>
         </Sec>
       ) : null}

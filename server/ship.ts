@@ -5,10 +5,10 @@
 // it. Every step lands on the card, so the sheet and the drawer show where it got to and what failed.
 
 import { normalize } from 'node:path';
-import { branchFor, cardRepos, ownFolders, type BootStep, type Card } from '../shared/cards.ts';
-import { parsePatch, type Changes } from '../shared/changes.ts';
+import { branchFor, cardRepos, folderFor, ownFolders, type BootStep, type Card } from '../shared/cards.ts';
+import { parsePatch, type Changes, type RepoChanges } from '../shared/changes.ts';
 import { allMerged, commitMessage, openPrs, partOf, prBody, prsOf, prTitle, type PullRequest, type RepoShipPlan, type ShipFile, type ShipPlan, type ShipRequest } from '../shared/ship.ts';
-import { repoName, samePath } from '../shared/workspaces.ts';
+import { isInside, repoName, samePath } from '../shared/workspaces.ts';
 
 /** A diff bigger than this is cut: the sheet says so. */
 const MAX_PATCH = 2 * 1024 * 1024;
@@ -166,14 +166,35 @@ export class ShipService {
   }
 
   /**
-   * What the card changed, with each file's patch: the working tree against where the branch left
-   * the base (so commits already made and edits not yet committed both show), plus untracked files.
+   * What the card changed in every repo it works in: its home folder, each worktree of its, and any
+   * other repo of the card it wrote a file in (a Current-branch card edits them in place). A folder
+   * that isn't a git repo, or is the same repo again, is skipped.
    */
   async changes(card: Card): Promise<Changes> {
-    const cwd = this.folder(card);
+    const home = this.folder(card);
+    const dirs = [home, ...ownFolders(card).map((f) => f.dir)];
+    for (const r of cardRepos(card)) {
+      const dir = folderFor(card, r);
+      if (!dirs.some((d) => samePath(d, dir)) && (card.files ?? []).some((f) => isInside(f, dir))) dirs.push(dir);
+    }
+    const repos: RepoChanges[] = [];
+    for (const dir of dirs) {
+      const one = await this.changesIn(card, dir).catch((e: unknown) => { if (samePath(dir, home)) throw e; return undefined; });
+      if (one && !repos.some((r) => samePath(r.root, one.root))) repos.push(one);
+    }
+    return { repos };
+  }
+
+  /**
+   * What the card changed in one folder, with each file's patch: the working tree against where the
+   * branch left the base (so commits already made and edits not yet committed both show), plus
+   * untracked files.
+   */
+  private async changesIn(card: Card, cwd: string): Promise<RepoChanges> {
     const top = await run('git', ['rev-parse', '--show-toplevel'], cwd);
     if (top.code !== 0) throw new Error(`${cwd} isn’t a git repo.`);
     const root = normalize(top.out);
+    const repo = repoName((card.folders ?? []).find((f) => samePath(f.dir, root))?.repo ?? root);
     const branch = (await run('git', ['branch', '--show-current'], root)).out;
     const remote = await this.remote(root);
     const base = await this.base(root, remote);
@@ -200,7 +221,7 @@ export class ShipService {
     const files = parsePatch(text).map((f) => ({ ...f, kind: untracked.some((u) => u.path === f.path) ? 'new' as const : f.kind, mine: mine.has(f.path.toLowerCase()) }));
     // The card's own files first, then the rest, each in path order.
     files.sort((a, b) => Number(b.mine) - Number(a.mine) || a.path.localeCompare(b.path));
-    return { root, branch, base: against === 'HEAD' ? branch || 'HEAD' : base, committed, files, ...(truncated ? { truncated: true } : {}) };
+    return { repo, root, branch, base: against === 'HEAD' ? branch || 'HEAD' : base, committed, files, ...(truncated ? { truncated: true } : {}) };
   }
 
   private step(id: string, text: string, state: BootStep['state']): void {

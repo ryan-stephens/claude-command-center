@@ -193,6 +193,46 @@ test('a host cc-control doesn’t know: it still commits and pushes, and says to
   }
 });
 
+test('changes cover every repo the card works in: its home, each worktree, and a repo of the card edited in place; a folder that isn’t git is skipped', async () => {
+  const web = repo();
+  const api = repo();
+  const docs = repo();
+  const plain = join(dir, `plain-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(plain);
+  // The home: a commit on the card's branch plus an edit not yet committed. The API worktree: a new file. docs: untouched.
+  git(web.work, 'checkout', '-q', '-b', 'shop-155-save-cart');
+  writeFileSync(join(web.work, 'cart.js'), 'export const cart = [];\n');
+  git(web.work, 'add', 'cart.js');
+  git(web.work, 'commit', '-qm', 'cart');
+  writeFileSync(join(web.work, 'README.md'), '# web\n\nMore.\n');
+  writeFileSync(join(api.work, 'Fees.cs'), 'class Fees {}\n');
+  const card: Card = {
+    ...seed(web.work), launch: { home: join(dir, 'web'), branch: 'worktree', mode: 'default', message: '' }, branchName: 'shop-155-save-cart',
+    folders: [{ repo: join(dir, 'web'), dir: web.work }, { repo: join(dir, 'api'), dir: api.work }, { repo: join(dir, 'docs'), dir: docs.work }, { repo: join(dir, 'notes'), dir: plain }],
+    files: [join(web.work, 'cart.js'), join(api.work, 'Fees.cs'), join(plain, 'todo.txt')],
+  };
+  const cards = new CardService(store, { port: 7788, changed: () => {} });
+  const ship = new ShipService(cards, new RunService(() => {}, process.env), { env: { ...process.env, CC_CONTROL_GH: stub } });
+  try {
+    const c = await ship.changes(card);
+    assert.deepEqual(c.repos.map((r) => [r.repo, r.branch, r.base, r.committed, r.files.map((f) => `${f.kind} ${f.path}${f.mine ? '*' : ''}`)]), [
+      ['web', 'shop-155-save-cart', 'main', 1, ['added cart.js*', 'modified README.md']],
+      ['api', 'main', 'main', 0, ['new Fees.cs*']],
+      ['docs', 'main', 'main', 0, []],
+    ], 'home first, then the worktrees in the card’s order; the plain folder skipped');
+    assert.match(c.repos[0].files[0].patch, /\+export const cart/);
+    // A Current-branch card with two repos edits the second in place: it is read too, once.
+    const inPlace: Card = { ...seed(web.work), packet: { ...card.packet, workspace: [{ kind: 'repo', id: web.work, label: 'web', on: true }, { kind: 'repo', id: api.work, label: 'api', on: true }] }, files: [join(api.work, 'Fees.cs')] };
+    const c2 = await ship.changes(inPlace);
+    assert.deepEqual(c2.repos.map((r) => r.files.map((f) => f.path).sort()), [['README.md', 'cart.js'], ['Fees.cs']]);
+    // A repo of the card it wrote nothing in is not read.
+    const untouched: Card = { ...inPlace, files: [] };
+    assert.equal((await ship.changes(untouched)).repos.length, 1);
+  } finally {
+    ship.stop();
+  }
+});
+
 test('a card that changed two repos ships each from its worktree: two commits, two pushes, two PRs linking each other; both followed and merged', async () => {
   const web = repo();
   const api = repo();

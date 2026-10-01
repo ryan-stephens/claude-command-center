@@ -4,7 +4,7 @@
 
 import {
   branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, homeOf, includedRepos, kindDefaults, kindForTicket, LAUNCH_MODES, modelName, STAGES, TESTING_NOTES, WORKSPACE_NOTES,
-  type BranchChoice, type Card, type CardDraft, type CardKind, type Packet, type PacketItem, type PrTarget, type Stage,
+  type BranchChoice, type Card, type CardDraft, type CardFolder, type CardKind, type Packet, type PacketItem, type PrTarget, type Stage,
 } from '../shared/cards.ts';
 import type { RepoInfo, Workspace } from '../shared/protocol.ts';
 import { recipeFor, recipeLabel, recipeText, wsRecipeKey, type RunRecipe } from '../shared/recipes.ts';
@@ -106,12 +106,19 @@ export function elapsed(since: number, now: number): string {
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 }
 
-/** A path as the drawer shows it: relative to the card's folder when inside it. */
-export function shortPath(path: string, cwd?: string): string {
-  if (!cwd) return path;
-  const p = path.replace(/\\/g, '/');
-  const c = cwd.replace(/\\/g, '/').replace(/\/+$/, '');
-  return p.toLowerCase().startsWith(`${c.toLowerCase()}/`) ? p.slice(c.length + 1) : path;
+/**
+ * A path as the drawer shows it: relative to the card's folder when inside it; inside another repo
+ * of the card (a worktree, or a repo edited in place) as `repo/path`, named after the repo.
+ */
+export function shortPath(path: string, cwd?: string, folders: CardFolder[] = []): string {
+  const under = (dir: string): string | null => {
+    const p = path.replace(/\\/g, '/');
+    const c = dir.replace(/\\/g, '/').replace(/\/+$/, '');
+    return p.toLowerCase().startsWith(`${c.toLowerCase()}/`) ? p.slice(c.length + 1) : null;
+  };
+  if (cwd) { const rel = under(cwd); if (rel !== null) return rel; }
+  for (const f of folders) { const rel = under(f.dir); if (rel !== null) return `${repoName(f.repo)}/${rel}`; }
+  return path;
 }
 
 // ---- The new-card screen ------------------------------------------------------------------

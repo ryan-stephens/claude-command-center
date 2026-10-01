@@ -1700,3 +1700,17 @@ What it costs: nothing. No VU dependency.
 ## 55. Overview: Claude said only when the transcript is not beside it
 
 2026-10-01, the owner: with the drawer wide enough for two columns, the live Transcript on the right already shows Claude's last message, so the Overview's *Claude said* section repeated it. It now shows only when the drawer is one column (a narrow window, the phone), where it is the only place that message appears. Checked in the §54 milestone 4 walkthrough: absent at 1400px, present at 800px.
+
+## 56. Changes across every repo the card works in
+
+2026-10-01, the owner, smoke-testing §54 at VU: "make sure the overview of a card shows all changes for all repos that have been effected in the card". §47's Changes asked git in the card's home folder only, so an API worktree's edits were invisible until the Ship sheet; the Overview's *What changed* listed them, but as full Windows paths (`shortPath` knew only the home folder).
+
+**What it does.**
+- **The Overview's *What changed*** names a file in another repo of the card by that repo: `loans-api/Fees.cs` (the repo's name, not the worktree folder's); the home repo's files stay relative. `shortPath(path, cwd, folders)` in `web/line-model.ts`.
+- **`Shift+D`** lists every repo the card works in: its home folder, each worktree of its (`ownFolders`), and any other repo of the card it wrote a file in (a *Current branch* card with two repos edits the second in place). With several, a header per repo says its name and what its diff is against (`shop-155 against main, 1 commit already on the branch`, or `nothing changed here` for an untouched worktree); the first line counts files and lines across them (`5 files · +6 −2 · in 3 repos: shop-ui, loans-api, docs-site (nothing)`); `↑ ↓` move across the repos; the diff pane is headed `repo/path`. One repo looks as before.
+
+**How.** `Changes` is now `{ repos: RepoChanges[] }` (`shared/changes.ts`; `changeRows`, `changeTotals`, `againstText` are the pure parts, tested). `ShipService.changes` walks the folders in the card's order, reads each once by its git root, skips a folder that isn't a git repo (only the home one is allowed to fail), and runs §47's diff per folder (`changesIn`). `PROTOCOL` 21.
+
+**Verified:** unit tests (279 pass; `pnpm typecheck` and `tsc --noUnusedLocals` clean): the rows, totals and wording; `shortPath` with worktrees; `changes` against three real repos as a worktree card (the home with a commit on the branch and an uncommitted edit, the API worktree with a new file, the docs worktree clean, a plain folder skipped) and as a Current-branch card that edited its second repo in place (read once; not read when nothing was written there). A scripted walkthrough on an isolated server (:7801) with the three worktrees; 12 checks passed, screenshots looked at: the Overview's four files with the API's as `loans-api/…`; `Shift+D` with the three headers, `5 files · +6 −2 · in 3 repos`, the card's files first in each repo, `↓` into the API's rows with the pane headed `loans-api/Rounding.cs`, `↓` stopping at the last file; the `?` row. No console errors.
+
+**To check at VU:** `Shift+D` on a card that touched the UI and an API: a header per repo, the API's files under its own, and *nothing changed here* for a repo Claude left alone. The Overview's *What changed* should read `repo/path` for the API's files.

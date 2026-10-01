@@ -1,8 +1,9 @@
-// D on a card: what it changed, as git sees it, without leaving for an editor. Files on the left
-// (the card's own first; ↑ ↓ or j k move), the chosen file's diff on the right. s ships from here.
+// Shift+D on a card: what it changed, as git sees it, in every repo it works in, without leaving for
+// an editor. Files on the left under a header per repo (the card's own first in each; ↑ ↓ or j k
+// move across all of them), the chosen file's diff on the right. s ships from here.
 
 import { useEffect, useState } from 'react';
-import { patchLines, type Changes } from '../../shared/changes.ts';
+import { againstText, changeRows, changeTotals, patchLines, type Changes } from '../../shared/changes.ts';
 import { shipKey } from '../line-keys.ts';
 import { useStore } from '../store.ts';
 import { cardChanges } from '../ws.ts';
@@ -19,8 +20,10 @@ export function ChangesSheet({ id }: { id: string }) {
 
   useEffect(() => { cardChanges(id).then(setChanges, (e: Error) => setError(e.message)); }, [id]);
 
-  const files = changes?.files ?? [];
-  const file = files[Math.min(at, files.length - 1)];
+  const rows = changes ? changeRows(changes) : [];
+  const files = rows.filter((r) => r.kind === 'file');
+  const chosen = files[Math.min(at, files.length - 1)];
+  const file = chosen?.kind === 'file' ? chosen.file : undefined;
   useEffect(() => { document.getElementById(`chg-${at}`)?.scrollIntoView({ block: 'nearest' }); }, [at]);
 
   useDialogKeys((e) => {
@@ -33,34 +36,44 @@ export function ChangesSheet({ id }: { id: string }) {
   });
 
   if (!card) return null;
-  const added = files.reduce((n, f) => n + f.added, 0);
-  const removed = files.reduce((n, f) => n + f.removed, 0);
+  const totals = changes ? changeTotals(changes) : null;
+  const several = (changes?.repos.length ?? 0) > 1;
+  const one = changes?.repos[0];
   return (
     <Overlay label="Changes" wide="xl">
       <DialogTitle><span className="flex min-w-0 items-center gap-2">Changes · <TicketKey k={card.key} source={card.ticket?.source} /><span className="truncate">{card.title}</span></span></DialogTitle>
       {error && <div className="rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
       {!changes && !error && <p className="flex items-center gap-2 text-sm text-faint"><span className="spinner" />Asking git…</p>}
-      {changes && (
+      {changes && totals && (
         <>
           <p className="mb-3 text-[13px] text-sub">
-            {files.length ? <><b>{files.length}</b> file{files.length === 1 ? '' : 's'} · <span className="text-ok">+{added}</span> <span className="text-bad">−{removed}</span></> : 'No changes'}
-            {changes.branch && changes.branch !== changes.base ? <> · <span className="font-mono">{changes.branch}</span> against <span className="font-mono">{changes.base}</span>{changes.committed ? `, ${changes.committed} commit${changes.committed === 1 ? '' : 's'} already on the branch` : ''}</> : <> · uncommitted, on <span className="font-mono">{changes.branch || 'HEAD'}</span></>}
-            {changes.truncated && <span className="text-attn"> · the diff was cut: it is very large</span>}
+            {totals.files ? <><b>{totals.files}</b> file{totals.files === 1 ? '' : 's'} · <span className="text-ok">+{totals.added}</span> <span className="text-bad">−{totals.removed}</span></> : 'No changes'}
+            {several
+              ? <> · in <b>{changes.repos.length}</b> repos: {changes.repos.map((r) => <span key={r.root}>{r.repo}{r.files.length ? '' : ' (nothing)'}</span>).reduce<React.ReactNode[]>((acc, el, i) => (i ? [...acc, ', ', el] : [el]), [])}</>
+              : one ? <> · {againstText(one).split(/(\S+ against \S+|on \S+)$/).map((part, i) => (i === 1 ? <span key={i} className="font-mono">{part}</span> : part))}</> : null}
+            {totals.truncated && <span className="text-attn"> · the diff was cut: it is very large</span>}
           </p>
-          {files.length > 0 && (
+          {totals.files > 0 && (
             <div className="grid max-h-[62vh] min-h-[40vh] grid-cols-[minmax(220px,300px)_minmax(0,1fr)] gap-3">
               <ul className="overflow-y-auto rounded-xl border border-line" role="listbox" aria-label="Changed files">
-                {files.map((f, i) => (
-                  <li key={f.path} id={`chg-${i}`} role="option" aria-selected={i === at} onClick={() => setAt(i)}
-                    className={`flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[12.5px] [&+&]:border-t [&+&]:border-line/60 ${i === at ? 'is-focus bg-raise' : 'hover:bg-raise/60'}`}>
-                    <span className={`w-12 shrink-0 text-[10.5px] font-bold uppercase ${f.kind === 'deleted' ? 'text-bad' : f.kind === 'modified' ? 'text-faint' : 'text-ok'}`}>{KIND[f.kind]}</span>
-                    <span className="min-w-0 grow truncate font-mono" title={f.path}>{f.path}</span>
-                    {f.mine && <span className="shrink-0 rounded-full bg-ok-bg px-1.5 text-[10.5px] font-semibold text-ok" title="Written by this card’s session">card</span>}
-                    <span className="shrink-0 font-mono text-[11px] tabular-nums"><span className="text-ok">+{f.added}</span> <span className="text-bad">−{f.removed}</span></span>
-                  </li>
-                ))}
+                {rows.map((r) => r.kind === 'repo'
+                  ? (
+                    <li key={`repo-${r.repo.root}`} className="sticky top-0 border-b border-line/60 bg-raise px-2.5 py-1.5 text-[11.5px] [li+&]:border-t">
+                      <span className="font-semibold">{r.repo.repo}</span> <span className="text-faint">· {r.repo.files.length ? againstText(r.repo) : 'nothing changed here'}</span>
+                    </li>
+                  )
+                  : (
+                    <li key={`${r.repo.root}:${r.file.path}`} id={`chg-${r.index}`} role="option" aria-selected={r.index === at} onClick={() => setAt(r.index)}
+                      className={`flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[12.5px] [li+&]:border-t [li+&]:border-line/60 ${r.index === at ? 'is-focus bg-raise' : 'hover:bg-raise/60'}`}>
+                      <span className={`w-12 shrink-0 text-[10.5px] font-bold uppercase ${r.file.kind === 'deleted' ? 'text-bad' : r.file.kind === 'modified' ? 'text-faint' : 'text-ok'}`}>{KIND[r.file.kind]}</span>
+                      <span className="min-w-0 grow truncate font-mono" title={`${several ? `${r.repo.repo}/` : ''}${r.file.path}`}>{r.file.path}</span>
+                      {r.file.mine && <span className="shrink-0 rounded-full bg-ok-bg px-1.5 text-[10.5px] font-semibold text-ok" title="Written by this card’s session">card</span>}
+                      <span className="shrink-0 font-mono text-[11px] tabular-nums"><span className="text-ok">+{r.file.added}</span> <span className="text-bad">−{r.file.removed}</span></span>
+                    </li>
+                  ))}
               </ul>
               <div className="overflow-auto rounded-xl border border-line bg-bg">
+                {several && chosen?.kind === 'file' && <div className="sticky top-0 border-b border-line/60 bg-raise px-3 py-1 font-mono text-[11.5px] text-sub">{chosen.repo.repo}/{chosen.file.path}</div>}
                 {file?.binary
                   ? <p className="px-3 py-2 text-sm text-faint">A binary file: nothing to show.</p>
                   : <pre className="m-0 px-0 py-1 font-mono text-[12px] leading-[1.45]">
@@ -74,7 +87,7 @@ export function ChangesSheet({ id }: { id: string }) {
         </>
       )}
       <div className="mt-4 flex items-center gap-3">
-        <span className="grow text-[13px] text-faint">Committed or not, tracked or new: everything different from where the branch left {changes?.base ?? 'the base'}. The card’s own files come first.</span>
+        <span className="grow text-[13px] text-faint">Committed or not, tracked or new: everything different from where each branch left its base{several ? ', in every repo the card works in' : ''}. The card’s own files come first.</span>
         <button className="btn" onClick={close}>Close<Key k="Esc" size="sm" /></button>
         {card.stage !== 'done' && card.cwd && <button className="btn btn-primary" onClick={() => { close(); shipKey(card.id); }}>Ship<Key k="s" size="sm" tone="ghost" /></button>}
       </div>

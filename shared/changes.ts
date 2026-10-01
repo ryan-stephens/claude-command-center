@@ -16,7 +16,10 @@ export interface ChangedFile {
   binary?: boolean;
 }
 
-export interface Changes {
+/** One repo the card works in: its home folder, each worktree of its, and any other repo of the card it wrote in. */
+export interface RepoChanges {
+  /** The repo's name (a worktree is named after the repo it is of). */
+  repo: string;
   root: string;
   branch: string;
   /** What the diff is against: the base branch where this branch left it, or HEAD on the base itself. */
@@ -26,6 +29,34 @@ export interface Changes {
   files: ChangedFile[];
   /** The patch was cut (very large diffs). */
   truncated?: boolean;
+}
+
+export interface Changes {
+  /** The card's home repo first, then the others in the card's order. */
+  repos: RepoChanges[];
+}
+
+/** The sheet's list: a header per repo when there are several, then its files; `index` counts files across repos. */
+export type ChangeRow = { kind: 'repo'; repo: RepoChanges } | { kind: 'file'; repo: RepoChanges; file: ChangedFile; index: number };
+export function changeRows(c: Changes): ChangeRow[] {
+  const rows: ChangeRow[] = [];
+  let index = 0;
+  for (const repo of c.repos) {
+    if (c.repos.length > 1) rows.push({ kind: 'repo', repo });
+    for (const file of repo.files) rows.push({ kind: 'file', repo, file, index: index++ });
+  }
+  return rows;
+}
+
+export function changeTotals(c: Changes): { files: number; added: number; removed: number; truncated: boolean } {
+  const files = c.repos.flatMap((r) => r.files);
+  return { files: files.length, added: files.reduce((n, f) => n + f.added, 0), removed: files.reduce((n, f) => n + f.removed, 0), truncated: c.repos.some((r) => r.truncated) };
+}
+
+/** What a repo's diff is against, in words: "shop-155 against main, 2 commits already on the branch" or "uncommitted, on main". */
+export function againstText(r: Pick<RepoChanges, 'branch' | 'base' | 'committed'>): string {
+  if (r.branch && r.branch !== r.base) return `${r.branch} against ${r.base}${r.committed ? `, ${r.committed} commit${r.committed === 1 ? '' : 's'} already on the branch` : ''}`;
+  return `uncommitted, on ${r.branch || 'HEAD'}`;
 }
 
 /** One file's diff out of `git diff` output: split on the `diff --git` headers, count the lines. */

@@ -129,6 +129,11 @@ test('progress, elapsed time and short paths', () => {
   assert.equal(elapsed(0, 65 * 60_000), '1h 05m');
   assert.equal(shortPath('C:\\Repos\\web-app\\src\\a.ts', 'c:/repos/web-app'), 'src/a.ts');
   assert.equal(shortPath('D:\\other\\b.ts', 'C:\\repos\\web-app'), 'D:\\other\\b.ts');
+  // A file in another repo of the card (its worktree) is named after the repo, not the worktree's folder.
+  const folders = [{ repo: 'C:\\repos\\web-app', dir: 'C:\\repos\\web-app-card-1' }, { repo: 'C:\\repos\\loans-api', dir: 'C:\\repos\\loans-api-card-1' }];
+  assert.equal(shortPath('C:\\repos\\web-app-card-1\\src\\a.ts', 'C:\\repos\\web-app-card-1', folders), 'src/a.ts');
+  assert.equal(shortPath('C:\\repos\\loans-api-card-1\\Fees.cs', 'C:\\repos\\web-app-card-1', folders), 'loans-api/Fees.cs');
+  assert.equal(shortPath('D:\\other\\b.ts', 'C:\\repos\\web-app-card-1', folders), 'D:\\other\\b.ts');
 });
 
 test('the / filter narrows the board by key, title or branch, every word', () => {

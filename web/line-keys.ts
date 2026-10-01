@@ -39,7 +39,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Enter (card open)', 'Type to its terminal: the message box under the transcript sends into the session itself (Esc leaves the box)'],
       ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal'],
       ['g (a card)', 'Go to its terminal tab: brings the Windows Terminal tab forward, for what the page can’t relay (the trust-the-folder prompt, a picker)'],
-      ['Shift+D (a card)', 'Changes: what it changed as git sees it, file by file with the diffs (↑ ↓ file, s ships from there)'],
+      ['Shift+D (a card)', 'Changes: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
       ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab. A repo gets a worktree on the card’s branch, and an API or UI among them joins the workspace’s stack; a note naming an API makes t suggest it'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a workspace stack, pick the environment and the APIs first. A workspace with no stack yet: what its repos say the stack is (okteto.yml, angular.json, the proxy file), Enter keeps it, e edits it first'],

@@ -15,7 +15,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
 
-export const PROTOCOL = 20;
+export const PROTOCOL = 21;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -359,7 +359,7 @@ export type ClientMsg =
   | { type: 'card.withdraw'; id: string; itemId: string }
   /** Type into the card's terminal session through its channel. Answered with ok or an error. */
   | { type: 'card.send'; reqId: string; id: string; text: string }
-  /** What the card changed, each file with its patch (D). Answered with card.changes. */
+  /** What the card changed in every repo it works in, each file with its patch (Shift+D). Answered with card.changes. */
   | { type: 'card.changes'; reqId: string; id: string }
   /** Bring the card's Windows Terminal tab to the front (g). Answered with ok or an error. */
   | { type: 'card.focusTab'; reqId: string; id: string }

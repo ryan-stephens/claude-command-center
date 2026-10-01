@@ -54,7 +54,7 @@ Two threads, both yours:
 **2. Keep improving the app between handoffs.** Pick from these, in this order, unless a handoff needs you:
 - ~~The stack editor's confirmation table that §54 milestone 3 left out~~ (done 2026-10-01, written into §54 milestone 3: a row per part with the files it was read from, `e` changes a row, `Delete` drops an API, `Enter` saves, `Alt+W` to the JSON; a saved stack shows where the repos now differ).
 - ~~Ship after a part-way failure~~ (done 2026-10-01, §54 milestone 4: `s` again ships only the repos left; the shipped block says *Shipped already*).
-- `Shift+D` changes on a worktree card across every repo, not just the home one.
+- ~~`Shift+D` changes on a worktree card across every repo, not just the home one~~ (done 2026-10-01, §56: a header per repo, the Overview's *What changed* names the other repos' files by repo).
 - The trust prompt for `--add-dir` folders: check whether Claude Code asks for those too; if it does, the trust setting should cover them (it marks every worktree already, so it may already be fine).
 - Anything §43's list of proposals still has that fits a calm, effective UI (`docs/prompts/continue-calm-ui.md`).
 
