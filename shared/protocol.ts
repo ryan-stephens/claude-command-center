@@ -11,7 +11,9 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  * says `hello` first; a page that hears anything else first is talking to a server from before
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
-export const PROTOCOL = 14;
+import type { Changes } from './changes.ts';
+
+export const PROTOCOL = 15;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -353,6 +355,8 @@ export type ClientMsg =
   | { type: 'card.withdraw'; id: string; itemId: string }
   /** Type into the card's terminal session through its channel. Answered with ok or an error. */
   | { type: 'card.send'; reqId: string; id: string; text: string }
+  /** What the card changed, each file with its patch (D). Answered with card.changes. */
+  | { type: 'card.changes'; reqId: string; id: string }
   /** Bring the card's Windows Terminal tab to the front (g). Answered with ok or an error. */
   | { type: 'card.focusTab'; reqId: string; id: string }
   /** Answer the permission prompt the terminal relayed (card.live.ask.requestId). Answered with ok or an error. */
@@ -420,6 +424,7 @@ export type ServerMsg =
   | { type: 'error'; message: string; reqId?: string }
   /** Every card on the Ticket Line, on connect and whenever one changes. */
   | { type: 'ship.plan'; reqId: string; plan: ShipPlan }
+  | { type: 'card.changes'; reqId: string; changes: Changes }
   /** The picker's rows for a card's stack, and the APIs to tick when nothing was picked before. */
   | { type: 'stack.plan'; reqId: string; rows: StackApiRow[]; suggested: string[] }
   /** Run recipes by repo path: the library's, the workspaces' and the cards' repos. */

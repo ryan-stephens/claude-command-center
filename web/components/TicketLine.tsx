@@ -14,7 +14,7 @@ import { openSession } from '../keys.ts';
 import { INBOX_VIEWS, inView, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard, ticketFocus } from '../line-model.ts';
-import { answerAsk, boardOf, editRecipe, goToTab, openAddComposer, openApp, openCard, openComposer, openNeighbour, saySubmit, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
+import { answerAsk, boardOf, editRecipe, goToTab, openAddComposer, openChanges, openApp, openCard, openComposer, openNeighbour, saySubmit, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
 import { cardRecipe, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
 import { prLine } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
@@ -483,7 +483,7 @@ function Overview({ card }: { card: Card }) {
         </Sec>
       ) : null}
       {card.files?.length ? (
-        <Sec title="What changed" right={<span className="text-sm text-faint">{card.files.length} file{card.files.length === 1 ? '' : 's'} written or edited</span>}>
+        <Sec title="What changed" right={<button className="flex items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={() => openChanges(card.id)} title="The diffs, file by file">{card.files.length} file{card.files.length === 1 ? '' : 's'} written or edited · diffs <Key k="⇧D" size="sm" /></button>}>
           <ul className="grid gap-1 font-mono text-[12.5px]">
             {card.files.map((f) => <li key={f} className="truncate" title={f}>{shortPath(f, card.cwd)}</li>)}
           </ul>

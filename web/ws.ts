@@ -1,6 +1,7 @@
 import type { CardDraft, PacketItem } from '../shared/cards.ts';
 import { wsRecipeKey } from '../shared/recipes.ts';
 import type { StackChoice } from '../shared/stack.ts';
+import type { Changes } from '../shared/changes.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
@@ -160,6 +161,12 @@ export async function saveRecipe(target: { repo: string } | { workspaceId: strin
 }
 
 /** Ship: what it will do for the card. */
+/** What the card changed, each file with its patch (git runs on the server). */
+export async function cardChanges(id: string): Promise<Changes> {
+  const reply = await request((reqId) => ({ type: 'card.changes', reqId, id }), 90_000);
+  return (reply as Extract<ServerMsg, { type: 'card.changes' }>).changes;
+}
+
 export async function shipPlan(id: string): Promise<ShipPlan> {
   const reply = await request((reqId) => ({ type: 'card.shipPlan', reqId, id }), 30_000);
   return (reply as Extract<ServerMsg, { type: 'ship.plan' }>).plan;
@@ -329,6 +336,7 @@ function receive(msg: ServerMsg): void {
       return;
     case 'card.started':
     case 'ship.plan':
+    case 'card.changes':
     case 'stack.plan':
       return; // answered to the screen that asked, which waits on it
     case 'workspace.file':

@@ -483,6 +483,12 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       broadcast(recipesMsg());
       return;
     }
+    case 'card.changes': {
+      const card = cards.get(String(msg.id));
+      if (!card) throw new Error('That card is no longer on the line.');
+      send(ws, { type: 'card.changes', reqId: msg.reqId, changes: await ship.changes(card) });
+      return;
+    }
     case 'card.shipPlan': {
       const card = cards.get(String(msg.id));
       if (!card) throw new Error('That card is no longer on the line.');

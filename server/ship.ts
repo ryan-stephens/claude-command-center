@@ -6,7 +6,11 @@
 
 import { normalize } from 'node:path';
 import { branchFor, cardRepos, type BootStep, type Card } from '../shared/cards.ts';
+import { parsePatch, type Changes } from '../shared/changes.ts';
 import { commitMessage, prBody, prTitle, type PullRequest, type ShipFile, type ShipPlan, type ShipRequest } from '../shared/ship.ts';
+
+/** A diff bigger than this is cut: the sheet says so. */
+const MAX_PATCH = 2 * 1024 * 1024;
 import type { CardService } from './cards.ts';
 import { hostFor, run, why, type CodeHost, type Out } from './hosts.ts';
 import type { RunService } from './recipes.ts';
@@ -133,6 +137,44 @@ export class ShipService {
       host: typeof host === 'string' ? '' : host.name,
       commit: commitMessage(card), title: prTitle(card), body: prBody(card, shipping, tried), blockers, notes,
     };
+  }
+
+  /**
+   * What the card changed, with each file's patch: the working tree against where the branch left
+   * the base (so commits already made and edits not yet committed both show), plus untracked files.
+   */
+  async changes(card: Card): Promise<Changes> {
+    const cwd = this.folder(card);
+    const top = await run('git', ['rev-parse', '--show-toplevel'], cwd);
+    if (top.code !== 0) throw new Error(`${cwd} isn’t a git repo.`);
+    const root = normalize(top.out);
+    const branch = (await run('git', ['branch', '--show-current'], root)).out;
+    const remote = await this.remote(root);
+    const base = await this.base(root, remote);
+    let against = 'HEAD';
+    let committed = 0;
+    if (branch && branch !== base) {
+      const ref = remote && (await run('git', ['rev-parse', '--verify', '--quiet', `refs/remotes/${remote}/${base}`], root)).code === 0 ? `${remote}/${base}` : base;
+      const mb = await run('git', ['merge-base', ref, 'HEAD'], root);
+      if (mb.code === 0 && mb.out) against = mb.out;
+      const n = await run('git', ['rev-list', '--count', `${ref}..HEAD`], root);
+      committed = n.code === 0 ? Number(n.out) || 0 : 0;
+    }
+    const tracked = await run('git', ['diff', '--no-color', '--no-ext-diff', '--find-renames', against, '--'], root, undefined, 60_000);
+    let text = tracked.raw.slice(0, MAX_PATCH);
+    let truncated = tracked.raw.length > MAX_PATCH;
+    const untracked = parseStatus((await run('git', ['status', '--porcelain=v1', '-z', '-uall'], root)).raw).filter((f) => f.status === '??');
+    for (const f of untracked) {
+      if (text.length >= MAX_PATCH) { truncated = true; break; }
+      // --no-index exits 1 when there is a difference, which there always is against nothing.
+      const d = await run('git', ['diff', '--no-color', '--no-index', '--', '/dev/null', f.path], root, undefined, 20_000);
+      text += d.raw.slice(0, MAX_PATCH - text.length);
+    }
+    const mine = new Set(relativeTo(root, card.files ?? []).map((p) => p.toLowerCase()));
+    const files = parsePatch(text).map((f) => ({ ...f, kind: untracked.some((u) => u.path === f.path) ? 'new' as const : f.kind, mine: mine.has(f.path.toLowerCase()) }));
+    // The card's own files first, then the rest, each in path order.
+    files.sort((a, b) => Number(b.mine) - Number(a.mine) || a.path.localeCompare(b.path));
+    return { root, branch, base: against === 'HEAD' ? branch || 'HEAD' : base, committed, files, ...(truncated ? { truncated: true } : {}) };
   }
 
   private step(id: string, text: string, state: BootStep['state']): void {

@@ -63,13 +63,14 @@ function Legend() {
   const hasTab = Boolean(shown?.cwd);
   // Waiting on you in the tab, and the page can't answer it: g is the way.
   const needsTab = Boolean(shown?.live?.phase === 'needs' && !asking);
+  const hasChanges = Boolean(shown?.cwd && (shown.files?.length || shown.ship));
   const hasPr = Boolean(pr ?? shown?.pr);
   const tab = useStore((s) => s.composer?.tab);
   const hasWaiting = Boolean(drawerCard && waiting(drawerCard).length);
   const hints = useStore((s) => s.settings.keyHints ?? 'always');
   if (modal) return null;
   const items = trimLegend(screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, canSay, asking, hasTab, needsTab, tab, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, canSay, asking, hasTab, needsTab, hasChanges, tab, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings }), hints);
   if (!items) return null;
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');

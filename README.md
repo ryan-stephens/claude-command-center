@@ -96,6 +96,7 @@ If you don't write code: ask a developer to do steps 1 to 6 once on your machine
 | | `Enter` (card open) | Type to its terminal: the message box under the transcript sends into the session itself (`Esc` leaves the box) |
 | | `y` / `n` (card open) | Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal |
 | | `g` (a card) | Go to its terminal tab: brings the Windows Terminal tab forward, for what the page can't relay (the trust-the-folder prompt, a picker) |
+| | `Shift+D` (a card) | Changes: what it changed as git sees it, file by file with the diffs (`↑ ↓` file, `s` ships from there) |
 | | `Ctrl+Enter` | The card's session in the app, to read along (`Esc`: back to the line) |
 | | `1`–`9` / `0` | One workspace / all of them |
 | | `/` | Filter the cards by words |

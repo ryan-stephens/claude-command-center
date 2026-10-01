@@ -14,6 +14,7 @@ import { addFolder } from '../line-model.ts';
 import { get, NO_BINDINGS, sessionById, set, setFilter as showWorkspace, useStore, type RepoTarget, type WorkspaceAction } from '../store.ts';
 import { createSession, saveRecipe, saveStack, send, setSources } from '../ws.ts';
 import { BindingsDialog } from './BindingsDialog.tsx';
+import { ChangesSheet } from './ChangesSheet.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
 import { FolderPicker } from './FolderPicker.tsx';
 import { Palette } from './Palette.tsx';
@@ -49,6 +50,7 @@ export function Dialogs() {
     case 'tryPick': return <TryPick id={modal.id} />;
     case 'ship': return <ShipSheet id={modal.id} />;
     case 'report': return <ReportSheet id={modal.id} />;
+    case 'changes': return <ChangesSheet id={modal.id} />;
     case 'addFolder': return <AddFolderDialog />;
     case 'pickWorkspace': return <PickWorkspaceDialog then={modal.then} />;
     case 'tickets': return <TicketsDialog />;

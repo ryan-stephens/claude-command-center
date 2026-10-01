@@ -92,6 +92,8 @@ export interface LineLegendInput {
   /** The focused or open card has a terminal tab (g brings it forward); it is waiting on you there and the page can't answer. */
   hasTab?: boolean;
   needsTab?: boolean;
+  /** The focused or open card has changed files (D shows the diffs). */
+  hasChanges?: boolean;
   /** The / filter has text in it. */
   filtered?: boolean;
   /** New-card screen: adding to a running card (this key), not making one. */
@@ -135,6 +137,7 @@ function tryKeys(x: LineLegendInput): LegendItem[] {
   return [
     ...(x.appRunning ? [{ keys: ['t'], label: 'Stop the app' }] : x.canTry ? [{ keys: ['t'], label: 'Try it', tone: 'acc' as const }] : []),
     ...(x.appUp ? [{ keys: ['o'], label: 'Open the app' }] : x.hasPr ? [{ keys: ['o'], label: 'Open the PR' }] : []),
+    ...(x.hasChanges ? [{ keys: ['⇧D'], label: 'Changes' }] : []),
     ...(x.ship ? [{ keys: ['s'], label: x.ship === 'merge' ? 'Merge' : x.ship === 'report' ? 'Report' : 'Ship' }] : []),
     ...(x.canDone ? [{ keys: ['d'], label: 'Done' }] : []),
   ];
