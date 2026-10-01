@@ -64,6 +64,21 @@ export interface Ticket {
 
 export const SOURCE_NAME: Record<TicketSource, string> = { jira: 'Jira', trello: 'Trello' };
 
+/** Statuses that finish a card without a word from you: the ticket has moved past the work. CC_CONTROL_DONE_STATUSES changes the list. */
+export const DONE_STATUSES = ['Done', 'Ready for PO'];
+
+/** The list from CC_CONTROL_DONE_STATUSES (comma-separated), else the default. */
+export function doneStatuses(value?: string): string[] {
+  const names = (value ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  return names.length ? names : DONE_STATUSES;
+}
+
+/** Does this ticket's status finish its card: the tracker's done category, or a status in the list (any case). */
+export function finishesCard(t: Pick<Ticket, 'status' | 'done'>, names: string[] = DONE_STATUSES): boolean {
+  const s = t.status.trim().toLowerCase();
+  return t.done || names.some((n) => n.toLowerCase() === s);
+}
+
 /**
  * What the Inbox shows (v switches): tickets assigned to you, or every ticket waiting for QA in
  * your projects, whoever built it. Tickets to review are found with the search on the new-card

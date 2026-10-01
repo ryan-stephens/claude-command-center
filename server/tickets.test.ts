@@ -219,6 +219,37 @@ test('writes: a comment is a document on Cloud and plain text on Data Center; tr
   assert.deepEqual(adfFrom(''), { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: ' ' }] }] }, 'never an empty paragraph, which Jira rejects');
 });
 
+test('the cards’ tickets are followed: fetched by key when the views leave them out, and handed back as they are now', async () => {
+  const seen: string[] = [];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => { body += d; });
+    req.on('end', () => {
+      const jql = String((JSON.parse(body) as { jql: string }).jql);
+      seen.push(jql);
+      res.setHeader('content-type', 'application/json');
+      const issue = (key: string, name: string, cat: string) => ({ key, fields: { summary: key, status: { name, statusCategory: { key: cat } }, project: { key: 'WS', name: 'Workspaces' }, updated: '2026-10-01T10:00:00.000-0500' } });
+      // The Inbox view brings WS-12 (in progress); the follow-up by key brings WS-7 (Ready for PO) and WS-9 (done).
+      res.end(JSON.stringify(/^key in/.test(jql) ? { total: 2, issues: [issue('WS-7', 'Ready for PO', 'indeterminate'), issue('WS-9', 'Done', 'done')] } : { total: 1, issues: [issue('WS-12', 'In Progress', 'indeterminate')] }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const site = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const meta = new Map<string, string>();
+  const store = { getMeta: (k: string) => meta.get(k), setMeta: (k: string, v: string) => { meta.set(k, v); } } as unknown as Store;
+  const svc = new TicketService(store, () => {}, { CC_CONTROL_JIRA_SITE: site, CC_CONTROL_JIRA_TOKEN: 'good', CC_CONTROL_JIRA_QA_JQL: 'off', CC_CONTROL_JIRA_QA_FIELD: 'off' });
+  const moved: [string, string][] = [];
+  svc.followCards({ keys: () => ['WS-12', 'WS-7', 'WS-9', 'not a key'], moved: (t) => { moved.push([t.key, t.status]); } });
+  try {
+    await svc.refresh();
+    assert.ok(seen.some((j) => j === 'key in (WS-7, WS-9)'), `only the keys the view didn’t bring, and only Jira-shaped ones: ${seen.join(' | ')}`);
+    assert.deepEqual(moved.sort(), [['WS-12', 'In Progress'], ['WS-7', 'Ready for PO'], ['WS-9', 'Done']]);
+    assert.equal(svc.list([]).some((t) => t.key === 'WS-7'), false, 'a followed ticket is not put in the Inbox');
+  } finally {
+    server.close();
+  }
+});
+
 test('demo tickets take comments and moves, and keep them', async () => {
   const meta = new Map<string, string>([['tickets.demo', '1']]);
   const store = { getMeta: (k: string) => meta.get(k), setMeta: (k: string, v: string) => { meta.set(k, v); } } as unknown as Store;
@@ -227,7 +258,10 @@ test('demo tickets take comments and moves, and keep them', async () => {
   await svc.comment(key, 'Looks right.');
   const moves = await svc.transitions(key);
   assert.ok(moves.length >= 3 && !moves.some((m) => m.to === demoTickets()[0].status), 'every status but the current one');
+  const moved: string[] = [];
+  svc.followCards({ keys: () => [key], moved: (t) => { moved.push(`${t.key} ${t.status}`); } });
   await svc.transition(key, 'Done');
+  assert.deepEqual(moved, [`${key} Done`], 'a demo move is handed to the cards at once');
   const t = svc.list([]).find((x) => x.key === key)!;
   assert.equal(t.comments.at(-1)?.body, 'Looks right.');
   assert.equal(t.status, 'Done');

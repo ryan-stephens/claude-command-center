@@ -201,6 +201,8 @@ export async function findQaField(c: JiraConfig): Promise<string | undefined> {
 
 /** A Jira project key, safe to put in JQL. */
 const PROJECT_KEY = /^[A-Z][A-Z0-9_]{0,30}$/;
+/** A Jira issue key, safe to put in JQL. */
+const JIRA_KEY = /^[A-Z][A-Z0-9_]{0,30}-\d{1,9}$/;
 
 /**
  * The "Ready for QA" view's JQL: CC_CONTROL_JIRA_QA_JQL when set, else that status in the projects
@@ -490,11 +492,38 @@ export class TicketService {
   private trello: SourceState = { state: 'off' };
   private at: number | undefined;
   private timer: NodeJS.Timeout | undefined;
+  /** The cards on the line with a ticket: their keys are looked up on every refresh, and each ticket as it is now is handed back. */
+  private cards: { keys: () => string[]; moved: (t: Ticket) => void } | undefined;
 
   constructor(store: Store, changed: () => void, env: NodeJS.ProcessEnv = process.env) {
     this.store = store;
     this.changed = changed;
     this.env = env;
+  }
+
+  /** Follow the cards' tickets: on every refresh, each card's ticket is fetched by key (the Inbox's JQL leaves done ones out) and handed to `moved`. */
+  followCards(cards: { keys: () => string[]; moved: (t: Ticket) => void }): void {
+    this.cards = cards;
+  }
+
+  /** The cards' Jira tickets the views didn't bring, fetched by key in batches; a failed batch is skipped until next time. */
+  private async fetchFollowed(c: JiraConfig | undefined, have: Ticket[]): Promise<Ticket[]> {
+    if (!c || !this.cards) return [];
+    const got = new Set(have.map((t) => t.key));
+    const keys = [...new Set(this.cards.keys())].filter((k) => JIRA_KEY.test(k) && !got.has(k));
+    const out: Ticket[] = [];
+    for (let i = 0; i < keys.length; i += 50) {
+      const batch = keys.slice(i, i + 50);
+      out.push(...await fetchJira(c, `key in (${batch.join(', ')})`, batch.length).catch(() => [] as Ticket[]));
+    }
+    return out;
+  }
+
+  /** Hand every ticket a card follows to the cards, as it is now. */
+  private tellCards(tickets: Ticket[]): void {
+    if (!this.cards) return;
+    const keys = new Set(this.cards.keys());
+    for (const t of tickets) if (keys.has(t.key)) this.cards.moved(t);
   }
 
   /** Fetch now and every few minutes while something is connected. */
@@ -536,6 +565,9 @@ export class TicketService {
     this.real = got;
     this.at = Date.now();
     this.changed();
+    // The cards' own tickets, including the ones the views leave out (done, or someone else's).
+    const followed = await this.fetchFollowed(jira ? await this.withQaField(jira).catch(() => jira!) : undefined, got);
+    this.tellCards([...got, ...followed, ...(this.demoOn() ? this.demoTickets() : [])]);
   }
 
   /**
@@ -675,6 +707,7 @@ export class TicketService {
       w[key] = { ...(w[key] ?? { comments: [] }), status: id };
       this.store.setMeta('tickets.demoWrites', JSON.stringify(w));
       this.changed();
+      this.tellCards(this.demoTickets().filter((t) => t.key === key));
       return;
     }
     const c = this.jiraFor(key);

@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { packetText, type Packet } from './cards.ts';
-import { inbox, relatedItem, ticketItems, type Ticket } from './tickets.ts';
+import { doneStatuses, finishesCard, inbox, relatedItem, ticketItems, type Ticket } from './tickets.ts';
+
+test('a ticket past the work finishes its card: the done category, or Done / Ready for PO by name (CC_CONTROL_DONE_STATUSES changes the names)', () => {
+  assert.equal(finishesCard({ status: 'In Progress', done: false }), false);
+  assert.equal(finishesCard({ status: 'Ready for QA', done: false }), false);
+  assert.equal(finishesCard({ status: 'Ready for PO', done: false }), true);
+  assert.equal(finishesCard({ status: 'done', done: false }), true, 'any case');
+  assert.equal(finishesCard({ status: 'Closed', done: true }), true, 'the done category, whatever the name');
+  assert.equal(finishesCard({ status: 'Ready for PO', done: false }, ['Done']), false, 'a list of your own');
+  assert.equal(finishesCard({ status: 'Accepted', done: false }, doneStatuses('Accepted, Done ')), true);
+  assert.deepEqual(doneStatuses(''), ['Done', 'Ready for PO']);
+  assert.deepEqual(doneStatuses(undefined), ['Done', 'Ready for PO']);
+});
 
 const T = (over: Partial<Ticket> = {}): Ticket => ({
   key: 'SHOP-155', source: 'jira', project: 'SHOP', projectName: 'Storefront', title: 'Save cart for signed-out users',

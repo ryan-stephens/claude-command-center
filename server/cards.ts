@@ -15,7 +15,7 @@ import {
   type BranchChoice, type BootStep, type Card, type CardDraft, type CardFolder, type CardKind, type CardWorktree, type LaterItem, type LaunchMode, type Packet, type PacketItem, type PrTarget,
 } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
-import type { Ticket } from '../shared/tickets.ts';
+import { SOURCE_NAME, type Ticket } from '../shared/tickets.ts';
 import { repoName, samePath } from '../shared/workspaces.ts';
 import { applyEvent, TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { SECRET } from './config.ts';
@@ -588,6 +588,24 @@ ${laterText(card.key, later, card, this.opts.runnable?.(card))}`;
     if (!card || !item) return;
     if (item.sent) throw new Error('That has already gone to Claude.');
     this.save({ ...card, later: card.later!.filter((i) => i !== item) });
+  }
+
+  /**
+   * The card's ticket as the tracker has it now: its status is kept on the card, and when it has
+   * moved past the work (`finished`: Done, Ready for PO) the card goes to Done on its own, with the
+   * tile saying why. Nothing happens to a card already done, or when nothing changed.
+   */
+  ticketMoved(t: Ticket, finished: boolean): Card | undefined {
+    const card = this.list().find((c) => c.ticket?.key === t.key && c.ticket.source === t.source);
+    if (!card || card.stage === 'done') return undefined;
+    const same = card.ticket!.status === t.status && card.ticket!.done === t.done;
+    if (same && !finished) return undefined;
+    const ticket: Ticket = { ...card.ticket!, status: t.status, done: t.done, updatedAt: Math.max(card.ticket!.updatedAt, t.updatedAt) };
+    const next: Card = finished
+      ? { ...card, ticket, stage: 'done', live: { ...(card.live ?? { phase: 'waiting' as const }), text: `${t.status} in ${SOURCE_NAME[t.source]}: done`, at: Date.now() } }
+      : { ...card, ticket };
+    this.save(next);
+    return next;
   }
 
   /** A QA or review card you are finished with (its report copied, or posted by hand) goes to Done. */

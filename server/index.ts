@@ -10,6 +10,7 @@ import { KEY_HINTS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInf
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { cardRepos, folderFor, type Card } from '../shared/cards.ts';
+import { doneStatuses, finishesCard } from '../shared/tickets.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, cleanDraft, focusTab, userModel, writeHookSettings } from './cards.ts';
@@ -66,6 +67,12 @@ const commands = new CommandService(store);
 const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, trustWorktrees: () => store.loadSettings().trustWorktrees === true, runnable: runnableRepos, changed: () => broadcast(cardsMsg()) });
 
 const tickets = new TicketService(store, () => broadcast(ticketsMsg()));
+// A card whose ticket has moved past the work (Done, Ready for PO; CC_CONTROL_DONE_STATUSES) goes to Done on its own.
+const doneNames = doneStatuses(process.env.CC_CONTROL_DONE_STATUSES);
+tickets.followCards({
+  keys: () => cards.list().filter((c) => c.ticket && c.stage !== 'done').map((c) => c.ticket!.key),
+  moved: (t) => { cards.ticketMoved(t, finishesCard(t, doneNames)); },
+});
 
 // Cards' terminals, reachable through their channel (hooks/cc-control-channel.mjs).
 const channels = new ChannelService({

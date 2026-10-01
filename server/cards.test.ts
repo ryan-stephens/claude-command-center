@@ -44,6 +44,22 @@ function seed(): Card {
   return card;
 }
 
+test('a ticket that moved past the work takes its card to Done; a status change short of that is kept on the card', () => {
+  const ticket = { key: 'SHOP-7', source: 'jira' as const, project: 'SHOP', projectName: 'Shop', title: 'x', description: '', acceptance: [], comments: [], attachments: [], links: [], status: 'In Progress', done: false, updatedAt: 5 };
+  const card: Card = { ...seed(), id: crypto.randomUUID(), key: 'SHOP-7', stage: 'try', ticket, live: { phase: 'waiting', text: 'Done. Ready to try', at: 1 } };
+  store.saveCard(card, 't');
+  assert.equal(cards.ticketMoved({ ...ticket, status: 'In Progress' }, false), undefined, 'nothing changed: nothing saved');
+  const qa = cards.ticketMoved({ ...ticket, status: 'Ready for QA', updatedAt: 9 }, false)!;
+  assert.equal(qa.stage, 'try', 'short of done: the card stays where it is');
+  assert.deepEqual([qa.ticket!.status, qa.ticket!.updatedAt], ['Ready for QA', 9]);
+  const po = cards.ticketMoved({ ...ticket, status: 'Ready for PO', updatedAt: 12 }, true)!;
+  assert.equal(po.stage, 'done');
+  assert.equal(po.live!.text, 'Ready for PO in Jira: done');
+  assert.equal(cards.get(card.id)!.stage, 'done', 'saved');
+  assert.equal(cards.ticketMoved({ ...ticket, status: 'Done', done: true }, true), undefined, 'a card already done is left alone');
+  assert.equal(cards.ticketMoved({ ...ticket, key: 'SHOP-999' }, true), undefined, 'no card for it');
+});
+
 test('the SessionStart hook needs the card’s own token', () => {
   const card = seed();
   assert.throws(() => cards.sessionStart(card.id, 'wrong-token!', { session_id: 'abcdef12-3456' }), /token/);
