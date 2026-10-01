@@ -1417,3 +1417,36 @@ Jira has no standard field for a QA reviewer. Teams add a custom one, and its id
 - `pnpm run doctor` still runs.
 
 **Not verified:** VU's Jira. Whether its field is found by name is the first thing `pnpm run doctor` will say there.
+
+## 51. The stack editor starts from your repos, and never saves made-up ones
+
+2026-10-01, from the owner's first try at VU: `t` picked dev, then listed **orders-api** under *APIs to run*, a repo that isn't theirs.
+
+**Why:**
+- With no stack yet, the stack tab of the recipe editor (§42) opened on `STACK_EXAMPLE`, an example with made-up names: `orders-api`, a `web-ui` with an Nx command, and a fictional PowerShell command.
+- Saving it untouched made it the workspace's stack.
+- The picker then listed `orders-api` greyed out as "not in this card or its workspace", and a run would have failed on `web-ui`.
+
+**What changed:**
+- **The editor starts from a draft of the workspace's own repos** (`stackDraft` in `shared/stack.ts`):
+  - a UI found by name (*ui*, *web*, *client*, *frontend*, *app*… as a word)
+  - the APIs found by name (*api*, *service*, *svc*, *backend*…), or every other repo when none says so
+  - a port each (5001, 5002…), so two APIs never clash
+  - `choose: env: [dev, uat]`, a common Okteto shape (`wait:port:{{port}} okteto up --namespace {{env}}`, `stop: okteto down`), and an Angular-style UI start with `--proxy-config {{proxy}}` on `proxy.conf.json`
+
+  It says, in bold, to change the commands, ports and proxy file before saving. `STACK_EXAMPLE` stays as the tests' worked example and is no longer offered.
+- **Saving refuses repos that aren't here.** `stack.save` checks every API and the UI against the workspace's repos and the repo library (a card can add library repos), by folder name, in any case. It names the strangers and the workspace's repos, and says when they are the example's made-up names (`unknownStackRepos`).
+- **A stack saved before this says so:**
+  - The editor shows an amber note naming the repos it doesn't have, and how to start again: empty the box, save, and reopen for a draft.
+  - When none of a stack's APIs is in the card or its workspace, the `t` picker says so (and that it is still the example, for `orders-api`), with the keys to fix it: `Esc`, `e`, `Alt+W`.
+
+**Verified** (isolated server; a workspace of the demo `Workspaces-UI` and `Workspaces-API` with the old example stack written into its database, as the owner's was; 7 scripted checks, screenshots looked at):
+- Saving the example through the server was refused: "orders-api, web-ui aren't repos in Workspaces or the repo library (Workspaces has Workspaces-UI, Workspaces-API)… the example's made-up names".
+- `t` on the workspace's card said the stack is still the example.
+- `e` opened on the stack with the amber note.
+- Emptying it and saving removed the stack. `e`, `Alt+W` `Alt+W` then offered the draft, with Workspaces-API as the API and Workspaces-UI as the UI, and no orders-api.
+- The draft saved, and `t` then listed Workspaces-API, which could be ticked.
+- No console errors.
+- Unit tests cover the draft (UI and APIs picked by name, ports, all-API fallback) and finding the example's names. `pnpm typecheck` and `pnpm test` (244) pass.
+
+**Next:** getting the real stack running at VU. The handoff is `docs/prompts/continue-try-it-at-vu.md`, written to be lean on tokens there.

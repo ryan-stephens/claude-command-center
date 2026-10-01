@@ -17,7 +17,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { ChannelService } from './channel.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
 import { plainStack, prepareStackRun, restoreLeftovers, runsDir, saveStack, stackOf, stackRecipe, stackRows } from './stack.ts';
-import { suggested } from '../shared/stack.ts';
+import { suggested, unknownStackRepos, validateStack } from '../shared/stack.ts';
 import { ShipService } from './ship.ts';
 import { findPrIn } from './hosts.ts';
 import { CommandService } from './commands.ts';
@@ -477,7 +477,17 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     }
     case 'stack.save': {
       const id = String(msg.workspaceId);
-      if (!store.loadWorkspaces().some((w) => w.id === id)) throw new Error('That workspace no longer exists.');
+      const owner = store.loadWorkspaces().find((w) => w.id === id);
+      if (!owner) throw new Error('That workspace no longer exists.');
+      if (msg.stack) {
+        // A stack can only start repos that are here: the workspace's, or the library's (a card can add those).
+        const libRepos = (library(true) as Extract<ServerMsg, { type: 'library' }>).repos.map((r) => r.name);
+        const wsRepos = owner.repos.map(repoName);
+        const unknown = unknownStackRepos(validateStack(msg.stack), [...wsRepos, ...libRepos]);
+        if (unknown.length) {
+          throw new Error(`${unknown.join(', ')} ${unknown.length === 1 ? 'isn’t a repo' : 'aren’t repos'} in ${owner.name} or the repo library${wsRepos.length ? ` (${owner.name} has ${wsRepos.join(', ')})` : ''}. Use your repos’ folder names${/orders-api|web-ui/.test(unknown.join(' ')) ? ': those are the example’s made-up names' : ''}.`);
+        }
+      }
       saveStack(store, id, msg.stack ?? null);
       send(ws, { type: 'ok', reqId: msg.reqId });
       broadcast(recipesMsg());

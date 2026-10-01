@@ -38,7 +38,7 @@ The owner likes the mock a lot. Keep its look, its words and its keys, including
   - The Inbox has *Mine* and *Ready for QA* (`v`), `/` on the new-card screen searches Jira for anyone's ticket, and the *Folders* tab adds any folder.
   - **First things to try at VU:** does the Ready for QA view fill, does search find a teammate's ticket, and does a review find its TFS PR?
 
-**Done (§42): Try it starts the whole stack**, built from the owner's answers to `docs/prompts/continue-try-it-stack.md`.
+**Done (§42): Try it starts the whole stack**, built from the owner's answers to `docs/prompts/continue-try-it-stack.md`. **Next for it (2026-10-01): get the real stack running at VU** with `docs/prompts/continue-try-it-at-vu.md`, written to be lean on tokens there. §51 fixed the editor's made-up example (`orders-api`), which the owner's first try had saved.
 - A workspace stack says how an API starts on Okteto, and `t` picks dev or uat and which APIs to run (the ones changed on the branch are ticked).
 - The UI starts on a proxy copy pointed at the picked APIs, and stop tears them down.
 - Tested against stand-ins only.

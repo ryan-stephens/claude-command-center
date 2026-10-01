@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseStep, recipeLabel, recipeText } from './recipes.ts';
-import { choiceLabel, choiceValues, fill, k8sName, mergeProxy, namesApi, STACK_EXAMPLE, stackRules, stackSteps, suggested, validateStack, type Stack } from './stack.ts';
+import { choiceLabel, choiceValues, fill, k8sName, mergeProxy, namesApi, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, suggested, unknownStackRepos, validateStack, type Stack } from './stack.ts';
 
 const stack: Stack = validateStack({
   choose: { env: ['dev', 'uat'] },
@@ -108,4 +108,18 @@ test('the card’s context says the stack runs the app', () => {
   const r = { repo: '', workspaceId: 'w1', steps: [], source: '', stack };
   assert.equal(recipeLabel(r), 'Run: the workspace’s stack (APIs orders-api, fees-api; UI web-ui)');
   assert.match(recipeText(r), /you pick env \(dev \/ uat\) and which APIs to run: orders-api, fees-api\. Then web-ui starts, with apps\/shop\/proxy\.conf\.json pointed at the APIs that run \(a copy; the repo’s file isn’t changed\), at http:\/\/localhost:4200\./);
+});
+
+test('the editor’s draft is built from the workspace’s own repos, and a stack naming others is caught', () => {
+  const d = validateStack(stackDraft(['Workspaces-UI', 'Workspaces-API', 'Loans-Service']));
+  assert.equal(d.ui!.repo, 'Workspaces-UI');
+  assert.deepEqual(d.apis.map((a) => a.repo), ['Workspaces-API', 'Loans-Service']);
+  assert.deepEqual(d.apis.map((a) => a.values.port), ['5001', '5002'], 'a port each, so two APIs never clash');
+  assert.deepEqual(d.choose, { env: ['dev', 'uat'] });
+  assert.deepEqual(unknownStackRepos(d, ['workspaces-ui', 'workspaces-api', 'loans-service']), [], 'folder names, any case');
+  // Names that say nothing: the UI is unknown, every repo is an API.
+  const plain = stackDraft(['alpha', 'beta']);
+  assert.equal(plain.ui, undefined);
+  assert.deepEqual(plain.apis.map((a) => a.repo), ['alpha', 'beta']);
+  assert.deepEqual(unknownStackRepos(STACK_EXAMPLE, ['Workspaces-UI', 'Workspaces-API']), ['orders-api', 'web-ui'], 'the example’s made-up names');
 });

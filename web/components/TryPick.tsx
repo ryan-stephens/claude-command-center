@@ -86,6 +86,11 @@ export function TryPick({ id }: { id: string }) {
       ))}
       <div className="eyebrow mb-1.5 mt-3">APIs to run{stack.apis.length ? '' : ': none set up in the stack'}</div>
       {error && <div className="rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
+      {rows && rows.length > 0 && rows.every((r) => !r.found) && (
+        <div className="mb-2 rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn" role="alert">
+          None of this stack’s APIs ({rows.map((r) => r.repo).join(', ')}) is a repo in this card or its workspace{rows.some((r) => /orders-api/.test(r.repo)) ? ': the stack is still the example' : ''}. <Key k="Esc" size="sm" /> then <Key k="e" size="sm" /> and the stack tab (<Key k="Alt W" size="sm" />) to put in your own APIs.
+        </div>
+      )}
       {!rows && !error && <p className="flex items-center gap-2 text-sm text-faint"><span className="spinner" />Looking at what changed on this card’s branch…</p>}
       {rows && (
         <ul className="space-y-1" role="listbox" aria-label="APIs to run" aria-multiselectable="true">

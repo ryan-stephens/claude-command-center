@@ -1,0 +1,69 @@
+# Get Try it running the real stack at VU
+
+Paste this into a new Claude Code session on the **VU work laptop**, opened in the cc-control clone, after `git pull`.
+
+---
+
+You're helping the owner get **Try it** (`t` on a card) in **cc-control** to bring up their real local stack at Veterans United:
+1. Their API on **Okteto**, against **dev** (the default) or **uat**.
+2. Their **UI** dev server, with its **proxy.conf** pointed at that API.
+3. Then they **open a loan** against the local UI and test.
+
+cc-control is a local web app over Claude Code terminal sessions (the Ticket Line board). The feature already exists: a workspace **stack** (PLAN §42). It was built and tested on the owner's personal laptop against stand-in scripts only. This session is its first contact with the real Okteto, the real repos and the real proxy file. Expect to fix the owner's stack settings first, and the app's code second.
+
+## Tokens are tight on this machine (enterprise billing)
+- **Read only what this job needs**, nothing else:
+  - `CLAUDE.md`
+  - `docs/PLAN.md` §42 (the stack) and §51 (the editor's draft)
+  - `shared/stack.ts`, plus `shared/recipes.ts` for the step syntax (`ps:`, `wait:`, `answers:`, `@repo`, `stop:`)
+  - `server/stack.ts` only if a run misbehaves
+- **Don't read the whole PLAN or the other handoffs**, and don't run Playwright walkthroughs here. The owner tests by pressing keys; ask them what the screen says.
+- **Bigger code changes** (new step types, new UI) can be built on the owner's personal laptop instead. Write down what's needed (see the end) rather than building it here, unless it's a small fix that unblocks the run.
+
+## Facts
+- **Settings and tokens** are in `%USERPROFILE%\.cc-control\config.env`. **`pnpm run doctor`** checks the machine, and it has a section per stack: the programs the steps use, PowerShell commands through the profile, `okteto context show`, where each repo is, duplicate ports, and whether the proxy file reads. It runs none of the steps.
+- **Server log:** `%USERPROFILE%\.cc-control\server.log`. The owner's server runs on :7777. **Ask before restarting it.** It needs a restart after `git pull` (server code changed).
+- **The stack is JSON**, edited from a card with `e`, then `Alt+W` to the third tab, *The workspace's stack*:
+  - `choose`: `{ "env": ["dev", "uat"] }`; the first value is the default, and `t` asks every time.
+  - `api.steps`: how *one* API starts, run in that API's repo, with `{{env}}`, `{{branch}}` (the API repo's branch, made Kubernetes-safe) and the API's own `values` (`{{name}}`, `{{port}}`, …) filled in. Add `stop:` lines for teardown.
+  - `api.proxy`: proxy rules each picked API adds.
+  - `apis`: `[{ "repo": "<folder name>", "values": { … } }]`.
+  - `ui`: `{ "repo", "proxyFile", "steps", "url" }`. The UI starts with `{{proxy}}`, a **copy** of the proxy file with the picked APIs' rules first, so the repo's file is never changed. `"proxyMode": "edit"` changes the file in place and restores it on stop, if the dev server can't take another path.
+- **Step prefixes:**
+  - `ps:` runs in PowerShell, with the profile loaded
+  - `answers:"y,n"` answers the step's questions
+  - `wait:"Now listening on"` or `wait:port:8080` says when a long-running step is ready
+  - `! …` is a step done by hand (shown, not run), which suits "open a loan" for now
+- **The known problem the owner hit:** `t` listed **orders-api**, a repo they don't have. That came from the editor's old example, saved unchanged. Since §51:
+  - the editor warns about repos the workspace doesn't have
+  - saving refuses them
+  - the picker says the stack is still the example
+  - **Fix:** `e`, `Alt+W` to the stack tab, empty the box, save, then `e` again. The editor then offers a draft built from the workspace's own repos.
+
+## How to go about it
+1. **Find out which machine you're on**, and confirm the pull and restart happened. Then have the owner run `pnpm run doctor`, and read its Jira, workspace and stack sections.
+2. **Ask the owner for these, using placeholders for anything internal:**
+   - the UI and API repo folder names; whether both are in one cc-control workspace
+   - how one API is started today with Okteto: the commands in order, which folder, how dev vs uat is chosen, and what tells them it's ready (a port, a log line)
+   - the proxy file's path, and a sanitised before/after of the entry that changes
+   - the UI's start command and port, and anything it needs first (`NODE_OPTIONS=--use-system-ca` fixed npm's certificate errors)
+   - what they do afterwards: `okteto down`, or leave it up
+   - how they open a loan against the local UI (for now an `!` step that says what to do)
+3. **Write the stack JSON** with them, and have them paste it into the editor and save. Saving checks it and says what's wrong.
+4. **Have them press `t`** on a card in that workspace: pick dev, tick the API, `Enter`. The card's Try it section shows each step, its state and the last lines of output. Fix the stack until the API is ready and the UI serves through the proxy copy. Then check `o` opens the UI and calls reach the API.
+5. **Fix code only where the app is wrong.** Examples: a step type that's missing, readiness that never fires, a proxy merge that's wrong for their file. Then:
+   - run `pnpm typecheck` and `pnpm test`
+   - add a PLAN section in the same commit
+   - use a conventional commit, staging named paths (never `git add -A`)
+   - push to main
+6. **Write down what's left** for the personal laptop: a "Not yet" list in a new PLAN section or in `docs/prompts/continue-ticket-line.md`. Candidates: opening the loan through the scenario tool, passing a value one step prints into a later step, more APIs or projects.
+
+## Rules
+- **Never commit** tokens, VU code, VU URLs, proxy entries, ticket contents or VU-internal tool names. The real stack JSON lives in the app (and in a shared workspace file if the team wants one), never in the repo. Examples in code and docs use made-up names.
+- **Ask first before:**
+  - restarting the owner's server
+  - anything that writes to Jira or TFS
+  - changing global npm, pnpm or git config
+  - running Okteto or kubectl commands yourself that create, deploy or destroy anything. The owner pressing `t` runs the stack's own steps; that's their call.
+- **Keyboard first, with the keys visible:** any new UI action needs a key, a legend entry and a row in `?`. The server binds to 127.0.0.1 only. Files are CRLF. Node 24 and pnpm.
+- **Report plainly** what worked against the real Okteto and what didn't.

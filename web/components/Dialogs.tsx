@@ -4,7 +4,7 @@ import { addPath, homeRepo, isInside, removePath, repoName, samePath, WORKSPACE_
 import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
 import type { SourceState } from '../../shared/tickets.ts';
 import { parseSteps, recipeFor, wsRecipeKey } from '../../shared/recipes.ts';
-import { STACK_EXAMPLE } from '../../shared/stack.ts';
+import { stackDraft, unknownStackRepos } from '../../shared/stack.ts';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
 import { HINTS_LABEL } from '../hints.ts';
@@ -568,7 +568,14 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
   // Opens on what the card runs: the stack, else the workspace's recipe, else the repo's.
   const [scope, setScope] = useState<Scope>(() => (stack ? 'stack' : wsRecipe ? 'workspace' : 'repo'));
   const recipe = scope === 'workspace' ? wsRecipe : scope === 'repo' ? repoRecipe : undefined;
-  const stackText = (st = stack) => JSON.stringify(st ?? STACK_EXAMPLE, null, 2);
+  // The stored list (stable), mapped outside the selector: a new array from a selector re-renders forever.
+  const wsRepos = useStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.repos);
+  const wsRepoNames = (wsRepos ?? []).map(repoName);
+  const libNames = useStore((s) => s.library.repos);
+  // No stack yet: a draft from the workspace's own repos (never made-up names) to change.
+  const stackText = (st = stack) => JSON.stringify(st ?? stackDraft(wsRepoNames), null, 2);
+  // A saved stack naming repos that aren't here (the old example's orders-api, say) says so.
+  const strangers = stack ? unknownStackRepos(stack, [...wsRepoNames, ...libNames.map((r) => r.name)]) : [];
   const textFor = (sc: Scope) => (sc === 'stack' ? stackText() : (sc === 'workspace' ? wsRecipe : repoRecipe)?.steps.join('\n') ?? '');
   const [text, setText] = useState(() => textFor(scope));
   const [url, setUrl] = useState(() => recipe?.url ?? '');
@@ -615,13 +622,18 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
       </div>
       <p className="mb-3 text-sm text-sub">
         {scope === 'stack'
-          ? <>Every {wsName ?? ''} card’s <Key k="t" size="sm" inline /> asks which values to use (<code>choose</code>: dev or uat) and which APIs to run. It runs <code>api.steps</code> in each picked API’s repo, with <code>{'{{env}}'}</code>, <code>{'{{branch}}'}</code> and the API’s <code>values</code> filled in. Then it starts the UI with <code>{'{{proxy}}'}</code>: a copy of <code>ui.proxyFile</code> with each picked API’s proxy rules put first. The repo’s file isn’t touched (<code>"proxyMode": "edit"</code> changes it in place and puts it back on stop). <code>stop:</code> steps run when you stop it.{stack ? ` Now: ${wsEntry?.source}.` : ' The workspace has none yet: this is an example to change.'}</>
+          ? <>{!stack && <b className="text-ink">A draft from {wsName ?? 'the workspace'}’s repos: change the commands, ports and proxy file to yours before saving. </b>}Every {wsName ?? ''} card’s <Key k="t" size="sm" inline /> asks which values to use (<code>choose</code>: dev or uat) and which APIs to run. It runs <code>api.steps</code> in each picked API’s repo, with <code>{'{{env}}'}</code>, <code>{'{{branch}}'}</code> and the API’s <code>values</code> filled in. Then it starts the UI with <code>{'{{proxy}}'}</code>: a copy of <code>ui.proxyFile</code> with each picked API’s proxy rules put first. The repo’s file isn’t touched (<code>"proxyMode": "edit"</code> changes it in place and puts it back on stop). <code>stop:</code> steps run when you stop it.{stack ? ` Now: ${wsEntry?.source}.` : ''}</>
           : scope === 'workspace'
             ? <>Every {wsName ?? ''} card runs this instead of its repo’s, so it can start several repos: a backend, then the UI pointed at it.{stack ? ' The workspace has a stack, which is what its cards run; this recipe is kept but not used.' : ''}</>
             : 'Try it runs these in the card’s folder.'}
         {scope !== 'stack' && <>{' '}Steps run one after another; a step that keeps running and serves is the app, and the next step starts.
         {recipe ? ` Now: ${recipe.source}.` : scope === 'repo' ? ' Nothing was detected for this repo.' : ' The workspace has none yet.'}</>}
       </p>
+      {scope === 'stack' && strangers.length > 0 && (
+        <div className="mb-3 rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn" role="alert">
+          This stack names {strangers.join(', ')}, which {strangers.length === 1 ? 'isn’t a repo' : 'aren’t repos'} in {wsName ?? 'the workspace'} or the library{/orders-api|web-ui/.test(strangers.join(' ')) ? ': they are the example’s made-up names' : ''}. Put in your own repos’ folder names{wsRepoNames.length ? ` (${wsRepoNames.join(', ')})` : ''}, or empty the box and save to start again from a draft of your repos.
+        </div>
+      )}
       <label className="eyebrow mb-1.5 block" htmlFor="recipe-steps">{scope === 'stack' ? 'The stack, as JSON' : 'Steps, one per line'}</label>
       <textarea id="recipe-steps" autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={keys} rows={scope === 'stack' ? 18 : 7} spellCheck={false}
         placeholder={scope === 'workspace'

@@ -129,7 +129,10 @@ export function validateStack(raw: unknown): Stack {
   return { choose, api, apis, ...(ui ? { ui } : {}) };
 }
 
-/** A starting point for the editor, with made-up names: how an API on a dev environment and a proxied UI fit. */
+/**
+ * A worked example with made-up names (tests use it): how an API on a dev environment and a proxied
+ * UI fit. The editor starts from stackDraft instead, so these names never end up in a real stack.
+ */
 export const STACK_EXAMPLE: Stack = {
   choose: { env: ['dev', 'uat'] },
   api: {
@@ -154,6 +157,34 @@ export const STACK_EXAMPLE: Stack = {
     url: 'http://localhost:4200',
   },
 };
+
+/** A UI repo by its name: web, ui, client, frontend, app, spa or portal as a word in it. */
+const UI_NAME = /(^|[-_. ])(ui|web|client|frontend|front-end|app|spa|portal)([-_. ]|$)/i;
+/** An API repo by its name. */
+const API_NAME = /(^|[-_. ])(api|apis|service|services|svc|backend|server|gateway)([-_. ]|$)/i;
+
+/**
+ * The stack editor's starting point for a workspace with none yet: the workspace's own repos (a UI
+ * by its name, the APIs by theirs, or every other repo), with a common Okteto + Angular-style
+ * shape to change. Never made-up repo names, so saving it untouched can't list repos you don't have.
+ */
+export function stackDraft(repoNames: string[]): Stack {
+  const ui = repoNames.find((n) => UI_NAME.test(n) && !API_NAME.test(n));
+  const rest = repoNames.filter((n) => n !== ui);
+  const apis = rest.some((n) => API_NAME.test(n)) ? rest.filter((n) => API_NAME.test(n)) : rest;
+  return {
+    choose: { env: ['dev', 'uat'] },
+    api: { steps: ['wait:port:{{port}} okteto up --namespace {{env}}', 'stop: okteto down'], proxy: { '/api/{{route}}/**': { target: 'http://localhost:{{port}}', secure: false, changeOrigin: true } } },
+    apis: apis.map((repo, i) => ({ repo, values: { name: repo, port: String(5001 + i), route: repo.toLowerCase().replace(/[-_.]?(api|service|svc)$/, '') || repo.toLowerCase() } })),
+    ...(ui ? { ui: { repo: ui, proxyFile: 'proxy.conf.json', steps: ['npm start -- --proxy-config {{proxy}}'], url: 'http://localhost:4200' } } : {}),
+  };
+}
+
+/** The repos a stack names that aren't in `known` (folder names, any case): a stack still holding an example's names. */
+export function unknownStackRepos(stack: Pick<Stack, 'apis' | 'ui'>, known: string[]): string[] {
+  const have = new Set(known.map((n) => n.toLowerCase()));
+  return [...stack.apis.map((a) => a.repo), ...(stack.ui ? [stack.ui.repo] : [])].filter((r) => !have.has(r.toLowerCase()));
+}
 
 /** Put values into {{name}} placeholders. A placeholder with no value is an error that says which. */
 export function fill(text: string, vars: Record<string, string>, where: string): string {
