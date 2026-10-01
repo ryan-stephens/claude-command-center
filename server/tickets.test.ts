@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { test } from 'node:test';
 import { inbox } from '../shared/tickets.ts';
 import type { Store } from './store.ts';
-import { adfText, boardPrefix, demoTickets, fetchJira, fromJira, fromTrello, jiraConfig, jiraSearch, splitAcceptance, TicketService } from './tickets.ts';
+import { adfFrom, adfText, boardPrefix, demoTickets, fetchJira, fromJira, fromTrello, jiraCommentRequest, jiraConfig, jiraSearch, jiraTransitionRequest, jiraTransitionsRequest, splitAcceptance, TicketService } from './tickets.ts';
 
 const text = (t: string) => ({ type: 'text', text: t });
 const para = (...c: object[]) => ({ type: 'paragraph', content: c });
@@ -197,4 +197,40 @@ test('a real request to a Data Center-shaped server: Bearer token, v2 search, wi
   } finally {
     server.close();
   }
+});
+
+test('writes: a comment is a document on Cloud and plain text on Data Center; transitions go to the same issue', () => {
+  const cloud = jiraConfig({ CC_CONTROL_JIRA_SITE: 'https://acme.atlassian.net', CC_CONTROL_JIRA_EMAIL: 'me@acme.com', CC_CONTROL_JIRA_TOKEN: 't' })!;
+  const dc = jiraConfig({ CC_CONTROL_JIRA_SITE: 'https://jira.acme.local/jira', CC_CONTROL_JIRA_TOKEN: 'pat' })!;
+  const c1 = jiraCommentRequest(cloud, 'SHOP-155', '## QA report\n\nPassed.\nAll good.');
+  assert.equal(c1.url, 'https://acme.atlassian.net/rest/api/3/issue/SHOP-155/comment');
+  assert.equal(c1.init.method, 'POST');
+  const body = JSON.parse(c1.init.body as string) as { body: { type: string; content: { content: unknown[] }[] } };
+  assert.equal(body.body.type, 'doc');
+  assert.equal(body.body.content.length, 2, 'two paragraphs');
+  assert.deepEqual(body.body.content[1].content, [{ type: 'text', text: 'Passed.' }, { type: 'hardBreak' }, { type: 'text', text: 'All good.' }]);
+  const c2 = jiraCommentRequest(dc, 'SHOP-155', 'Passed.');
+  assert.equal(c2.url, 'https://jira.acme.local/jira/rest/api/2/issue/SHOP-155/comment');
+  assert.deepEqual(JSON.parse(c2.init.body as string), { body: 'Passed.' });
+  assert.equal((c2.init.headers as Record<string, string>).Authorization, 'Bearer pat');
+  assert.equal(jiraTransitionsRequest(cloud, 'SHOP-155').url, 'https://acme.atlassian.net/rest/api/3/issue/SHOP-155/transitions');
+  assert.equal(jiraTransitionsRequest(cloud, 'SHOP-155').init.method, 'GET');
+  assert.deepEqual(JSON.parse(jiraTransitionRequest(dc, 'SHOP-155', '31').init.body as string), { transition: { id: '31' } });
+  assert.deepEqual(adfFrom(''), { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: ' ' }] }] }, 'never an empty paragraph, which Jira rejects');
+});
+
+test('demo tickets take comments and moves, and keep them', async () => {
+  const meta = new Map<string, string>([['tickets.demo', '1']]);
+  const store = { getMeta: (k: string) => meta.get(k), setMeta: (k: string, v: string) => { meta.set(k, v); } } as unknown as Store;
+  const svc = new TicketService(store, () => {}, {});
+  const key = demoTickets()[0].key;
+  await svc.comment(key, 'Looks right.');
+  const moves = await svc.transitions(key);
+  assert.ok(moves.length >= 3 && !moves.some((m) => m.to === demoTickets()[0].status), 'every status but the current one');
+  await svc.transition(key, 'Done');
+  const t = svc.list([]).find((x) => x.key === key)!;
+  assert.equal(t.comments.at(-1)?.body, 'Looks right.');
+  assert.equal(t.status, 'Done');
+  assert.equal(t.done, true);
+  await assert.rejects(svc.comment('REAL-1', 'x'), /Jira isn’t connected/);
 });

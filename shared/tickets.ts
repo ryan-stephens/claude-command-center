@@ -19,6 +19,9 @@ export interface TicketLink {
   relation: string;
 }
 
+/** A status a ticket can move to from where it is (Jira's transitions; a demo ticket's usual four). */
+export interface TicketTransition { id: string; name: string; to: string }
+
 export interface Ticket {
   /** SHOP-155 for Jira; for Trello, the board's short name and the card number, e.g. WEB-12. */
   key: string;

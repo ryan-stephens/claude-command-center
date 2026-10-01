@@ -45,7 +45,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['t picker: ← →  /  ↑ ↓ Space  /  a n  /  Enter', 'Environment (dev, uat …)  /  which APIs run (changed ones are ticked)  /  all or none  /  start them, then the UI'],
       ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
       ['e (a card)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo, the whole workspace, or the workspace’s stack of APIs and UI)'],
-      ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket; on a card in Ship, merge it. On a QA or review card: its report (Enter copies, o opens the PR, d moves it to Done)'],
+      ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket; on a card in Ship, merge it. On a QA or review card: its report (Enter copies, j posts it on the Jira ticket and m moves the ticket, each after you confirm; o opens the PR, d moves the card to Done)'],
       ['d (a card in Ship)', 'Done: the PR was merged or closed by hand, or the host isn’t one Ship can follow'],
       ['Delete', 'Take the card off the line (its terminal session keeps running)'],
     ],

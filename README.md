@@ -88,7 +88,7 @@ If you don't write code: ask a developer to do steps 1 to 6 once on your machine
 | | `← → ↑ ↓` / `Enter` | Move between cards / open one full screen: Overview or Context (`Tab`; how it started, what Claude was given) beside its live transcript; `←` / `→` the previous / next card; `Esc` back to the board |
 | | `t` / `o` (a card) | Try it: run its repo's recipe in the card's folder / open the app (`t` again stops it). With a workspace stack, `t` first asks the environment (`←` `→`) and which APIs to run (`↑` `↓` `Space`, `Enter` starts) |
 | | `e` (a card) | Write or edit the run recipe: for the card's repo, the whole workspace, or the workspace's stack (`Alt+W`) |
-| | `s` (a card) | Ship: commit the ticked files, push, open a PR from the ticket (`gh`); on a card in Ship, merge it. On a QA or review card: its report, `Enter` copies it, `o` opens the PR, `d` moves the card to Done |
+| | `s` (a card) | Ship: commit the ticked files, push, open a PR from the ticket (`gh`); on a card in Ship, merge it. On a QA or review card: its report, `Enter` copies it, `j` posts it on the Jira ticket and `m` moves the ticket (each asks first; nothing is written on its own), `o` opens the PR, `d` moves the card to Done |
 | | `d` (a card in Ship) | Done by hand: the PR was merged or closed elsewhere, or the host isn't one Ship can follow |
 | | `o` (a card) | The app its run is serving; with nothing running, its pull request |
 | | `Delete` | Take the card off the line (its terminal session keeps running); on a ticket in the Inbox, hide it |

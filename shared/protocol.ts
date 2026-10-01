@@ -12,8 +12,9 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
 import type { Changes } from './changes.ts';
+import type { TicketTransition } from './tickets.ts';
 
-export const PROTOCOL = 15;
+export const PROTOCOL = 16;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -382,6 +383,10 @@ export type ClientMsg =
   /** Hide a ticket from the Inbox (Delete on it), or show it again (Shift+T). Read-only towards the tracker. */
   | { type: 'tickets.hide'; key: string; hidden: boolean }
   | { type: 'tickets.refresh' }
+  /** Writes to the tracker, each asked for on the page: a comment on a ticket (ok or an error), where it can move (tickets.transitions), moving it (ok or an error). */
+  | { type: 'tickets.comment'; reqId: string; key: string; text: string }
+  | { type: 'tickets.transitions'; reqId: string; key: string }
+  | { type: 'tickets.transition'; reqId: string; key: string; id: string }
   /** Search the tracker for any ticket (not only yours): a key or words. Answered with tickets.found. Read-only. */
   | { type: 'tickets.search'; reqId: string; q: string }
   /** Find the pull request for a ticket in these repos (QA and review cards). Answered with pr.found. Read-only. */
@@ -437,4 +442,5 @@ export type ServerMsg =
   /** What a search found, or why it couldn't search. */
   | { type: 'tickets.found'; reqId: string; q: string; tickets: Ticket[]; problem?: string }
   /** The ticket's pull request, or why none was found (a line per repo). */
-  | { type: 'pr.found'; reqId: string; pr?: PrTarget; notes: string[] };
+  | { type: 'pr.found'; reqId: string; pr?: PrTarget; notes: string[] }
+  | { type: 'tickets.transitions'; reqId: string; key: string; transitions: TicketTransition[] };

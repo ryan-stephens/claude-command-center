@@ -2,6 +2,7 @@ import type { CardDraft, PacketItem } from '../shared/cards.ts';
 import { wsRecipeKey } from '../shared/recipes.ts';
 import type { StackChoice } from '../shared/stack.ts';
 import type { Changes } from '../shared/changes.ts';
+import type { TicketTransition } from '../shared/tickets.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
@@ -118,6 +119,18 @@ export async function addCardContext(id: string, items: PacketItem[], note: stri
 /** Search the tracker for any ticket, by key or words. */
 export async function searchTickets(q: string): Promise<Extract<ServerMsg, { type: 'tickets.found' }>> {
   return await request((reqId) => ({ type: 'tickets.search', reqId, q }), 30_000) as Extract<ServerMsg, { type: 'tickets.found' }>;
+}
+
+/** Writes to the tracker, each from an explicit key on the page. */
+export async function commentTicket(key: string, text: string): Promise<void> {
+  await request((reqId) => ({ type: 'tickets.comment', reqId, key, text }), 30_000);
+}
+export async function ticketTransitions(key: string): Promise<TicketTransition[]> {
+  const reply = await request((reqId) => ({ type: 'tickets.transitions', reqId, key }), 30_000);
+  return (reply as Extract<ServerMsg, { type: 'tickets.transitions' }>).transitions;
+}
+export async function moveTicket(key: string, id: string): Promise<void> {
+  await request((reqId) => ({ type: 'tickets.transition', reqId, key, id }), 30_000);
 }
 
 /** The pull request for a ticket in these repos, or why there is none. */
@@ -337,6 +350,7 @@ function receive(msg: ServerMsg): void {
     case 'card.started':
     case 'ship.plan':
     case 'card.changes':
+    case 'tickets.transitions':
     case 'stack.plan':
       return; // answered to the screen that asked, which waits on it
     case 'workspace.file':

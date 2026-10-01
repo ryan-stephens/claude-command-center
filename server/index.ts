@@ -547,6 +547,24 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'tickets.refresh':
       await tickets.refresh();
       return;
+    case 'tickets.comment': {
+      const key = String(msg.key ?? '').slice(0, 60);
+      const text = String(msg.text ?? '').slice(0, 30_000).trim();
+      if (!text) throw new Error('Nothing to post.');
+      await tickets.comment(key, text);
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    }
+    case 'tickets.transitions': {
+      const key = String(msg.key ?? '').slice(0, 60);
+      send(ws, { type: 'tickets.transitions', reqId: msg.reqId, key, transitions: await tickets.transitions(key) });
+      return;
+    }
+    case 'tickets.transition': {
+      await tickets.transition(String(msg.key ?? '').slice(0, 60), String(msg.id ?? '').slice(0, 60));
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    }
     case 'tickets.search': {
       const q = String(msg.q ?? '').slice(0, 200);
       const r = await tickets.search(q, store.loadWorkspaces().map((w) => w.id));

@@ -16,7 +16,7 @@
 // fromJira / fromTrello turn each API's JSON into a Ticket and are tested against recorded shapes;
 // the HTTP calls themselves haven't met a live site yet (PLAN §31).
 
-import type { InboxView, Ticket, TicketComment, TicketLink, TicketProject, TicketSources, SourceState } from '../shared/tickets.ts';
+import type { InboxView, Ticket, TicketComment, TicketLink, TicketProject, TicketSources, TicketTransition, SourceState } from '../shared/tickets.ts';
 import type { Store } from './store.ts';
 
 // ---- Jira ---------------------------------------------------------------------------------------
@@ -221,6 +221,62 @@ export function jiraSearch(c: JiraConfig, jql = c.jql, max = 50): { url: string;
       body: JSON.stringify({ jql, fields: [...JIRA_FIELDS, ...(c.acField ? [c.acField] : [])], maxResults: max }),
     },
   };
+}
+
+function jiraAuth(c: JiraConfig): string {
+  return c.kind === 'server' && !c.email ? `Bearer ${c.token}` : `Basic ${Buffer.from(`${c.email}:${c.token}`).toString('base64')}`;
+}
+
+/**
+ * Plain text as Jira Cloud's document format (its v3 API takes nothing else for a comment):
+ * paragraphs split on blank lines, single newlines as hard breaks. Markdown stays as it is written.
+ */
+export function adfFrom(text: string): unknown {
+  const paragraphs = text.replace(/\r\n/g, '\n').trim().split(/\n{2,}/);
+  return {
+    type: 'doc', version: 1,
+    content: paragraphs.map((p) => ({
+      type: 'paragraph',
+      content: p.split('\n').flatMap((line, i) => [...(i ? [{ type: 'hardBreak' }] : []), ...(line ? [{ type: 'text', text: line }] : [])]),
+    })).map((p) => (p.content.length ? p : { ...p, content: [{ type: 'text', text: ' ' }] })),
+  };
+}
+
+/** The writes: a comment on a ticket, its transitions, moving it. Cloud speaks v3 (document bodies); Data Center v2 (plain text). */
+export function jiraCommentRequest(c: JiraConfig, key: string, text: string): { url: string; init: RequestInit } {
+  const v3 = c.kind === 'cloud';
+  return {
+    url: `${c.site}/rest/api/${v3 ? 3 : 2}/issue/${encodeURIComponent(key)}/comment`,
+    init: { method: 'POST', headers: { Authorization: jiraAuth(c), Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ body: v3 ? adfFrom(text) : text }) },
+  };
+}
+export function jiraTransitionsRequest(c: JiraConfig, key: string): { url: string; init: RequestInit } {
+  return { url: `${c.site}/rest/api/${c.kind === 'cloud' ? 3 : 2}/issue/${encodeURIComponent(key)}/transitions`, init: { method: 'GET', headers: { Authorization: jiraAuth(c), Accept: 'application/json' } } };
+}
+export function jiraTransitionRequest(c: JiraConfig, key: string, id: string): { url: string; init: RequestInit } {
+  return {
+    url: `${c.site}/rest/api/${c.kind === 'cloud' ? 3 : 2}/issue/${encodeURIComponent(key)}/transitions`,
+    init: { method: 'POST', headers: { Authorization: jiraAuth(c), Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ transition: { id } }) },
+  };
+}
+
+/** One Jira request with the usual errors in words; the body as text ('' for 204). */
+async function jiraCall(c: JiraConfig, r: { url: string; init: RequestInit }): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(r.url, { ...r.init, signal: AbortSignal.timeout(20_000) });
+  } catch (e) {
+    const code = (e as { cause?: { code?: string } }).cause?.code ?? (e as Error).message;
+    throw new Error(`Couldn't reach Jira at ${c.site} (${code})`);
+  }
+  const text = await res.text();
+  if (!res.ok) {
+    let detail = '';
+    try { const j = JSON.parse(text) as { errorMessages?: string[]; errors?: Record<string, string> }; detail = [...(j.errorMessages ?? []), ...Object.values(j.errors ?? {})].join('; '); } catch { /* not JSON */ }
+    const why = detail || jiraProblem(res.status, c);
+    throw new Error(`Jira said ${res.status} ${res.statusText}${why ? `: ${why}` : ''}`);
+  }
+  return text;
 }
 
 /** What a failed request means, in words. */
@@ -521,11 +577,68 @@ export class TicketService {
     this.changed();
   }
 
+  /** Comments and moves made on demo tickets from the app, so the demo behaves like a tracker that remembers. */
+  private demoWrites(): Record<string, { comments: TicketComment[]; status?: string }> {
+    try { return JSON.parse(this.store.getMeta('tickets.demoWrites') ?? '{}') as Record<string, { comments: TicketComment[]; status?: string }>; } catch { return {}; }
+  }
+
+  private demoTickets(): Ticket[] {
+    const w = this.demoWrites();
+    return demoTickets().map((t) => (w[t.key] ? { ...t, comments: [...t.comments, ...w[t.key].comments], status: w[t.key].status ?? t.status, done: /^done$/i.test(w[t.key].status ?? t.status) } : t));
+  }
+
+  private isDemo(key: string): boolean {
+    return this.demoOn() && demoTickets().some((t) => t.key === key);
+  }
+
+  private jiraFor(key: string): JiraConfig {
+    const c = jiraConfig(this.env);
+    if (!c) throw new Error(`Jira isn’t connected, so nothing can be written to ${key}: set CC_CONTROL_JIRA_SITE and a token in config.env.`);
+    return c;
+  }
+
+  /** Post a comment on a Jira ticket (a demo ticket keeps it here). Asked for from the page, never on its own. */
+  async comment(key: string, text: string): Promise<void> {
+    if (this.isDemo(key)) {
+      const w = this.demoWrites();
+      w[key] = { ...(w[key] ?? { comments: [] }), comments: [...(w[key]?.comments ?? []), { author: 'you (from cc-control)', body: text, at: Date.now() }] };
+      this.store.setMeta('tickets.demoWrites', JSON.stringify(w));
+      this.changed();
+      return;
+    }
+    await jiraCall(this.jiraFor(key), jiraCommentRequest(this.jiraFor(key), key, text));
+  }
+
+  /** Where a Jira ticket can move to from its status (a demo ticket: the usual four). */
+  async transitions(key: string): Promise<TicketTransition[]> {
+    if (this.isDemo(key)) {
+      const now = this.demoTickets().find((t) => t.key === key)?.status;
+      return ['To Do', 'In Progress', 'Ready for QA', 'Done'].filter((s) => s !== now).map((s) => ({ id: s, name: s, to: s }));
+    }
+    const c = this.jiraFor(key);
+    const body = JSON.parse(await jiraCall(c, jiraTransitionsRequest(c, key))) as { transitions?: { id: string; name: string; to?: { name?: string } }[] };
+    return (body.transitions ?? []).map((t) => ({ id: String(t.id), name: t.name, to: t.to?.name ?? t.name }));
+  }
+
+  /** Move a Jira ticket along one of its transitions. The Inbox is refreshed afterwards. */
+  async transition(key: string, id: string): Promise<void> {
+    if (this.isDemo(key)) {
+      const w = this.demoWrites();
+      w[key] = { ...(w[key] ?? { comments: [] }), status: id };
+      this.store.setMeta('tickets.demoWrites', JSON.stringify(w));
+      this.changed();
+      return;
+    }
+    const c = this.jiraFor(key);
+    await jiraCall(c, jiraTransitionRequest(c, key, id));
+    void this.refresh();
+  }
+
   /** Every ticket, with the workspace its project maps to (a mapped workspace that is gone counts as none). */
   list(workspaceIds: string[]): Ticket[] {
     const m = this.mapping();
     const hidden = this.hiddenKeys();
-    const all = [...this.real, ...(this.demoOn() ? demoTickets() : [])];
+    const all = [...this.real, ...(this.demoOn() ? this.demoTickets() : [])];
     return all.map((t) => ({ ...t, workspaceId: m[t.project] && workspaceIds.includes(m[t.project]) ? m[t.project] : null, ...(hidden[t.key] ? { hidden: true } : {}) }));
   }
 
