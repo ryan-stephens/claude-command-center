@@ -5,7 +5,7 @@
 // can't be read is asked once, and every finding says which file it came from. Pure: the server
 // hands in each repo's file list and a reader, so tests use repos in memory.
 
-import { API_NAME, readLooseJson, routeGuess, UI_NAME, type Stack, type StackApi } from './stack.ts';
+import { API_NAME, readLooseJson, routeGuess, UI_NAME, type Stack, type StackApi, type UiApp } from './stack.ts';
 import { findForwards } from './okteto.ts';
 
 /** One repo as the detector sees it: its files (relative, forward slashes, a bounded walk) and a reader. */
@@ -50,26 +50,64 @@ export function healthRoute(cs: string): string | undefined {
   return attr ? `/${attr[1]}` : undefined;
 }
 
-interface Serve { command: string; proxyFile?: string; port?: number; from: string }
+interface Serve { command: string; proxyFile?: string; port?: number; path?: string; from: string; /** The other apps the repo can serve. */ others?: string[] }
+
+type Targets = Record<string, Record<string, unknown>>;
+const serveOpts = (target: Record<string, unknown> | undefined) => ((target?.options ?? {}) as { proxyConfig?: string; port?: number });
+/** The app's baseHref from its build target, when it isn't `/`. */
+const basePath = (targets: Targets | undefined): string | undefined => {
+  const b = (targets?.build?.options as { baseHref?: unknown } | undefined)?.baseHref;
+  return typeof b === 'string' && b.trim() && b.trim() !== '/' ? `/${b.trim().replace(/^\/+/, '')}` : undefined;
+};
+
+/**
+ * Every app the UI repo can serve, in the order its files list them: angular.json's projects with a
+ * serve target, then each project.json (an nx workspace has one per app under apps/) with one.
+ */
+export function uiApps(repo: RepoFiles): (UiApp & { proxyFile?: string; kind: 'ng' | 'nx' })[] {
+  const json = (rel: string) => { const t = repo.read(rel); if (!t) return undefined; try { return readLooseJson(t); } catch { return undefined; } };
+  const out: (UiApp & { proxyFile?: string; kind: 'ng' | 'nx' })[] = [];
+  const ng = json('angular.json');
+  if (ng) {
+    const projects = (ng.projects ?? {}) as Record<string, { architect?: Targets; targets?: Targets }>;
+    const names = Object.keys(projects).filter((p) => (projects[p].architect ?? projects[p].targets)?.serve);
+    const first = typeof ng.defaultProject === 'string' && names.includes(ng.defaultProject) ? ng.defaultProject : undefined;
+    for (const name of first ? [first, ...names.filter((n) => n !== first)] : names) {
+      const t = projects[name].architect ?? projects[name].targets;
+      const o = serveOpts(t?.serve);
+      const path = basePath(t);
+      out.push({ name, kind: 'ng', from: 'angular.json', ...(o.proxyConfig ? { proxyFile: o.proxyConfig } : {}), ...(o.port ? { port: o.port } : {}), ...(path ? { path } : {}) });
+    }
+  }
+  for (const file of repo.files.filter((f) => /(^|\/)project\.json$/.test(f)).sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b))) {
+    const pj = json(file);
+    const targets = pj?.targets as Targets | undefined;
+    if (!targets?.serve) continue;
+    const name = String(pj!.name ?? (file.includes('/') ? file.split('/').at(-2) : repo.name));
+    const o = serveOpts(targets.serve);
+    const path = basePath(targets);
+    out.push({ name, kind: 'nx', from: file, ...(o.proxyConfig ? { proxyFile: o.proxyConfig } : {}), ...(o.port ? { port: o.port } : {}), ...(path ? { path } : {}) });
+  }
+  return out;
+}
+
+/** What the project file says about one app of the UI repo (the one the steps serve), by name; the first app when no name. */
+export function uiApp(repo: RepoFiles, name?: string): UiApp | undefined {
+  const apps = uiApps(repo);
+  const hit = name ? apps.find((a) => a.name.toLowerCase() === name.toLowerCase()) : apps[0];
+  if (!hit) return undefined;
+  const { proxyFile: _p, kind: _k, ...app } = hit;
+  return app;
+}
 
 /** How the UI serves, from angular.json (ng), project.json (nx) or package.json; the proxy file the serve target names. */
 export function uiServe(repo: RepoFiles): Serve | undefined {
   const json = (rel: string) => { const t = repo.read(rel); if (!t) return undefined; try { return readLooseJson(t); } catch { return undefined; } };
-  const opts = (target: Record<string, unknown> | undefined) => ((target?.options ?? {}) as { proxyConfig?: string; port?: number });
-  const ng = json('angular.json');
-  if (ng) {
-    const projects = (ng.projects ?? {}) as Record<string, { architect?: Record<string, Record<string, unknown>>; targets?: Record<string, Record<string, unknown>> }>;
-    const name = (ng.defaultProject as string | undefined) ?? Object.keys(projects).find((p) => (projects[p].architect ?? projects[p].targets)?.serve) ?? Object.keys(projects)[0];
-    if (name) {
-      const o = opts((projects[name]?.architect ?? projects[name]?.targets)?.serve);
-      return { command: `npx ng serve ${name} --proxy-config {{proxy}} --port {{uiPort}}`, ...(o.proxyConfig ? { proxyFile: o.proxyConfig } : {}), ...(o.port ? { port: o.port } : {}), from: 'angular.json' };
-    }
-  }
-  const pj = json('project.json');
-  if (pj && (pj.targets as Record<string, unknown> | undefined)?.serve) {
-    const name = String(pj.name ?? repo.name);
-    const o = opts((pj.targets as Record<string, Record<string, unknown>>).serve);
-    return { command: `npx nx serve ${name} --proxyConfig={{proxy}} --port={{uiPort}}`, ...(o.proxyConfig ? { proxyFile: o.proxyConfig } : {}), ...(o.port ? { port: o.port } : {}), from: 'project.json' };
+  const apps = uiApps(repo);
+  if (apps.length) {
+    const [a, ...rest] = apps;
+    const command = a.kind === 'ng' ? `npx ng serve ${a.name} --proxy-config {{proxy}} --port {{uiPort}}` : `npx nx serve ${a.name} --proxyConfig={{proxy}} --port={{uiPort}}`;
+    return { command, ...(a.proxyFile ? { proxyFile: a.proxyFile } : {}), ...(a.port ? { port: a.port } : {}), ...(a.path ? { path: a.path } : {}), from: a.from, ...(rest.length ? { others: rest.map((r) => r.name) } : {}) };
   }
   const pkg = json('package.json');
   if (pkg) {
@@ -179,7 +217,9 @@ export function detectStack(repos: RepoFiles[]): Detected {
   if (ui) {
     const r = ui.repo;
     const proxyFile = ui.serve.proxyFile && r.files.includes(ui.serve.proxyFile.replace(/^\.\//, '')) ? ui.serve.proxyFile.replace(/^\.\//, '') : r.files.find((f) => /(^|\/)proxy\.conf\.(json|js|mjs|cjs)$/.test(f));
-    findings.push({ repo: r.name, role: 'ui', text: `serves with ${ui.serve.command.replace(/ --proxy-config \{\{proxy\}\}| --proxyConfig=\{\{proxy\}\}/, proxyFile ? '$&' : '')}`, from: ui.serve.from });
+    findings.push({ repo: r.name, role: 'ui', text: `serves with ${ui.serve.command.replace(/ --proxy-config \{\{proxy\}\}| --proxyConfig=\{\{proxy\}\}/, proxyFile ? '$&' : '')}${ui.serve.port ? ` (its own port is ${ui.serve.port})` : ''}`, from: ui.serve.from });
+    if (ui.serve.path) findings.push({ repo: r.name, role: 'ui', text: `the app lives at ${ui.serve.path} (its baseHref): the URL opens there`, from: ui.serve.from });
+    if (ui.serve.others?.length) findings.push({ repo: r.name, role: 'ui', text: `the repo can also serve ${ui.serve.others.join(', ')}: to start one of those instead, name it in the serve step`, asked: true });
     let rules: Record<string, unknown> | undefined;
     if (proxyFile && /\.json$/.test(proxyFile)) {
       try { rules = readLooseJson(r.read(proxyFile) ?? ''); findings.push({ repo: r.name, role: 'ui', text: `proxy rules: ${Object.keys(rules).join(', ') || 'none'}`, from: proxyFile }); } catch { findings.push({ repo: r.name, role: 'ui', text: `${proxyFile} couldn’t be read as JSON: the picked APIs can’t be put in it`, from: proxyFile, asked: true }); }
@@ -189,7 +229,7 @@ export function detectStack(repos: RepoFiles[]): Detected {
       findings.push({ repo: r.name, role: 'ui', text: 'no proxy file found: the UI starts without one (the APIs you pick aren’t reached through it)', asked: true });
     }
     const command = proxyFile && rules ? ui.serve.command : ui.serve.command.replace(/ --proxy-config \{\{proxy\}\}| --proxyConfig=\{\{proxy\}\}/, '');
-    uiPart = { repo: r.name, ...(proxyFile && rules ? { proxyFile } : {}), steps: ['if not exist node_modules npm install', command], url: 'http://localhost:{{uiPort}}' };
+    uiPart = { repo: r.name, ...(proxyFile && rules ? { proxyFile } : {}), steps: ['if not exist node_modules npm install', command], url: 'http://localhost:{{uiPort}}', ...(ui.serve.path ? { path: ui.serve.path } : {}) };
     if (rules) {
       for (const a of apiFacts) {
         const key = ruleFor(rules, a);

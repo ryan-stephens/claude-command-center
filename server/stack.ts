@@ -6,11 +6,13 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, readLooseJson, runLabel, stackRules, stackSteps, uiUrlFor, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo, type StackRunContext } from '../shared/stack.ts';
+import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, readLooseJson, runLabel, stackRules, stackSteps, uiPortFor, uiProject, uiUrlFor, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo, type StackRunContext } from '../shared/stack.ts';
+import { uiApp } from '../shared/stack-detect.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import { run } from './hosts.ts';
 import { PortPool } from './ports.ts';
 import type { RunOptions, RunPlaces } from './recipes.ts';
+import { repoFiles } from './repo-files.ts';
 import type { Store } from './store.ts';
 
 const key = (workspaceId: string) => `stack:ws:${workspaceId}`;
@@ -121,7 +123,9 @@ export async function prepareStackRun(stack: StackInfo, choice: StackChoice, pla
   const ports: Record<string, number> = {};
   apis.forEach((a, i) => { ports[a.repo.toLowerCase()] = picked[i]; });
   const uiPort = wantUi ? picked[picked.length - 1] : undefined;
-  const ctx: StackRunContext = { branches, ports, ...(uiPort ? { uiPort } : {}) };
+  // The served app's own port and baseHref, from its project file: the URL when the stack doesn't say.
+  const app = stack.ui && uiDir ? uiApp(repoFiles(uiDir), uiProject(stack.ui.steps)) : undefined;
+  const ctx: StackRunContext = { branches, ports, ...(uiPort ? { uiPort } : {}), ...(app ? { uiApp: app } : {}) };
   try {
     let cleanup: (() => void) | undefined;
     let write: (() => void) | undefined;
@@ -150,7 +154,7 @@ export async function prepareStackRun(stack: StackInfo, choice: StackChoice, pla
     const undo = cleanup;
     return {
       recipe: { repo: '', workspaceId: stack.workspaceId, steps, ...(url ? { url } : {}), source: stack.source },
-      opts: { choice: runLabel(values, pick.apis, ports, uiPort), cleanup: () => { pool.free(picked); undo?.(); } },
+      opts: { choice: runLabel(values, pick.apis, ports, stack.ui ? uiPortFor(stack, pick, ctx) : undefined, stack.ui ? uiProject(stack.ui.steps) ?? app?.name : undefined), cleanup: () => { pool.free(picked); undo?.(); } },
     };
   } catch (e) {
     pool.free(picked);

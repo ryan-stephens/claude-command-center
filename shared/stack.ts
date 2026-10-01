@@ -36,8 +36,10 @@ export interface Stack {
     /** override (default): write a copy with the rules outside the repo and pass it as {{proxy}}. edit: change the file in place and put it back on stop. */
     proxyMode?: 'override' | 'edit';
     steps: string[];
-    /** Where it serves; may use {{uiPort}}. */
+    /** Where it serves; may use {{uiPort}}. Unset: the --port in its steps, else the served app's own port from its project file, else what the app prints. */
     url?: string;
+    /** Where the app lives on its server (`/ap-summary/`), put after the port. Unset: the app's baseHref when its project file has one. */
+    path?: string;
   };
 }
 
@@ -51,6 +53,39 @@ export interface StackRunContext {
   ports?: Record<string, number>;
   /** The port picked for the UI, when its steps or url ask for {{uiPort}}. */
   uiPort?: number;
+  /** What the served app's own project file says (angular.json, project.json): its port and baseHref, read when the run is prepared. */
+  uiApp?: UiApp;
+}
+
+/** One app a UI repo can serve, as its project file says it. */
+export interface UiApp {
+  name: string;
+  port?: number;
+  /** Its baseHref, when not `/`. */
+  path?: string;
+  /** The file it was read from. */
+  from: string;
+}
+
+/** The project the UI's steps serve: `nx serve X`, `nx run X:serve`, `ng serve X` (none: the project file's default). */
+export function uiProject(steps: string[]): string | undefined {
+  for (const s of steps) {
+    const m = /\b(?:nx|ng)(?:\.cmd)?\s+serve\s+(?!-)([\w@./-]+)/i.exec(s) ?? /\bnx(?:\.cmd)?\s+run\s+([\w@./-]+):serve\b/i.exec(s);
+    if (m) return m[1];
+  }
+  return undefined;
+}
+
+/** A fixed --port in steps (after their placeholders were filled). */
+export function fixedPort(steps: string[]): number | undefined {
+  const m = /--port[= ](\d{2,5})\b/.exec(steps.join('\n'));
+  return m ? Number(m[1]) : undefined;
+}
+
+/** The path put after the port: `/ap-summary/`, never doubled onto a url that already has one. */
+export function withPath(url: string, path?: string): string {
+  if (!path || path === '/') return url;
+  return /^https?:\/\/[^/]+\/?$/.test(url) ? `${url.replace(/\/$/, '')}/${path.replace(/^\//, '')}` : url;
 }
 
 /** A stack as the page gets it: where it came from. */
@@ -138,9 +173,12 @@ export function validateStack(raw: unknown): Stack {
     const mode = u.proxyMode === 'edit' ? 'edit' : 'override';
     const url = str(u.url, 300);
     if (url && !/^https?:\/\/\S+$/.test(url)) throw new Error('"ui.url" should look like http://localhost:{{uiPort}}.');
+    let path = str(u.path, 200);
+    if (path && /\s|^https?:/i.test(path)) throw new Error('"ui.path" is the part after the port, like /ap-summary/.');
+    if (path && !path.startsWith('/')) path = `/${path}`;
     const uiSteps = steps(u.steps, '"ui.steps"');
     if (!uiSteps.length) throw new Error('"ui.steps" is empty: say how the UI starts.');
-    ui = { repo, ...(proxyFile ? { proxyFile, proxyMode: mode } : {}), steps: uiSteps, ...(url ? { url } : {}) };
+    ui = { repo, ...(proxyFile ? { proxyFile, proxyMode: mode } : {}), steps: uiSteps, ...(url ? { url } : {}), ...(path && path !== '/' ? { path } : {}) };
   }
   if (!apis.length && !ui) throw new Error('The stack has no APIs and no UI.');
   return { choose, api, apis, ...(ui ? { ui } : {}) };
@@ -276,9 +314,10 @@ export function k8sDeployment(name: string, branch: string): string {
 }
 
 /** "uat · orders-api :18000, fees-api :18001 · UI :18002": what was picked, with the ports picked for it. */
-export function runLabel(values: Record<string, string>, apis: string[], ports: Record<string, number> = {}, uiPort?: number): string {
+export function runLabel(values: Record<string, string>, apis: string[], ports: Record<string, number> = {}, uiPort?: number, app?: string): string {
   const api = apis.map((a) => (ports[a.toLowerCase()] ? `${a} :${ports[a.toLowerCase()]}` : a));
-  return [...Object.values(values), api.length ? api.join(', ') : 'UI only', ...(uiPort ? [`UI :${uiPort}`] : [])].join(' · ');
+  const ui = app || uiPort ? [`${app ?? 'UI'}${uiPort ? ` :${uiPort}` : ''}`] : [];
+  return [...Object.values(values), api.length ? api.join(', ') : 'UI only', ...ui].join(' · ');
 }
 
 /** The picked values, each checked against what the stack offers; missing ones get the default. */
@@ -326,10 +365,24 @@ function uiVars(values: Record<string, string>, ui: NonNullable<Stack['ui']>, ct
   return { ...chosenVars(values), repo: ui.repo, branch: ctx.branches[ui.repo.toLowerCase()] ?? 'main', ...(ctx.proxy ? { proxy: ctx.proxy } : {}), ...(ctx.uiPort ? { uiPort: String(ctx.uiPort) } : {}) };
 }
 
-/** Where the UI will serve for this run, when the stack says. */
+/**
+ * Where the UI will serve for this run: `ui.url` filled in; else the port picked for it, a --port in
+ * its steps, or the served app's own port from its project file; then `ui.path`, else the app's
+ * baseHref. Nothing says the port: no URL up front, and the address the app prints is used.
+ */
 export function uiUrlFor(stack: Stack, choice: StackChoice, ctx: StackRunContext): string | undefined {
-  if (!stack.ui?.url) return undefined;
-  return fill(stack.ui.url, uiVars(choiceValues(stack, choice.values), stack.ui, ctx), 'the UI’s url');
+  if (!stack.ui) return undefined;
+  const vars = uiVars(choiceValues(stack, choice.values), stack.ui, ctx);
+  const port = ctx.uiPort ?? fixedPort(stack.ui.steps.map((s) => fill(s, vars, 'the UI’s steps'))) ?? ctx.uiApp?.port;
+  const base = stack.ui.url ? fill(stack.ui.url, vars, 'the UI’s url') : port ? `http://localhost:${port}` : undefined;
+  return base ? withPath(base, stack.ui.path ?? ctx.uiApp?.path) : undefined;
+}
+
+/** The port the UI serves on for this run, as uiUrlFor works it out, when it is a number. */
+export function uiPortFor(stack: Stack, choice: StackChoice, ctx: StackRunContext): number | undefined {
+  const url = uiUrlFor(stack, choice, ctx);
+  const m = url ? /:(\d{2,5})(?:\/|$)/.exec(url) : null;
+  return m ? Number(m[1]) : undefined;
 }
 
 /**
@@ -405,7 +458,7 @@ export function suggested(rows: StackApiRow[]): string[] {
 export function stackText(stack: Stack): string {
   const ask = Object.entries(stack.choose).map(([k, v]) => `${k} (${v.join(' / ')})`).join(', ');
   const L = [`The workspace’s stack starts the app. When you press Try it, you pick ${ask ? `${ask} and ` : ''}which APIs to run: ${stack.apis.map((a) => a.repo).join(', ') || 'none set up'}. Each gets a local port of its own for that run.`];
-  if (stack.ui) L.push(`Then ${stack.ui.repo} starts${stack.ui.proxyFile ? `, with ${stack.ui.proxyFile} pointed at the APIs that run (${stack.ui.proxyMode === 'edit' ? 'changed in place and put back on stop: never commit that change' : 'a copy; the repo’s file isn’t changed'})` : ''}${stack.ui.url ? `, at ${stack.ui.url.replace(/\{\{\s*uiPort\s*\}\}/, '<a port picked for the run>')}` : ''}.`);
+  if (stack.ui) L.push(`Then ${stack.ui.repo} starts${stack.ui.proxyFile ? `, with ${stack.ui.proxyFile} pointed at the APIs that run (${stack.ui.proxyMode === 'edit' ? 'changed in place and put back on stop: never commit that change' : 'a copy; the repo’s file isn’t changed'})` : ''}${stack.ui.url ? `, at ${withPath(stack.ui.url.replace(/\{\{\s*uiPort\s*\}\}/, '<a port picked for the run>'), stack.ui.path)}` : stack.ui.path ? `, at ${stack.ui.path} on its port` : ''}.`);
   L.push('cc-control does this; don’t start the APIs or the UI yourself, and don’t edit the proxy file to point at them.');
   return L.join(' ');
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { addRepoToStack, detectStack, envNamesIn, healthRoute, manifestName, ruleFor, templateRule, uiServe, type RepoFiles } from './stack-detect.ts';
+import { addRepoToStack, detectStack, envNamesIn, healthRoute, manifestName, ruleFor, templateRule, uiApp, uiApps, uiServe, type RepoFiles } from './stack-detect.ts';
 import { stackWarnings, validateStack } from './stack.ts';
 
 /** A repo in memory. */
@@ -22,6 +22,20 @@ test('pieces: the manifest’s name, a health route, the UI’s serve command, t
   assert.equal(healthRoute('app.MapGet("/loans/{id}", …)'), undefined, 'not obvious: not guessed');
   assert.deepEqual(uiServe(repo('shop-ui', { 'angular.json': ANGULAR })), { command: 'npx ng serve shop --proxy-config {{proxy}} --port {{uiPort}}', proxyFile: 'apps/shop/proxy.conf.json', port: 4200, from: 'angular.json' });
   assert.deepEqual(uiServe(repo('shop', { 'project.json': JSON.stringify({ name: 'shop', targets: { serve: { options: { proxyConfig: 'proxy.conf.json' } } } }) })), { command: 'npx nx serve shop --proxyConfig={{proxy}} --port={{uiPort}}', proxyFile: 'proxy.conf.json', from: 'project.json' });
+  // An nx workspace of several standalone apps, one project.json each: the first serves, the others are said; its own port and baseHref are read.
+  const NX = repo('lending-ui', {
+    'package.json': '{}',
+    'apps/deny-withdraw/project.json': JSON.stringify({ name: 'deny-withdraw', targets: { build: { options: { baseHref: '/ap-summary/' } }, serve: { options: { proxyConfig: 'apps/deny-withdraw/proxy.conf.json', port: 4216 } } } }),
+    'apps/deny-withdraw/proxy.conf.json': PROXY,
+    'apps/payoff/project.json': JSON.stringify({ name: 'payoff', targets: { build: { options: { baseHref: '/payoff/' } }, serve: { options: { port: 4220 } } } }),
+    'libs/shared/project.json': JSON.stringify({ name: 'shared', targets: { build: {} } }),
+  });
+  assert.deepEqual(uiServe(NX), { command: 'npx nx serve deny-withdraw --proxyConfig={{proxy}} --port={{uiPort}}', proxyFile: 'apps/deny-withdraw/proxy.conf.json', port: 4216, path: '/ap-summary/', from: 'apps/deny-withdraw/project.json', others: ['payoff'] });
+  assert.deepEqual(uiApp(NX, 'payoff'), { name: 'payoff', port: 4220, path: '/payoff/', from: 'apps/payoff/project.json' });
+  assert.deepEqual(uiApp(NX, 'PAYOFF')?.name, 'payoff', 'any case');
+  assert.equal(uiApp(NX, 'nope'), undefined);
+  assert.equal(uiApp(NX)?.name, 'deny-withdraw', 'no name: the first');
+  assert.deepEqual(uiApps(repo('shop-ui', { 'angular.json': ANGULAR })).map((a) => [a.name, a.port, a.path]), [['shop', 4200, undefined]], 'a baseHref of / is no path');
   assert.equal(uiServe(repo('site', { 'package.json': JSON.stringify({ scripts: { dev: 'vite' }, devDependencies: { vite: '5' } }) }))!.command, 'npm run dev -- --port {{uiPort}}');
   assert.equal(uiServe(repo('lib', { 'package.json': JSON.stringify({ scripts: { test: 'x' } }) })), undefined);
   const rules = JSON.parse(PROXY.replace(/\/\/.*\n/, '').replace(/,(\s*[}\]])/g, '$1')) as Record<string, unknown>;
@@ -62,7 +76,7 @@ test('a workspace’s repos become a stack: APIs from okteto.yml and .csproj, th
     'proxied by the rule /gateway/team/fees/** [apps/shop/proxy.conf.json]',
   ]);
   assert.deepEqual(say('shop-ui'), [
-    'serves with npx ng serve shop --proxy-config {{proxy}} --port {{uiPort}} [angular.json]',
+    'serves with npx ng serve shop --proxy-config {{proxy}} --port {{uiPort}} (its own port is 4200) [angular.json]',
     'proxy rules: /gateway/team/loans/**, /gateway/team/fees/**, /assets/** [apps/shop/proxy.conf.json]',
   ]);
   assert.deepEqual(say('team-docs'), ['nothing to go on (no okteto.yml, .csproj, angular.json, project.json or package.json): left out of the stack']);

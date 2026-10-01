@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseStep, recipeLabel, recipeText } from './recipes.ts';
-import { apiVars, choiceLabel, choiceValues, fill, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, runLabel, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiUrlFor, unknownStackRepos, validateStack, type Stack } from './stack.ts';
+import { apiVars, choiceLabel, choiceValues, fill, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, runLabel, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiPortFor, uiProject, uiUrlFor, unknownStackRepos, validateStack, withPath, type Stack, type StackRunContext } from './stack.ts';
 
 const stack: Stack = validateStack({
   choose: { env: ['dev', 'uat'] },
@@ -69,12 +69,32 @@ test('ports are picked per run: {{port}} is the picked one, {{appPort}} the cont
   assert.equal(needsUiPort(stack), false, 'a fixed port: none picked');
   assert.equal(uiUrlFor(withUi, { values: {}, apis: [] }, ctx), 'http://localhost:18001');
   assert.equal(uiUrlFor(stack, { values: {}, apis: [] }, ctx), 'http://localhost:4200');
+  // No url in the stack: the --port in the steps, else the served app's own port and baseHref from its project file, else 4200; ui.path goes after the port.
+  const noUrl = (ui: Partial<NonNullable<Stack['ui']>>, c: Partial<StackRunContext> = {}): string | undefined => uiUrlFor({ ...stack, ui: { repo: 'web-ui', steps: ['nx serve deny-withdraw'], ...ui } }, { values: {}, apis: [] }, { ...ctx, uiPort: undefined, ...c });
+  assert.equal(noUrl({}), undefined, 'nothing says the port: the address the app prints is used');
+  assert.equal(noUrl({ steps: ['nx serve deny-withdraw --port 4216'] }), 'http://localhost:4216');
+  assert.equal(noUrl({ steps: ['nx serve deny-withdraw --port={{uiPort}}'] }, { uiPort: 18001 }), 'http://localhost:18001');
+  assert.equal(noUrl({}, { uiApp: { name: 'deny-withdraw', port: 4216, path: '/ap-summary/', from: 'apps/deny-withdraw/project.json' } }), 'http://localhost:4216/ap-summary/', 'what its project file says');
+  assert.equal(noUrl({ path: '/other/' }, { uiApp: { name: 'deny-withdraw', port: 4216, path: '/ap-summary/', from: 'x' } }), 'http://localhost:4216/other/', 'ui.path wins over the baseHref');
+  assert.equal(noUrl({ url: 'http://localhost:{{uiPort}}', path: '/ap-summary/' }, { uiPort: 18001 }), 'http://localhost:18001/ap-summary/');
+  assert.equal(noUrl({ url: 'http://localhost:4216/already/', path: '/ap-summary/' }), 'http://localhost:4216/already/', 'a url with a path keeps it');
+  assert.equal(uiPortFor({ ...stack, ui: { repo: 'web-ui', steps: ['nx serve x'], path: '/p/' } }, { values: {}, apis: [] }, { ...ctx, uiPort: undefined, uiApp: { name: 'x', port: 4216, from: 'f' } }), 4216);
+  assert.equal(uiProject(['if not exist node_modules npm install', 'node_modules\\.bin\\nx.cmd serve deny-withdraw --proxyConfig={{proxy}}']), 'deny-withdraw');
+  assert.equal(uiProject(['npx nx run shop:serve:development --port 4200']), 'shop');
+  assert.equal(uiProject(['npx ng serve --proxy-config p.json']), undefined, 'no project named');
+  assert.equal(uiProject(['npm start']), undefined);
+  assert.equal(withPath('http://localhost:4216', 'ap-summary/'), 'http://localhost:4216/ap-summary/');
+  assert.equal(withPath('http://localhost:4216/', '/'), 'http://localhost:4216/');
+  assert.equal(validateStack({ api: { steps: ['x'] }, apis: [], ui: { repo: 'w', steps: ['npm start'], path: 'ap-summary/' } }).ui!.path, '/ap-summary/');
+  assert.throws(() => validateStack({ api: { steps: ['x'] }, apis: [], ui: { repo: 'w', steps: ['npm start'], path: 'http://x/' } }), /part after the port/);
   const ex = stackSteps(withUi, { values: { env: 'dev' }, apis: ['orders-api'] }, ctx);
   assert.equal(ex[1], '@orders-api wait:port:18000 forward:18000:8080 KUBECONFIG=%KUBECONFIG_DEV% okteto up');
   assert.match(ex[0], /kubectl get deployment orders-api-feature-abc-1 -n team-dev/);
   assert.equal(ex[3], '@web-ui node_modules\\.bin\\nx.cmd run shop:serve:development --proxyConfig=p.json --port 18001');
   assert.equal(runLabel({ env: 'uat' }, ['orders-api', 'fees-api'], { 'orders-api': 18000, 'fees-api': 18002 }, 18001), 'uat · orders-api :18000, fees-api :18002 · UI :18001');
   assert.equal(runLabel({ env: 'dev' }, []), 'dev · UI only');
+  assert.equal(runLabel({ env: 'dev' }, ['orders-api'], { 'orders-api': 18000 }, 4216, 'deny-withdraw'), 'dev · orders-api :18000 · deny-withdraw :4216', 'the app the UI serves, on its own port');
+  assert.equal(runLabel({ env: 'dev' }, [], {}, undefined, 'deny-withdraw'), 'dev · UI only · deny-withdraw');
 });
 
 test('what keeps a stack from running twice at once is said, not enforced', () => {

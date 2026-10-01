@@ -69,6 +69,7 @@ function driftOf(saved: Stack, detected: Stack | undefined, id: string): string 
     const out: string[] = [];
     if (saved.ui.steps.at(-1) !== detected.ui.steps.at(-1)) out.push(`serves with ${detected.ui.steps.at(-1)}`);
     if ((saved.ui.proxyFile ?? '') !== (detected.ui.proxyFile ?? '')) out.push(`proxy file ${detected.ui.proxyFile ?? 'none'}`);
+    if (saved.ui.path && detected.ui.path && saved.ui.path !== detected.ui.path) out.push(`the app lives at ${detected.ui.path}`);
     return out.length ? out.join(' · ') : undefined;
   }
   if (!id.startsWith('api:')) return undefined;
@@ -133,7 +134,8 @@ export function fieldsOf(stack: Stack, id: string): Field[] {
       { key: 'ui.steps', label: 'Steps, one per line', value: stack.ui.steps.join('\n'), multiline: true, hint: '{{proxy}} is the proxy copy, {{uiPort}} the port picked for the run' },
       { key: 'ui.proxyFile', label: 'Proxy file, inside the repo (empty: none)', value: stack.ui.proxyFile ?? '' },
       { key: 'ui.proxyMode', label: 'override (a copy) or edit (the file itself, put back on stop)', value: stack.ui.proxyMode ?? 'override' },
-      { key: 'ui.url', label: 'Where it serves', value: stack.ui.url ?? '', hint: 'http://localhost:{{uiPort}}' },
+      { key: 'ui.url', label: 'Where it serves (empty: the --port in its steps, else the app’s own port from its project file)', value: stack.ui.url ?? '', hint: 'http://localhost:{{uiPort}}' },
+      { key: 'ui.path', label: 'Where the app lives on its server, put after the port (empty: its baseHref, if any)', value: stack.ui.path ?? '', hint: '/ap-summary/' },
     ];
   }
   if (id.startsWith('api:')) {
@@ -178,6 +180,7 @@ export function withField(stack: Stack, id: string, key: string, value: string):
     else if (key === 'ui.proxyFile') { if (v) ui.proxyFile = v; else { delete ui.proxyFile; delete ui.proxyMode; } }
     else if (key === 'ui.proxyMode') ui.proxyMode = v === 'edit' ? 'edit' : 'override';
     else if (key === 'ui.url') { if (v) ui.url = v; else delete ui.url; }
+    else if (key === 'ui.path') { if (v) ui.path = v.startsWith('/') ? v : `/${v}`; else delete ui.path; }
     return { ...stack, ui };
   }
   if (id.startsWith('api:')) {

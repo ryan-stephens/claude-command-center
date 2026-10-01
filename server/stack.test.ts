@@ -113,6 +113,39 @@ test('a stack run: the picked API on its branch, ready when it says so, the UI o
   }
 });
 
+test('no ui.url: the URL is the served app’s own port and baseHref from its project file, and the title names the app', async () => {
+  const orders = repo('u-orders-api', { 'api.js': API }, 'main');
+  const ui = repo('u-lending-ui', {
+    'package.json': '{}',
+    'apps/deny-withdraw/project.json': JSON.stringify({ name: 'deny-withdraw', targets: { build: { options: { baseHref: '/ap-summary/' } }, serve: { options: { proxyConfig: 'apps/deny-withdraw/proxy.conf.json', port: 4216 } } } }),
+    'apps/deny-withdraw/proxy.conf.json': PROXY,
+    'apps/payoff/project.json': JSON.stringify({ name: 'payoff', targets: { serve: { options: { port: 4220 } } } }),
+  }, 'main');
+  const places = { cwd: ui, repos: { 'orders-api': orders, 'lending-ui': ui } };
+  const base = makeStack();
+  const info = {
+    ...validateStack({ ...base, apis: [base.apis[0]], ui: { repo: 'lending-ui', proxyFile: 'apps/deny-withdraw/proxy.conf.json', steps: ['node_modules\\.bin\\nx.cmd serve deny-withdraw --proxyConfig={{proxy}}'] } }),
+    workspaceId: 'wu', source: '',
+  };
+  const pool = new PortPool([18441, 18445]);
+  const { recipe, opts } = await prepareStackRun(info, { values: { env: 'dev' }, apis: ['orders-api'] }, places, 'cu', join(dir, 'runs-u'), pool);
+  assert.equal(recipe.url, 'http://localhost:4216/ap-summary/');
+  assert.equal(opts.choice, 'dev · orders-api :18441 · deny-withdraw :4216');
+  opts.cleanup?.();
+  // The step names the other app: its port and path.
+  const other = { ...info, ui: { ...info.ui!, steps: ['npx nx serve payoff'] } };
+  const o = await prepareStackRun(other, { values: { env: 'dev' }, apis: [] }, places, 'cu2', join(dir, 'runs-u'), pool);
+  assert.equal(o.recipe.url, 'http://localhost:4220');
+  assert.equal(o.opts.choice, 'dev · UI only · payoff :4220');
+  o.opts.cleanup?.();
+  // A written url wins; ui.path still goes after it.
+  const written = { ...info, ui: { ...info.ui!, url: 'http://localhost:{{uiPort}}', path: '/ap-summary/', steps: ['npx nx serve deny-withdraw --port={{uiPort}}'] } };
+  const w = await prepareStackRun(written, { values: { env: 'dev' }, apis: [] }, places, 'cu3', join(dir, 'runs-u'), pool);
+  assert.equal(w.recipe.url, 'http://localhost:18441/ap-summary/');
+  assert.equal(w.opts.choice, 'dev · UI only · deny-withdraw :18441');
+  w.opts.cleanup?.();
+});
+
 // A stand-in okteto: `okteto up -f <manifest>` reads the manifest's forward and starts the API on
 // that local port, as the real one would forward it. The UI serves its proxy copy on --port.
 const OKTETO = "const a=process.argv;const f=a[a.indexOf('-f')+1];const m=/-\\s*(\\d+):(\\d+)/.exec(require('fs').readFileSync(f,'utf8'));process.env.PORT=m[1];console.log('Forward: '+m[1]+' -> '+m[2]);require(require('path').join(process.cwd(),'api.js'))";

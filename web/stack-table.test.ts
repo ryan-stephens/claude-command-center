@@ -77,7 +77,9 @@ test('fields of each row, and a field changed makes the stack it says', () => {
   assert.deepEqual(fieldsOf(stack, 'template').map((f) => [f.key, f.multiline]), [['api.steps', true], ['api.proxy', true]]);
   assert.deepEqual(fieldsOf(stack, 'api:loans-api').map((f) => [f.key, f.value]), [['values.name', 'loans-api'], ['values.appPort', '8080'], ['values.dir', 'src/LoansApi'], ['values.health', '/self'], ['values.route', 'loans'], ['proxy', '']]);
   assert.equal(fieldsOf(stack, 'api:fees-api').find((f) => f.key === 'values.appPort')!.value, '8081', 'the old port shown as appPort');
-  assert.deepEqual(fieldsOf(stack, 'ui').map((f) => f.key), ['ui.repo', 'ui.steps', 'ui.proxyFile', 'ui.proxyMode', 'ui.url']);
+  assert.deepEqual(fieldsOf(stack, 'ui').map((f) => f.key), ['ui.repo', 'ui.steps', 'ui.proxyFile', 'ui.proxyMode', 'ui.url', 'ui.path']);
+  assert.equal(withField(stack, 'ui', 'ui.path', 'ap-summary/').ui!.path, '/ap-summary/', 'a leading slash is put on');
+  assert.equal(withField(withField(stack, 'ui', 'ui.path', '/x/'), 'ui', 'ui.path', '').ui!.path, undefined, 'empty removes it');
   assert.deepEqual(fieldsOf(stack, 'api:nope'), []);
 
   assert.deepEqual(withField(stack, 'choose', 'choose.env', 'uat, dev, qa').choose, { env: ['uat', 'dev', 'qa'] });
