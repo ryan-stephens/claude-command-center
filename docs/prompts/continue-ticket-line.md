@@ -47,7 +47,9 @@ The owner likes the mock a lot. Keep its look, its words and its keys, including
 
 **Done (§44): type to the card's terminal from the page, and answer its prompts.** Claude Code's channels, with a launcher that presses through the development-channels confirmation. Proven live on this laptop. What's next for "leave the app less" is at the end of §44 (Jira comments and transitions, PR comments inline, builds from TFS).
 
-**Next: prove it at VU.** The owner pastes their stack in (`e`, `Alt+W` to the stack tab), runs `pnpm run doctor`, and tries `t`. The open points are in §42's *Not verified*:
+**Next, chosen by the owner (2026-09-30): a calm, effective UI.** The handoff is `docs/prompts/continue-calm-ui.md`: key hints switchable off in settings, fewer things on screen, then the loop items that still leak out of the app, and the developer-experience list.
+
+**Also: prove it at VU.** The owner pastes their stack in (`e`, `Alt+W` to the stack tab), runs `pnpm run doctor`, and tries `t`. The open points are in §42's *Not verified*:
 - does `okteto up` run without a terminal;
 - the real deployment name;
 - does nx take `--proxyConfig`;
