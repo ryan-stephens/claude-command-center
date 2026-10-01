@@ -178,6 +178,26 @@ export interface CardFolder {
   dir: string;
 }
 
+/** One of a card's worktrees as it is now, for removing it (Shift+X). */
+export interface CardWorktree extends CardFolder {
+  /** The branch it is on; unset when detached (a review's copy of the PR's branch). */
+  branch?: string;
+  /** Files changed and not committed. */
+  changed: boolean;
+  /** Commits no remote branch has. */
+  unpushed: number;
+  /** The folder is gone already (removed by hand). */
+  missing: boolean;
+}
+
+/** The worktrees a card has (folders of its own, not the repos' usual ones). */
+export function ownFolders(c: { folders?: CardFolder[] }): CardFolder[] {
+  return (c.folders ?? []).filter((f) => !samePath(f.dir, f.repo));
+}
+
+/** A worktree that can go without losing anything. */
+export const isClean = (w: Pick<CardWorktree, 'changed' | 'unpushed' | 'missing'>) => w.missing || (!w.changed && !w.unpushed);
+
 export interface Card extends CardDraft {
   id: string;
   /**
@@ -290,14 +310,21 @@ export function cardRepos(c: Pick<Card, 'packet' | 'later'>): string[] {
  * Exactly what Claude gets when context is added to a running card: the hook returns this as
  * additionalContext alongside your next message.
  */
-export function laterText(key: string, items: PacketItem[]): string {
+export function laterText(key: string, items: PacketItem[], c: { folders?: CardFolder[] } = {}): string {
   const repos = items.filter((i) => i.kind === 'repo');
   const notes = items.filter((i) => i.kind === 'note');
   const rest = items.filter((i) => i.kind !== 'repo' && i.kind !== 'note');
   const L = [`# Added to ${key} by cc-control`, '', 'More context for this card, added since it started. Take it into account from here on.'];
   if (repos.length) {
     L.push('', '## More repos you can read and edit');
-    for (const r of repos) L.push(`- ${r.label}: ${r.id}`);
+    // A worktree card's new repo got a worktree on the card's branch: that folder is the one to use.
+    // --add-dir can't be changed after start, so the user runs /add-dir in the tab for edits there.
+    const own = repos.map((r) => ({ r, dir: folderFor(c, r.id) })).filter(({ r, dir }) => !samePath(dir, r.id));
+    for (const r of repos) {
+      const dir = folderFor(c, r.id);
+      L.push(samePath(dir, r.id) ? `- ${r.label}: ${r.id}` : `- ${r.label}: ${dir} (a worktree of ${r.id} on this card’s branch; change it there, not in the usual folder)`);
+    }
+    if (own.length) L.push(`Edits in ${own.length === 1 ? 'that folder' : 'those folders'} will ask until you run ${own.map(({ dir }) => `/add-dir ${dir}`).join(' and ')} in the tab: ask for that first.`);
   }
   if (rest.length) {
     L.push('', '## Also look at');
@@ -349,7 +376,8 @@ export function defaultMessage(key: string, mode: LaunchMode, kind: CardKind = '
 
 /** The mode and branch each kind starts with: QA and review don't make a branch of their own. */
 export function kindDefaults(kind: CardKind, pr?: PrTarget | null): Pick<CardLaunch, 'mode' | 'branch'> {
-  if (kind === 'build') return { mode: 'plan', branch: 'new' };
+  // Development works in worktrees of its own (§54): several cards in one repo never touch each other's files.
+  if (kind === 'build') return { mode: 'plan', branch: 'worktree' };
   // A review stays read-only in plan mode; QA plans its checks first, then sets up data and tests.
   return { mode: 'plan', branch: kind === 'review' && pr ? 'pr' : 'current' };
 }

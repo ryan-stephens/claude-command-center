@@ -342,6 +342,7 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
   const workspaces = useStore((s) => s.workspaces);
   const model = useStore((s) => s.cardModel);
   const user = useStore((s) => s.userModel);
+  const trust = useStore((s) => s.settings.trustWorktrees === true);
   const rows = goRows(c, workspaces, keyName, { pinned: model, user });
   const gi = Math.min(c.gi, rows.length - 1);
   const focused = c.pane === 'go';
@@ -364,12 +365,16 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
                   ))}
                 </div>}
             {r.id === 'kind' && <div className="text-[12.5px] text-faint">{CARD_KINDS.find((k) => k.id === c.kind)!.blurb} <Key k="k" size="sm" inline /> changes it from anywhere on this screen.</div>}
+            {r.id === 'branch' && c.kind === 'build' && <div className="text-[12.5px] text-faint">{c.launch.branch === 'worktree'
+              ? <>Each repo gets a folder of its own next to it ({homeOf(c.packet, c.launch) ? `${homeOf(c.packet, c.launch)!.replace(/[\\/]+$/, '')}-${keyName.toLowerCase()}` : 'repo-card-n'}) on the card’s branch, so other cards in the same repos are never touched. What that costs: a UI’s first start runs its install, and Claude Code asks once in the tab whether to trust the new folder{trust ? ' (your setting marks it trusted first)' : <> (the <Key k="?" size="sm" inline /> <Key k="B" size="sm" inline /> setting can mark it trusted first)</>}. <Key k="⇧X" size="sm" inline /> on the card removes the folders when it is done.</>
+              : c.launch.branch === 'new' ? 'Switches the repo’s usual folder to the new branch. Another card in the same repo would then change the files under this one: pick a worktree for that.'
+              : 'Stays on whatever the repo’s folder is on, and changes it there.'}</div>}
             {r.id === 'branch' && c.kind !== 'build' && <div className="text-[12.5px] text-faint">{c.pr
               ? <>Found <a className="underline hover:text-ink" href={c.pr.url} target="_blank" rel="noreferrer">PR #{c.pr.number} {c.pr.title}</a>: {c.pr.source} → {c.pr.target}. The copy is a detached worktree, so your own checkout stays as it is.</>
               : c.prLooking ? 'Looking for the ticket’s pull request…'
               : c.ticket ? <>No open pull request names {c.ticket.key}{c.prNotes?.length ? `: ${c.prNotes.join('; ')}` : '.'} {c.kind === 'review' ? 'Claude will look for its branch.' : ''}</>
               : 'Pick the ticket first: its pull request is looked up by its key.'}</div>}
-            {r.id === 'where' && <div className="text-[12.5px] text-faint">A Windows Terminal tab runs claude with this context. The first time in a folder it asks whether to trust it: answer in the tab.</div>}
+            {r.id === 'where' && <div className="text-[12.5px] text-faint">A Windows Terminal tab runs claude with this context.{c.launch.branch === 'worktree' && trust ? '' : ' The first time in a folder it asks whether to trust it: answer in the tab.'}</div>}
             {r.id === 'mode' && c.launch.mode === 'auto' && <div className="text-[12.5px] text-faint">Auto isn’t offered on every model{c.launch.model === 'haiku' ? ' (Haiku refuses it)' : ''}.</div>}
             {r.id === 'model' && <div className="text-[12.5px] text-faint">{c.launch.model ? `Starts with --model ${c.launch.model}.` : model ? `The default is ${model}, pinned by this server (CC_CONTROL_MODEL).` : user ? `The default is ${user}, from your Claude Code settings.` : 'Claude Code picks, as in a plain terminal.'} <Key k="m" size="sm" inline /> changes it from anywhere on this screen.</div>}
           </div>

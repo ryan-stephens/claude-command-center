@@ -59,6 +59,9 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Type to it'), 'no channel: no message box');
   assert.deepEqual(labels({ view: 'drawer', ship: 'merge', canDone: true, hasPr: true, bindings: {} }).slice(3, 6), ['Open the PR', 'Merge', 'Done'], 'a card in Ship: o opens the PR, d is done by hand');
   assert.deepEqual(labels({ view: 'drawer', canAdd: true, hasWaiting: true, bindings: {} }).slice(3, 6), ['Run recipe', 'Add context', 'Take back']);
+  assert.deepEqual(labels({ view: 'drawer', hasWorktrees: true, bindings: {} }).slice(-2), ['Worktrees', 'Remove card'], 'a worktree card: Shift+X before Delete');
+  assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Worktrees'));
+  assert.ok(labels({ view: 'board', hasFocus: true, hasWorktrees: true, bindings: {} }).includes('Worktrees'));
   assert.deepEqual(labels({ view: 'drawer', canTry: true, bindings: {} }).slice(3, 5), ['Try it', 'Run recipe']);
   assert.deepEqual(labels({ view: 'drawer', canTry: true, appRunning: true, appUp: true, bindings: {} }).slice(3, 5), ['Stop the app', 'Open the app']);
   assert.ok(labels({ view: 'board', hasFocus: true, canTry: true, bindings: {} }).includes('Try it'));

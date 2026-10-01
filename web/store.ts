@@ -34,6 +34,8 @@ export type Modal =
   | { kind: 'sources' }
   /** Take a card off the Ticket Line. */
   | { kind: 'deleteCard'; id: string }
+  /** Shift+X on a card (or w in the Delete dialog): its worktrees, to remove them with their branch. */
+  | { kind: 'worktrees'; id: string; thenDelete?: boolean }
   /** Write or edit a repo's run recipe (e in a card's drawer). */
   | { kind: 'recipe'; repo: string; workspaceId?: string }
   /** t on a card whose workspace has a stack: pick dev / uat and the APIs to run. */

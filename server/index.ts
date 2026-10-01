@@ -61,7 +61,7 @@ const broker = new PermissionBroker(
 
 const store = new Store();
 const commands = new CommandService(store);
-const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, changed: () => broadcast(cardsMsg()) });
+const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, trustWorktrees: () => store.loadSettings().trustWorktrees === true, changed: () => broadcast(cardsMsg()) });
 
 const tickets = new TicketService(store, () => broadcast(ticketsMsg()));
 
@@ -159,6 +159,7 @@ function cleanSettings(raw: unknown): Settings {
   }
   const h = (raw as Settings)?.keyHints;
   if (h && KEY_HINTS.includes(h)) out.keyHints = h;
+  if ((raw as Settings)?.trustWorktrees === true) out.trustWorktrees = true;
   return out;
 }
 
@@ -416,10 +417,22 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       cards.delete(String(msg.id));
       return;
     case 'card.addContext':
-      cards.addContext(String(msg.id), msg.items, msg.note);
+      await cards.addContext(String(msg.id), msg.items, msg.note);
       send(ws, { type: 'ok', reqId: msg.reqId });
       broadcast(recipesMsg());
       return;
+    case 'card.worktrees':
+      send(ws, { type: 'card.worktrees', reqId: msg.reqId, id: String(msg.id), worktrees: await cards.worktrees(String(msg.id)) });
+      return;
+    case 'card.removeWorktrees': {
+      const id = String(msg.id);
+      // A run from those folders would be left pointing at nothing: it stops first, with its stop: steps.
+      await runs.stop(id, true);
+      const r = await cards.removeWorktrees(id, msg.force === true, msg.thenDelete === true);
+      if (msg.thenDelete === true && !r.kept.length) cards.delete(id);
+      send(ws, { type: 'card.worktreesRemoved', reqId: msg.reqId, id, removed: r.removed, kept: r.kept });
+      return;
+    }
     case 'card.try': {
       const card = cards.get(String(msg.id));
       if (!card) throw new Error('That card is no longer on the line.');

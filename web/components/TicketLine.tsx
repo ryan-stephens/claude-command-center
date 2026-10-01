@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { askOf, cardRepos, fmtK, itemTokens, kindName, memoryPct, modelName, packetText, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
+import { askOf, cardRepos, fmtK, itemTokens, kindName, memoryPct, modelName, ownFolders, packetText, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
 import { homeRepo, repoName, samePath } from '../../shared/workspaces.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { importWorkspace } from '../commands.ts';
@@ -14,7 +14,7 @@ import { openSession } from '../keys.ts';
 import { INBOX_VIEWS, inView, qaLine, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard, ticketFocus } from '../line-model.ts';
-import { answerAsk, boardOf, editRecipe, goToTab, openAddComposer, openChanges, openApp, openCard, openComposer, openNeighbour, saySubmit, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
+import { answerAsk, boardOf, editRecipe, goToTab, openAddComposer, openChanges, openApp, openCard, openComposer, openNeighbour, openWorktrees, saySubmit, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
 import { cardRecipe, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
 import { prLine } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
@@ -513,6 +513,10 @@ function Overview({ card }: { card: Card }) {
           <dt className="text-faint">Terminal tab</dt><dd>Titled <b>{card.key}</b> in Windows Terminal. Type to Claude there.</dd>
           <dt className="text-faint">Folder</dt><dd className="break-all font-mono text-[12.5px]">{card.cwd}</dd>
           {card.branchName && <><dt className="text-faint">Branch</dt><dd className="font-mono text-[12.5px]">{card.branchName}</dd></>}
+          {ownFolders(card).length > 0 && <><dt className="text-faint">Worktrees</dt><dd className="break-all">
+            <span className="font-mono text-[12.5px]">{ownFolders(card).map((f) => repoName(f.dir)).join(', ')}</span>
+            <button className="ml-2 text-faint hover:text-ink" onClick={() => openWorktrees(card.id)} title={card.stage === 'done' ? 'Remove them and their branch' : 'What each holds; removable once the card is done'}><Key k="⇧X" size="sm" inline /> {card.stage === 'done' ? 'remove' : 'look'}</button>
+          </dd></>}
           <dt className="text-faint">Model</dt><dd>{modelName(card.model ?? card.launch.model)}{!card.launch.model && card.model ? <span className="text-faint"> (the default)</span> : null}</dd>
           <dt className="text-faint">Session</dt><dd className="font-mono text-[12.5px]">{card.sessionId ?? 'not linked yet'}</dd>
           <dt className="text-faint">Started</dt><dd>{new Date(card.createdAt).toLocaleString()}</dd>

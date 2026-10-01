@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { branchFor, fmtK, folderFor, homeOf, includedRepos, launchLines, memoryPct, modelFor, modelName, packetText, worktreeFor, wtArg, type CardDraft, type Packet } from './cards.ts';
+import { branchFor, fmtK, folderFor, homeOf, includedRepos, isClean, kindDefaults, laterText, launchLines, memoryPct, modelFor, modelName, ownFolders, packetText, worktreeFor, wtArg, type CardDraft, type Packet } from './cards.ts';
 
 const repo = (id: string, on = true) => ({ kind: 'repo' as const, id, label: id.split('\\').pop()!, on });
 const packet = (over: Partial<Packet> = {}): Packet => ({
@@ -16,6 +16,27 @@ const draft = (over: Partial<CardDraft> = {}): CardDraft => ({
   packet: packet(),
   launch: { home: 'D:\\repos\\web-app', branch: 'new', mode: 'plan', message: 'Plan CARD-3.' },
   ...over,
+});
+
+test('development starts in worktrees; QA and review on what is there', () => {
+  assert.deepEqual(kindDefaults('build'), { mode: 'plan', branch: 'worktree' });
+  assert.deepEqual(kindDefaults('qa'), { mode: 'plan', branch: 'current' });
+  assert.equal(kindDefaults('review', { number: 1, title: '', url: 'http://x', host: 'github', source: 'a', target: 'b', repo: 'r' }).branch, 'pr');
+});
+
+test('a repo added later is handed over as its worktree, with the /add-dir to ask for', () => {
+  const folders = [{ repo: 'D:\\repos\\loans-api', dir: 'D:\\repos\\loans-api-card-4' }, { repo: 'D:\\repos\\shop-ui', dir: 'D:\\repos\\shop-ui' }];
+  const items = [repo('D:\\repos\\loans-api'), repo('D:\\repos\\notes')];
+  const text = laterText('CARD-4', items, { folders });
+  assert.match(text, /- loans-api: D:\\repos\\loans-api-card-4 \(a worktree of D:\\repos\\loans-api on this card’s branch; change it there, not in the usual folder\)/);
+  assert.match(text, /- notes: D:\\repos\\notes\n/);
+  assert.match(text, /until you run \/add-dir D:\\repos\\loans-api-card-4 in the tab/);
+  assert.ok(!laterText('CARD-4', items).includes('/add-dir'), 'no worktrees, no ask');
+  assert.deepEqual(ownFolders({ folders }).map((f) => f.dir), ['D:\\repos\\loans-api-card-4'], 'a folder that is the repo itself isn’t a worktree');
+  assert.equal(isClean({ changed: false, unpushed: 0, missing: false }), true);
+  assert.equal(isClean({ changed: true, unpushed: 0, missing: false }), false);
+  assert.equal(isClean({ changed: false, unpushed: 2, missing: false }), false);
+  assert.equal(isClean({ changed: true, unpushed: 2, missing: true }), true, 'gone already: nothing to lose');
 });
 
 test('included repos: workspace then card layer, skipping ones left out and duplicates', () => {

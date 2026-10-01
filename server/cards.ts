@@ -11,8 +11,8 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  BRANCH_NAME, branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, folderFor, PACKET_KINDS, homeOf, includedRepos, LAUNCH_MODES, laterText, modelFor, packetText, tokens, fmtK, waiting, worktreeFor, wtArg,
-  type BranchChoice, type BootStep, type Card, type CardDraft, type CardFolder, type CardKind, type LaterItem, type LaunchMode, type Packet, type PacketItem, type PrTarget,
+  BRANCH_NAME, branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, folderFor, PACKET_KINDS, homeOf, includedRepos, isClean, LAUNCH_MODES, laterText, modelFor, ownFolders, packetText, tokens, fmtK, waiting, worktreeFor, wtArg,
+  type BranchChoice, type BootStep, type Card, type CardDraft, type CardFolder, type CardKind, type CardWorktree, type LaterItem, type LaunchMode, type Packet, type PacketItem, type PrTarget,
 } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
 import type { Ticket } from '../shared/tickets.ts';
@@ -21,6 +21,7 @@ import { applyEvent, TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { SECRET } from './config.ts';
 import { normalizeFolder } from './fs-browse.ts';
 import { DB_PATH, type Store } from './store.ts';
+import { trustFolders } from './trust.ts';
 
 const HOOK_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-hook.mjs', import.meta.url));
 /** How long a new tab has to report in before the card says something may be wrong. */
@@ -122,7 +123,8 @@ export function cleanDraft(raw: unknown, workspaces: Workspace[]): CardDraft {
   const mode: LaunchMode = LAUNCH_MODES.some((m) => m.id === l.mode) ? l.mode! : 'plan';
   const kind: CardKind = CARD_KINDS.find((k) => k.id === d.kind)?.id ?? 'build';
   const pr = kind === 'build' ? undefined : cleanPr(d.pr, packet);
-  const branch: BranchChoice = l.branch === 'current' || l.branch === 'worktree' ? l.branch : l.branch === 'pr' && pr ? 'pr' : l.branch === 'pr' ? 'current' : 'new';
+  // Anything that isn't a choice the page offers gets the kind's default: a worktree for development, the current branch for QA and review.
+  const branch: BranchChoice = l.branch === 'current' || l.branch === 'worktree' || l.branch === 'new' ? l.branch : l.branch === 'pr' && pr ? 'pr' : kind === 'build' ? 'worktree' : 'current';
   const model = CARD_MODELS.find((m) => m.id === l.model)?.id;
   const ticketKey = str(d.ticketKey, 60).trim();
   return {
@@ -141,13 +143,16 @@ function git(cwd: string, args: string[]): Promise<string> {
 }
 
 /**
- * A worktree card's folders: a worktree of every repo, each on a new `branch`, next to the repo.
- * A folder that isn't the top of a git repo (any folder can be context) is left as it is and named
- * in `skipped`, except the home repo, which must be one. If any worktree can't be made, the ones
- * already made are removed with their branches, so nothing is left half done.
+ * A worktree card's folders: a worktree of every repo, each on `branch`, next to the repo. The
+ * branch is new (made with the first worktree of each repo) unless `onExisting`: a repo added to a
+ * running card joins the card's branch, which that repo may already have (a branch of that name
+ * made by hand) or not. A folder that isn't the top of a git repo (any folder can be context) is
+ * left as it is and named in `skipped`, except the home repo, which must be one. If any worktree
+ * can't be made, the ones already made are removed with their branches, so nothing is left half done.
  */
-export async function makeWorktrees(repos: string[], home: string, key: string, branch: string): Promise<{ folders: CardFolder[]; skipped: string[] }> {
+export async function makeWorktrees(repos: string[], home: string, key: string, branch: string, onExisting = false): Promise<{ folders: CardFolder[]; skipped: string[] }> {
   const folders: CardFolder[] = [];
+  const made: string[] = [];
   const skipped: string[] = [];
   try {
     for (const repo of repos) {
@@ -159,17 +164,56 @@ export async function makeWorktrees(repos: string[], home: string, key: string, 
       }
       const dir = worktreeFor(repo, key);
       if (existsSync(dir)) throw new Error(`${dir} already exists, so the worktree for ${repoName(repo)} can’t go there.`);
-      await git(repo, ['worktree', 'add', dir, '-b', branch]).catch((e: Error) => { throw new Error(`Couldn't make a worktree for ${repoName(repo)}: ${e.message}`); });
+      const has = onExisting && Boolean(await git(repo, ['branch', '--list', branch]).catch(() => ''));
+      await git(repo, ['worktree', 'add', dir, ...(has ? [branch] : ['-b', branch])]).catch((e: Error) => { throw new Error(`Couldn't make a worktree for ${repoName(repo)}: ${e.message}`); });
       folders.push({ repo, dir });
+      if (!has) made.push(repo);
     }
   } catch (e) {
     for (const f of folders) {
       await git(f.repo, ['worktree', 'remove', '--force', f.dir]).catch(() => {});
-      await git(f.repo, ['branch', '-D', branch]).catch(() => {});
+      if (made.includes(f.repo)) await git(f.repo, ['branch', '-D', branch]).catch(() => {});
     }
     throw e;
   }
   return { folders, skipped };
+}
+
+/** A card's worktrees as they are now: what would be lost by removing each. */
+export async function worktreeStates(card: Pick<Card, 'folders'>): Promise<CardWorktree[]> {
+  return Promise.all(ownFolders(card).map(async (f) => {
+    if (!isDir(f.dir)) return { ...f, changed: false, unpushed: 0, missing: true };
+    const branch = await git(f.dir, ['branch', '--show-current']).catch(() => '');
+    const status = await git(f.dir, ['status', '--porcelain']).catch(() => '');
+    // Commits only this branch has (no remote branch, no other local branch): what deleting it loses.
+    const n = await git(f.dir, ['rev-list', '--count', 'HEAD', '--not', '--remotes', ...(branch ? [`--exclude=${branch}`] : []), '--branches']).catch(() => '0');
+    return { ...f, ...(branch ? { branch } : {}), changed: status.length > 0, unpushed: Number(n) || 0, missing: false };
+  }));
+}
+
+/**
+ * Remove a card's worktrees and, for a worktree card, their branch. Only the clean ones go unless
+ * `force`; the rest are returned as `kept`, with their state, for a second look. A folder already
+ * gone is pruned from its repo. The branch goes only once its worktree is gone.
+ */
+export async function removeWorktrees(card: Pick<Card, 'folders' | 'branchName' | 'launch'>, force: boolean): Promise<{ removed: CardWorktree[]; kept: CardWorktree[]; problems: string[] }> {
+  const removed: CardWorktree[] = [];
+  const kept: CardWorktree[] = [];
+  const problems: string[] = [];
+  for (const w of await worktreeStates(card)) {
+    if (!force && !isClean(w)) { kept.push(w); continue; }
+    try {
+      if (w.missing) await git(w.repo, ['worktree', 'prune']);
+      else await git(w.repo, ['worktree', 'remove', '--force', w.dir]);
+      // A review's copy is detached: no branch of the card's to delete. A worktree card's branch is its own.
+      if (card.launch.branch === 'worktree' && card.branchName) await git(w.repo, ['branch', '-D', card.branchName]).catch(() => {});
+      removed.push(w);
+    } catch (e) {
+      problems.push(`${repoName(w.dir)}: ${(e as Error).message}`);
+      kept.push(w);
+    }
+  }
+  return { removed, kept, problems };
 }
 
 /** claude.exe on PATH, so Windows Terminal starts the same one a terminal would. */
@@ -231,6 +275,8 @@ interface CardOpts {
   model?: string;
   /** The model in the user's Claude Code settings, read when a card starts. */
   userModel?: () => string | undefined;
+  /** The setting: mark a card's new worktrees trusted in ~/.claude.json before its tab opens. */
+  trustWorktrees?: () => boolean;
   changed: () => void;
 }
 
@@ -330,6 +376,7 @@ export class CardService {
       if (skipped.length) this.step(card, `Left ${skipped.map(repoName).join(', ')} as ${skipped.length === 1 ? 'it is' : 'they are'}: not a git repo`);
     }
     if (card.launch.branch === 'pr' && card.pr) card.folders = [{ repo: start, dir: card.cwd }];
+    this.trust(card, ownFolders(card).map((f) => f.dir));
 
     card.model = modelFor(card.launch, this.opts.model, this.opts.userModel?.());
     const token = crypto.randomUUID();
@@ -351,6 +398,17 @@ export class CardService {
     this.opts.changed();
     this.waits.set(card.id, setTimeout(() => this.noWord(card.id), HOOK_WAIT_MS));
     return card;
+  }
+
+  /** With the setting on, new worktrees are marked trusted so the tab doesn't stop at Claude Code's prompt. A problem is a boot line, never a failed start. */
+  private trust(card: Card, dirs: string[]): void {
+    if (!dirs.length || !this.opts.trustWorktrees?.()) return;
+    try {
+      const marked = trustFolders(dirs);
+      if (marked.length) this.step(card, `Marked ${marked.length === 1 ? repoName(marked[0]) : `${marked.length} folders`} trusted in ~/.claude.json (your setting)`);
+    } catch (e) {
+      this.step(card, `Couldn’t mark the folder trusted in ~/.claude.json (${(e as Error).message}): answer the trust prompt in the tab`, 'bad');
+    }
   }
 
   /** The card's channel connected (its terminal can be typed into from here) or went away. */
@@ -420,7 +478,7 @@ export class CardService {
     if (giving && later.length) {
       text += `
 
-${laterText(card.key, later)}`;
+${laterText(card.key, later, card)}`;
       const now = Date.now();
       card.later = later.map((i) => (i.sent ? i : { ...i, sent: now }));
     }
@@ -455,14 +513,16 @@ ${laterText(card.key, later)}`;
       next = { ...next, later: next.later!.map((i) => (i.sent ? i : { ...i, sent: now })) };
     }
     if (next !== card) this.save(next);
-    return sending.length ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: laterText(card.key, sending) } } : null;
+    return sending.length ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: laterText(card.key, sending, card) } } : null;
   }
 
   /**
    * Add context to a card that has started: repos, related tickets and your note wait on it until
    * the session takes them (see hookEvent). What it already has is skipped; nothing new is an error.
+   * On a worktree card a new git repo gets a worktree on the card's branch first (and is used from
+   * there); if that can't be made, nothing is added.
    */
-  addContext(id: string, rawItems: unknown, note: unknown): LaterItem[] {
+  async addContext(id: string, rawItems: unknown, note: unknown): Promise<LaterItem[]> {
     const card = this.get(id);
     if (!card) throw new Error('That card is no longer on the line.');
     if (card.stage === 'done') throw new Error(`${card.key} is done.`);
@@ -479,8 +539,44 @@ ${laterText(card.key, later)}`;
     const text = str(note, 8000).trim();
     if (text) add.push({ kind: 'note', id: `note:${now}`, label: `Your note: ${text.length > 60 ? `${text.slice(0, 59)}…` : text}`, text, on: true, at: now });
     if (!add.length) throw new Error(`Nothing new to add: ${card.key} already has all of that.`);
-    this.save({ ...card, later: [...(card.later ?? []), ...add] });
+    const next: Card = { ...card, later: [...(card.later ?? []), ...add] };
+    const newRepos = add.filter((i) => i.kind === 'repo').map((i) => i.id);
+    if (card.launch.branch === 'worktree' && card.branchName && newRepos.length) {
+      const { folders } = await makeWorktrees(newRepos, '', card.key, card.branchName, true);
+      if (folders.length) {
+        next.folders = [...(card.folders ?? []), ...folders];
+        next.boot = [...card.boot, { at: now, text: `Made ${folders.length === 1 ? `a worktree ${repoName(folders[0].dir)}` : `worktrees ${folders.map((f) => repoName(f.dir)).join(', ')}`} on ${card.branchName} (added later: run /add-dir there in the tab)`, state: 'ok' }];
+        this.trust(next, folders.map((f) => f.dir));
+      }
+    }
+    this.save(next);
     return add;
+  }
+
+  /** The card's worktrees as they are now (Shift+X). */
+  worktrees(id: string): Promise<CardWorktree[]> {
+    const card = this.get(id);
+    if (!card) throw new Error('That card is no longer on the line.');
+    return worktreeStates(card);
+  }
+
+  /**
+   * Remove a card's worktrees (Shift+X, or the Delete dialog's w). A card still in flight keeps
+   * them unless it is being deleted: its session works in them. The clean ones go; the others need
+   * `force`, after the dialog has shown what they hold.
+   */
+  async removeWorktrees(id: string, force: boolean, deleting = false): Promise<{ removed: CardWorktree[]; kept: CardWorktree[] }> {
+    const card = this.get(id);
+    if (!card) throw new Error('That card is no longer on the line.');
+    if (card.stage !== 'done' && !deleting) throw new Error(`${card.key} isn’t done: its session works in those folders. Remove them with the card (Delete, then w), or once it is done.`);
+    const { removed, kept, problems } = await removeWorktrees(card, force);
+    if (removed.length) {
+      const gone = new Set(removed.map((w) => w.dir));
+      const text = `Removed ${removed.map((w) => repoName(w.dir)).join(', ')}${card.launch.branch === 'worktree' && card.branchName ? ` and the branch ${card.branchName}` : ''}`;
+      this.save({ ...card, folders: (card.folders ?? []).filter((f) => !gone.has(f.dir)), boot: [...card.boot, { at: Date.now(), text, state: 'ok' }] });
+    }
+    if (problems.length) throw new Error(`Couldn’t remove ${problems.join('; ')}`);
+    return { removed, kept };
   }
 
   /** Take back something that is still waiting on the card. */

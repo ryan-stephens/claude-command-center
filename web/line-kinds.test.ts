@@ -38,7 +38,7 @@ test('k cycles the kind; the mode, branch, message and notes follow, and what yo
   assert.equal(goRows(c, [W], 'WSS-3')[0].opts[goRows(c, [W], 'WSS-3')[0].at], 'Code review');
   c = pickOption(c, 'kind', 0, [W], 'WSS-3');
   assert.equal(c.kind, 'build');
-  assert.equal(c.launch.branch, 'new');
+  assert.equal(c.launch.branch, 'worktree');
 });
 
 test('a chosen kind sticks when a ticket is picked; otherwise the ticket decides', () => {

@@ -29,7 +29,7 @@ test('a draft needs a title and a real repo; unknown workspaces and modes fall b
   assert.deepEqual(d.packet.card, [], 'unknown item kinds are dropped');
   assert.equal(d.launch.home, dir, 'the home falls back to an included repo');
   assert.equal(d.launch.mode, 'plan', 'never a mode the page did not offer');
-  assert.equal(d.launch.branch, 'new');
+  assert.equal(d.launch.branch, 'worktree', 'development works in worktrees unless the page said otherwise');
   assert.equal(d.launch.message, 'Plan it');
 });
 
@@ -115,18 +115,18 @@ test('hook events move the linked card; events from other sessions are ignored',
 
 type HookOut = { hookSpecificOutput: { hookEventName: string; additionalContext: string } } | null;
 
-test('context added later waits on the card and goes with the next message typed in its tab', () => {
+test('context added later waits on the card and goes with the next message typed in its tab', async () => {
   const card = seed();
   cards.sessionStart(card.id, 'secret-token', { session_id: 'tab-session-3', source: 'startup' });
   const other = mkdtempSync(join(tmpdir(), 'cc-cards-more-'));
   try {
-    const added = cards.addContext(card.id, [
+    const added = await cards.addContext(card.id, [
       { kind: 'repo', id: other, label: 'x', on: true },
       { kind: 'repo', id: dir, label: 'x', on: true },
       { kind: 'ticket', id: 'ticket:SHOP-160', label: 'Related ticket: SHOP-160 Tax', text: 'SHOP-160 Tax\nRound it.', on: true },
     ], '  Use the guest_cart flag.  ');
     assert.deepEqual(added.map((i) => i.kind), ['repo', 'ticket', 'note'], 'a repo the card already has is skipped');
-    assert.throws(() => cards.addContext(card.id, [{ kind: 'repo', id: other, label: 'x', on: true }], ''), /Nothing new/);
+    await assert.rejects(cards.addContext(card.id, [{ kind: 'repo', id: other, label: 'x', on: true }], ''), /Nothing new/);
 
     assert.equal(cards.hookEvent(card.id, 'secret-token', 'PreToolUse', { session_id: 'tab-session-3', tool_name: 'Read' }), null, 'only a typed message takes it');
     const out = cards.hookEvent(card.id, 'secret-token', 'UserPromptSubmit', { session_id: 'tab-session-3', prompt: 'go on' }) as HookOut;
@@ -149,10 +149,10 @@ test('context added later waits on the card and goes with the next message typed
   }
 });
 
-test('what waits before the session links goes with the packet; waiting items can be taken back', () => {
+test('what waits before the session links goes with the packet; waiting items can be taken back', async () => {
   const card = seed();
-  const [note] = cards.addContext(card.id, [], 'First note');
-  cards.addContext(card.id, [], 'Second note');
+  const [note] = await cards.addContext(card.id, [], 'First note');
+  await cards.addContext(card.id, [], 'Second note');
   cards.withdraw(card.id, note.id);
   assert.deepEqual(cards.get(card.id)!.later!.map((i) => i.text), ['Second note']);
   const out = cards.sessionStart(card.id, 'secret-token', { session_id: 'tab-session-5', source: 'startup' }) as HookOut;

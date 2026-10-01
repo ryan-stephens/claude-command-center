@@ -1,6 +1,6 @@
 // WebSocket protocol shared by server and web. Plain types only (erasable TS, runs under Node type stripping).
 
-import type { Card, CardDraft, PacketItem, PrTarget } from './cards.ts';
+import type { Card, CardDraft, CardWorktree, PacketItem, PrTarget } from './cards.ts';
 import type { CardRun, RunRecipe } from './recipes.ts';
 import type { ShipPlan, ShipRequest } from './ship.ts';
 import type { Stack, StackApiRow, StackChoice } from './stack.ts';
@@ -14,7 +14,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
 
-export const PROTOCOL = 16;
+export const PROTOCOL = 17;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -242,6 +242,8 @@ export interface Settings {
   bindings?: Record<string, string[]>;
   /** Key hints on the screens (web/hints.ts). Unset: always. */
   keyHints?: KeyHints;
+  /** Mark a card's new worktrees trusted in ~/.claude.json before its tab opens, so Claude Code doesn't ask. Unset: off. */
+  trustWorktrees?: boolean;
 }
 
 // ---- Command board ---------------------------------------------------------
@@ -392,7 +394,11 @@ export type ClientMsg =
   /** Find the pull request for a ticket in these repos (QA and review cards). Answered with pr.found. Read-only. */
   | { type: 'card.findPr'; reqId: string; key: string; repos: string[] }
   /** A QA or review card is finished with: it goes to Done. */
-  | { type: 'card.done'; id: string };
+  | { type: 'card.done'; id: string }
+  /** The card's worktrees as they are now (Shift+X). */
+  | { type: 'card.worktrees'; reqId: string; id: string }
+  /** Remove them (and their branch): only the clean ones unless `force`; `thenDelete` takes the card off the line after. */
+  | { type: 'card.removeWorktrees'; reqId: string; id: string; force?: boolean; thenDelete?: boolean };
 
 export type ServerMsg =
   /** Always the first message on a connection. */
@@ -430,6 +436,8 @@ export type ServerMsg =
   /** Every card on the Ticket Line, on connect and whenever one changes. */
   | { type: 'ship.plan'; reqId: string; plan: ShipPlan }
   | { type: 'card.changes'; reqId: string; changes: Changes }
+  | { type: 'card.worktrees'; reqId: string; id: string; worktrees: CardWorktree[] }
+  | { type: 'card.worktreesRemoved'; reqId: string; id: string; removed: CardWorktree[]; kept: CardWorktree[] }
   /** The picker's rows for a card's stack, and the APIs to tick when nothing was picked before. */
   | { type: 'stack.plan'; reqId: string; rows: StackApiRow[]; suggested: string[] }
   /** Run recipes by repo path: the library's, the workspaces' and the cards' repos. */

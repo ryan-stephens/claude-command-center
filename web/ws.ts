@@ -139,6 +139,16 @@ export async function findPr(key: string, repos: string[]): Promise<Extract<Serv
 }
 
 /** Try it: run the card's recipe, or its workspace's stack with what was picked. Rejects with the server's reason (no recipe, folder gone). */
+/** Shift+X: the card's worktrees as they are now. */
+export async function cardWorktrees(id: string): Promise<Extract<ServerMsg, { type: 'card.worktrees' }>> {
+  return await request((reqId) => ({ type: 'card.worktrees', reqId, id }), 60_000) as Extract<ServerMsg, { type: 'card.worktrees' }>;
+}
+
+/** Remove them (the clean ones, or all with `force`), and the card too when asked. */
+export async function removeCardWorktrees(id: string, force: boolean, thenDelete: boolean): Promise<Extract<ServerMsg, { type: 'card.worktreesRemoved' }>> {
+  return await request((reqId) => ({ type: 'card.removeWorktrees', reqId, id, force, thenDelete }), 120_000) as Extract<ServerMsg, { type: 'card.worktreesRemoved' }>;
+}
+
 export async function tryCard(id: string, choice?: StackChoice): Promise<void> {
   await request((reqId) => ({ type: 'card.try', reqId, id, ...(choice ? { choice } : {}) }), 60_000);
 }
@@ -350,6 +360,8 @@ function receive(msg: ServerMsg): void {
     case 'card.started':
     case 'ship.plan':
     case 'card.changes':
+    case 'card.worktrees':
+    case 'card.worktreesRemoved':
     case 'tickets.transitions':
     case 'stack.plan':
       return; // answered to the screen that asked, which waits on it

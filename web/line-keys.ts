@@ -3,7 +3,7 @@
 // expanding a session. Every key here has a row in LINE_SECTIONS (the ? overlay) and in
 // lineLegendFor (the bar at the bottom).
 
-import { askOf, cardRepos, waiting } from '../shared/cards.ts';
+import { askOf, cardRepos, ownFolders, waiting } from '../shared/cards.ts';
 import { cardRecipe } from '../shared/recipes.ts';
 import type { StackChoice } from '../shared/stack.ts';
 import { repoName } from '../shared/workspaces.ts';
@@ -47,7 +47,8 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['e (a card)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo, the whole workspace, or the workspace’s stack of APIs and UI)'],
       ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket; on a card in Ship, merge it. On a QA or review card: its report (Enter copies, j posts it on the Jira ticket and m moves the ticket, each after you confirm; o opens the PR, d moves the card to Done)'],
       ['d (a card in Ship)', 'Done: the PR was merged or closed by hand, or the host isn’t one Ship can follow'],
-      ['Delete', 'Take the card off the line (its terminal session keeps running)'],
+      ['Shift+X (a card)', 'Worktrees: the folders the card made, with what each still holds; on a Done card, remove them and their branch (Enter the clean ones, f all of them)'],
+      ['Delete', 'Take the card off the line (its terminal session keeps running); w there removes its worktrees too'],
     ],
   },
   {
@@ -521,6 +522,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
       return true;
     }
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;
+    case 'X': if (s.line.drawer) openWorktrees(s.line.drawer); return true;
     case 'Enter': if (s.line.drawer) focusSay(s.line.drawer); return true;
     case 'y': case 'n': if (s.line.drawer) answerAsk(s.line.drawer, e.key === 'y' ? 'allow' : 'deny'); return true;
     case 'g': if (s.line.drawer) goToTab(s.line.drawer); return true;
@@ -595,6 +597,7 @@ function boardKeys(e: KeyboardEvent): boolean {
     case 'C': openComposer(null, true); return true;
     case 'n': flash('n starts work on a ticket in the Inbox; c makes a card without one'); return true;
     case 'Delete': if (focused) set({ modal: { kind: 'deleteCard', id: focused } }); return true;
+    case 'X': if (focused) openWorktrees(focused); else flash('Pick a card first'); return true;
     case 'Escape': if (s.line.q) set({ line: { ...s.line, q: '' } }); return true;
   }
   return false;
@@ -617,6 +620,14 @@ export function saySubmit(id: string): void {
 }
 
 /** y / n on an open card: answer the permission prompt its terminal relayed. */
+/** Shift+X: the card's worktrees, to remove them (with their branch) once the card is done. */
+export function openWorktrees(id: string, thenDelete = false): void {
+  const card = get().cards.find((c) => c.id === id);
+  if (!card) return;
+  if (!ownFolders(card).length) { flash(`${card.key} has no worktrees: it works in ${card.cwd ? repoName(card.cwd) : 'its repo'}’s own folder`); return; }
+  set({ modal: { kind: 'worktrees', id, ...(thenDelete ? { thenDelete } : {}) } });
+}
+
 /** D: what the card changed, file by file with the diffs, without leaving for an editor. */
 export function openChanges(id: string): void {
   const card = get().cards.find((c) => c.id === id);

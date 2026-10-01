@@ -11,14 +11,22 @@ import { Key } from './ui.tsx';
  * B: key hints (the first row: Enter, Space or ← → cycle it), then the rebindable shortcuts:
  * ↑↓ pick, Enter then press the new combo, Backspace resets to default.
  */
+/** The settings rows above the shortcuts: key hints, then trusting worktrees. */
+const SETTING_ROWS = 2;
+
 export function BindingsDialog() {
   const overrides = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
   const hints = useStore((s) => s.settings.keyHints ?? 'always');
-  // Row 0 is the hints setting; the actions follow.
+  const trust = useStore((s) => s.settings.trustWorktrees === true);
+  // Rows 0 and 1 are settings; the actions follow.
   const [index, setIndex] = useState(0);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState('');
-  const rows = ACTIONS.length + 1;
+  const rows = ACTIONS.length + SETTING_ROWS;
+  const toggleTrust = () => {
+    send({ type: 'settings.set', settings: { ...get().settings, trustWorktrees: !trust } });
+    flash(trust ? 'New worktrees: Claude Code asks to trust them in the tab' : 'New worktrees: marked trusted before the tab opens');
+  };
 
   function save(id: ActionId, combos: string[] | undefined) {
     const next = { ...overrides };
@@ -29,7 +37,7 @@ export function BindingsDialog() {
 
   function onKeyDown(e: ReactKeyboardEvent) {
     e.preventDefault();
-    const action = ACTIONS[index - 1];
+    const action = ACTIONS[index - SETTING_ROWS];
     if (capturing && action) {
       if (e.key === 'Escape') { setCapturing(false); setError(''); return; }
       const combo = comboOf(e.nativeEvent);
@@ -45,8 +53,8 @@ export function BindingsDialog() {
     switch (e.key) {
       case 'ArrowDown': setIndex(Math.min(rows - 1, index + 1)); break;
       case 'ArrowUp': setIndex(Math.max(0, index - 1)); break;
-      case 'ArrowLeft': case 'ArrowRight': case ' ': if (index === 0) cycleHints(); break;
-      case 'Enter': if (index === 0) cycleHints(); else { setCapturing(true); setError(''); } break;
+      case 'ArrowLeft': case 'ArrowRight': case ' ': if (index === 0) cycleHints(); else if (index === 1) toggleTrust(); break;
+      case 'Enter': if (index === 0) cycleHints(); else if (index === 1) toggleTrust(); else { setCapturing(true); setError(''); } break;
       case 'Backspace':
       case 'Delete': if (action) { save(action.id, undefined); flash(`${action.label}: back to default`); } break;
       case 'Escape': set({ modal: { kind: 'help' } }); break;
@@ -65,8 +73,16 @@ export function BindingsDialog() {
             <span className="font-semibold">{HINTS_LABEL[hints]}</span>
             <span className="text-xs text-faint">always · on hover · off</span>
           </li>
+          <li onClick={() => { setIndex(1); toggleTrust(); }} className={`grid gap-0.5 rounded-xl px-3 py-2 text-sm ${index === 1 ? 'is-focus bg-raise' : ''}`}>
+            <div className="flex items-center gap-3">
+              <span className="grow text-sub">Trust a card’s new worktrees in Claude Code</span>
+              <span className="font-semibold">{trust ? 'On' : 'Off'}</span>
+              <span className="text-xs text-faint">on · off</span>
+            </div>
+            <span className="text-xs text-faint">On: before a worktree card’s tab opens, cc-control sets <span className="font-mono">projects["&lt;folder&gt;"].hasTrustDialogAccepted = true</span> for each new folder in <span className="font-mono">~/.claude.json</span>, Claude Code’s own file, so the tab doesn’t stop at “trust this folder?”. Nothing else in that file is touched. Off: answer the prompt in the tab.</span>
+          </li>
           {ACTIONS.map((a, i) => {
-            const at = i + 1;
+            const at = i + SETTING_ROWS;
             const custom = Boolean(overrides[a.id]);
             return (
               <li key={a.id} onClick={() => setIndex(at)} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${at === index ? 'is-focus bg-raise' : ''}`}>
@@ -80,7 +96,7 @@ export function BindingsDialog() {
           })}
         </ul>
         {error && <p className="mt-2 text-sm text-bad">{error}</p>}
-        <DialogKeys items={[['↑ ↓', 'choose'], ['Enter', 'change, then press the new keys (on the first row: next hints setting)'], ['Backspace', 'back to default'], ['Esc', 'back']]} />
+        <DialogKeys items={[['↑ ↓', 'choose'], ['Enter', 'change, then press the new keys (on the settings rows: the next value)'], ['Backspace', 'back to default'], ['Esc', 'back']]} />
       </div>
     </Overlay>
   );

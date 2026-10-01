@@ -30,14 +30,15 @@ Lessons from earlier sessions:
 - Don't trim `git status --porcelain` output: its leading spaces are part of the format.
 - The Bash tool's heredocs and `sed` mangle backslashes and regexes. Write edit scripts and tests with the Write tool, or use Edit.
 - Playwright: `press('?')` doesn't open help; use Shift+Slash. Check for `[role=dialog]`, not page text.
-- A card started in a folder Claude Code hasn't trusted (any new worktree) stops at the trust prompt in its tab.
+- A card started in a folder Claude Code hasn't trusted (any new worktree) stops at the trust prompt in its tab, unless the *Trust a card's new worktrees* setting (`?` `B`) is on.
 - Process kills of terminal tabs from tests are blocked. Tell me which tabs to close.
 - Cards without a `sessionId` hide the Try it section; seed test cards with one.
 
 ## Where this stands (2026-10-01)
 - §42: a workspace **stack** says how one API starts on Okteto and how the UI starts on a proxy copy; `t` picks the env and the APIs (changed ones ticked).
 - §52: `wait:http:<port>/<path>` marks a step ready when its address answers below 500 (Kestrel's "Now listening on" can be hidden by the app's logging, and `okteto up` opens the port early).
-- §53: a *New worktree* card gets a worktree of **every** repo in its context on the card's branch (`loans-api` → `loans-api-card-4`), Claude gets them with `--add-dir`, and Try it, the picker and `{{branch}}` use them. Ship is still one repo (the home repo's worktree). Worktrees aren't cleaned up. A repo added later with `c` doesn't get one.
+- §53: a *New worktree* card gets a worktree of **every** repo in its context on the card's branch (`loans-api` → `loans-api-card-4`), Claude gets them with `--add-dir`, and Try it, the picker and `{{branch}}` use them. Ship is still one repo (the home repo's worktree).
+- §54 milestone 1 (done 2026-10-01): worktrees are the Develop default; `c` with a repo makes a worktree on the card's branch; `Shift+X` (and `w` in the Delete dialog) removes a card's worktrees and branch, never silently; a setting marks new worktrees trusted in `~/.claude.json`. **Milestone 2 is next:** several cards up at once (ports picked per run, `forward:{{port}}` on the `okteto up` line, `{{deployment}}`).
 - Two cards can't run the same API at once: every run of an API wants the same forwarded port, and the UI's port is fixed in its start command.
 
 ## The goal
@@ -58,4 +59,4 @@ Keep each piece swappable (§35): Okteto is one way to run an API; a plain `dotn
 
 Before calling something done, verify it for real (a scripted walkthrough on the isolated server), and say what was only tried against stand-ins. The real Okteto, kubectl and the team's tooling are on the VU laptop; write what I should check there in a short "To check at VU" list at the end of each PLAN section.
 
-Start by reading, then give me the §54 plan and wait.
+Start by reading. §54 is written and agreed, and milestone 1 is built: carry on with milestone 2 as §54 lays it out (the owner's Okteto facts are in it), verifying with two seeded cards on one stand-in stack running at once.

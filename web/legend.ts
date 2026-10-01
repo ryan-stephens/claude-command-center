@@ -110,6 +110,8 @@ export interface LineLegendInput {
   canDone?: boolean;
   /** It has a pull request to open (o, when no app is up). */
   hasPr?: boolean;
+  /** A card (focused or open) has worktrees of its own (Shift+X lists them, removes them when it is done). */
+  hasWorktrees?: boolean;
   /** Open card: its terminal can be typed into from here (Enter), and it is asking something y / n can answer. */
   canSay?: boolean;
   asking?: boolean;
@@ -180,6 +182,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       ...(x.canAdd ? [{ keys: ['c'], label: 'Add context', tone: 'acc' as const }] : []),
       ...(x.hasWaiting ? [{ keys: ['x'], label: 'Take back' }] : []),
       ...(x.hasSession ? [{ ...full, label: 'Its session' }] : []),
+      ...(x.hasWorktrees ? [{ keys: ['⇧X'], label: 'Worktrees' }] : []),
       { keys: ['Delete'], label: 'Remove card' },
     ];
   }
@@ -194,6 +197,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     { keys: ['1–9', '0'], label: 'Workspace / all' },
     { keys: ['/'], label: 'Filter' },
     ...(x.filtered ? [{ keys: ['Esc'], label: 'Clear filter' }] : []),
+    ...(x.hasFocus && x.hasWorktrees ? [{ keys: ['⇧X'], label: 'Worktrees' }] : []),
     ...(x.hasFocus ? [{ keys: ['Delete'], label: 'Remove' }] : []),
     ...WORKSPACE_KEYS,
   ];

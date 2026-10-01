@@ -9,10 +9,11 @@ import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
 import { HINTS_LABEL } from '../hints.ts';
 import { cycleHints, keymap, openSession } from '../keys.ts';
-import { deleteCard, runWorkspaceAction, updateComposer } from '../line-keys.ts';
+import { deleteCard, openWorktrees, runWorkspaceAction, updateComposer } from '../line-keys.ts';
 import { addFolder } from '../line-model.ts';
-import { get, NO_BINDINGS, sessionById, set, setFilter as showWorkspace, useStore, type RepoTarget, type WorkspaceAction } from '../store.ts';
-import { createSession, saveRecipe, saveStack, send, setSources } from '../ws.ts';
+import { isClean, ownFolders, type CardWorktree } from '../../shared/cards.ts';
+import { flash, get, NO_BINDINGS, sessionById, set, setFilter as showWorkspace, useStore, type RepoTarget, type WorkspaceAction } from '../store.ts';
+import { cardWorktrees, createSession, removeCardWorktrees, saveRecipe, saveStack, send, setSources } from '../ws.ts';
 import { BindingsDialog } from './BindingsDialog.tsx';
 import { ChangesSheet } from './ChangesSheet.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
@@ -46,6 +47,7 @@ export function Dialogs() {
     case 'repoRemove': return <RepoRemover target={modal.target} />;
     case 'sources': return <SourcesDialog />;
     case 'deleteCard': return <DeleteCardDialog id={modal.id} />;
+    case 'worktrees': return <WorktreesDialog id={modal.id} thenDelete={modal.thenDelete === true} />;
     case 'recipe': return <RecipeDialog repo={modal.repo} workspaceId={modal.workspaceId} />;
     case 'tryPick': return <TryPick id={modal.id} />;
     case 'ship': return <ShipSheet id={modal.id} />;
@@ -532,10 +534,12 @@ function DeleteWorkspaceDialog({ id }: { id: string }) {
 
 function DeleteCardDialog({ id }: { id: string }) {
   const card = useStore((s) => s.cards.find((c) => c.id === id));
+  const worktrees = card ? ownFolders(card) : [];
   const doIt = () => { deleteCard(id); close(); };
   useDialogKeys((e) => {
     const k = e.key.toLowerCase();
     if (k === 'y' || k === 'enter') doIt();
+    else if (k === 'w' && worktrees.length) openWorktrees(id, true);
     else if (k === 'n' || k === 'escape') close();
     else return false;
     return true;
@@ -544,10 +548,78 @@ function DeleteCardDialog({ id }: { id: string }) {
     <Overlay label="Remove card">
       <DialogTitle>Take {card ? `${card.key} ${card.title}` : 'this card'} off the line?</DialogTitle>
       <p className="text-sub">Only the card goes. Its terminal tab, session, branch and changes stay as they are.</p>
+      {worktrees.length > 0 && <p className="mt-2 text-sub">Its {worktrees.length === 1 ? 'worktree' : `${worktrees.length} worktrees`} ({worktrees.map((f) => repoName(f.dir)).join(', ')}) stay too. <Key k="w" size="sm" inline /> shows what each holds and removes them with the card.</p>}
       <div className="mt-5 flex justify-end gap-2.5">
         <button className="btn" onClick={close}>Keep it<Key k="N" size="sm" /></button>
+        {worktrees.length > 0 && <button className="btn" onClick={() => openWorktrees(id, true)}>Worktrees too<Key k="w" size="sm" /></button>}
         <button className="btn btn-primary" onClick={doIt}>Remove<Key k="Y" size="sm" tone="ghost" /></button>
       </div>
+    </Overlay>
+  );
+}
+
+/**
+ * Shift+X on a card (or w in the Delete dialog): its worktrees, what each still holds, and
+ * removing them with their branch. Clean ones go on Enter; ones with uncommitted or unpushed work
+ * need f, after this has said what would be lost. A card still in flight only shows them.
+ */
+function WorktreesDialog({ id, thenDelete }: { id: string; thenDelete: boolean }) {
+  const card = useStore((s) => s.cards.find((c) => c.id === id));
+  const [rows, setRows] = useState<CardWorktree[] | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const canRemove = Boolean(card && (card.stage === 'done' || thenDelete));
+  useEffect(() => {
+    let on = true;
+    cardWorktrees(id).then((r) => { if (on) setRows(r.worktrees); }, (e: Error) => { if (on) setError(e.message); });
+    return () => { on = false; };
+  }, [id]);
+  const dirty = rows?.filter((w) => !isClean(w)) ?? [];
+  const clean = rows?.filter(isClean) ?? [];
+  function remove(force: boolean) {
+    if (!rows || busy || !canRemove) return;
+    if (!force && !clean.length) { flash(dirty.length ? 'They all hold work: f removes them anyway' : 'Nothing to remove'); return; }
+    setBusy(true);
+    removeCardWorktrees(id, force, thenDelete).then((r) => {
+      if (thenDelete && !r.kept.length) { deleteCard(id); close(); flash(`Removed ${r.removed.length === 1 ? 'the worktree' : `${r.removed.length} worktrees`} and ${card?.key ?? 'the card'}`); return; }
+      flash(r.removed.length ? `Removed ${r.removed.map((w) => repoName(w.dir)).join(', ')}` : 'Nothing removed');
+      if (r.kept.length) { setRows(r.kept); setBusy(false); } else close();
+    }, (e: Error) => { setError(e.message); setBusy(false); });
+  }
+  useDialogKeys((e) => {
+    const k = e.key.toLowerCase();
+    if (k === 'enter') remove(false);
+    else if (k === 'f') remove(true);
+    else if (k === 'escape') close();
+    else return false;
+    return true;
+  });
+  const what = (w: CardWorktree) => w.missing ? 'already gone' : [w.changed ? 'uncommitted changes' : '', w.unpushed ? `${w.unpushed} unpushed commit${w.unpushed === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ') || 'clean';
+  return (
+    <Overlay label="Worktrees" wide>
+      <DialogTitle>{card?.key ?? 'The card'}’s worktrees{thenDelete ? ', then the card' : ''}</DialogTitle>
+      {error && <p className="mb-3 rounded-lg bg-bad-bg px-3 py-2 text-sm text-bad" role="alert">{error}</p>}
+      {!rows && !error && <p className="text-sm text-faint">Looking at each folder…</p>}
+      {rows && (
+        <ul className="grid gap-1.5 text-sm">
+          {rows.map((w) => (
+            <li key={w.dir} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-line bg-raise px-3 py-2">
+              <div className="min-w-0">
+                <div className="truncate font-mono text-[12.5px]" title={w.dir}>{w.dir}</div>
+                <div className="text-xs text-faint">of {repoName(w.repo)}{w.branch ? ` · on ${w.branch}` : ' · detached'}</div>
+              </div>
+              <span className={`whitespace-nowrap rounded-full px-2 text-[11px] font-semibold ${isClean(w) ? 'bg-ok-bg text-ok' : 'bg-attn-bg text-attn'}`}>{what(w)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {rows && (
+        <p className="mt-3 text-sm text-sub">
+          {!canRemove ? <>{card?.key} is still in flight and its session works in these folders. They can go once it is Done, or with the card (<Key k="Delete" size="sm" inline /> then <Key k="w" size="sm" inline />).</>
+            : <>Removing a worktree deletes its folder{card?.launch.branch === 'worktree' && card.branchName ? <> and the branch <span className="font-mono text-[12.5px]">{card.branchName}</span> in that repo</> : null}. {dirty.length ? <b>{dirty.length === 1 ? 'One holds' : `${dirty.length} hold`} work that isn’t anywhere else; <Key k="f" size="sm" inline /> removes {dirty.length === 1 ? 'it' : 'them'} anyway.</b> : 'Nothing here is unsaved.'}</>}
+        </p>
+      )}
+      <DialogKeys items={canRemove ? [['Enter', `remove the clean ${clean.length === 1 ? 'one' : 'ones'}`], ['f', 'remove all of them, work and all'], ['Esc', 'keep them']] : [['Esc', 'back']]} />
     </Overlay>
   );
 }

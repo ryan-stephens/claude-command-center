@@ -499,11 +499,12 @@ export function goRows(c: Composer, workspaces: Workspace[], key: string, models
 }
 
 /**
- * The Branch row's choices. Development makes its own branch; QA and review work on what is
- * there: the current checkout, or a copy of the repo on the pull request's branch once it is found.
+ * The Branch row's choices. Development works in worktrees of its own (the default), or on a new
+ * branch in the repo's usual folder, or where the repo is; QA and review work on what is there:
+ * the current checkout, or a copy of the repo on the pull request's branch once it is found.
  */
 export function branchOpts(c: Composer, key: string): { id: BranchChoice; name: string; off?: boolean }[] {
-  if (c.kind === 'build') return [{ id: 'new', name: `New: ${branchFor(key, c.title || 'new')}` }, { id: 'current', name: 'Current branch' }, { id: 'worktree', name: includedRepos(c.packet).length > 1 ? 'New worktree of each repo' : 'New worktree' }];
+  if (c.kind === 'build') return [{ id: 'worktree', name: includedRepos(c.packet).length > 1 ? 'New worktree of each repo' : 'New worktree' }, { id: 'current', name: 'Current branch' }, { id: 'new', name: `New branch here: ${branchFor(key, c.title || 'new')}` }];
   return [
     { id: 'current', name: 'Current branch' },
     c.pr ? { id: 'pr', name: `PR #${c.pr.number}’s branch, in a copy` } : { id: 'pr', name: c.prLooking ? 'PR’s branch (looking…)' : 'PR’s branch (none found)', off: true },
