@@ -1537,3 +1537,82 @@ Jira has no standard field for a QA reviewer. Teams add a custom one, and its id
 - A worktree for a repo added later with `c`: it is used from its usual folder.
 - Worktrees as a workspace's default for new cards, and removing a card's worktrees from the app when it's done.
 - A warning before Try it when a repo it will run from its usual folder is on a different branch from the card's.
+
+## 54. A card is a unit of work: worktrees for everything, several cards up at once, a stack that needs no fiddling
+
+2026-10-01, the owner (`docs/prompts/continue-unit-of-work.md`): one ticket may touch the UI, several APIs and more; all of it should be worked on in that card's own worktrees, spun up locally from them, with several cards tried at once even when they share the same UI and APIs, and with as little stack setup as possible: "they shouldn't need to be changing any stack settings/configs frequently".
+
+**Plan, not yet built.** Five milestones, each its own commit with its own verification and its own *To check at VU* list. Costs are stated per milestone; the VU laptop is where Okteto, kubectl and the team's PowerShell command live, so anything touching them is tried against stand-ins here and checked there.
+
+### Where it stands
+- §53: a *New worktree* card gets a worktree of every repo in its context; Try it, the picker and `{{branch}}` use them. But *New branch* is still the Develop default (`kindDefaults`), a repo added with `c` runs from its usual folder, Ship is one repo, and nothing removes worktrees.
+- §42/§52: every run of an API wants the same forwarded port (`values.port`), and the UI's port sits in its start command, so two cards can't run the same API or UI at once.
+- §51: the stack is hand-written JSON from a draft; ports, routes and commands are typed in and shared through the workspace file.
+
+### Milestone 1: worktrees are the way a card works, not an option
+What changes for a user:
+- A Develop card defaults to *New worktree of each repo*. *Current branch* stays for QA, review and a quick look, and *New branch* stays as a choice, no longer the default.
+- A repo added later with `c` gets a worktree on the card's branch too (`makeWorktrees` for that one repo, added to `card.folders`), and it shows in the `t` picker. Claude is told where it is in the delivered context; with the channel on, cc-control also types `/add-dir <worktree>` into the tab, since `--add-dir` can't be changed after start. Without the channel the context says to run it.
+- When a card reaches Done or is deleted, the drawer offers **Remove worktrees** (a key, a legend entry, a `?` row; candidate `Shift+X`, checked against the keymap when built). It lists each worktree with its state (clean, uncommitted changes, unpushed commits), stops a running Try it first, removes the clean ones and asks again for the others. Never silent, never automatic; the delete confirmation gets the same offer.
+- Costs said once, plainly, in *What happens* on the new-card screen: a folder per repo next to it; the UI's first start runs `npm install`; Claude Code asks to trust the new folder once in the tab.
+
+What it costs: disk per card is the checkout plus each UI's `node_modules` (git objects are shared, so a worktree is far smaller than a clone); a first `npm install` per card; one trust prompt per card. Nothing at VU depends on it.
+
+Claude Code keeps trust per folder in `~/.claude.json`. The owner agreed (2026-10-01) to a setting, off by default, that marks a card's worktrees trusted before the tab opens, shown with exactly what it writes, like the hook install was.
+
+### Milestone 2: several cards up at once
+What changes for a user: `t` on two cards of the same stack starts two of everything, each on its own ports, each card's Try it showing its own URL. Nothing is typed into the stack for it.
+
+How:
+- **Ports are picked per run**, not written in the stack. cc-control takes free ports from a range (default 18000–18999, `CC_CONTROL_PORTS` to change it) and checks each is unused before the run. The run records them, so stop and the drawer know them.
+- **Placeholders:** `{{port}}` becomes the local port picked for that API in that run. `{{appPort}}` is the port the API listens on in its container (from `values`, or the okteto manifest's `forward` once milestone 3 detects it; default 8080). The UI gets `{{uiPort}}`, and `ui.url` may use it (`http://localhost:{{uiPort}}`). A stack that still sets `values.port` keeps working: it is read as `appPort`, and the editor's note says so.
+- **Okteto is told the local port.** `okteto up` has no flag for a forward; forwards come from the manifest (`forward: - local:remote`). At VU (the owner, 2026-10-01) the team's PowerShell helper **generates** `okteto.yml` and the deployment manifest per feature branch, in the repo, named after the branch, and `okteto up` reads them from the folder it runs in. So in a worktree card each card already has its own manifest and its own deployment; what is shared is the forward, `8080 -> 8080`. A step prefix **`forward:{{port}}`** on the `okteto up` line makes cc-control read the step's folder's `okteto.yml` when the step starts (after the helper has written it), write a copy beside it (`okteto.cc-control.yml`) with every forward's local side set to the picked port, and run the command with `-f okteto.cc-control.yml` added. The copy sits beside the original so relative paths resolve the same; it is deleted on stop, never ticked by Ship, and listed in `.git/info/exclude`. The draft and the example use it; a team whose manifest already says `${CC_PORT:-8080}:8080` can set `CC_PORT={{port}}` on the step instead.
+- **The deployment name is cut to 50 characters** by the helper (the API's name, a dash, then as much of the branch as fits), so `{{name}}-{{branch}}` is wrong for long names. A **`{{deployment}}`** placeholder gives the cut name, and the stop step in the draft uses it. `k8sName` keeps the branch itself at 50.
+- **The namespace and kubeconfig per environment:** the helper takes the environment and the project, and `okteto up` reads `OKTETO_NAMESPACE` (`<project>-{{env}}`) and `KUBECONFIG` (a file per cluster) from the environment. The stack sets the namespace from `{{env}}` as now; the kubeconfig path stays per developer in `config.env` (milestone 3), one variable per environment (`KUBECONFIG_DEV`, `KUBECONFIG_UAT`) picked by a step's `KUBECONFIG=%KUBECONFIG_{{ENV}}%`, where `{{ENV}}` is the choice in upper case.
+- **The UI** starts with `--port {{uiPort}}` (Angular and nx both take it) and the per-card proxy copy already points at the picked ports.
+- **Deployment names** already differ per card (`{{branch}}`); the picker and Try it title say the ports.
+- `pnpm run doctor` loses the "two APIs on the same port" check and gains "the port range has room".
+
+What it costs: RAM, mostly. At VU a second UI dev server and a second `okteto up` (its file sync) per card; two cards of a three-API stack are six Okteto deployments in the namespace. The run shows what is up so it can be stopped.
+
+Depends on at VU:
+- Namespace quotas for two deployments of one API.
+- Whether `okteto up -f` with a sibling file keeps the sync folder and the build context (expected, to confirm).
+- That the generated manifest's forward line is the plain `local:remote` shape the rewrite expects (ask for a sanitised copy).
+
+Test here: two seeded worktree cards on one stand-in stack, started together: two APIs on two ports, two UIs on two ports, each UI answering with its own card's branch, each proxy copy pointing at its own API; stopping one leaves the other running.
+
+### Milestone 3: a stack that needs no fiddling
+What changes for a user: `t` on a workspace with no stack works first time. It shows what cc-control found in the repos, with the one or two things it couldn't find asked once, and saves that as the workspace's stack on `Enter`. The JSON stays under an advanced tab for teams whose shape differs.
+
+Detected per repo (`server/stack-detect.ts`, pure parts in `shared/`):
+- **An API** by `okteto.yml` / `okteto.yaml`: its dev name, `forward` (gives `appPort`), its `command`; a `*.csproj` folder for `{{dir}}`; the health path when obvious (`MapHealthChecks("/…")`, `MapGet("/self")`, a `[Route]` named health/self/ping), else `/`, which `wait:http:` accepts with a 404.
+- **The UI** by `angular.json` / `project.json` / `package.json`: the serve target's `proxyConfig` and `port`, the start script, nx or ng. Its proxy file's existing rules say the **route per API**: a rule whose target or key names the API (`/gateway/team/loans/**` for `loans-api`) is suggested as that API's rule; the rest are asked for once, per API, with the proxy file's rule shapes as examples.
+- **What stays asked once per workspace:** the env list (default dev / uat) and any route no rule matched.
+- Detection runs again when a repo is added (milestone 5) and when the stack editor is opened, showing *detected* next to *saved* so a drifted manifest is noticed.
+
+The stack editor's first tab becomes that confirmation (a table: repo, role, app port, command, proxy rule, found in which file; `↑` `↓` to a row, `e` to change a value, `Enter` to save, `Alt+W` to the JSON as now). Every key is in the footer and `?`.
+
+**Nothing machine-specific in the shared stack.** `~/.cc-control/config.env` already feeds every variable into the server, and steps fill `%NAME%` from it, so `KUBECONFIG=%USERPROFILE%\.kube\dev.yaml` stays per developer. What's added: the doctor lists which `%NAMES%` the stack uses and which are unset on this machine, and the stack editor's help says to put personal values there. If the owner's own kubeconfig path is in a workspace file today, it moves.
+
+What it costs: nothing at run time; detection reads a few files per repo. Depends on at VU: the real shapes of `okteto.yml` (a fixed `dev:` name or a per-branch one, `forward` lines), the Angular/nx serve target, and the proxy file. Ask the owner for sanitised copies (no URLs or internal names) to write the parsers against; stand-ins otherwise.
+
+### Milestone 4: Ship per repo
+What changes for a user: a card that changed several repos ships each of them. The sheet shows one block per repo (branch, files ticked, host), `Enter` commits, pushes and opens a PR in each from its worktree, in order, stopping at the first failure with the rest untouched. The card lists its PRs; `o` opens the focused one, `↑` `↓` moves between them in the Ship section. `s` again merges every open one after one confirmation naming them. Done when all are merged.
+
+How: `shipPlan` returns a plan per repo that has changes in the card's folders (`card.folders` from §53); `card.ship` takes one request per repo; `card.ship.prs` replaces the single `pr`; each PR's body links the others ("Part of KEY; see also loans-ui PR 12"). GitHub stays on `gh`, Azure DevOps on its REST API (§36). `PROTOCOL` bumps.
+
+What it costs: nothing new to install. Depends on at VU: a real multi-repo PR hasn't been opened from the app; the first one should be on repos the owner picks, asked first as today.
+
+### Milestone 5: context added later feeds the run
+What changes for a user: anything added with `c` changes what `t` offers. A repo added becomes a worktree (milestone 1) and is detected into the stack (milestone 3) if it is an API or a UI, with its row in the picker. A note naming an API makes the picker flag that API as *named in the ticket*, because the suggestions read the card's added notes too. The packet's *Running the app* says what is runnable now: each API's worktree, the ones added since the start, and the URL pattern the card will get.
+
+What it costs: nothing. No VU dependency.
+
+### Order and what each depends on
+1 → 2 → 3 → 4 → 5 as the owner suggested. 2 defines the port placeholders that 3's detection fills, so 2 goes before 3. 4 needs only §53's folders and could be done any time after 1. 5 is small once 1 and 3 exist.
+
+### Verification, each milestone
+`pnpm typecheck`, `pnpm test`, `tsc --noUnusedLocals`, unit tests for the pure parts (worktree planning, port picking, placeholder filling, manifest rewriting, detection against sample files, per-repo ship plans), and a scripted Playwright walkthrough on an isolated server with screenshots looked at. The real Okteto, kubectl, nx and the team's command are only at VU: each milestone's section ends with *To check at VU*, and the stack docs say what was tried against stand-ins.
+
+**Status:** plan agreed with the owner 2026-10-01 (order as above; the trust setting yes); milestone 1 next.
