@@ -131,7 +131,8 @@ test('two cards run the same API and UI at once: each run gets its own ports, fo
   const ui2 = repo('two-ui-c2', { 'ui.js': UI_PORT, 'proxy.conf.json': PROXY }, 'card-2');
   const info = {
     ...validateStack({
-      api: { steps: ['wait:"Now listening on" forward:{{port}}:{{appPort}} okteto up', 'stop: node -e "require(\'fs\').writeFileSync(\'down.txt\', \'{{deployment}}\')"'], proxy: { '/gw/{{route}}/**': { target: 'http://localhost:{{port}}' } } },
+      // No forward: on the line: the picked port is forwarded on its own.
+      api: { steps: ['wait:"Now listening on" okteto up', 'stop: node -e "require(\'fs\').writeFileSync(\'down.txt\', \'{{deployment}}\')"'], proxy: { '/gw/{{route}}/**': { target: 'http://localhost:{{port}}' } } },
       apis: [{ repo: 'orders-api', values: { name: 'orders-api', appPort: '8080', route: 'orders' } }],
       ui: { repo: 'web-ui', proxyFile: 'proxy.conf.json', steps: ['node ui.js "{{proxy}}" --port {{uiPort}}'], url: 'http://localhost:{{uiPort}}' },
     }), workspaceId: 'w2', source: '',
@@ -147,7 +148,7 @@ test('two cards run the same API and UI at once: each run gets its own ports, fo
     assert.equal(b.opts.choice, 'orders-api :18452 · UI :18453', 'the second run never gets the first one’s ports');
     assert.equal(a.recipe.url, 'http://localhost:18451');
     assert.equal(b.recipe.url, 'http://localhost:18453');
-    assert.match(a.recipe.steps[0], /^@orders-api wait:"Now listening on" forward:18450:8080 okteto up$/);
+    assert.match(a.recipe.steps[0], /^@orders-api forward:18450:8080 wait:"Now listening on" okteto up$/, 'forwarded without being told');
     await runs.start('c1', a.recipe, { cwd: ui1, repos: { 'orders-api': api1, 'web-ui': ui1 } }, a.opts);
     await runs.start('c2', b.recipe, { cwd: ui2, repos: { 'orders-api': api2, 'web-ui': ui2 } }, b.opts);
     await until(() => runs.get('c1')?.state === 'up' && runs.get('c2')?.state === 'up', 20_000).catch((e: Error) => { throw new Error(`${e.message}: ${JSON.stringify([runs.get('c1'), runs.get('c2')].map((r) => [r?.state, r?.text, r?.steps.map((s) => [s.state, s.tail])]))}`); });

@@ -6,7 +6,7 @@
 // kubectl and the rest live in the steps a team writes. Pure and shared, so the page and the server
 // build the same thing.
 
-import { MAX_STEPS, parseStep } from './recipes.ts';
+import { MAX_STEPS, OKTETO_UP, parseStep } from './recipes.ts';
 
 /** One API the stack can start. */
 export interface StackApi {
@@ -221,10 +221,10 @@ const USES = (what: string) => new RegExp(`\\{\\{\\s*${what}\\s*\\}\\}`);
 export function stackWarnings(stack: Stack): string[] {
   const out: string[] = [];
   const apiLines = [...stack.api.steps, JSON.stringify(stack.api.proxy ?? {}), ...stack.apis.map((a) => JSON.stringify(a.proxy ?? {}))].join('\n');
+  // An okteto up without forward: gets the picked port forwarded on its own (stackSteps); only forward:no keeps a shared 8080.
   const specs = stack.api.steps.map(parseStep).filter((s): s is NonNullable<typeof s> => Boolean(s && !s.note));
-  const okteto = specs.filter((s) => /(^|[\\/\s])okteto(\.exe)?\s+up\b/i.test(s.cmd));
-  if (USES('port').test(apiLines) && okteto.length && !okteto.some((s) => /forward:/i.test(s.line))) {
-    out.push('{{port}} is picked for each run, but the okteto up step doesn’t forward it: put forward:{{port}}:{{appPort}} on that line, or the proxy points at a port nothing answers on.');
+  if (USES('port').test(apiLines) && specs.some((s) => s.forward === false && OKTETO_UP.test(s.cmd))) {
+    out.push('{{port}} is picked for each run, but forward:no keeps the okteto up step on the manifest’s own port: two cards can’t run that API at once, and the proxy points at a port nothing answers on.');
   }
   const legacy = stack.apis.filter((a) => a.values.port && !a.values.appPort).map((a) => a.repo);
   if (legacy.length) out.push(`${legacy.join(', ')}: "port" in values now means the port inside the container ({{appPort}}); the local port is picked per run. Call it "appPort" to say so.`);
@@ -340,12 +340,18 @@ export function stackSteps(stack: Stack, choice: StackChoice, ctx: StackRunConte
   const values = choiceValues(stack, choice.values);
   const run: string[] = [];
   const stops: string[][] = [];
-  const add = (lines: string[], repo: string, vars: Record<string, string>, where: string) => {
+  const add = (lines: string[], repo: string, vars: Record<string, string>, where: string, port?: number) => {
     const mine: string[] = [];
     for (const raw of lines) {
-      const line = fill(raw, vars, where);
-      const spec = parseStep(line);
+      let line = fill(raw, vars, where);
+      let spec = parseStep(line);
       if (!spec) continue;
+      // An okteto up with a port picked forwards it without being told: the team's manifest says
+      // 8080 -> 8080, and nothing answers on the picked port otherwise. forward:no keeps the manifest's own.
+      if (port !== undefined && !spec.note && !spec.stop && spec.forward === undefined && OKTETO_UP.test(spec.cmd)) {
+        line = `forward:${port}:${vars.appPort} ${line}`;
+        spec = parseStep(line)!;
+      }
       // Steps run in their repo unless the line names another; notes are shown as written.
       const full = spec.note || spec.repo ? line : `@${repo} ${line}`;
       (spec.stop ? mine : run).push(full);
@@ -354,7 +360,7 @@ export function stackSteps(stack: Stack, choice: StackChoice, ctx: StackRunConte
   };
   for (const api of pickedApis(stack, choice.apis)) {
     const key = api.repo.toLowerCase();
-    add(stack.api.steps, api.repo, apiVars(values, api, ctx.branches[key] ?? 'main', ctx.ports?.[key]), `${api.repo}’s steps`);
+    add(stack.api.steps, api.repo, apiVars(values, api, ctx.branches[key] ?? 'main', ctx.ports?.[key]), `${api.repo}’s steps`, ctx.ports?.[key]);
   }
   if (stack.ui) add(stack.ui.steps, stack.ui.repo, uiVars(values, stack.ui, ctx), 'the UI’s steps');
   return [...run, ...stops.reverse().flat()];

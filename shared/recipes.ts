@@ -11,7 +11,9 @@
 // wait:"text", wait:port:8080 or wait:http:8080/health says when a step that keeps running is ready;
 // forward:18000:8080 runs an okteto command with a copy of the folder's okteto.yml whose forward of
 // container port 8080 is local port 18000 (shared/okteto.ts), so two runs of one API never want the
-// same port; answers:"y,n" types those lines into the questions it asks; lines starting with # are comments.
+// same port (a stack's okteto up gets it on its own when a port is picked; forward:no keeps the
+// manifest's own forward); answers:"y,n" types those lines into the questions it asks; lines
+// starting with # are comments.
 
 import { stackText, type Stack } from './stack.ts';
 import { repoName, samePath } from './workspaces.ts';
@@ -102,8 +104,8 @@ export interface StepSpec {
    * address answering below 500 (a forwarded port can be open before the app behind it is).
    */
   wait?: { text: string } | { port: number } | { url: string };
-  /** Run with a copy of the folder's okteto manifest forwarding `local` to the container's `remote` port (the first forward when unset). */
-  forward?: { local: number; remote?: number };
+  /** Run with a copy of the folder's okteto manifest forwarding `local` to the container's `remote` port (the first forward when unset); `false` (forward:no) keeps the manifest as it is. */
+  forward?: { local: number; remote?: number } | false;
   /** Lines typed into the step's input, one per question it asks. */
   answers?: string[];
 }
@@ -130,6 +132,7 @@ export function parseStep(line: string): StepSpec | undefined {
     else if ((m = /^wait:http:(\d{2,5})(\/\S*)?\s+/i.exec(rest))) wait = { url: `http://localhost:${m[1]}${m[2] ?? '/'}` };
     else if ((m = /^wait:"([^"]+)"\s+/i.exec(rest))) wait = { text: m[1] };
     else if ((m = /^forward:(\d{2,5})(?::(\d{2,5}))?\s+/i.exec(rest))) forward = { local: Number(m[1]), ...(m[2] ? { remote: Number(m[2]) } : {}) };
+    else if ((m = /^forward:no\s+/i.exec(rest))) forward = false;
     else if ((m = /^answers:"([^"]*)"\s+/i.exec(rest))) answers = m[1].split(',').map((a) => a.trim());
     else if ((m = /^@(\S+)\s+/.exec(rest))) repo = m[1];
     else break;
@@ -142,9 +145,12 @@ export function parseStep(line: string): StepSpec | undefined {
   }
   return {
     line, cmd: rest.trim(), ...(repo ? { repo } : {}), env, stop, note: false,
-    ...(ps ? { ps } : {}), ...(wait ? { wait } : {}), ...(forward ? { forward } : {}), ...(answers ? { answers } : {}),
+    ...(ps ? { ps } : {}), ...(wait ? { wait } : {}), ...(forward !== undefined ? { forward } : {}), ...(answers ? { answers } : {}),
   };
 }
+
+/** Does this command run `okteto up` (at its start, or after a `;`, `&&` or `|` in a one-line script)? */
+export const OKTETO_UP = /(^|[\\/\s;&|])okteto(?:\.exe)?\s+up\b/i;
 
 /** What a step waits for, as the drawer says it: "Now listening on", "port 8080", "http://localhost:8080/self". */
 export function waitLabel(s: Pick<StepSpec, 'wait'>): string | undefined {

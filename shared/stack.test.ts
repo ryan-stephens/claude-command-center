@@ -59,7 +59,10 @@ test('ports are picked per run: {{port}} is the picked one, {{appPort}} the cont
   assert.equal(apiVars({}, { repo: 'x-api', values: {} }, 'main').appPort, '8080', 'nothing said: 8080');
   assert.equal(apiVars({}, { repo: 'x-api', values: { port: '5001' } }, 'main').port, '5001', 'no port picked: the value as before');
   const steps = stackSteps(stack, { values: { env: 'uat' }, apis: ['orders-api'] }, ctx);
-  assert.equal(steps[1], '@orders-api wait:port:18000 okteto up');
+  assert.equal(steps[1], '@orders-api forward:18000:8080 wait:port:18000 okteto up', 'okteto up forwards the picked port without being told');
+  assert.equal(stackSteps({ ...stack, api: { ...stack.api, steps: ['ps: $Env:KUBECONFIG = "x"; okteto up', 'forward:no okteto up', 'stop: okteto down', 'okteto exec -- dotnet run'] } }, { values: { env: 'uat' }, apis: ['orders-api'] }, ctx).slice(0, 3).join('\n'),
+    '@orders-api forward:18000:8080 ps: $Env:KUBECONFIG = "x"; okteto up\n@orders-api forward:no okteto up\n@orders-api okteto exec -- dotnet run', 'after a ; too; forward:no and other okteto commands left alone');
+  assert.equal(stackSteps(stack, { values: { env: 'uat' }, apis: ['orders-api'] }, { ...ctx, ports: {} })[1], '@orders-api wait:port:8080 okteto up', 'no port picked: nothing added');
   assert.deepEqual(stackRules(stack, { values: {}, apis: ['orders-api'] }, ctx)['/orders/api/**'], { target: 'http://localhost:18000/' });
   const withUi = validateStack({ ...STACK_EXAMPLE, apis: [{ repo: 'orders-api', values: { name: 'orders-api', dir: 'OrdersApi', appPort: '8080', route: 'orders' } }] });
   assert.equal(needsUiPort(withUi), true);
@@ -76,11 +79,11 @@ test('ports are picked per run: {{port}} is the picked one, {{appPort}} the cont
 
 test('what keeps a stack from running twice at once is said, not enforced', () => {
   const w = stackWarnings(stack);
-  assert.equal(w.length, 4, w.join('\n'));
-  assert.match(w[0], /okteto up step doesn’t forward it: put forward:\{\{port\}\}:\{\{appPort\}\}/);
-  assert.match(w[1], /orders-api, fees-api: "port" in values now means the port inside the container/);
-  assert.match(w[2], /Use \{\{deployment\}\}/);
-  assert.match(w[3], /add --port \{\{uiPort\}\} to its start step/);
+  assert.equal(w.length, 3, w.join('\n'));
+  assert.match(w[0], /orders-api, fees-api: "port" in values now means the port inside the container/);
+  assert.match(w[1], /Use \{\{deployment\}\}/);
+  assert.match(w[2], /add --port \{\{uiPort\}\} to its start step/);
+  assert.match(stackWarnings({ ...stack, api: { ...stack.api, steps: ['forward:no okteto up'] } })[0], /forward:no keeps the okteto up step on the manifest’s own port/, 'only an opt-out is worth a word');
   assert.deepEqual(stackWarnings(validateStack({ api: { steps: ['PORT={{port}} dotnet run'] }, apis: [{ repo: 'a-api', values: { appPort: '80' } }] })), [], 'no okteto, no proxy: nothing to say');
 });
 

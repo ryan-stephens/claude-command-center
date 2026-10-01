@@ -196,7 +196,8 @@ export function forwarded(spec: StepSpec, cwd: string): { cmd: string; made?: st
   const copy = join(cwd, FORWARD_MANIFEST);
   writeFileSync(copy, text);
   excludeFromGit(cwd, FORWARD_MANIFEST);
-  const cmd = spec.cmd.replace(/^((?:\S*[\\/])?okteto(?:\.exe)?\s+[a-z]+)/i, `$1 -f ${FORWARD_MANIFEST}`);
+  // The okteto command may sit after a `;` or `&&` in a one-line script ($Env:KUBECONFIG = "…"; okteto up).
+  const cmd = spec.cmd.replace(/(^|[;&|]\s*)((?:\S*[\\/])?okteto(?:\.exe)?\s+[a-z]+)/i, `$1$2 -f ${FORWARD_MANIFEST}`);
   return { cmd, made: copy };
 }
 

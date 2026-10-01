@@ -212,6 +212,9 @@ test('a step line: ps:, wait: and answers:, in any order with @repo and stop:', 
   assert.deepEqual(parseStep('wait:port:18000 forward:18000:8080 okteto up')!.forward, { local: 18000, remote: 8080 });
   assert.deepEqual(parseStep('forward:18000 @api okteto up --namespace dev')!.forward, { local: 18000 }, 'no container port: the first forward');
   assert.equal(parseStep('forward:18000 @api okteto up --namespace dev')!.cmd, 'okteto up --namespace dev');
+  assert.equal(parseStep('forward:no ps: okteto up')!.forward, false, 'forward:no keeps the manifest as it is');
+  assert.equal(parseStep('forward:no ps: okteto up')!.cmd, 'okteto up');
+  assert.equal(parseStep('okteto up')!.forward, undefined);
 });
 
 test('a forward: step runs okteto with a copy of the manifest pointed at the picked port, kept out of git', () => {
@@ -229,6 +232,10 @@ test('a forward: step runs okteto with a copy of the manifest pointed at the pic
     assert.equal(readFileSync(join(cwd, '.git', 'info', 'exclude'), 'utf8').split('okteto.cc-control.yml').length, 2, 'listed once');
     assert.equal(forwarded(parseStep('forward:18000:8080 okteto exec -- sh -c "dotnet run"')!, cwd).cmd, 'okteto exec -f okteto.cc-control.yml -- sh -c "dotnet run"', 'never after the --');
     assert.equal(forwarded(parseStep('forward:18000 node up.js')!, cwd).cmd, 'node up.js', 'not an okteto command: the copy is written, the command is left alone');
+    // VU's steps are one-line PowerShell scripts: the okteto command sits after a `;`.
+    assert.equal(forwarded(parseStep('forward:18000:8080 ps: $Env:KUBECONFIG = "$env:userprofile\\.kube\\dev.yaml"; okteto up')!, cwd).cmd, '$Env:KUBECONFIG = "$env:userprofile\\.kube\\dev.yaml"; okteto up -f okteto.cc-control.yml', 'after a ; in a PowerShell line');
+    assert.equal(forwarded(parseStep('forward:18000:8080 cd x && okteto.exe up --namespace dev')!, cwd).cmd, 'cd x && okteto.exe up -f okteto.cc-control.yml --namespace dev', 'after a &&');
+    assert.deepEqual(forwarded(parseStep('forward:no okteto up')!, cwd), { cmd: 'okteto up' }, 'forward:no: nothing is written');
     rmSync(join(cwd, 'okteto.yml'));
     assert.throws(() => forwarded(spec, cwd), /No okteto\.yml in .* to forward port 18000: put forward: on the okteto up line, after the step that writes the manifest/);
     writeFileSync(join(cwd, 'okteto.yml'), 'name: x\n');
