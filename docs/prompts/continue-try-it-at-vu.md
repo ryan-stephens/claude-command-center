@@ -32,7 +32,7 @@ cc-control is a local web app over Claude Code terminal sessions (the Ticket Lin
 - **Step prefixes:**
   - `ps:` runs in PowerShell, with the profile loaded
   - `answers:"y,n"` answers the step's questions
-  - `wait:"Now listening on"` or `wait:port:8080` says when a long-running step is ready
+  - `wait:"Now listening on"`, `wait:port:8080` or `wait:http:8080/self` says when a long-running step is ready. Use `wait:http:` for `dotnet watch run` behind `okteto up`: the app's logging can hide "Now listening on", and okteto opens the port before the app is up (§52)
   - `! …` is a step done by hand (shown, not run), which suits "open a loan" for now
 - **The known problem the owner hit:** `t` listed **orders-api**, a repo they don't have. That came from the editor's old example, saved unchanged. Since §51:
   - the editor warns about repos the workspace doesn't have

@@ -8,8 +8,8 @@
 // `! something to do by hand`. The prefixes come in any order. @repo runs it in that repo (the card's
 // folder for its own repo); NAME=value sets the step's environment (parsed here, so it works in
 // cmd.exe too); stop: lines run when the app is stopped; ps: runs it in PowerShell instead of cmd;
-// wait:"text" or wait:port:8080 says when a step that keeps running is ready; answers:"y,n" types
-// those lines into the questions it asks; lines starting with # are comments.
+// wait:"text", wait:port:8080 or wait:http:8080/health says when a step that keeps running is ready;
+// answers:"y,n" types those lines into the questions it asks; lines starting with # are comments.
 
 import { stackText, type Stack } from './stack.ts';
 import { repoName, samePath } from './workspaces.ts';
@@ -45,8 +45,10 @@ export interface RunStep {
   env?: string[];
   /** Runs when the app is stopped. */
   stop?: boolean;
-  /** What it waits for before the next step starts: "Now listening on", "port 8080". */
+  /** What it waits for before the next step starts: "Now listening on", "port 8080", "http://localhost:8080/self". */
   waitFor?: string;
+  /** While it waits on an address: what the last try got ("no answer yet", "answered 503"). */
+  waitNote?: string;
   /** Exit code, once it exited. */
   code?: number | null;
   /** The last lines it printed. */
@@ -93,8 +95,11 @@ export interface StepSpec {
   note: boolean;
   /** Run in PowerShell rather than cmd. */
   ps?: boolean;
-  /** When a step that keeps running is ready: a line containing this text, or its port open. */
-  wait?: { text: string } | { port: number };
+  /**
+   * When a step that keeps running is ready: a line containing this text, its port open, or this
+   * address answering below 500 (a forwarded port can be open before the app behind it is).
+   */
+  wait?: { text: string } | { port: number } | { url: string };
   /** Lines typed into the step's input, one per question it asks. */
   answers?: string[];
 }
@@ -117,6 +122,7 @@ export function parseStep(line: string): StepSpec | undefined {
     if ((m = /^stop:\s*/i.exec(rest))) stop = true;
     else if ((m = /^ps:\s*/i.exec(rest))) ps = true;
     else if ((m = /^wait:port:(\d{2,5})\s+/i.exec(rest))) wait = { port: Number(m[1]) };
+    else if ((m = /^wait:http:(\d{2,5})(\/\S*)?\s+/i.exec(rest))) wait = { url: `http://localhost:${m[1]}${m[2] ?? '/'}` };
     else if ((m = /^wait:"([^"]+)"\s+/i.exec(rest))) wait = { text: m[1] };
     else if ((m = /^answers:"([^"]*)"\s+/i.exec(rest))) answers = m[1].split(',').map((a) => a.trim());
     else if ((m = /^@(\S+)\s+/.exec(rest))) repo = m[1];
@@ -134,10 +140,10 @@ export function parseStep(line: string): StepSpec | undefined {
   };
 }
 
-/** What a step waits for, as the drawer says it: "Now listening on", "port 8080". */
+/** What a step waits for, as the drawer says it: "Now listening on", "port 8080", "http://localhost:8080/self". */
 export function waitLabel(s: Pick<StepSpec, 'wait'>): string | undefined {
   if (!s.wait) return undefined;
-  return 'port' in s.wait ? `port ${s.wait.port}` : s.wait.text;
+  return 'port' in s.wait ? `port ${s.wait.port}` : 'url' in s.wait ? s.wait.url : s.wait.text;
 }
 
 /** The recipe's steps, read (comments dropped). */

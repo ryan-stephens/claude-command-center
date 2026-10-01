@@ -7,6 +7,7 @@
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { get as httpGet } from 'node:http';
 import { connect } from 'node:net';
 import { join } from 'node:path';
 import { findUrl, MAX_STEPS, portOf, specsOf, stepLabel, waitLabel, type CardRun, type RunRecipe, type StepSpec } from '../shared/recipes.ts';
@@ -158,6 +159,21 @@ function listening(port: number): Promise<boolean> {
   });
 }
 
+/** How long a wait:http: step may go without an answer below 500 before the run fails. */
+const HTTP_WAIT_MS = 10 * 60_000;
+
+/**
+ * The status this address answers with, or undefined when nothing answers (refused, reset, or a
+ * forwarded port with no app behind it yet). Its own agent, so no proxy from the environment is used.
+ */
+function answers(url: string): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const req = httpGet(url, { agent: false, timeout: 3000 }, (res) => { res.resume(); resolve(res.statusCode); });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(undefined));
+  });
+}
+
 /** Kill a step and whatever it started (a dev server's children). */
 function killTree(child: ChildProcess): void {
   if (child.pid === undefined || child.exitCode !== null) return;
@@ -218,9 +234,12 @@ export class RunService {
   private timer: NodeJS.Timeout | null = null;
   private changed: () => void;
   private env: NodeJS.ProcessEnv;
+  private httpWaitMs: number;
 
-  constructor(changed: () => void, env: NodeJS.ProcessEnv) {
+  /** `httpWaitMs`: how long a wait:http: step may wait (tests shorten it). */
+  constructor(changed: () => void, env: NodeJS.ProcessEnv, opts: { httpWaitMs?: number } = {}) {
     this.changed = changed;
+    this.httpWaitMs = opts.httpWaitMs ?? HTTP_WAIT_MS;
     // Plain output, no dev server opening a browser of its own (o opens it), and no tokens from the settings file.
     this.env = { ...withoutSecrets(env), FORCE_COLOR: '0', NO_COLOR: '1', BROWSER: 'none', PYTHONUNBUFFERED: '1' };
   }
@@ -323,8 +342,37 @@ export class RunService {
         if (step.state === 'go') poll = setInterval(() => { void listening(port).then((ok) => { if (ok) up(); }); }, 1000);
       });
     }
+    // wait:http: asks the address every second until it answers below 500, and fails the run if it
+    // never does in time. The step keeps running (its output shows why) until t stops it.
+    const addr = wait && 'url' in wait ? wait.url : undefined;
+    let ask: NodeJS.Timeout | null = null;
+    let timedOut = false;
+    if (addr) {
+      const deadline = Date.now() + this.httpWaitMs;
+      step.waitNote = 'no answer yet';
+      const check = () => {
+        ask = null;
+        void answers(addr).then((status) => {
+          if (moved || step.state !== 'go' || live.stopped) return;
+          if (status !== undefined && status < 500) { delete step.waitNote; up(); return; }
+          const note = status === undefined ? 'no answer yet' : `answered ${status}`;
+          if (note !== step.waitNote) { step.waitNote = note; this.soon(); }
+          if (Date.now() < deadline) { ask = setTimeout(check, 1000); return; }
+          timedOut = true;
+          settle();
+          const mins = Math.round(this.httpWaitMs / 60_000);
+          step.state = 'bad';
+          step.waitNote = mins ? `no answer in ${mins} min` : 'no answer in time';
+          step.tail = [...step.tail, `(${addr} ${status === undefined ? 'never answered' : `still answered ${status}`})`].slice(-SHOW);
+          run.state = 'failed';
+          run.text = `${stepLabel(spec)}: ${addr} never answered`;
+          this.changed();
+        });
+      };
+      check();
+    }
     const quiet = !wait && appLike(spec.cmd, last) ? setTimeout(() => up(), QUIET_UP_MS) : null;
-    const settle = () => { if (poll) clearInterval(poll); if (quiet) clearTimeout(quiet); };
+    const settle = () => { if (poll) clearInterval(poll); if (quiet) clearTimeout(quiet); if (ask) clearTimeout(ask); };
     const text = wait && 'text' in wait ? wait.text.toLowerCase() : undefined;
     this.capture(live, i, child, (url) => { if (step.state === 'go' && !wait) { settle(); up(url); } }, (line) => {
       if (text && step.state === 'go' && line.toLowerCase().includes(text)) { settle(); up(findUrl(line)); }
@@ -333,6 +381,9 @@ export class RunService {
       settle();
       step.code = code;
       if (live.stopped) { step.state = 'off'; this.soon(); return; }
+      // It already failed by never answering; going away later changes nothing.
+      if (timedOut) { this.soon(); return; }
+      delete step.waitNote;
       if (step.state === 'up') {
         // The app went away by itself.
         step.state = code === 0 ? 'off' : 'bad';

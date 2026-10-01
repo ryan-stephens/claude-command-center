@@ -6,3 +6,4 @@ dist/
 *.db-*
 .playwright-mcp/
 .idea/
+CLAUDE.local.md

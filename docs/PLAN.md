@@ -1450,3 +1450,43 @@ Jira has no standard field for a QA reviewer. Teams add a custom one, and its id
 - Unit tests cover the draft (UI and APIs picked by name, ports, all-API fallback) and finding the example's names. `pnpm typecheck` and `pnpm test` (244) pass.
 
 **Next:** getting the real stack running at VU. The handoff is `docs/prompts/continue-try-it-at-vu.md`, written to be lean on tokens there.
+
+## 52. A step is ready when its address answers: wait:http:
+
+2026-10-01, from a handoff from the VU laptop.
+
+**What happened there:** a stack step that starts a .NET API with `dotnet watch run` was never marked ready by `wait:"Now listening on"`, though the API was up.
+- The app logs through Serilog with the `Microsoft` namespace overridden to Warning, so Kestrel's Information-level "Now listening on" line is never printed.
+- `wait:port:N` can't tell either: `okteto up` forwards the port locally before the app behind it starts, so the port is open while every connection is dropped.
+- The workaround there, until this ships, was `wait:"Overriding HTTP_PORTS"`, a warning printed just before Kestrel binds.
+
+**What changed:**
+- **`wait:http:8080/self`** (`shared/recipes.ts`): the step is ready once `http://localhost:8080/self` answers with any status below 500. With no path it asks `/`, where even a 404 means the app is serving. Only a port is taken, never a host, so the check stays on this machine.
+- **The server asks every second** (`server/recipes.ts`), each try with a 3 s limit, on its own HTTP agent so a proxy set in the environment is never used for localhost.
+  - Refused, reset or dropped connections (the forwarded port with nothing behind it) and answers of 500 and up keep it waiting.
+  - After **10 minutes** without an answer below 500 the step turns red and the run fails: "`node api.js`: http://localhost:8080/self never answered". The step is left running so its output stays visible, and `t` stops it with its `stop:` steps as usual. If it exits later, that changes nothing.
+- **The Try it section says what it is waiting on and what it last got:** "waiting for http://localhost:8080/self · no answer yet", then "· answered 503"; a timed-out step says "no answer in 10 min" in place of an exit code. No new action, so no new key.
+- **Docs:** the recipe editor's help, the README and `continue-try-it-at-vu.md` name the prefix. `STACK_EXAMPLE`'s `dotnet watch run` step uses `wait:http:{{port}}` in place of the Kestrel line.
+
+**Also in this commit:**
+- `CLAUDE.md` has a *Two laptops* section: development happens on the personal laptop only; sessions on the VU laptop diagnose and write a handoff, in the shape of the new `docs/prompts/vu-handoff-template.md`, with nothing internal in it.
+- `CLAUDE.local.md` is ignored by git, for notes that must stay on one machine.
+
+**Verified** with stand-ins, not the real Okteto or the team's API:
+- Unit tests:
+  - parsing (`wait:http:8080/self`, no path, any case, a prefix with no command after it);
+  - a real run: a stand-in that opens the port and drops every connection (like `okteto up`), then answers 503, then 200 on `/self`. The step waits through all of it, says "no answer yet" then "answered 503", and is ready only at the 200, after which the next step runs;
+  - a step that never answers fails the run with its message, the next step never starts, and the step exiting later changes nothing.
+- A scripted walkthrough on an isolated server (:7791; :7788 was taken), a Demo workspace with that stand-in as its recipe:
+  - `t` showed "waiting for http://localhost:18099/self · no answer yet", then "· answered 503", then both steps "serving" and "Running at …".
+  - `e` showed the new prefix in the editor's help.
+  - No console errors. Screenshots looked at.
+- `pnpm typecheck`, `pnpm test` (246) and `tsc --noUnusedLocals` pass.
+
+**To check at VU:** after `git pull` and a server restart, change the API step to `wait:http:<port>/<a path the API serves>` and press `t`. The step should show "answered …" codes while `dotnet watch` builds, then turn to serving.
+
+**Not yet:**
+- Passing a value one step prints into a later step.
+- Opening the loan through the scenario tool (for now a `!` step says to do it by hand).
+- More APIs at once: each needs its own port, and okteto forwards 8080 by default.
+- `pnpm run doctor` shows `okteto context` as invalid, because it runs without `KUBECONFIG`.

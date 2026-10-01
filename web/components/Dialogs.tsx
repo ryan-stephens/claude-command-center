@@ -642,7 +642,7 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
         className="field w-full resize-y font-mono text-[13px]" />
       <div className="mt-1.5 grid gap-0.5 text-[12.5px] text-faint">
         <span><code>@repo</code> runs a step in that repo (by folder name) · <code>NAME=value</code> before the command sets a variable for that step · <code>! …</code> is something to do by hand (shown, not run) · <code>stop: …</code> runs when the app is stopped · <code># …</code> is a comment.</span>
-        <span><code>ps:</code> runs the step in PowerShell · <code>wait:"Now listening on"</code> or <code>wait:port:8080</code> says when a step that keeps running is ready · <code>answers:"y,n"</code> answers the questions it asks, in order.</span>
+        <span><code>ps:</code> runs the step in PowerShell · <code>wait:"Now listening on"</code>, <code>wait:port:8080</code> or <code>wait:http:8080/health</code> (answers below 500) says when a step that keeps running is ready · <code>answers:"y,n"</code> answers the questions it asks, in order.</span>
       </div>
       {scope !== 'stack' && <>
         <label className="eyebrow mb-1.5 mt-3 block" htmlFor="recipe-url">Where the app will be (optional; otherwise read from what it prints)</label>

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { cardRecipe, findUrl, parseStep, parseSteps, portOf, recipeLabel, recipeText, stepLabel, waitLabel, wsRecipeKey } from '../shared/recipes.ts';
@@ -203,6 +204,63 @@ test('a step line: ps:, wait: and answers:, in any order with @repo and stop:', 
   assert.deepEqual(parseStep('wait:port:8080 okteto up')!.wait, { port: 8080 });
   assert.equal(waitLabel(parseStep('wait:port:8080 okteto up')!), 'port 8080');
   assert.equal(parseStep('echo wait:port:1 ps: x')!.cmd, 'echo wait:port:1 ps: x', 'only at the start');
+  assert.deepEqual(parseStep('wait:http:8080/self @api okteto up')!.wait, { url: 'http://localhost:8080/self' });
+  assert.deepEqual(parseStep('WAIT:HTTP:5001 dotnet run')!.wait, { url: 'http://localhost:5001/' }, 'no path asks /');
+  assert.equal(waitLabel(parseStep('wait:http:8080/self okteto up')!), 'http://localhost:8080/self');
+  assert.equal(parseStep('wait:http:8080/self')!.cmd, 'wait:http:8080/self', 'a prefix needs a command after it');
+});
+
+/** A port nothing listens on yet. */
+const freePort = () => new Promise<number>((resolve) => {
+  const s = createServer().listen(0, '127.0.0.1', () => { const p = (s.address() as { port: number }).port; s.close(() => resolve(p)); });
+});
+
+test('a wait:http: step is ready only when its address answers below 500, not when its port opens', async () => {
+  const port = await freePort();
+  // Like okteto up then dotnet: the port is open but drops every connection, then the app answers 503, then 404.
+  const cwd = repo('wait-http', {
+    'api.js': [
+      "const net=require('net'),http=require('http');",
+      'const fwd=net.createServer((c)=>c.destroy()).listen(Number(process.env.PORT),()=>console.log("Forwarding"));',
+      "setTimeout(()=>fwd.close(()=>{let up=false;setTimeout(()=>up=true,1500);http.createServer((q,r)=>{r.statusCode=up?(q.url==='/self'?200:404):503;r.end()}).listen(Number(process.env.PORT),()=>console.log('started'))}),1200);",
+    ].join('\n'),
+    'app.js': "const s=require('http').createServer((q,r)=>r.end('ok')).listen(0,()=>console.log('Local: http://localhost:'+s.address().port+'/'))",
+  });
+  const runs = new RunService(() => {}, process.env);
+  const notes = new Set<string>();
+  try {
+    await runs.start('h1', { repo: cwd, source: '', steps: [`wait:http:${port}/self PORT=${port} node api.js`, 'node app.js'] }, cwd);
+    const step = () => runs.get('h1')!.steps[0];
+    assert.equal(step().waitFor, `http://localhost:${port}/self`);
+    await until(() => { if (step().waitNote) notes.add(step().waitNote!); return step().tail.includes('Forwarding'); });
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(step().state, 'go', 'an open port that drops connections isn’t ready');
+    await until(() => { if (step().waitNote) notes.add(step().waitNote!); return runs.get('h1')?.state === 'up'; });
+    assert.ok(notes.has('no answer yet') && notes.has('answered 503'), `said what it got: ${[...notes].join(', ')}`);
+    assert.deepEqual(runs.get('h1')!.steps.map((s) => s.state), ['up', 'up']);
+    assert.equal(step().waitNote, undefined);
+  } finally {
+    runs.stopAll();
+  }
+});
+
+test('a wait:http: step that never answers fails the run, and says so', async () => {
+  const port = await freePort();
+  const cwd = repo('wait-http-never', { 'api.js': 'setTimeout(()=>{}, 4000)' });
+  const runs = new RunService(() => {}, process.env, { httpWaitMs: 1200 });
+  try {
+    await runs.start('h2', { repo: cwd, source: '', steps: [`wait:http:${port} node api.js`, 'node -e "console.log(1)"'] }, cwd);
+    await until(() => runs.get('h2')?.state === 'failed');
+    const run = runs.get('h2')!;
+    assert.deepEqual(run.steps.map((s) => s.state), ['bad', 'wait'], 'the next step never ran');
+    assert.equal(run.steps[0].waitNote, 'no answer in time');
+    assert.match(run.text, new RegExp(`localhost:${port}/ never answered`));
+    await until(() => run.steps[0].code !== undefined, 8000);
+    assert.equal(runs.get('h2')!.state, 'failed', 'the step exiting later changes nothing');
+    assert.deepEqual(run.steps.map((s) => s.state), ['bad', 'wait']);
+  } finally {
+    runs.stopAll();
+  }
 });
 
 test('a wait: step is ready only when its text shows, and its URL isn’t the app’s', async () => {

@@ -571,9 +571,9 @@ function StepRow({ s }: { s: RunStep }) {
           {s.repo && <span className="shrink-0 rounded border border-line bg-raise px-1 text-[11px] text-sub">{s.repo}</span>}
           {s.env?.length ? <span className="shrink-0 text-[11px] text-faint" title="Variables this step sets (values hidden)">{s.env.join(' ')}</span> : null}
           <span className="min-w-0 grow truncate" title={s.cmd}>{s.cmd}</span>
-          {s.waitFor && s.state === 'go' && <span className="shrink-0 font-sans text-[11px] text-busy">waiting for {s.waitFor}</span>}
+          {s.waitFor && s.state === 'go' && <span className="shrink-0 font-sans text-[11px] text-busy">waiting for {s.waitFor}{s.waitNote ? ` · ${s.waitNote}` : ''}</span>}
         </>}
-      {s.state === 'bad' && <span className="shrink-0 text-bad">{s.code === undefined ? 'can’t run' : `exit ${s.code}`}</span>}
+      {s.state === 'bad' && <span className="shrink-0 text-bad">{s.waitNote ?? (s.code === undefined ? 'can’t run' : `exit ${s.code}`)}</span>}
       {s.state === 'up' && <span className="shrink-0 text-ok">serving</span>}
     </li>
   );

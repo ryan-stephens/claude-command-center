@@ -139,7 +139,7 @@ export const STACK_EXAMPLE: Stack = {
     steps: [
       'ps: answers:"y,n" if (-not (kubectl get deployment {{name}}-{{branch}} -n team-{{env}} 2>$null)) { New-DevEnvironment -Name {{name}} -Environment {{env}}; kubectl apply -f deployment.json }',
       'wait:port:{{port}} okteto up',
-      'wait:"Now listening on" okteto exec -- sh -c "cd src/{{dir}} && dotnet watch run"',
+      'wait:http:{{port}} okteto exec -- sh -c "cd src/{{dir}} && dotnet watch run"',
       'stop: okteto down',
       'stop: kubectl delete deployment {{name}}-{{branch}} -n team-{{env}}',
     ],
