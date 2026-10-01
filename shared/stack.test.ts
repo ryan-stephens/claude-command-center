@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseStep, recipeLabel, recipeText } from './recipes.ts';
-import { apiVars, choiceLabel, choiceValues, fill, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, runLabel, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiPortFor, uiProject, uiUrlFor, unknownStackRepos, validateStack, withPath, type Stack, type StackRunContext } from './stack.ts';
+import { apiVars, choiceLabel, choiceValues, fill, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, runLabel, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiPortFor, uiProject, uiUrlFor, unknownStackRepos, staleUrl, validateStack, withPath, type Stack, type StackRunContext } from './stack.ts';
 
 const stack: Stack = validateStack({
   choose: { env: ['dev', 'uat'] },
@@ -78,6 +78,13 @@ test('ports are picked per run: {{port}} is the picked one, {{appPort}} the cont
   assert.equal(noUrl({ path: '/other/' }, { uiApp: { name: 'deny-withdraw', port: 4216, path: '/ap-summary/', from: 'x' } }), 'http://localhost:4216/other/', 'ui.path wins over the baseHref');
   assert.equal(noUrl({ url: 'http://localhost:{{uiPort}}', path: '/ap-summary/' }, { uiPort: 18001 }), 'http://localhost:18001/ap-summary/');
   assert.equal(noUrl({ url: 'http://localhost:4216/already/', path: '/ap-summary/' }), 'http://localhost:4216/already/', 'a url with a path keeps it');
+  // VU: ui.url written as http://localhost:4200 from the example, the step serves deny-withdraw with no --port, and its project file says 4220 at /deny-withdraw/.
+  const dw = { name: 'deny-withdraw', port: 4220, path: '/deny-withdraw/', from: 'apps/deny-withdraw/project.json' };
+  assert.equal(noUrl({ url: 'http://localhost:4200' }, { uiApp: dw }), 'http://localhost:4220/deny-withdraw/', 'the project file wins over a stale url');
+  assert.equal(noUrl({ url: 'http://localhost:4200', steps: ['nx serve deny-withdraw --port 4200'] }, { uiApp: dw }), 'http://localhost:4200/deny-withdraw/', 'unless the step sets that port');
+  assert.equal(noUrl({ url: 'http://localhost:4200/x/' }, { uiApp: dw }), 'http://localhost:4200/x/', 'a url with its own path is left alone');
+  assert.equal(staleUrl('http://localhost:4200', 4220), true);
+  assert.equal(staleUrl('http://localhost:4220/', 4220), false);
   assert.equal(uiPortFor({ ...stack, ui: { repo: 'web-ui', steps: ['nx serve x'], path: '/p/' } }, { values: {}, apis: [] }, { ...ctx, uiPort: undefined, uiApp: { name: 'x', port: 4216, from: 'f' } }), 4216);
   assert.equal(uiProject(['if not exist node_modules npm install', 'node_modules\\.bin\\nx.cmd serve deny-withdraw --proxyConfig={{proxy}}']), 'deny-withdraw');
   assert.equal(uiProject(['npx nx run shop:serve:development --port 4200']), 'shop');

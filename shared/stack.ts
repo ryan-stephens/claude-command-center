@@ -373,9 +373,18 @@ function uiVars(values: Record<string, string>, ui: NonNullable<Stack['ui']>, ct
 export function uiUrlFor(stack: Stack, choice: StackChoice, ctx: StackRunContext): string | undefined {
   if (!stack.ui) return undefined;
   const vars = uiVars(choiceValues(stack, choice.values), stack.ui, ctx);
-  const port = ctx.uiPort ?? fixedPort(stack.ui.steps.map((s) => fill(s, vars, 'the UI’s steps'))) ?? ctx.uiApp?.port;
-  const base = stack.ui.url ? fill(stack.ui.url, vars, 'the UI’s url') : port ? `http://localhost:${port}` : undefined;
+  const inSteps = fixedPort(stack.ui.steps.map((s) => fill(s, vars, 'the UI’s steps')));
+  const port = ctx.uiPort ?? inSteps ?? ctx.uiApp?.port;
+  let base = stack.ui.url ? fill(stack.ui.url, vars, 'the UI’s url') : port ? `http://localhost:${port}` : undefined;
+  // A url written with a port the steps don't set, when the app's project file says another: the file is right (the url was a guess, or from the example).
+  if (base && stack.ui.url && !ctx.uiPort && !inSteps && ctx.uiApp?.port && staleUrl(base, ctx.uiApp.port)) base = `http://localhost:${ctx.uiApp.port}`;
   return base ? withPath(base, stack.ui.path ?? ctx.uiApp?.path) : undefined;
+}
+
+/** A plain localhost url (no path of its own) on a port that isn't the served app's. */
+export function staleUrl(url: string, appPort: number): boolean {
+  const m = /^https?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})\/?$/i.exec(url);
+  return Boolean(m && Number(m[1]) !== appPort);
 }
 
 /** The port the UI serves on for this run, as uiUrlFor works it out, when it is a number. */

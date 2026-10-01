@@ -144,6 +144,12 @@ test('no ui.url: the URL is the served app’s own port and baseHref from its pr
   assert.equal(w.recipe.url, 'http://localhost:18441/ap-summary/');
   assert.equal(w.opts.choice, 'dev · UI only · deny-withdraw :18441');
   w.opts.cleanup?.();
+  // VU's stack as saved: url http://localhost:4200 from the example, no --port on the step: the project file's port and path are used.
+  const stale = { ...info, ui: { ...info.ui!, url: 'http://localhost:4200' } };
+  const s = await prepareStackRun(stale, { values: { env: 'dev' }, apis: [] }, places, 'cu4', join(dir, 'runs-u'), pool);
+  assert.equal(s.recipe.url, 'http://localhost:4216/ap-summary/');
+  assert.equal(s.opts.choice, 'dev · UI only · deny-withdraw :4216');
+  s.opts.cleanup?.();
 });
 
 // A stand-in okteto: `okteto up -f <manifest>` reads the manifest's forward and starts the API on

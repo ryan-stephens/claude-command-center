@@ -25,12 +25,13 @@ test('pieces: the manifest’s name, a health route, the UI’s serve command, t
   // An nx workspace of several standalone apps, one project.json each: the first serves, the others are said; its own port and baseHref are read.
   const NX = repo('lending-ui', {
     'package.json': '{}',
-    'apps/deny-withdraw/project.json': JSON.stringify({ name: 'deny-withdraw', targets: { build: { options: { baseHref: '/ap-summary/' } }, serve: { options: { proxyConfig: 'apps/deny-withdraw/proxy.conf.json', port: 4216 } } } }),
-    'apps/deny-withdraw/proxy.conf.json': PROXY,
+    // As VU's nx 21 workspace has it: the port in serve.options, the proxy file under serve.configurations.development, the baseHref in build.options.
+    'apps/deny-withdraw/project.json': JSON.stringify({ name: 'deny-withdraw', targets: { build: { options: { baseHref: '/ap-summary/' }, defaultConfiguration: 'production' }, serve: { configurations: { production: {}, development: { proxyConfig: 'apps/config/proxy.conf.json' } }, defaultConfiguration: 'development', options: { port: 4216 } }, 'serve-static': { options: { port: 4200 } } } }),
+    'apps/config/proxy.conf.json': PROXY,
     'apps/payoff/project.json': JSON.stringify({ name: 'payoff', targets: { build: { options: { baseHref: '/payoff/' } }, serve: { options: { port: 4220 } } } }),
     'libs/shared/project.json': JSON.stringify({ name: 'shared', targets: { build: {} } }),
   });
-  assert.deepEqual(uiServe(NX), { command: 'npx nx serve deny-withdraw --proxyConfig={{proxy}} --port={{uiPort}}', proxyFile: 'apps/deny-withdraw/proxy.conf.json', port: 4216, path: '/ap-summary/', from: 'apps/deny-withdraw/project.json', others: ['payoff'] });
+  assert.deepEqual(uiServe(NX), { command: 'npx nx serve deny-withdraw --proxyConfig={{proxy}} --port={{uiPort}}', proxyFile: 'apps/config/proxy.conf.json', port: 4216, path: '/ap-summary/', from: 'apps/deny-withdraw/project.json', others: ['payoff'] });
   assert.deepEqual(uiApp(NX, 'payoff'), { name: 'payoff', port: 4220, path: '/payoff/', from: 'apps/payoff/project.json' });
   assert.deepEqual(uiApp(NX, 'PAYOFF')?.name, 'payoff', 'any case');
   assert.equal(uiApp(NX, 'nope'), undefined);

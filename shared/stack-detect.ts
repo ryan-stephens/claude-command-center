@@ -53,7 +53,13 @@ export function healthRoute(cs: string): string | undefined {
 interface Serve { command: string; proxyFile?: string; port?: number; path?: string; from: string; /** The other apps the repo can serve. */ others?: string[] }
 
 type Targets = Record<string, Record<string, unknown>>;
-const serveOpts = (target: Record<string, unknown> | undefined) => ((target?.options ?? {}) as { proxyConfig?: string; port?: number });
+/** The serve target's options with its default configuration's on top (nx puts proxyConfig under configurations.development). */
+const serveOpts = (target: Record<string, unknown> | undefined): { proxyConfig?: string; port?: number } => {
+  const options = (target?.options ?? {}) as Record<string, unknown>;
+  const configs = (target?.configurations ?? {}) as Record<string, Record<string, unknown>>;
+  const def = typeof target?.defaultConfiguration === 'string' ? target.defaultConfiguration : 'development';
+  return { ...options, ...(configs[def] ?? {}) } as { proxyConfig?: string; port?: number };
+};
 /** The app's baseHref from its build target, when it isn't `/`. */
 const basePath = (targets: Targets | undefined): string | undefined => {
   const b = (targets?.build?.options as { baseHref?: unknown } | undefined)?.baseHref;
@@ -219,7 +225,10 @@ export function detectStack(repos: RepoFiles[]): Detected {
     const proxyFile = ui.serve.proxyFile && r.files.includes(ui.serve.proxyFile.replace(/^\.\//, '')) ? ui.serve.proxyFile.replace(/^\.\//, '') : r.files.find((f) => /(^|\/)proxy\.conf\.(json|js|mjs|cjs)$/.test(f));
     findings.push({ repo: r.name, role: 'ui', text: `serves with ${ui.serve.command.replace(/ --proxy-config \{\{proxy\}\}| --proxyConfig=\{\{proxy\}\}/, proxyFile ? '$&' : '')}${ui.serve.port ? ` (its own port is ${ui.serve.port})` : ''}`, from: ui.serve.from });
     if (ui.serve.path) findings.push({ repo: r.name, role: 'ui', text: `the app lives at ${ui.serve.path} (its baseHref): the URL opens there`, from: ui.serve.from });
-    if (ui.serve.others?.length) findings.push({ repo: r.name, role: 'ui', text: `the repo can also serve ${ui.serve.others.join(', ')}: to start one of those instead, name it in the serve step`, asked: true });
+    if (ui.serve.others?.length) {
+      const o = ui.serve.others;
+      findings.push({ repo: r.name, role: 'ui', text: `the repo can also serve ${o.slice(0, 8).join(', ')}${o.length > 8 ? ` and ${o.length - 8} more` : ''}: to start one of those instead, name it in the serve step`, asked: true });
+    }
     let rules: Record<string, unknown> | undefined;
     if (proxyFile && /\.json$/.test(proxyFile)) {
       try { rules = readLooseJson(r.read(proxyFile) ?? ''); findings.push({ repo: r.name, role: 'ui', text: `proxy rules: ${Object.keys(rules).join(', ') || 'none'}`, from: proxyFile }); } catch { findings.push({ repo: r.name, role: 'ui', text: `${proxyFile} couldn’t be read as JSON: the picked APIs can’t be put in it`, from: proxyFile, asked: true }); }
