@@ -17,7 +17,9 @@ Read before changing anything:
 - `docs/prompts/continue-ticket-line.md`: what the line does and where it stands.
 - `docs/PLAN.md` §54: the five milestones just built (worktrees as the way a card works, several cards up at once, a stack read from the repos, Ship per repo, context added later feeding the run). Read its **Not verified** and **To check at VU** lists: they are what my smoke test exercises, so what I report will land in them. Skim §42, §52 and §53 for the stack and worktrees, and §35 for keeping trackers, dev environments and code hosts swappable.
 
-## Where this stands (2026-10-01)
+## Where this stands (2026-10-01, evening)
+Two sessions in. The second one (commits `6816cc5` and `6217133`) built Ship after a part-way failure (`s` again ships only the repos left; `ship.left` on the card, `shipMode` in `shared/ship.ts`, PROTOCOL 20), hid the Overview's *Claude said* when the live transcript is beside it, and built the stack editor's table (`web/stack-table.ts` + `web/components/StackTable.tsx`; the editor's tabs are repo → workspace → table → JSON). Both are written into PLAN §54 (milestones 3 and 4) and §55, each with a *To check at VU* list. The owner is now smoke-testing at VU and will paste what they see; thread 1 below is the priority.
+
 Everything in §54 is built and verified against stand-ins only: a stand-in `okteto` that starts an API on the port its `-f` manifest forwards, a stand-in `gh`, a stub TFS, stand-in repos. The real Okteto, kubectl, the team's helper, nx, `gh` and TFS are on the VU laptop. The open items, in the order the smoke test will meet them:
 1. `t` on a workspace with no stack: does detection read the real `angular.json` / nx serve target, the real proxy file, and the manifest the helper generates? What came out as `?` that should have been `✓`? (`e` then shows the same as a table, a row per part with the files each was read from; `e` on a row fixes a value.)
 2. The real `okteto up -f okteto.cc-control.yml`: does a sibling copy keep the sync folder and the dev name? If not, the fallback is the `${CC_PORT:-8080}:8080` edit to the team's manifest with `CC_PORT={{port}}` on the step (§54, milestone 2).
