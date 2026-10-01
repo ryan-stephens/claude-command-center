@@ -5,6 +5,7 @@
 
 import { askOf, cardRepos, ownFolders, waiting } from '../shared/cards.ts';
 import { cardRecipe, wsRecipeKey } from '../shared/recipes.ts';
+import { allMerged, openPrs, prsOf } from '../shared/ship.ts';
 import type { StackChoice } from '../shared/stack.ts';
 import { repoName } from '../shared/workspaces.ts';
 import { inbox, INBOX_VIEWS, type Ticket } from '../shared/tickets.ts';
@@ -45,7 +46,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['t picker: ← →  /  ↑ ↓ Space  /  a n  /  Enter', 'Environment (dev, uat …)  /  which APIs run (changed ones are ticked)  /  all or none  /  start them, then the UI'],
       ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
       ['e (a card)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo, the whole workspace, or the workspace’s stack of APIs and UI)'],
-      ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket; on a card in Ship, merge it. On a QA or review card: its report (Enter copies, j posts it on the Jira ticket and m moves the ticket, each after you confirm; o opens the PR, d moves the card to Done)'],
+      ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket, in each repo the card changed (one block per repo in the sheet; the PRs link each other); on a card in Ship, merge them. On a QA or review card: its report (Enter copies, j posts it on the Jira ticket and m moves the ticket, each after you confirm; o opens the PR, d moves the card to Done)'],
       ['d (a card in Ship)', 'Done: the PR was merged or closed by hand, or the host isn’t one Ship can follow'],
       ['Shift+X (a card)', 'Worktrees: the folders the card made, with what each still holds; on a Done card, remove them and their branch (Enter the clean ones, f all of them)'],
       ['Delete', 'Take the card off the line (its terminal session keeps running); w there removes its worktrees too'],
@@ -325,10 +326,12 @@ export function openApp(id: string): void {
   const s = get();
   const run = s.runs[id];
   const card = s.cards.find((c) => c.id === id);
-  const pr = card?.ship?.pr ?? card?.pr;
+  // The card's PRs: the first still open, else the first; a QA or review card's is the one it looks at.
+  const prs = card ? prsOf(card.ship) : [];
+  const pr = openPrs(prs)[0] ?? prs[0] ?? card?.pr;
   if (run?.state === 'up' && run.url) window.open(run.url, '_blank', 'noopener');
   else if (run?.state === 'running') flash('The app is still starting');
-  else if (pr) window.open(pr.url, '_blank', 'noopener');
+  else if (pr) { window.open(pr.url, '_blank', 'noopener'); if (prs.length > 1) flash(`Opened PR #${pr.number}${pr.repo ? ` (${pr.repo})` : ''}; the others are in the Ship section`); }
   else flash('Nothing running yet: t tries it');
 }
 
@@ -350,8 +353,8 @@ export function shipKey(id: string): void {
     set({ modal: { kind: 'report', id } });
     return;
   }
-  if (card.stage === 'done' && card.ship?.pr?.state === 'MERGED') { flash(`${card.key} is merged`); return; }
-  if (!card.sessionId && !card.ship?.pr) { flash(`${card.key} hasn’t started yet`); return; }
+  if (card.stage === 'done' && allMerged(prsOf(card.ship))) { flash(`${card.key} is merged`); return; }
+  if (!card.sessionId && !prsOf(card.ship).length) { flash(`${card.key} hasn’t started yet`); return; }
   set({ modal: { kind: 'ship', id } });
 }
 

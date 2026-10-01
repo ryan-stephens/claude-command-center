@@ -15,7 +15,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
 
-export const PROTOCOL = 18;
+export const PROTOCOL = 19;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -377,7 +377,7 @@ export type ClientMsg =
   | { type: 'card.stopRun'; id: string }
   /** Save the run recipe you wrote for a repo; no steps goes back to the detected one. Answered with ok or an error. */
   | { type: 'recipe.save'; reqId: string; repo?: string; workspaceId?: string; steps: string[]; url?: string }
-  /** Ship: what shipping the card will do (answered with ship.plan), do it (ok or an error), look at its PR again, merge it. */
+  /** Ship: what shipping the card will do, one block per repo it changed (answered with ship.plan), do it (ok or an error), look at its PRs again, merge them. */
   | { type: 'card.shipPlan'; reqId: string; id: string }
   | { type: 'card.ship'; reqId: string; id: string; request: ShipRequest }
   | { type: 'card.prRefresh'; reqId: string; id: string }

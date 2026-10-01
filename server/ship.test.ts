@@ -22,7 +22,7 @@ writeFileSync(stub, `import { appendFileSync, readFileSync } from 'node:fs';
 const a = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, JSON.stringify(a) + '\\n');
 if (a[0] === '--version') console.log('gh version 2.0.0 (stub)');
-else if (a[0] === 'pr' && a[1] === 'create') { const i = a.indexOf('--body-file'); appendFileSync(${JSON.stringify(log)}, JSON.stringify({ body: readFileSync(a[i + 1], 'utf8') }) + '\\n'); console.log('https://github.com/acme/web/pull/12'); }
+else if (a[0] === 'pr' && a[1] === 'create') { const i = a.indexOf('--body-file'); const n = 12 + readFileSync(${JSON.stringify(log)}, 'utf8').split('\\n').filter((l) => l.includes('"body"')).length; appendFileSync(${JSON.stringify(log)}, JSON.stringify({ body: readFileSync(a[i + 1], 'utf8') }) + '\\n'); console.log('https://github.com/acme/web/pull/' + n); }
 else if (a[0] === 'pr' && a[1] === 'view') console.log(JSON.stringify({ state: 'OPEN', reviewDecision: 'APPROVED', statusCheckRollup: [{ status: 'COMPLETED', conclusion: 'SUCCESS' }] }));
 else if (a[0] === 'pr' && a[1] === 'merge') console.log('Merged');
 else process.exit(1);
@@ -90,16 +90,18 @@ test('ships only the files it ticked: branch off main, commit, push, PR; then fo
   const ship = new ShipService(cards, new RunService(() => {}, process.env), { env: { ...process.env, CC_CONTROL_GH: stub } });
   try {
     const plan = await ship.plan(card);
-    assert.equal(plan.branch, 'main');
-    assert.equal(plan.newBranch, 'shop-155-save-cart-signed-out');
-    assert.equal(plan.base, 'main');
+    assert.equal(plan.repos.length, 1, 'one repo: one block');
+    const [r] = plan.repos;
+    assert.equal(r.branch, 'main');
+    assert.equal(r.newBranch, 'shop-155-save-cart-signed-out');
+    assert.equal(r.base, 'main');
     assert.deepEqual(plan.blockers, []);
-    assert.deepEqual(plan.files.map((f) => [f.path, f.mine]), [['cart.js', true], ['notes.txt', false]]);
-    assert.match(plan.notes[0], /1 changed file not written by this card is left out/);
+    assert.deepEqual(r.files.map((f) => [f.path, f.mine]), [['cart.js', true], ['notes.txt', false]]);
+    assert.match(plan.notes[0], /^1 changed file not written by this card is left out/);
     assert.match(plan.body, /- `cart\.js`/);
 
-    const pr = await ship.ship(card.id, { commit: plan.commit, title: plan.title, body: plan.body, paths: ['cart.js', 'not-a-change.js'] });
-    assert.deepEqual(pr, { number: 12, url: 'https://github.com/acme/web/pull/12', host: 'github', state: 'OPEN', checks: 'none', checkedAt: pr!.checkedAt });
+    const [pr] = await ship.ship(card.id, { commit: plan.commit, title: plan.title, body: plan.body, repos: [{ root: r.root, paths: ['cart.js', 'not-a-change.js'] }] });
+    assert.deepEqual(pr, { number: 12, url: 'https://github.com/acme/web/pull/12', host: 'github', state: 'OPEN', checks: 'none', checkedAt: pr!.checkedAt, repo: pr.repo, root: r.root });
     assert.equal(git(work, 'branch', '--show-current'), 'shop-155-save-cart-signed-out');
     assert.equal(git(work, 'log', '-1', '--format=%s'), 'feat: save cart for signed-out users (SHOP-155)');
     assert.equal(git(work, 'show', '--name-only', '--format=', 'HEAD'), 'cart.js', 'only the ticked file');
@@ -114,9 +116,11 @@ test('ships only the files it ticked: branch off main, commit, push, PR; then fo
     assert.equal(saved.branchName, 'shop-155-save-cart-signed-out');
     assert.deepEqual(saved.ship!.steps.map((s) => s.state), ['ok', 'ok', 'ok', 'ok']);
     assert.match(saved.ship!.steps[1].text, /^Committed [0-9a-f]+: feat: save cart/);
-    await assert.rejects(ship.ship(card.id, { commit: 'x', title: 'x', body: '', paths: ['notes.txt'] }), /already has PR #12/);
+    assert.equal(saved.ship!.prs!.length, 1);
+    assert.equal(saved.ship!.pr, undefined, 'the list is the record now');
+    await assert.rejects(ship.ship(card.id, { commit: 'x', title: 'x', body: '', repos: [{ root: r.root, paths: ['notes.txt'] }] }), /already has PR #12/);
 
-    const seen = await ship.refresh(card.id);
+    const [seen] = await ship.refresh(card.id);
     assert.equal(prLine(seen!), 'PR #12 · approved · checks passing');
     await ship.merge(card.id);
     assert.ok(calls().some((a) => Array.isArray(a) && a[1] === 'merge' && a.includes('--squash')));
@@ -138,7 +142,7 @@ test('a changed tracked file listed first keeps its whole name (git status start
   const ship = new ShipService(cards, new RunService(() => {}, process.env), { env: { ...process.env, CC_CONTROL_GH: stub } });
   try {
     const plan = await ship.plan(card);
-    assert.deepEqual(plan.files, [{ path: 'README.md', status: ' M', mine: true }, { path: 'zeta.txt', status: '??', mine: false }]);
+    assert.deepEqual(plan.repos[0].files, [{ path: 'README.md', status: ' M', mine: true }, { path: 'zeta.txt', status: '??', mine: false }]);
   } finally {
     ship.stop();
   }
@@ -158,10 +162,10 @@ test('what stops it is said up front: no remote, nothing ticked', async () => {
     const plan = await ship.plan(card);
     assert.deepEqual(plan.blockers, ['The repo has no remote to push to.']);
     assert.equal(plan.notes.some((n) => /doesn’t know/.test(n)), false, 'no remote: nothing about hosts');
-    await assert.rejects(ship.ship(card.id, { commit: 'x', title: 'x', body: '', paths: [] }), /no remote/);
+    await assert.rejects(ship.ship(card.id, { commit: 'x', title: 'x', body: '', repos: [] }), /no remote/);
     const { work: w2 } = repo();
     const c2 = seed(w2);
-    await assert.rejects(ship.ship(c2.id, { commit: 'x', title: 'x', body: '', paths: [] }), /Nothing to ship/);
+    await assert.rejects(ship.ship(c2.id, { commit: 'x', title: 'x', body: '', repos: [{ root: w2, paths: [] }] }), /Nothing to ship/);
   } finally {
     ship.stop();
   }
@@ -176,14 +180,63 @@ test('a host cc-control doesn’t know: it still commits and pushes, and says to
   try {
     const plan = await ship.plan(card);
     assert.deepEqual(plan.blockers, []);
-    assert.equal(plan.host, '');
+    assert.equal(plan.repos[0].host, '');
     assert.match(plan.notes.join(' '), /doesn’t know how to open a pull request on .*remote-.*\.git yet/);
-    const pr = await ship.ship(card.id, { commit: plan.commit, title: plan.title, body: plan.body, paths: ['cart.js'] });
-    assert.equal(pr, undefined);
+    const prs = await ship.ship(card.id, { commit: plan.commit, title: plan.title, body: plan.body, repos: [{ root: plan.repos[0].root, paths: ['cart.js'] }] });
+    assert.deepEqual(prs, []);
     assert.match(git(remote, 'branch', '--list'), /shop-155-save-cart-signed-out/, 'pushed');
     const saved = cards.get(card.id)!;
     assert.equal(saved.stage, 'ship');
     assert.match(saved.ship!.steps.at(-1)!.text, /Open the pull request for shop-155-save-cart-signed-out in the browser/);
+  } finally {
+    ship.stop();
+  }
+});
+
+test('a card that changed two repos ships each from its worktree: two commits, two pushes, two PRs linking each other; both followed and merged', async () => {
+  const web = repo();
+  const api = repo();
+  writeFileSync(join(web.work, 'cart.js'), 'export const cart = [];\n');
+  writeFileSync(join(api.work, 'Fees.cs'), 'class Fees {}\n');
+  writeFileSync(join(api.work, 'scratch.txt'), 'not the card’s\n');
+  // A worktree card: each work folder stands in for the card's worktree of a repo (named after the repo).
+  const card: Card = {
+    ...seed(web.work), launch: { home: join(dir, 'web'), branch: 'worktree', mode: 'default', message: '' }, branchName: 'shop-155-save-cart-signed-out',
+    folders: [{ repo: join(dir, 'web'), dir: web.work }, { repo: join(dir, 'api'), dir: api.work }],
+    files: [join(web.work, 'cart.js'), join(api.work, 'Fees.cs')],
+  };
+  store.saveCard(card, 'tok');
+  const cards = new CardService(store, { port: 7788, changed: () => {} });
+  const ship = new ShipService(cards, new RunService(() => {}, process.env), { env: { ...process.env, CC_CONTROL_GH: stub } });
+  try {
+    const plan = await ship.plan(card);
+    assert.deepEqual(plan.repos.map((r) => [r.repo, r.newBranch, r.files.map((f) => `${f.path}${f.mine ? '*' : ''}`)]), [['web', 'shop-155-save-cart-signed-out', ['cart.js*']], ['api', 'shop-155-save-cart-signed-out', ['Fees.cs*', 'scratch.txt']]]);
+    assert.deepEqual(plan.notes, ['api: 1 changed file not written by this card is left out. Tick it to include.'], 'named by repo');
+    assert.match(plan.body, /- `web\/cart\.js`\n- `api\/Fees\.cs`/, 'the files by repo');
+    // The stub numbers PRs by how many it has opened so far in this file.
+    const n = 12 + calls().filter((a) => a.body).length;
+    const prs = await ship.ship(card.id, { commit: plan.commit, title: plan.title, body: plan.body, repos: plan.repos.map((r) => ({ root: r.root, paths: r.files.filter((f) => f.mine).map((f) => f.path) })) });
+    assert.deepEqual(prs.map((p) => [p.repo, p.number, p.root]), [['web', n, web.work], ['api', n + 1, api.work]]);
+    assert.equal(git(web.work, 'show', '--name-only', '--format=', 'HEAD'), 'cart.js');
+    assert.equal(git(api.work, 'show', '--name-only', '--format=', 'HEAD'), 'Fees.cs', 'only the ticked file in each');
+    assert.match(git(web.remote, 'branch', '--list'), /shop-155/, 'pushed');
+    assert.match(git(api.remote, 'branch', '--list'), /shop-155/, 'pushed too');
+    const bodies = calls().filter((a) => a.body).map((a) => a.body as string);
+    assert.match(bodies.at(-2)!, /Part of SHOP-155 with api \(its PR opens with this one\)\./, 'the first PR names the second');
+    assert.ok(bodies.at(-1)!.includes(`Part of SHOP-155 with [web](https://github.com/acme/web/pull/${n}).`), 'the second links the first');
+    const saved = cards.get(card.id)!;
+    assert.equal(saved.stage, 'ship');
+    assert.deepEqual(saved.ship!.prs!.map((p) => p.number), [n, n + 1]);
+    assert.ok(saved.ship!.steps.every((s) => /^(web|api): /.test(s.text)), 'every step says which repo');
+    await assert.rejects(ship.ship(card.id, { commit: 'x', title: 'x', body: '', repos: [] }), /already has 2 open PRs/);
+    const seen = await ship.refresh(card.id);
+    assert.deepEqual(seen.map((p) => prLine(p)), [`PR #${n} · approved · checks passing`, `PR #${n + 1} · approved · checks passing`]);
+    assert.equal(cards.get(card.id)!.stage, 'ship', 'not done until both are merged');
+    await ship.merge(card.id);
+    assert.doesNotMatch(git(web.remote, 'branch', '--list'), /shop-155/);
+    assert.doesNotMatch(git(api.remote, 'branch', '--list'), /shop-155/);
+    assert.ok(cards.get(card.id)!.ship!.prs!.every((p) => p.state === 'MERGED'));
+    assert.equal(cards.get(card.id)!.stage, 'done');
   } finally {
     ship.stop();
   }

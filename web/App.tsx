@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { askOf, cardRepos, ownFolders, waiting } from '../shared/cards.ts';
 import { cardRecipe } from '../shared/recipes.ts';
+import { openPrs, prsOf } from '../shared/ship.ts';
 import { Dialogs } from './components/Dialogs.tsx';
 import { SessionView } from './components/SessionView.tsx';
 import { Icon, Key, KeyHint, WsBadge } from './components/ui.tsx';
@@ -54,10 +55,11 @@ function Legend() {
   const run = useStore((s) => (shown ? s.runs[shown.id] : undefined));
   const appRunning = run?.state === 'running' || run?.state === 'up';
   const appUp = run?.state === 'up' && Boolean(run.url);
-  const pr = shown?.ship?.pr;
+  const prs = shown ? prsOf(shown.ship) : [];
+  const pr = openPrs(prs)[0] ?? prs[0];
   const testing = shown?.kind === 'qa' || shown?.kind === 'review';
   const ship = testing ? (shown.report || shown.live?.lastMessage ? 'report' as const : undefined)
-    : shown && shown.stage !== 'done' && (shown.sessionId || pr) ? (pr && pr.state === 'OPEN' ? 'merge' as const : 'ship' as const) : undefined;
+    : shown && shown.stage !== 'done' && (shown.sessionId || pr) ? (openPrs(prs).length ? 'merge' as const : 'ship' as const) : undefined;
   const canDone = shown?.stage === 'ship';
   const canSay = Boolean(drawerCard?.channel);
   const asking = Boolean(drawerCard && askOf(drawerCard)?.requestId);

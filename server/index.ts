@@ -535,7 +535,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const r = (msg.request ?? {}) as Partial<ShipRequest>;
       await ship.ship(String(msg.id), {
         commit: String(r.commit ?? '').slice(0, 4000), title: String(r.title ?? '').slice(0, 300), body: String(r.body ?? '').slice(0, 60_000),
-        paths: Array.isArray(r.paths) ? r.paths.map(String).slice(0, 2000) : [],
+        repos: (Array.isArray(r.repos) ? r.repos : []).slice(0, 20).map((x) => ({ root: String((x as { root?: unknown })?.root ?? ''), paths: Array.isArray((x as { paths?: unknown[] })?.paths) ? (x as { paths: unknown[] }).paths.map(String).slice(0, 2000) : [] })),
       });
       send(ws, { type: 'ok', reqId: msg.reqId });
       return;

@@ -239,8 +239,11 @@ export interface Card extends CardDraft {
   round?: number;
   /** Context added since it started: it waits on the card until a hook hands it to Claude. */
   later?: LaterItem[];
-  /** Shipping it: each step (branch, commit, push, PR, merge) and the pull request it opened. */
-  ship?: { steps: BootStep[]; pr?: PullRequest };
+  /**
+   * Shipping it: each step (branch, commit, push, PR, merge) and the pull requests it opened, one
+   * per repo it changed (`prs`); `pr` is the single one of cards from before Ship went per repo.
+   */
+  ship?: { steps: BootStep[]; pr?: PullRequest; prs?: PullRequest[] };
   /** QA and review: the report Claude ended with (its QA report or review findings). */
   report?: CardReport;
 }

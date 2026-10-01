@@ -16,7 +16,7 @@ import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard, ticketFocus } from '../line-model.ts';
 import { answerAsk, boardOf, editRecipe, goToTab, openAddComposer, openChanges, openApp, openCard, openComposer, openNeighbour, openWorktrees, saySubmit, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
 import { cardRecipe, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
-import { prLine } from '../../shared/ship.ts';
+import { allMerged, openPrs, prLine, prsLine, prsOf } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
@@ -272,9 +272,9 @@ function CardTile({ card, focused, color }: { card: Card; focused: boolean; colo
         </span>
       )}
       <RunLine id={card.id} />
-      {card.ship?.pr && (
-        <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold ${card.ship.pr.state === 'MERGED' ? 'text-ok' : card.ship.pr.checks === 'fail' ? 'text-bad' : 'text-busy'}`}>
-          <span className="rounded border border-current px-1 font-mono text-[10px]">PR</span><span className="truncate">{prLine(card.ship.pr)}</span>
+      {prsOf(card.ship).length > 0 && (
+        <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold ${allMerged(prsOf(card.ship)) ? 'text-ok' : prsOf(card.ship).some((p) => p.checks === 'fail') ? 'text-bad' : 'text-busy'}`}>
+          <span className="rounded border border-current px-1 font-mono text-[10px]">PR</span><span className="truncate">{prsLine(prsOf(card.ship))}</span>
         </span>
       )}
       {prog && (
@@ -420,9 +420,9 @@ function DrawerActions({ card }: { card: Card }) {
         <button className={`btn py-1 ${card.report ? 'btn-primary' : ''}`} onClick={() => shipKey(card.id)}>
           <Key k="s" size="sm" tone={card.report ? 'ghost' : undefined} />{card.kind === 'qa' ? 'QA report' : 'Findings'}
         </button>
-      ) : card.stage !== 'done' && (card.sessionId || card.ship?.pr) && (
-        <button className={`btn py-1 ${card.stage === 'try' || card.ship?.pr ? 'btn-primary' : ''}`} onClick={() => shipKey(card.id)}>
-          <Key k="s" size="sm" tone={card.stage === 'try' || card.ship?.pr ? 'ghost' : undefined} />{card.ship?.pr?.state === 'OPEN' ? `Merge #${card.ship.pr.number}` : 'Ship'}
+      ) : card.stage !== 'done' && (card.sessionId || prsOf(card.ship).length > 0) && (
+        <button className={`btn py-1 ${card.stage === 'try' || prsOf(card.ship).length ? 'btn-primary' : ''}`} onClick={() => shipKey(card.id)}>
+          <Key k="s" size="sm" tone={card.stage === 'try' || prsOf(card.ship).length ? 'ghost' : undefined} />{openPrs(prsOf(card.ship)).length > 1 ? `Merge ${openPrs(prsOf(card.ship)).length} PRs` : openPrs(prsOf(card.ship)).length === 1 ? `Merge #${openPrs(prsOf(card.ship))[0].number}` : 'Ship'}
         </button>
       )}
       {card.stage !== 'done' && <button className="btn py-1" onClick={() => openAddComposer(card.id)}><Key k="c" size="sm" />Add context</button>}
@@ -532,17 +532,19 @@ function Overview({ card }: { card: Card }) {
   );
 }
 
-/** The card's pull request and how shipping went. */
+/** The card's pull requests (one per repo it shipped) and how shipping went. */
 function Shipped({ card }: { card: Card }) {
-  const pr = card.ship!.pr;
+  const prs = prsOf(card.ship);
+  const seen = prs.map((p) => p.checkedAt ?? 0).reduce((a, b) => Math.max(a, b), 0);
   return (
-    <Sec title="Ship" right={pr && <span className="text-sm text-faint">{pr.checkedAt ? `looked at ${clock(pr.checkedAt)}` : ''}</span>}>
-      {pr && (
-        <div className="flex items-center gap-2.5 rounded-lg bg-busy-bg px-3 py-2 text-sm font-semibold text-busy">
+    <Sec title="Ship" right={prs.length > 0 && <span className="text-sm text-faint">{seen ? `looked at ${clock(seen)}` : ''}</span>}>
+      {prs.map((pr) => (
+        <div key={`${pr.host}-${pr.number}`} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold ${pr.state === 'MERGED' ? 'bg-ok-bg text-ok' : 'bg-busy-bg text-busy'}`}>
+          {prs.length > 1 && <span className="shrink-0 rounded border border-current px-1 font-mono text-[11px]">{pr.repo ?? 'repo'}</span>}
           <a className="grow underline" href={pr.url} target="_blank" rel="noreferrer">{prLine(pr)}</a>
-          {pr.state === 'OPEN' && <button className="flex items-center gap-1.5" onClick={() => shipKey(card.id)}><Key k="s" size="sm" />merge</button>}
+          {pr.state === 'OPEN' && <button className="flex items-center gap-1.5" onClick={() => shipKey(card.id)}><Key k="s" size="sm" />merge{openPrs(prs).length > 1 ? ' all' : ''}</button>}
         </div>
-      )}
+      ))}
       <ol className="grid gap-1 text-[13px]">
         {card.ship!.steps.map((st, i) => (
           <li key={i} className="flex items-start gap-2.5">

@@ -128,11 +128,11 @@ test('shipping to Azure DevOps Server: push over git, the PR through the REST AP
     const noToken = await new ShipService(cards, new RunService(() => {}, process.env), { env: {} }).plan(card);
     assert.match(noToken.blockers[0], /Set CC_CONTROL_ADO_TOKEN/);
     const plan = await ship.plan(card);
-    assert.equal(plan.host, 'Azure DevOps');
-    assert.equal(plan.base, 'develop', 'no origin/HEAD: develop is found locally');
+    assert.equal(plan.repos[0].host, 'Azure DevOps');
+    assert.equal(plan.repos[0].base, 'develop', 'no origin/HEAD: develop is found locally');
     assert.deepEqual(plan.blockers, []);
 
-    const pr = (await ship.ship(card.id, { commit: plan.commit, title: plan.title, body: 'x'.repeat(5000), paths: ['proxy.conf.json'] }))!;
+    const [pr] = await ship.ship(card.id, { commit: plan.commit, title: plan.title, body: 'x'.repeat(5000), repos: [{ root: plan.repos[0].root, paths: ['proxy.conf.json'] }] });
     assert.equal(pr.number, 314);
     assert.equal(pr.host, 'azure');
     assert.equal(pr.url, `http://127.0.0.1:${port}/tfs/DefaultCollection/ss/_git/Workspaces-UI/pullrequest/314`);
@@ -147,7 +147,7 @@ test('shipping to Azure DevOps Server: push over git, the PR through the REST AP
     ]);
 
     tfs.approve();
-    const seen = await ship.refresh(card.id);
+    const [seen] = await ship.refresh(card.id);
     assert.deepEqual([seen!.state, seen!.review, seen!.checks], ['OPEN', 'APPROVED', 'pass']);
     assert.ok(tfs.seen.filter((s) => s.method === 'GET').every((s) => /api-version=5\.0/.test(s.url)), 'the version it found is remembered');
 

@@ -5,10 +5,10 @@
 // it. Every step lands on the card, so the sheet and the drawer show where it got to and what failed.
 
 import { normalize } from 'node:path';
-import { branchFor, cardRepos, type BootStep, type Card } from '../shared/cards.ts';
+import { branchFor, cardRepos, ownFolders, type BootStep, type Card } from '../shared/cards.ts';
 import { parsePatch, type Changes } from '../shared/changes.ts';
-import { commitMessage, prBody, prTitle, type PullRequest, type ShipFile, type ShipPlan, type ShipRequest } from '../shared/ship.ts';
-import { isInside, samePath } from '../shared/workspaces.ts';
+import { allMerged, commitMessage, openPrs, partOf, prBody, prsOf, prTitle, type PullRequest, type RepoShipPlan, type ShipFile, type ShipPlan, type ShipRequest } from '../shared/ship.ts';
+import { repoName, samePath } from '../shared/workspaces.ts';
 
 /** A diff bigger than this is cut: the sheet says so. */
 const MAX_PATCH = 2 * 1024 * 1024;
@@ -92,11 +92,13 @@ export class ShipService {
     return 'main';
   }
 
-  async plan(card: Card): Promise<ShipPlan> {
-    const cwd = this.folder(card);
+  /** What shipping one folder of the card will do: its branch, remote and host, the files, what is in the way. */
+  private async planRepo(card: Card, cwd: string, home: boolean): Promise<RepoShipPlan> {
     const top = await run('git', ['rev-parse', '--show-toplevel'], cwd);
     if (top.code !== 0) throw new Error(`${cwd} isn’t a git repo.`);
     const root = normalize(top.out);
+    // A worktree is named after the repo it is of; the repo's own folder after itself.
+    const repo = repoName((card.folders ?? []).find((f) => samePath(f.dir, root))?.repo ?? root);
     const branch = (await run('git', ['branch', '--show-current'], root)).out;
     const remote = await this.remote(root);
     const base = await this.base(root, remote);
@@ -119,10 +121,6 @@ export class ShipService {
       .map((f) => ({ ...f, mine: mine.has(f.path.toLowerCase()) }));
     const others = files.filter((f) => !f.mine).length;
     if (others) notes.push(`${others} changed file${others === 1 ? '' : 's'} not written by this card ${others === 1 ? 'is' : 'are'} left out. Tick ${others === 1 ? 'it' : 'them'} to include.`);
-    const elsewhere = (card.files ?? []).length - relativeTo(root, card.files ?? []).length;
-    // A worktree card's other repos: say which of its worktrees they are in, so they can be shipped from there.
-    const where = (card.folders ?? []).filter((f) => !samePath(f.dir, root) && (card.files ?? []).some((p) => isInside(p, f.dir))).map((f) => f.dir);
-    if (elsewhere) notes.push(`${elsewhere} file${elsewhere === 1 ? '' : 's'} it changed in other repos ${elsewhere === 1 ? 'isn’t' : 'aren’t'} part of this PR${where.length ? ` (in ${where.join(', ')}, on the same branch)` : ''}.`);
 
     let ahead = 0;
     if (branch && branch !== base) {
@@ -130,15 +128,34 @@ export class ShipService {
       const n = await run('git', ['rev-list', '--count', `${ref}..HEAD`], root);
       ahead = n.code === 0 ? Number(n.out) || 0 : 0;
     }
-    if (!files.some((f) => f.mine) && !ahead) notes.push('Claude hasn’t changed any files here that git can see. Tick the ones to ship.');
+    if (home && !files.some((f) => f.mine) && !ahead) notes.push('Claude hasn’t changed any files here that git can see. Tick the ones to ship.');
+    return { repo, root, branch, ...(newBranch ? { newBranch } : {}), base, host: typeof host === 'string' ? '' : host.name, files, ahead, blockers, notes };
+  }
 
+  /**
+   * One block per repo the card ships: its home folder always, and each other worktree of its with
+   * work in it (files the card wrote, or commits the base doesn't have). One commit message, title
+   * and body for all of them; a repo's blockers and notes are named by repo when there are several.
+   */
+  async plan(card: Card): Promise<ShipPlan> {
+    const home = this.folder(card);
+    const first = await this.planRepo(card, home, true);
+    const repos: RepoShipPlan[] = [first];
+    for (const f of ownFolders(card)) {
+      if (samePath(f.dir, home) || samePath(f.dir, first.root)) continue;
+      const r = await this.planRepo(card, f.dir, false).catch(() => undefined);
+      if (r && (r.files.some((x) => x.mine) || r.ahead)) repos.push(r);
+    }
     const run0 = this.runs.get(card.id);
     const tried = run0 && (run0.state === 'up' || run0.state === 'done' || run0.steps.some((s) => s.state === 'up')) ? run0.steps.map((s) => s.cmd).join(' && ') : undefined;
-    const shipping = files.filter((f) => f.mine).map((f) => f.path);
+    const several = repos.length > 1;
+    const shipping = repos.flatMap((r) => r.files.filter((f) => f.mine).map((f) => (several ? `${r.repo}/${f.path}` : f.path)));
+    const tag = (r: RepoShipPlan, s: string) => (several ? `${r.repo}: ${s}` : s);
     return {
-      cardId: card.id, root, branch, ...(newBranch ? { newBranch } : {}), base, files, ahead,
-      host: typeof host === 'string' ? '' : host.name,
-      commit: commitMessage(card), title: prTitle(card), body: prBody(card, shipping, tried), blockers, notes,
+      cardId: card.id, repos,
+      commit: commitMessage(card), title: prTitle(card), body: prBody(card, shipping, tried),
+      blockers: repos.flatMap((r) => r.blockers.map((b) => tag(r, b))),
+      notes: repos.flatMap((r) => r.notes.map((n) => tag(r, n))),
     };
   }
 
@@ -190,120 +207,162 @@ export class ShipService {
     });
   }
 
-  /** Commit, push and open the PR (none when the host is one cc-control doesn't know). Throws with what went wrong; the card keeps the steps. */
-  async ship(id: string, req: ShipRequest): Promise<PullRequest | undefined> {
+  /** Put a PR on the card: replacing the one for the same repo, or added. */
+  private savePr(id: string, pr: PullRequest): void {
+    this.cards.update(id, (c) => {
+      const prs = prsOf(c.ship);
+      const i = prs.findIndex((p) => (p.root && pr.root ? samePath(p.root, pr.root) : p.number === pr.number && p.host === pr.host));
+      const next = i >= 0 ? prs.map((p, k) => (k === i ? pr : p)) : [...prs, pr];
+      const { pr: _old, ...ship } = c.ship ?? { steps: [] };
+      return { ...c, ship: { ...ship, steps: ship.steps ?? [], prs: next } };
+    });
+  }
+
+  /**
+   * Commit, push and open a PR in each repo the request names, in the plan's order; a failure
+   * stops there, with the repos before it shipped and the rest untouched. A host cc-control
+   * doesn't know gets the push and a note to open the PR by hand. Throws with what went wrong;
+   * the card keeps the steps and the PRs opened so far.
+   */
+  async ship(id: string, req: ShipRequest): Promise<PullRequest[]> {
     if (this.busy.has(id)) throw new Error('It is already shipping.');
     const card = this.cards.get(id);
     if (!card) throw new Error('That card is no longer on the line.');
-    if (card.ship?.pr && card.ship.pr.state !== 'CLOSED') throw new Error(`${card.key} already has PR #${card.ship.pr.number}. s merges it.`);
+    const open = openPrs(prsOf(card.ship));
+    if (open.length) throw new Error(`${card.key} already has ${open.length === 1 ? `PR #${open[0].number}` : `${open.length} open PRs`}. s merges ${open.length === 1 ? 'it' : 'them'}.`);
     const plan = await this.plan(card);
     if (plan.blockers.length) throw new Error(plan.blockers[0]);
-    const known = new Map(plan.files.map((f) => [f.path, f]));
-    const paths = [...new Set(req.paths)].filter((p) => known.has(p));
-    if (!paths.length && !plan.ahead) throw new Error('Nothing to ship: tick the files to commit.');
+    // What to ship where: each requested repo, matched to its block, with only files that are really changed.
+    const jobs = plan.repos.flatMap((r) => {
+      const want = req.repos.find((x) => samePath(x.root, r.root));
+      if (!want) return [];
+      const known = new Set(r.files.map((f) => f.path));
+      const paths = [...new Set(want.paths)].filter((p) => known.has(p));
+      return paths.length || r.ahead ? [{ r, paths }] : [];
+    });
+    if (!jobs.length) throw new Error('Nothing to ship: tick the files to commit.');
     const commit = req.commit.trim();
     const title = req.title.replace(/[\r\n]+/g, ' ').trim();
-    if (paths.length && !commit) throw new Error('Write a commit message.');
+    if (jobs.some((j) => j.paths.length) && !commit) throw new Error('Write a commit message.');
     if (!title) throw new Error('Give the pull request a title.');
 
     this.busy.add(id);
     this.cards.update(id, (c) => ({ ...c, ship: { steps: [] } }));
-    const root = plan.root;
-    const fail = (what: string, o: Out): never => {
-      this.step(id, `${what}: ${why(o)}`, 'bad');
-      throw new Error(`${what}: ${why(o)}`);
-    };
+    const several = jobs.length > 1;
+    const opened: PullRequest[] = [];
     try {
-      let branch = plan.branch;
-      if (plan.newBranch) {
-        this.step(id, `Making branch ${plan.newBranch}`, 'go');
-        const o = await run('git', ['switch', '-c', plan.newBranch], root);
-        if (o.code !== 0) fail(`Couldn’t make ${plan.newBranch}`, o);
-        branch = plan.newBranch;
-        this.cards.update(id, (c) => ({ ...c, branchName: branch }));
-        this.step(id, `Made branch ${branch}`, 'ok');
-      }
-      if (paths.length) {
-        this.step(id, `Committing ${paths.length} file${paths.length === 1 ? '' : 's'}`, 'go');
-        const add = await run('git', ['add', '--', ...paths], root);
-        if (add.code !== 0) fail('git add failed', add);
-        const c = await run('git', ['commit', '-F', '-'], root, `${commit}\n`);
-        if (c.code !== 0) fail('The commit failed', c);
-        const sha = (await run('git', ['rev-parse', '--short', 'HEAD'], root)).out;
-        this.step(id, `Committed ${sha}: ${commit.split('\n')[0]}`, 'ok');
-      }
-      const remote = (await this.remote(root))!;
-      this.step(id, `Pushing ${branch} to ${remote}`, 'go');
-      const push = await run('git', ['push', '-u', remote, branch], root, undefined, 120_000);
-      if (push.code !== 0) fail('The push failed', push);
-      this.step(id, `Pushed ${branch} to ${remote}`, 'ok');
-
-      const host = await this.host(root, remote);
-      if (typeof host === 'string') {
-        this.step(id, `Open the pull request for ${branch} in the browser: cc-control can’t open one on this host yet`, 'ok');
+      for (const { r, paths } of jobs) {
+        const root = r.root;
+        const tag = several ? `${r.repo}: ` : '';
+        const fail = (what: string, o: Out): never => {
+          this.step(id, `${tag}${what}: ${why(o)}`, 'bad');
+          throw new Error(`${tag}${what}: ${why(o)}`);
+        };
+        let branch = r.branch;
+        if (r.newBranch) {
+          this.step(id, `${tag}Making branch ${r.newBranch}`, 'go');
+          const o = await run('git', ['switch', '-c', r.newBranch], root);
+          if (o.code !== 0) fail(`Couldn’t make ${r.newBranch}`, o);
+          branch = r.newBranch;
+          this.cards.update(id, (c) => ({ ...c, branchName: branch }));
+          this.step(id, `${tag}Made branch ${branch}`, 'ok');
+        }
+        if (paths.length) {
+          this.step(id, `${tag}Committing ${paths.length} file${paths.length === 1 ? '' : 's'}`, 'go');
+          const add = await run('git', ['add', '--', ...paths], root);
+          if (add.code !== 0) fail('git add failed', add);
+          const c = await run('git', ['commit', '-F', '-'], root, `${commit}\n`);
+          if (c.code !== 0) fail('The commit failed', c);
+          const sha = (await run('git', ['rev-parse', '--short', 'HEAD'], root)).out;
+          this.step(id, `${tag}Committed ${sha}: ${commit.split('\n')[0]}`, 'ok');
+        }
+        const remote = (await this.remote(root))!;
+        this.step(id, `${tag}Pushing ${branch} to ${remote}`, 'go');
+        const push = await run('git', ['push', '-u', remote, branch], root, undefined, 120_000);
+        if (push.code !== 0) fail('The push failed', push);
+        this.step(id, `${tag}Pushed ${branch} to ${remote}`, 'ok');
         this.cards.update(id, (c) => ({ ...c, stage: 'ship' }));
-        return undefined;
+
+        const host = await this.host(root, remote);
+        if (typeof host === 'string') {
+          this.step(id, `${tag}Open the pull request for ${branch} in the browser: cc-control can’t open one on this host yet`, 'ok');
+          continue;
+        }
+        this.step(id, `${tag}Opening the pull request on ${host.name}`, 'go');
+        // The body the sheet showed, plus the change's other repos: the PRs opened before this one linked.
+        const others = several ? jobs.filter((j) => j !== undefined && j.r !== r).map((j) => ({ repo: j.r.repo, url: opened.find((p) => p.root && samePath(p.root, j.r.root))?.url })) : [];
+        const body = [req.body.trimEnd(), partOf(card.key, others)].filter(Boolean).join('\n\n');
+        let pr: PullRequest;
+        try {
+          pr = { ...await host.create(root, { title, body, head: branch, base: r.base }), repo: r.repo, root };
+        } catch (e) {
+          this.step(id, `${tag}${(e as Error).message}`, 'bad');
+          throw e;
+        }
+        this.step(id, `${tag}Opened PR #${pr.number} on ${host.name}`, 'ok');
+        opened.push(pr);
+        this.savePr(id, pr);
       }
-      this.step(id, `Opening the pull request on ${host.name}`, 'go');
-      let opened: PullRequest;
-      try {
-        opened = await host.create(root, { title, body: req.body, head: branch, base: plan.base });
-      } catch (e) {
-        this.step(id, (e as Error).message, 'bad');
-        throw e;
-      }
-      this.step(id, `Opened PR #${opened.number} on ${host.name}`, 'ok');
-      this.cards.update(id, (c) => ({ ...c, stage: 'ship', ship: { ...c.ship, steps: c.ship?.steps ?? [], pr: opened } }));
       return opened;
     } finally {
       this.busy.delete(id);
     }
   }
 
-  /** Look at the card's PR again; a merged one moves the card to Done. */
-  async refresh(id: string): Promise<PullRequest | undefined> {
+  /** Look at each of the card's PRs again; all merged moves the card to Done. */
+  async refresh(id: string): Promise<PullRequest[]> {
     const card = this.cards.get(id);
-    const pr = card?.ship?.pr;
-    if (!card || !pr) return undefined;
-    const root = this.folder(card);
-    const host = await this.host(root, await this.remote(root));
-    if (typeof host === 'string') throw new Error(host);
-    const seen = await host.view(root, pr);
-    const next: PullRequest = { ...pr, ...seen, checkedAt: Date.now() };
-    this.cards.update(id, (c) => ({ ...c, ...(next.state === 'MERGED' ? { stage: 'done' as const } : {}), ship: { ...c.ship, steps: c.ship?.steps ?? [], pr: next } }));
-    return next;
+    const prs = card ? prsOf(card.ship) : [];
+    if (!card || !prs.length) return [];
+    const out: PullRequest[] = [];
+    for (const pr of prs) {
+      const root = pr.root ?? this.folder(card);
+      const host = await this.host(root, await this.remote(root));
+      if (typeof host === 'string') throw new Error(host);
+      const seen = await host.view(root, pr);
+      const next: PullRequest = { ...pr, ...seen, checkedAt: Date.now(), ...(pr.root ? {} : { root }) };
+      this.savePr(id, next);
+      out.push(next);
+    }
+    if (allMerged(out)) this.cards.update(id, (c) => ({ ...c, stage: 'done' }));
+    return out;
   }
 
   private async refreshAll(): Promise<void> {
     for (const c of this.cards.list()) {
-      if (c.stage === 'ship' && c.ship?.pr?.state === 'OPEN') await this.refresh(c.id).catch(() => undefined);
+      if (c.stage === 'ship' && openPrs(prsOf(c.ship)).length) await this.refresh(c.id).catch(() => undefined);
     }
   }
 
-  /** Squash-merge the card's PR, delete its branch on the remote (the local one stays), and move it to Done. */
+  /** Squash-merge each open PR of the card, delete its branch on the remote (the local one stays), and move the card to Done once all are merged. */
   async merge(id: string): Promise<void> {
     if (this.busy.has(id)) throw new Error('It is busy.');
     const card = this.cards.get(id);
-    const pr = card?.ship?.pr;
-    if (!card || !pr) throw new Error('It has no pull request yet. s ships it first.');
-    if (pr.state === 'MERGED') throw new Error(`PR #${pr.number} is already merged.`);
-    const root = this.folder(card);
-    const remote = await this.remote(root);
-    const host = await this.host(root, remote);
-    if (typeof host === 'string') throw new Error(host);
+    const prs = card ? prsOf(card.ship) : [];
+    if (!card || !prs.length) throw new Error('It has no pull request yet. s ships it first.');
+    const todo = openPrs(prs);
+    if (!todo.length) throw new Error(prs.length === 1 ? `PR #${prs[0].number} is already merged.` : 'Every PR is already merged.');
     this.busy.add(id);
     try {
-      this.step(id, `Merging PR #${pr.number}`, 'go');
-      let merged: { deletesBranch: boolean };
-      try {
-        merged = await host.merge(root, pr);
-      } catch (e) {
-        this.step(id, (e as Error).message, 'bad');
-        throw e;
+      for (const pr of todo) {
+        const root = pr.root ?? this.folder(card);
+        const tag = prs.length > 1 && pr.repo ? `${pr.repo}: ` : '';
+        const remote = await this.remote(root);
+        const host = await this.host(root, remote);
+        if (typeof host === 'string') throw new Error(host);
+        this.step(id, `${tag}Merging PR #${pr.number}`, 'go');
+        let merged: { deletesBranch: boolean };
+        try {
+          merged = await host.merge(root, pr);
+        } catch (e) {
+          this.step(id, `${tag}${(e as Error).message}`, 'bad');
+          throw e;
+        }
+        if (!merged.deletesBranch && card.branchName && remote) await run('git', ['push', remote, '--delete', card.branchName], root);
+        this.step(id, `${tag}Merged PR #${pr.number}`, 'ok');
+        this.savePr(id, { ...pr, state: 'MERGED', checkedAt: Date.now() });
       }
-      if (!merged.deletesBranch && card.branchName && remote) await run('git', ['push', remote, '--delete', card.branchName], root);
-      this.step(id, `Merged PR #${pr.number}`, 'ok');
-      this.cards.update(id, (c) => ({ ...c, stage: 'done', ship: { ...c.ship, steps: c.ship?.steps ?? [], pr: { ...pr, state: 'MERGED', checkedAt: Date.now() } } }));
+      if (allMerged(prsOf(this.cards.get(id)?.ship))) this.cards.update(id, (c) => ({ ...c, stage: 'done' }));
     } finally {
       this.busy.delete(id);
     }
