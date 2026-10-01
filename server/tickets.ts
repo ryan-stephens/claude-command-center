@@ -11,6 +11,8 @@
 //   QA"; by default that status in the projects your own tickets are in, `off` for none), and
 //   CC_CONTROL_JIRA_AC_FIELD (customfield_12345) when the acceptance criteria live in their own
 //   field rather than in the description. search() finds any ticket by key or words.
+//   The QA reviewer is a custom field too: found by its name ("QA Reviewer", "QA Assignee",
+//   "Tester"…), or named by CC_CONTROL_JIRA_QA_FIELD (customfield_12345, or off).
 // Trello: CC_CONTROL_TRELLO_KEY, CC_CONTROL_TRELLO_TOKEN, CC_CONTROL_TRELLO_BOARDS (board ids, commas).
 //
 // fromJira / fromTrello turn each API's JSON into a Ticket and are tested against recorded shapes;
@@ -124,8 +126,20 @@ function acceptanceField(v: unknown): string[] {
   return text.split(/\r?\n/).map((l) => l.replace(ITEM, '').trim()).filter(Boolean);
 }
 
-/** A Jira issue (Cloud API v3 or Data Center API v2) as a Ticket. `acField` names a custom field holding the acceptance criteria. */
-export function fromJira(issue: JiraIssue, site?: string, acField?: string): Ticket {
+/** A person in a Jira field: a user, a list of users (the first), a select option, or plain text. Null when it is empty. */
+export function personIn(v: unknown): string | null {
+  const one = Array.isArray(v) ? v[0] : v;
+  if (typeof one === 'string') return one.trim() || null;
+  const o = (one ?? {}) as { displayName?: unknown; name?: unknown; value?: unknown };
+  const name = [o.displayName, o.value, o.name].find((x) => typeof x === 'string' && x.trim()) as string | undefined;
+  return name?.trim() ?? null;
+}
+
+/**
+ * A Jira issue (Cloud API v3 or Data Center API v2) as a Ticket. `acField` names a custom field
+ * holding the acceptance criteria; `qaField` the one holding the QA reviewer.
+ */
+export function fromJira(issue: JiraIssue, site?: string, acField?: string, qaField?: string): Ticket {
   const f = issue.fields ?? {};
   const split = splitAcceptance(f.description ?? '');
   const own = acField ? acceptanceField((f as Record<string, unknown>)[acField]) : [];
@@ -152,6 +166,7 @@ export function fromJira(issue: JiraIssue, site?: string, acField?: string): Tic
     status: f.status?.name ?? '',
     done: f.status?.statusCategory?.key === 'done',
     ...(f.assignee?.displayName ? { assignee: f.assignee.displayName } : {}),
+    ...(qaField ? { qaReviewer: personIn((f as Record<string, unknown>)[qaField]) } : {}),
     ...(site ? { url: `${site.replace(/\/+$/, '')}/browse/${issue.key}` } : {}),
     updatedAt: Date.parse(f.updated ?? '') || 0,
   };
@@ -163,7 +178,26 @@ const DEFAULT_JQL = 'assignee = currentUser() AND statusCategory != Done ORDER B
 const QA_STATUS = 'Ready for QA';
 
 /** Jira settings from the environment, or why they aren't enough. `qaJql`: unset uses the default; 'off' turns the view off. */
-export interface JiraConfig { site: string; kind: 'cloud' | 'server'; email?: string; token: string; jql: string; qaJql?: string; acField?: string }
+export interface JiraConfig { site: string; kind: 'cloud' | 'server'; email?: string; token: string; jql: string; qaJql?: string; acField?: string; /** The QA reviewer's field id; 'off' for none; unset: found by name. */ qaField?: string }
+
+/** A field Jira lists at /field: what pickQaField needs. */
+export interface JiraField { id: string; name?: string; custom?: boolean; schema?: { type?: string; items?: string } }
+
+const QA_FIELD_NAME = /^(qa|test(ing)?)[\s_-]*(reviewer|assignee|tester|engineer|owner|analyst|resource)$|^(qa|tester)$/i;
+
+/** The field that holds a ticket's QA reviewer: a custom field named like one, user fields first. */
+export function pickQaField(fields: JiraField[]): string | undefined {
+  const named = fields.filter((f) => f.custom !== false && QA_FIELD_NAME.test((f.name ?? '').trim()));
+  const user = (f: JiraField) => f.schema?.type === 'user' || f.schema?.items === 'user';
+  return (named.find(user) ?? named[0])?.id;
+}
+
+/** Ask Jira for its fields and pick the QA reviewer's. Undefined when there is none. */
+export async function findQaField(c: JiraConfig): Promise<string | undefined> {
+  const res = await fetch(`${c.site}/rest/api/${c.kind === 'cloud' ? 3 : 2}/field`, { headers: { Authorization: jiraAuth(c), Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new Error(`Jira said ${res.status} listing its fields`);
+  return pickQaField(await res.json() as JiraField[]);
+}
 
 /** A Jira project key, safe to put in JQL. */
 const PROJECT_KEY = /^[A-Z][A-Z0-9_]{0,30}$/;
@@ -207,8 +241,12 @@ export function jiraConfig(e: NodeJS.ProcessEnv): JiraConfig | undefined {
     site, kind, ...(email ? { email } : {}), token, jql: e.CC_CONTROL_JIRA_JQL || DEFAULT_JQL,
     ...(e.CC_CONTROL_JIRA_QA_JQL ? { qaJql: e.CC_CONTROL_JIRA_QA_JQL } : {}),
     ...(e.CC_CONTROL_JIRA_AC_FIELD ? { acField: e.CC_CONTROL_JIRA_AC_FIELD.trim() } : {}),
+    ...(e.CC_CONTROL_JIRA_QA_FIELD ? { qaField: e.CC_CONTROL_JIRA_QA_FIELD.trim() } : {}),
   };
 }
+
+/** The QA reviewer field to ask for, unless it is switched off. */
+const qaFieldOf = (c: JiraConfig) => (c.qaField && c.qaField.toLowerCase() !== 'off' ? c.qaField : undefined);
 
 /** The search request: Cloud's /rest/api/3/search/jql with email + API token; Data Center's /rest/api/2/search with a PAT (Bearer) or username + password. */
 export function jiraSearch(c: JiraConfig, jql = c.jql, max = 50): { url: string; init: RequestInit } {
@@ -218,7 +256,7 @@ export function jiraSearch(c: JiraConfig, jql = c.jql, max = 50): { url: string;
     init: {
       method: 'POST',
       headers: { Authorization: auth, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jql, fields: [...JIRA_FIELDS, ...(c.acField ? [c.acField] : [])], maxResults: max }),
+      body: JSON.stringify({ jql, fields: [...JIRA_FIELDS, ...(c.acField ? [c.acField] : []), ...(qaFieldOf(c) ? [qaFieldOf(c)!] : [])], maxResults: max }),
     },
   };
 }
@@ -301,7 +339,7 @@ export async function fetchJira(c: JiraConfig, jql = c.jql, max = 50): Promise<T
   const text = await res.text();
   if (text.trimStart().startsWith('<')) throw new Error(`Jira at ${c.site} answered with a web page instead of data: check the address (a context path like /jira?) and that the token is a ${c.kind === 'cloud' ? 'Cloud API token' : 'personal access token'}.`);
   const body = JSON.parse(text) as { issues?: JiraIssue[] };
-  return (body.issues ?? []).map((i) => fromJira(i, c.site, c.acField));
+  return (body.issues ?? []).map((i) => fromJira(i, c.site, c.acField, qaFieldOf(c)));
 }
 
 // ---- Trello -------------------------------------------------------------------------------------
@@ -406,10 +444,10 @@ export function demoTickets(now = Date.now()): Ticket[] {
     t({ source: 'trello', project: 'demo-trello-web', projectName: 'Web board', key: 'WB-12', title: 'Footer links 404 on /about', status: 'Doing', updatedAt: now - 6 * 3600_000,
       description: 'Three footer links on /about point to old paths.', acceptance: ['Every footer link returns 200'] }),
     // Someone else's, waiting for QA: the Inbox's "Ready for QA" view.
-    t({ ...shop, key: 'SHOP-149', title: 'Gift card balance shows at checkout', status: 'Ready for QA', assignee: 'Priya', views: ['qa'], updatedAt: now - 5 * 3600_000,
+    t({ ...shop, key: 'SHOP-149', title: 'Gift card balance shows at checkout', status: 'Ready for QA', assignee: 'Priya', qaReviewer: 'Sam', views: ['qa'], updatedAt: now - 5 * 3600_000,
       description: 'Shoppers paying with a gift card can’t see what is left on it. Show the balance under the gift card field at checkout, and what remains after this order.',
       acceptance: ['The balance shows once a valid gift card is entered', 'It shows what remains after this order', 'An expired card says so instead of showing a balance'] }),
-    t({ ...pay, key: 'PAY-84', title: 'Refund emails include the order number', status: 'Ready for QA', assignee: 'Dana', views: ['qa'], updatedAt: now - 2 * DAY,
+    t({ ...pay, key: 'PAY-84', title: 'Refund emails include the order number', status: 'Ready for QA', assignee: 'Dana', qaReviewer: null, views: ['qa'], updatedAt: now - 2 * DAY,
       description: 'Customers reply to refund emails asking which order it was. Put the order number in the subject and the first line.',
       acceptance: ['The subject has the order number', 'The first line names the order and the amount'] }),
   ];
@@ -505,7 +543,8 @@ export class TicketService {
    * workspace), merged by key with the views each came through. A failing QA view doesn't lose
    * your own tickets.
    */
-  private async fetchJiraViews(c: JiraConfig): Promise<Ticket[]> {
+  private async fetchJiraViews(given: JiraConfig): Promise<Ticket[]> {
+    const c = await this.withQaField(given);
     const mine = (await fetchJira(c)).map((t) => ({ ...t, views: ['mine'] as InboxView[] }));
     const jql = qaJql(c, [...mine.map((t) => t.project), ...Object.keys(this.mapping())]);
     if (!jql) return mine;
@@ -516,6 +555,15 @@ export class TicketService {
       by.set(t.key, had ? { ...had, views: [...(had.views ?? []), 'qa'] } : { ...t, views: ['qa'] });
     }
     return [...by.values()];
+  }
+
+  /** The QA reviewer's field, once found by name (asked once; a failed lookup is tried again next refresh). */
+  private qaField: string | null | undefined;
+
+  private async withQaField(c: JiraConfig): Promise<JiraConfig> {
+    if (c.qaField) return c;
+    if (this.qaField === undefined) this.qaField = await findQaField(c).then((id) => id ?? null, () => undefined);
+    return this.qaField ? { ...c, qaField: this.qaField } : c;
   }
 
   /**
@@ -531,7 +579,7 @@ export class TicketService {
     const jql = searchJql(q);
     if (c && jql) {
       try {
-        got.push(...await fetchJira(c, jql, 20));
+        got.push(...await fetchJira(await this.withQaField(c), jql, 20));
       } catch (err) {
         // A key that doesn't exist is a 400 from Jira: nothing found, not a failure.
         if (!/Jira said 400/.test((err as Error).message) || !/^key =/.test(jql)) problem = (err as Error).message;

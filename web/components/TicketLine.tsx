@@ -11,7 +11,7 @@ import { homeRepo, repoName, samePath } from '../../shared/workspaces.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { importWorkspace } from '../commands.ts';
 import { openSession } from '../keys.ts';
-import { INBOX_VIEWS, inView, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
+import { INBOX_VIEWS, inView, qaLine, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard, ticketFocus } from '../line-model.ts';
 import { answerAsk, boardOf, editRecipe, goToTab, openAddComposer, openChanges, openApp, openCard, openComposer, openNeighbour, saySubmit, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
@@ -201,7 +201,8 @@ function TicketTile({ t, focused, color }: { t: Ticket; focused: boolean; color:
       </span>
       <span className="text-[14px] font-semibold leading-snug">{t.title}</span>
       <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-faint">
-        <span>{ws?.name ?? `${t.projectName} · no workspace`}</span><span>·</span><span>{t.status}</span>{t.assignee && !inView(t, 'mine') && <><span>·</span><span>{t.assignee}</span></>}<span>·</span><span>{age(t.updatedAt)}</span>
+        <span>{ws?.name ?? `${t.projectName} · no workspace`}</span><span>·</span><span>{t.status}</span>{t.assignee && !inView(t, 'mine') && <><span>·</span><span title="Assigned to">{t.assignee}</span></>}
+        {inView(t, 'qa') && qaLine(t) && <><span>·</span><span className={t.qaReviewer ? 'font-semibold text-sub' : 'italic'} title="QA reviewer">{qaLine(t)}</span></>}<span>·</span><span>{age(t.updatedAt)}</span>
       </span>
     </button>
   );

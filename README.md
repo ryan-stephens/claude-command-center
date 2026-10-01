@@ -122,7 +122,7 @@ Put these in `config.env` (or set them where you start the server), then restart
 |---|---|
 | Jira Data Center / Server | `CC_CONTROL_JIRA_SITE` (`https://jira.company.local`, with any context path), `CC_CONTROL_JIRA_TOKEN` (a personal access token) |
 | Jira Cloud | `CC_CONTROL_JIRA_SITE` (`https://you.atlassian.net`), `CC_CONTROL_JIRA_EMAIL`, `CC_CONTROL_JIRA_TOKEN` (an [API token](https://id.atlassian.com/manage-profile/security/api-tokens)) |
-| Jira, both | optional `CC_CONTROL_JIRA_JQL` (the Inbox's *Mine*; default: assigned to you, not done), `CC_CONTROL_JIRA_QA_JQL` (its *Ready for QA*; default: that status in the projects your tickets are in; `off` for none), `CC_CONTROL_JIRA_AC_FIELD` (a custom field holding the acceptance criteria) |
+| Jira, both | optional `CC_CONTROL_JIRA_JQL` (the Inbox's *Mine*; default: assigned to you, not done), `CC_CONTROL_JIRA_QA_JQL` (its *Ready for QA*; default: that status in the projects your tickets are in; `off` for none), `CC_CONTROL_JIRA_AC_FIELD` (a custom field holding the acceptance criteria), `CC_CONTROL_JIRA_QA_FIELD` (the QA reviewer shown on *Ready for QA* tickets; by default the custom field named like "QA Reviewer", "QA Assignee" or "Tester"; `off` to hide it) |
 | Trello | `CC_CONTROL_TRELLO_KEY`, `CC_CONTROL_TRELLO_TOKEN`, `CC_CONTROL_TRELLO_BOARDS` (board ids, comma-separated) |
 
 Then `Shift+T` on the line shows whether each is connected, and maps each project or board to a workspace. Acceptance criteria come from an "Acceptance criteria" (or "Done when") section in a Jira description (rich text on Cloud, wiki markup such as `h3. Acceptance Criteria` and `# item` on Data Center), the field `CC_CONTROL_JIRA_AC_FIELD` names, or a checklist of that name on a Trello card.

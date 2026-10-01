@@ -16,7 +16,7 @@ import { recipeOf } from '../server/recipes.ts';
 import { readLooseJson, stackOf } from '../server/stack.ts';
 import { parseStep } from '../shared/recipes.ts';
 import { DB_PATH, Store } from '../server/store.ts';
-import { jiraConfig, jiraProblem } from '../server/tickets.ts';
+import { findQaField, jiraConfig, jiraProblem } from '../server/tickets.ts';
 import { repoName } from '../shared/workspaces.ts';
 
 type Mark = 'ok' | 'warn' | 'bad' | 'info';
@@ -80,6 +80,14 @@ if (!jira) {
     if (res.ok) {
       const me = await res.json() as { displayName?: string; name?: string };
       line('ok', `Jira ${jira.kind === 'cloud' ? 'Cloud' : 'Data Center'}`, `${jira.site}, signed in as ${me.displayName ?? me.name ?? 'you'}`);
+      // The QA reviewer shown on Ready for QA tickets: the field named in the settings, or found by its name.
+      if (jira.qaField?.toLowerCase() === 'off') line('info', '  QA reviewer', 'off (CC_CONTROL_JIRA_QA_FIELD=off)');
+      else if (jira.qaField) line('info', '  QA reviewer', `from ${jira.qaField} (CC_CONTROL_JIRA_QA_FIELD)`);
+      else {
+        const found = await findQaField(jira).catch(() => undefined);
+        line(found ? 'ok' : 'info', '  QA reviewer', found ? `found the field ${found}` : 'no field named like “QA Reviewer”, “QA Assignee” or “Tester”',
+          found ? '' : 'If your QA reviewer field has another name, set CC_CONTROL_JIRA_QA_FIELD to its id (customfield_…).');
+      }
     } else line('bad', `Jira ${jira.kind === 'cloud' ? 'Cloud' : 'Data Center'}`, `${jira.site} said ${res.status}`, jiraProblem(res.status, jira));
   } catch (e) {
     const code = (e as { cause?: { code?: string } }).cause?.code ?? (e as Error).message;

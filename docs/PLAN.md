@@ -1377,3 +1377,43 @@ Unit tests cover:
 **How.** `server/tickets.ts`: `jiraCommentRequest`, `jiraTransitionsRequest`, `jiraTransitionRequest` (pure, tested): Cloud speaks the v3 API, whose comments must be its document format (`adfFrom`: paragraphs on blank lines, hard breaks on single newlines, never an empty paragraph, which Jira rejects); Data Center speaks v2 with plain text; the same auth as the search. `jiraCall` turns Jira's error bodies into words. `TicketService.comment / transitions / transition`; demo writes live in the `tickets.demoWrites` meta row and are applied in `list()`. Messages `tickets.comment`, `tickets.transitions`, `tickets.transition` (`PROTOCOL` 16). `ReportSheet.tsx` has the two modes.
 
 **Verified** on the isolated server against the demo ticket SHOP-155 on a seeded QA card: `j` asks and names the demo ticket, Esc backs out, Enter posts and the sheet says *Posted*, `m` lists the other three statuses, Enter moves it to Done and the new-card screen's ticket list shows Done; unit tests for the three requests, the document format and the demo writes (`pnpm test`, 241). **Not verified against a real Jira**: the owner's VU laptop has one; the first real `j` is the test (a wrong document shape would come back as a 400 with Jira's words in the error box). Trello comments and list moves are the obvious next step with the same shape.
+
+## 50. Ready for QA shows each ticket's QA reviewer
+
+2026-10-01, from the owner: in the *Ready for QA* view, show the ticket's single QA reviewer, not only its assignee.
+
+Jira has no standard field for a QA reviewer. Teams add a custom one, and its id (`customfield_…`) differs from site to site.
+
+**How the field is found** (`server/tickets.ts`):
+- **By name, automatically.** The first refresh asks Jira for its fields (`/rest/api/3/field`, or `/2/` on Data Center). It takes a custom field named like "QA Reviewer", "QA Assignee", "QA Tester", "Testing Owner", "Tester" or "QA" (`pickQaField`).
+- **User fields win** over text ones of the same kind, so "QA Notes" or a text "QA Reviewer" lose to a user-type "QA Assignee".
+- **Asked once per server run.** A failed lookup is tried again at the next refresh.
+- **`CC_CONTROL_JIRA_QA_FIELD`** names the field instead (no lookup), and `off` hides it.
+- The field is asked for in every search: the Inbox's views, and the new-card screen's Jira search.
+
+**How the value is read** (`personIn`): a user (`displayName`, or `name` on Data Center), the first of a list of users (one reviewer), a select option's `value`, or plain text.
+- An empty field becomes `qaReviewer: null`, and the tile says *no QA reviewer yet*.
+- With no such field at all, nothing is said.
+
+**What you see:**
+- On *Ready for QA* tiles, after the assignee: "Priya · **QA Sam**", or *no QA reviewer yet* in italics.
+- The same in the new-card screen's ticket list ("… · Ready for QA · Priya · QA Sam"), via `ticketSub` / `qaLine` in `shared/tickets.ts`.
+- *Mine* doesn't show it.
+- `pnpm run doctor` says which field it found, or that none is named like one and to set `CC_CONTROL_JIRA_QA_FIELD`. Run it first at VU.
+- The demo tickets have one of each: SHOP-149 (QA Sam) and PAY-84 (none yet).
+
+**Verified:**
+- **Unit tests:**
+  - picking the field (user fields first, the wrong names left alone)
+  - reading each shape of value
+  - a stand-in Jira whose field list has "QA Reviewer" as `customfield_10077`: the QA view showed "Priya · QA Sam" and an empty field as null; every search asked for the field, and the field list was fetched once over two refreshes
+  - `CC_CONTROL_JIRA_QA_FIELD` naming a field (no lookup) and `off` (not asked for)
+  - `pnpm test` (243) passes
+- **Isolated server, demo tickets, 5 scripted checks:**
+  - Mine doesn't show it.
+  - Ready for QA showed "Priya · QA Sam" on SHOP-149 and *no QA reviewer yet* on PAY-84; screenshot looked at.
+  - The new-card list showed "Priya · QA Sam".
+  - No console errors.
+- `pnpm run doctor` still runs.
+
+**Not verified:** VU's Jira. Whether its field is found by name is the first thing `pnpm run doctor` will say there.

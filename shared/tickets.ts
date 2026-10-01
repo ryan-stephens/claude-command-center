@@ -48,6 +48,12 @@ export interface Ticket {
   hidden?: boolean;
   /** Who it is assigned to, as the tracker names them. */
   assignee?: string;
+  /**
+   * Who is down to QA it (Jira has no standard field: a custom one called "QA Reviewer" or the
+   * like, found by name or named by CC_CONTROL_JIRA_QA_FIELD). Null: the field is there but empty;
+   * unset: no such field.
+   */
+  qaReviewer?: string | null;
   /** The Inbox views it came in through: assigned to you, and waiting for QA. Unset: yours. */
   views?: InboxView[];
   /** Found by a search on the new-card screen rather than fetched for the Inbox. */
@@ -139,9 +145,15 @@ export function ticketText(t: Pick<Ticket, 'key' | 'source'>, items: PacketItem[
   return L;
 }
 
-/** "Jira · Storefront · To Do · Priya": the line under a ticket's title. */
+/** "Jira · Storefront · Ready for QA · Priya · QA Sam": the line under a ticket's title. */
 export function ticketSub(t: Ticket): string {
-  return `${SOURCE_NAME[t.source]} · ${t.projectName} · ${t.status}${t.assignee && !inView(t, 'mine') ? ` · ${t.assignee}` : ''}`;
+  const people = [t.assignee && !inView(t, 'mine') ? t.assignee : '', inView(t, 'qa') ? qaLine(t) : ''].filter(Boolean);
+  return `${SOURCE_NAME[t.source]} · ${t.projectName} · ${t.status}${people.map((p) => ` · ${p}`).join('')}`;
+}
+
+/** "QA Sam", "no QA reviewer yet", or nothing when the tracker has no QA reviewer field. */
+export function qaLine(t: Pick<Ticket, 'qaReviewer'>): string {
+  return t.qaReviewer ? `QA ${t.qaReviewer}` : t.qaReviewer === null ? 'no QA reviewer yet' : '';
 }
 
 /**
