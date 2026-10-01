@@ -16,7 +16,7 @@ import {
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
-import { addCardContext, answerCard, sayToCard, send, startCard, tryCard } from './ws.ts';
+import { addCardContext, answerCard, focusCardTab, sayToCard, send, startCard, tryCard } from './ws.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
@@ -37,6 +37,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['← → (card open)', 'The previous / next card on the board, in column order'],
       ['Enter (card open)', 'Type to its terminal: the message box under the transcript sends into the session itself (Esc leaves the box)'],
       ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal'],
+      ['g (a card)', 'Go to its terminal tab: brings the Windows Terminal tab forward, for what the page can’t relay (the trust-the-folder prompt, a picker)'],
       ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a workspace stack, pick the environment and the APIs first'],
@@ -501,6 +502,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;
     case 'Enter': if (s.line.drawer) focusSay(s.line.drawer); return true;
     case 'y': case 'n': if (s.line.drawer) answerAsk(s.line.drawer, e.key === 'y' ? 'allow' : 'deny'); return true;
+    case 'g': if (s.line.drawer) goToTab(s.line.drawer); return true;
     case 'c': if (s.line.drawer) openAddComposer(s.line.drawer); return true;
     case 'x': if (s.line.drawer) withdrawLast(s.line.drawer); return true;
     case 't': if (s.line.drawer) tryIt(s.line.drawer); return true;
@@ -562,6 +564,7 @@ function boardKeys(e: KeyboardEvent): boolean {
     case 'Enter': if (focused) openCard(focused); return true;
     case 't': if (focused) tryIt(focused); else flash('Pick a card first'); return true;
     case 'o': if (focused) openApp(focused); return true;
+    case 'g': if (focused) goToTab(focused); else flash('Pick a card first'); return true;
     case 's': if (focused) shipKey(focused); return true;
     case 'd': if (focused) doneKey(focused); return true;
     case 'e': if (focused) editRecipe(focused); else workspaceKey('edit'); return true;
@@ -590,6 +593,14 @@ export function saySubmit(id: string): void {
 }
 
 /** y / n on an open card: answer the permission prompt its terminal relayed. */
+/** g: the card's Windows Terminal tab, brought to the front (the trust prompt, or anything the channel can't relay). */
+export function goToTab(id: string): void {
+  const card = get().cards.find((c) => c.id === id);
+  if (!card) return;
+  if (!card.cwd) { flash(`${card.key} hasn’t opened a tab yet`); return; }
+  focusCardTab(id).then(() => flash(`Brought the tab ${card.key} forward`), (e: Error) => flash(e.message));
+}
+
 export function answerAsk(id: string, behavior: 'allow' | 'deny'): void {
   const card = get().cards.find((c) => c.id === id);
   const ask = card && askOf(card);

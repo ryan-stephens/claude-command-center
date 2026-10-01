@@ -95,6 +95,7 @@ If you don't write code: ask a developer to do steps 1 to 6 once on your machine
 | | `c` (card open) | Add context to it: it waits on the card and goes in with your next message in its tab (`x` takes back the last one still waiting) |
 | | `Enter` (card open) | Type to its terminal: the message box under the transcript sends into the session itself (`Esc` leaves the box) |
 | | `y` / `n` (card open) | Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal |
+| | `g` (a card) | Go to its terminal tab: brings the Windows Terminal tab forward, for what the page can't relay (the trust-the-folder prompt, a picker) |
 | | `Ctrl+Enter` | The card's session in the app, to read along (`Esc`: back to the line) |
 | | `1`–`9` / `0` | One workspace / all of them |
 | | `/` | Filter the cards by words |

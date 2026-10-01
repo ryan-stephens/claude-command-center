@@ -89,6 +89,9 @@ export interface LineLegendInput {
   onTicket?: boolean;
   /** The focused card's session has linked (the expand key opens it). */
   hasSession?: boolean;
+  /** The focused or open card has a terminal tab (g brings it forward); it is waiting on you there and the page can't answer. */
+  hasTab?: boolean;
+  needsTab?: boolean;
   /** The / filter has text in it. */
   filtered?: boolean;
   /** New-card screen: adding to a running card (this key), not making one. */
@@ -164,6 +167,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       { keys: ['Esc'], label: 'Back to the board' },
       ...(x.asking ? [{ keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' as const }] : []),
       ...(x.canSay ? [{ keys: ['Enter'], label: 'Type to it', tone: x.asking ? undefined : 'acc' as const }] : []),
+      ...(x.hasTab ? [{ keys: ['g'], label: x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab ? { tone: 'attn' as const } : {}) }] : []),
       { keys: ['←', '→'], label: 'Previous / next card' },
       { keys: ['Tab'], label: 'Overview · Context' },
       ...tryKeys(x),
@@ -177,7 +181,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   return [
     { keys: ['←', '→', '↑', '↓'], label: 'Move' },
     ...(x.onTicket ? [{ keys: ['n', 'Enter'], label: 'Start work', tone: 'acc' as const }, { keys: ['Delete'], label: 'Hide' }] : []),
-    ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open the card' }, ...tryKeys(x), { keys: ['e'], label: 'Run recipe' }] : []),
+    ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open the card' }, ...tryKeys(x), ...(x.hasTab ? [{ keys: ['g'], label: x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab ? { tone: 'attn' as const } : {}) }] : []), { keys: ['e'], label: 'Run recipe' }] : []),
     ...(x.hasSession ? [full] : []),
     { keys: ['c'], label: 'New card', tone: 'acc' },
     { keys: ['⇧T'], label: 'Tickets' },

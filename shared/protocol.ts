@@ -11,7 +11,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  * says `hello` first; a page that hears anything else first is talking to a server from before
  * this existed, which drops newer messages without a word, so the page says to restart it.
  */
-export const PROTOCOL = 13;
+export const PROTOCOL = 14;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -353,6 +353,8 @@ export type ClientMsg =
   | { type: 'card.withdraw'; id: string; itemId: string }
   /** Type into the card's terminal session through its channel. Answered with ok or an error. */
   | { type: 'card.send'; reqId: string; id: string; text: string }
+  /** Bring the card's Windows Terminal tab to the front (g). Answered with ok or an error. */
+  | { type: 'card.focusTab'; reqId: string; id: string }
   /** Answer the permission prompt the terminal relayed (card.live.ask.requestId). Answered with ok or an error. */
   | { type: 'card.answer'; reqId: string; id: string; requestId: string; behavior: 'allow' | 'deny' }
   /** Try it: run the card's recipe in its folder (again, if it ran before), or its workspace's stack with what was picked. Answered with ok or an error. */

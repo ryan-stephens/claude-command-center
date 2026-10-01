@@ -12,7 +12,7 @@ import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { cardRepos, type Card } from '../shared/cards.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
-import { CardService, cleanDraft, userModel, writeHookSettings } from './cards.ts';
+import { CardService, cleanDraft, focusTab, userModel, writeHookSettings } from './cards.ts';
 import { timingSafeEqual } from 'node:crypto';
 import { ChannelService } from './channel.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
@@ -451,6 +451,12 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       if (!text.trim()) throw new Error('Nothing to send.');
       channels.send(String(msg.id), text);
       send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    }
+    case 'card.focusTab': {
+      const card = cards.get(String(msg.id));
+      if (!card) throw new Error('That card is gone.');
+      focusTab(card.key).then(() => send(ws, { type: 'ok', reqId: msg.reqId }), (e: Error) => send(ws, { type: 'error', reqId: msg.reqId, message: e.message }));
       return;
     }
     case 'card.answer': {

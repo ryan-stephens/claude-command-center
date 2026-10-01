@@ -27,6 +27,22 @@ const HOOK_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-hook.mjs', import
 const HOOK_WAIT_MS = 45_000;
 const CHANNEL_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-channel.mjs', import.meta.url));
 const LAUNCH_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-launch.ps1', import.meta.url));
+const FOCUS_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-focus-tab.ps1', import.meta.url));
+
+/**
+ * Bring a card's terminal tab to the front: the Windows Terminal tab titled with its key (the
+ * focus script walks the terminal's windows with UI Automation). Rejects when no such tab is open.
+ */
+export function focusTab(key: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile('powershell.exe', ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', FOCUS_SCRIPT, '-Title', key], { timeout: 15_000, windowsHide: true }, (err, stdout) => {
+      if (err) return reject(new Error(`Couldn't look for the tab: ${err.message}`));
+      if (stdout.trim() === 'ok') return resolve();
+      reject(new Error(`No terminal tab titled ${key} is open: it closed, or the card started before tabs kept their titles.`));
+    });
+  });
+}
+
 /** Cards start with a channel into their terminal (a research-preview flag); CC_CONTROL_CHANNEL=0 turns it off. */
 export const CHANNEL_ON = process.env.CC_CONTROL_CHANNEL !== '0';
 
@@ -286,7 +302,8 @@ export class CardService {
     const claudeArgs = ['--settings', writeHookSettings(), ...channelArgs(),
       '--permission-mode', card.launch.mode, ...((card.launch.model ?? this.opts.model) ? ['--model', card.launch.model ?? this.opts.model!] : []),
       ...others.flatMap((r) => ['--add-dir', r])];
-    const args = ['-w', '0', 'nt', '--title', key, '-d', card.cwd, ...tabCommand(findClaude(), claudeArgs, card.launch.message)];
+    // The title stays the card's key (Claude Code would otherwise retitle the tab), so g can find the tab again.
+    const args = ['-w', '0', 'nt', '--title', key, '--suppressApplicationTitle', '-d', card.cwd, ...tabCommand(findClaude(), claudeArgs, card.launch.message)];
     await new Promise<void>((resolve, reject) => {
       const child = spawn('wt.exe', args, { env: tabEnv(process.env, card.id, token, this.opts.port), stdio: 'ignore', windowsHide: true, detached: true });
       child.on('error', (e) => reject(new Error(`Couldn't open Windows Terminal (wt.exe): ${e.message}`)));

@@ -139,6 +139,11 @@ export async function answerCard(id: string, requestId: string, behavior: 'allow
   await request((reqId) => ({ type: 'card.answer', reqId, id, requestId, behavior }));
 }
 
+/** Bring the card's terminal tab to the front (the UI Automation walk can take a moment). */
+export async function focusCardTab(id: string): Promise<void> {
+  await request((reqId) => ({ type: 'card.focusTab', reqId, id }), 20_000);
+}
+
 /** The picker's rows for a card's stack: which APIs it has, which changed, which to tick. */
 export async function stackPlan(id: string): Promise<Extract<ServerMsg, { type: 'stack.plan' }>> {
   return await request((reqId) => ({ type: 'card.stackPlan', reqId, id }), 60_000) as Extract<ServerMsg, { type: 'stack.plan' }>;

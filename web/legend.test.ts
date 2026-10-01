@@ -16,6 +16,14 @@ test('session: Esc means stop while busy, and typing hides the numpad and talk k
   assert.ok(labels({}).includes('Ctrl+Enter Back to the line'), 'the expand key goes back where the session was opened from');
 });
 
+test('g goes to the card’s tab, and says so louder when the tab is waiting on you', () => {
+  const line = (x: Partial<Parameters<typeof lineLegendFor>[0]>) => lineLegendFor({ view: 'drawer', bindings: {}, ...x }).map((i) => `${i.keys.join('+')} ${i.label}${i.tone ? ` (${i.tone})` : ''}`);
+  assert.ok(!line({}).some((x) => x.startsWith('g ')), 'no tab yet, no g');
+  assert.ok(line({ hasTab: true }).includes('g Its tab'));
+  assert.ok(line({ hasTab: true, needsTab: true }).includes('g Answer in its tab (attn)'));
+  assert.ok(lineLegendFor({ view: 'board', hasFocus: true, hasTab: true, bindings: {} }).some((i) => i.keys[0] === 'g'));
+});
+
 test('rebound keys show their current binding', () => {
   assert.ok(labels({ bindings: { pushToTalk: ['F9'] } }).includes('Hold F9 Talk'));
   assert.ok(labels({ bindings: { expand: ['Alt+Enter'] } }).includes('Alt+Enter Back to the line'));

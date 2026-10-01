@@ -14,7 +14,7 @@ import { openSession } from '../keys.ts';
 import { INBOX_VIEWS, inView, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard, ticketFocus } from '../line-model.ts';
-import { answerAsk, boardOf, editRecipe, openAddComposer, openApp, openCard, openComposer, openNeighbour, saySubmit, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
+import { answerAsk, boardOf, editRecipe, goToTab, openAddComposer, openApp, openCard, openComposer, openNeighbour, saySubmit, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
 import { cardRecipe, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
 import { prLine } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
@@ -413,6 +413,7 @@ function DrawerActions({ card }: { card: Card }) {
           <Key k={expand} size="sm" />Its session
         </button>
       )}
+      {card.cwd && <button className="btn py-1" onClick={() => goToTab(card.id)} title="Bring its Windows Terminal tab to the front"><Key k="g" size="sm" />Its tab</button>}
       <TryButtons card={card} />
       {(card.kind === 'qa' || card.kind === 'review') ? (card.report || card.live?.lastMessage) && (
         <button className={`btn py-1 ${card.report ? 'btn-primary' : ''}`} onClick={() => shipKey(card.id)}>
@@ -653,7 +654,7 @@ function LiveNow({ card }: { card: Card }) {
           {ask.kind === 'plan' && ask.plan
             ? <div className="md max-h-80 overflow-y-auto rounded-lg border border-line bg-surface px-3 py-2 text-sm"><Markdown remarkPlugins={[remarkGfm]}>{ask.plan}</Markdown></div>
             : <p className="text-[15px] font-semibold">{ask.kind === 'question' ? ask.detail : `Allow ${ask.detail ?? ask.tool}?`}</p>}
-          <p className="text-sm text-sub">{ask.requestId ? <><Key k="y" size="sm" inline /> allows, <Key k="n" size="sm" inline /> denies, straight to its terminal.</> : card.channel && ask.kind === 'question' ? <>Answer in the message box (<Key k="Enter" size="sm" inline />): it goes into the session.</> : <>Answer it in the terminal tab <b>{card.key}</b>. Nothing changes until you do.</>}</p>
+          <p className="text-sm text-sub">{ask.requestId ? <><Key k="y" size="sm" inline /> allows, <Key k="n" size="sm" inline /> denies, straight to its terminal.</> : card.channel && ask.kind === 'question' ? <>Answer in the message box (<Key k="Enter" size="sm" inline />): it goes into the session.</> : <>Answer it in the terminal tab <b>{card.key}</b>: <Key k="g" size="sm" inline /> brings it forward. Nothing changes until you do.</>}</p>
         </div>
       </Sec>
     );
