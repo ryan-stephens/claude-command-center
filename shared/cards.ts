@@ -242,8 +242,9 @@ export interface Card extends CardDraft {
   /**
    * Shipping it: each step (branch, commit, push, PR, merge) and the pull requests it opened, one
    * per repo it changed (`prs`); `pr` is the single one of cards from before Ship went per repo.
+   * `left`: the repos a ship stopped before reaching (the one that failed first), so s ships them next.
    */
-  ship?: { steps: BootStep[]; pr?: PullRequest; prs?: PullRequest[] };
+  ship?: { steps: BootStep[]; pr?: PullRequest; prs?: PullRequest[]; left?: string[] };
   /** QA and review: the report Claude ended with (its QA report or review findings). */
   report?: CardReport;
 }

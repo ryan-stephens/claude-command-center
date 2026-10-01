@@ -15,7 +15,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
 
-export const PROTOCOL = 19;
+export const PROTOCOL = 20;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 

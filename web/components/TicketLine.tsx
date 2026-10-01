@@ -16,7 +16,7 @@ import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard, ticketFocus } from '../line-model.ts';
 import { answerAsk, boardOf, editRecipe, goToTab, openAddComposer, openChanges, openApp, openCard, openComposer, openNeighbour, openWorktrees, saySubmit, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
 import { cardRecipe, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
-import { allMerged, openPrs, prLine, prsLine, prsOf } from '../../shared/ship.ts';
+import { allMerged, openPrs, prLine, prsLine, prsOf, shipLeft, shipMode } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
 import { send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
@@ -367,7 +367,7 @@ function CardView({ id }: { id: string }) {
             <Key k="Tab" size="sm" />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {left === 'ctx' ? <ContextTab card={card} wsName={ws?.name} /> : left === 'tx' ? <TranscriptTab card={card} /> : <Overview card={card} />}
+            {left === 'ctx' ? <ContextTab card={card} wsName={ws?.name} /> : left === 'tx' ? <TranscriptTab card={card} /> : <Overview card={card} wide={wide} />}
           </div>
           {left === 'tx' && <Say card={card} />}
         </div>
@@ -422,7 +422,7 @@ function DrawerActions({ card }: { card: Card }) {
         </button>
       ) : card.stage !== 'done' && (card.sessionId || prsOf(card.ship).length > 0) && (
         <button className={`btn py-1 ${card.stage === 'try' || prsOf(card.ship).length ? 'btn-primary' : ''}`} onClick={() => shipKey(card.id)}>
-          <Key k="s" size="sm" tone={card.stage === 'try' || prsOf(card.ship).length ? 'ghost' : undefined} />{openPrs(prsOf(card.ship)).length > 1 ? `Merge ${openPrs(prsOf(card.ship)).length} PRs` : openPrs(prsOf(card.ship)).length === 1 ? `Merge #${openPrs(prsOf(card.ship))[0].number}` : 'Ship'}
+          <Key k="s" size="sm" tone={card.stage === 'try' || prsOf(card.ship).length ? 'ghost' : undefined} />{shipMode(card.ship) === 'rest' ? `Ship ${shipLeft(card.ship).join(', ')}` : openPrs(prsOf(card.ship)).length > 1 ? `Merge ${openPrs(prsOf(card.ship)).length} PRs` : openPrs(prsOf(card.ship)).length === 1 ? `Merge #${openPrs(prsOf(card.ship))[0].number}` : 'Ship'}
         </button>
       )}
       {card.stage !== 'done' && <button className="btn py-1" onClick={() => openAddComposer(card.id)}><Key k="c" size="sm" />Add context</button>}
@@ -454,7 +454,8 @@ function Sec({ id, title, right, children }: { id?: string; title?: string; righ
   );
 }
 
-function Overview({ card }: { card: Card }) {
+/** The Overview tab. `wide`: the live transcript is beside it, so Claude's last message isn't repeated here. */
+function Overview({ card, wide }: { card: Card; wide?: boolean }) {
   const act = cardActivity(card);
   const size = tokens(packetText(card, card.key, card.branchName));
   return (
@@ -500,7 +501,7 @@ function Overview({ card }: { card: Card }) {
           <p className="text-sm"><a className="underline hover:text-acc" href={card.pr.url} target="_blank" rel="noreferrer">PR #{card.pr.number} {card.pr.title}</a> · <span className="font-mono text-[12.5px]">{card.pr.source} → {card.pr.target}</span></p>
         </Sec>
       )}
-      {card.live?.lastMessage && card.live.phase !== 'working' && !card.live.ask && !(card.report && card.live.lastMessage.includes(card.report.text.slice(0, 200))) && (
+      {!wide && card.live?.lastMessage && card.live.phase !== 'working' && !card.live.ask && !(card.report && card.live.lastMessage.includes(card.report.text.slice(0, 200))) && (
         <Sec title="Claude said">
           <div className="md max-h-64 overflow-y-auto text-sm"><Markdown remarkPlugins={[remarkGfm]}>{card.live.lastMessage}</Markdown></div>
         </Sec>
@@ -542,9 +543,15 @@ function Shipped({ card }: { card: Card }) {
         <div key={`${pr.host}-${pr.number}`} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold ${pr.state === 'MERGED' ? 'bg-ok-bg text-ok' : 'bg-busy-bg text-busy'}`}>
           {prs.length > 1 && <span className="shrink-0 rounded border border-current px-1 font-mono text-[11px]">{pr.repo ?? 'repo'}</span>}
           <a className="grow underline" href={pr.url} target="_blank" rel="noreferrer">{prLine(pr)}</a>
-          {pr.state === 'OPEN' && <button className="flex items-center gap-1.5" onClick={() => shipKey(card.id)}><Key k="s" size="sm" />merge{openPrs(prs).length > 1 ? ' all' : ''}</button>}
+          {pr.state === 'OPEN' && !shipLeft(card.ship).length && <button className="flex items-center gap-1.5" onClick={() => shipKey(card.id)}><Key k="s" size="sm" />merge{openPrs(prs).length > 1 ? ' all' : ''}</button>}
         </div>
       ))}
+      {shipLeft(card.ship).length > 0 && (
+        <div className="flex items-center gap-2.5 rounded-lg bg-attn-bg px-3 py-2 text-sm text-attn">
+          <span className="grow">Stopped before {shipLeft(card.ship).join(' and ')} shipped. Fix what the step below says, then ship the rest; merging waits until every repo has its PR.</span>
+          <button className="flex items-center gap-1.5 font-semibold" onClick={() => shipKey(card.id)}><Key k="s" size="sm" />ship the rest</button>
+        </div>
+      )}
       <ol className="grid gap-1 text-[13px]">
         {card.ship!.steps.map((st, i) => (
           <li key={i} className="flex items-start gap-2.5">

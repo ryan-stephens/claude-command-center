@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { askOf, cardRepos, ownFolders, waiting } from '../shared/cards.ts';
 import { cardRecipe } from '../shared/recipes.ts';
-import { openPrs, prsOf } from '../shared/ship.ts';
+import { openPrs, prsOf, shipMode } from '../shared/ship.ts';
 import { Dialogs } from './components/Dialogs.tsx';
 import { SessionView } from './components/SessionView.tsx';
 import { Icon, Key, KeyHint, WsBadge } from './components/ui.tsx';
@@ -59,7 +59,7 @@ function Legend() {
   const pr = openPrs(prs)[0] ?? prs[0];
   const testing = shown?.kind === 'qa' || shown?.kind === 'review';
   const ship = testing ? (shown.report || shown.live?.lastMessage ? 'report' as const : undefined)
-    : shown && shown.stage !== 'done' && (shown.sessionId || pr) ? (openPrs(prs).length ? 'merge' as const : 'ship' as const) : undefined;
+    : shown && shown.stage !== 'done' && (shown.sessionId || pr) ? shipMode(shown.ship) : undefined;
   const canDone = shown?.stage === 'ship';
   const canSay = Boolean(drawerCard?.channel);
   const asking = Boolean(drawerCard && askOf(drawerCard)?.requestId);

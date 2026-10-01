@@ -48,6 +48,8 @@ export interface RepoShipPlan {
   blockers: string[];
   /** Worth knowing, but not in the way. */
   notes: string[];
+  /** The PR this repo already has from an earlier ship: its branch is pushed, so it is left alone. */
+  pr?: PullRequest;
 }
 
 /**
@@ -80,6 +82,15 @@ export function prsOf(ship: { pr?: PullRequest; prs?: PullRequest[] } | undefine
 
 export const allMerged = (prs: PullRequest[]) => prs.length > 0 && prs.every((p) => p.state === 'MERGED');
 export const openPrs = (prs: PullRequest[]) => prs.filter((p) => p.state === 'OPEN' || !p.state);
+
+/** A ship stopped part-way: PRs are open and repos are still to ship, so s ships the rest, not merges. */
+export const shipLeft = (ship: { pr?: PullRequest; prs?: PullRequest[]; left?: string[] } | undefined): string[] => (openPrs(prsOf(ship)).length ? ship?.left ?? [] : []);
+
+/** What s does on a card: ship it, ship the repos a failed ship left, or merge its PRs. */
+export function shipMode(ship: { pr?: PullRequest; prs?: PullRequest[]; left?: string[] } | undefined): 'ship' | 'rest' | 'merge' {
+  if (!openPrs(prsOf(ship)).length) return 'ship';
+  return shipLeft(ship).length ? 'rest' : 'merge';
+}
 
 /** The tile's one line: "PR #12 · approved · checks passing", or "2 PRs · #12 approved, #7 waiting for review". */
 export function prsLine(prs: PullRequest[]): string {

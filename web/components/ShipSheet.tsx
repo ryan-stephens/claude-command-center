@@ -1,11 +1,12 @@
 // s on a card: the Ship sheet. Before a PR: the commit message, then one block per repo the card
 // changed (its branch, its changed files with the ones Claude wrote ticked, ↑ ↓ Space to change),
 // the PR's title and body written from the ticket, and Enter to commit, push and open a PR in each.
+// A ship that stopped part-way: the same form, the shipped repos marked, Enter ships the rest.
 // After: the PRs as their hosts see them, ↑ ↓ to pick one, o to open it, and Enter merges them all.
 
 import { useEffect, useState } from 'react';
 import type { BootStep } from '../../shared/cards.ts';
-import { openPrs, prLine, prsOf, type ShipPlan } from '../../shared/ship.ts';
+import { openPrs, prLine, prsOf, shipLeft, shipMode, type ShipPlan } from '../../shared/ship.ts';
 import { flash, get, set, useStore } from '../store.ts';
 import { mergeCard, refreshPr, shipCard, shipPlan } from '../ws.ts';
 import { close, DialogKeys, DialogTitle, Overlay, useDialogKeys } from './Overlay.tsx';
@@ -40,7 +41,7 @@ function Steps({ id }: { id: string }) {
 export function ShipSheet({ id }: { id: string }) {
   const card = useStore((s) => s.cards.find((c) => c.id === id));
   // Which sheet is settled when it opens: the PRs that shipping opens must not turn it into the merge sheet.
-  const [merge] = useState(() => Boolean(card && openPrs(prsOf(card.ship)).length));
+  const [merge] = useState(() => Boolean(card && shipMode(card.ship) === 'merge'));
   if (!card) return null;
   return merge ? <MergeSheet id={id} /> : <ShipForm id={id} />;
 }
@@ -60,28 +61,33 @@ function ShipForm({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const keyOf = (r: Row) => `${r.root}\0${r.path}`;
+  // A ship stopped part-way: the repos with a PR are shown shipped, and Enter ships the rest.
+  const rest = shipMode(card.ship) === 'rest';
+  const left = shipLeft(card.ship);
 
   useEffect(() => {
     shipPlan(id).then((p) => {
       setPlan(p); setCommit(p.commit); setTitle(p.title); setBody(p.body);
-      setPicked(new Set(p.repos.flatMap((r) => r.files.filter((f) => f.mine).map((f) => keyOf({ root: r.root, path: f.path })))));
+      setPicked(new Set(p.repos.filter((r) => !r.pr).flatMap((r) => r.files.filter((f) => f.mine).map((f) => keyOf({ root: r.root, path: f.path })))));
     }, (e: Error) => setError(e.message));
   }, [id]);
 
-  // Every file of every block, in order, so ↑ ↓ walk through them all.
-  const rows: Row[] = plan?.repos.flatMap((r) => r.files.map((f) => ({ root: r.root, path: f.path }))) ?? [];
+  // Every file of every block still to ship, in order, so ↑ ↓ walk through them all.
+  const rows: Row[] = plan?.repos.filter((r) => !r.pr).flatMap((r) => r.files.map((f) => ({ root: r.root, path: f.path }))) ?? [];
   const toggle = (r: Row) => setPicked((s) => { const n = new Set(s); const k = keyOf(r); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const several = (plan?.repos.length ?? 0) > 1;
+  const todo = plan?.repos.filter((r) => !r.pr) ?? [];
   const go = () => {
     if (!plan || busy) return;
     if (plan.blockers.length) { setError(plan.blockers[0]); return; }
     setBusy(true); setError(null);
-    const repos = plan.repos.map((r) => ({ root: r.root, paths: r.files.filter((f) => picked.has(keyOf({ root: r.root, path: f.path }))).map((f) => f.path) }));
+    const repos = todo.map((r) => ({ root: r.root, paths: r.files.filter((f) => picked.has(keyOf({ root: r.root, path: f.path }))).map((f) => f.path) }));
     shipCard(id, { commit, title, body, repos }).then(() => {
       close();
       const prs = prsOf(get().cards.find((c) => c.id === id)?.ship);
       set({ line: { ...get().line, focus: id, drawer: id, tab: 'over' } });
-      flash(prs.length > 1 ? `Opened ${prs.length} PRs (${prs.map((p) => `#${p.number}`).join(', ')}) · o opens one; s merges them once their checks pass`
+      flash(rest ? `Shipped ${left.join(', ')} · every repo has its PR now; s merges them once their checks pass`
+        : prs.length > 1 ? `Opened ${prs.length} PRs (${prs.map((p) => `#${p.number}`).join(', ')}) · o opens one; s merges them once their checks pass`
         : prs.length ? `Opened PR #${prs[0].number} · o opens it; s merges it once its checks pass (looked at every few minutes)` : 'Pushed. Open the PR in the browser; d when it is merged');
     }, (e: Error) => { setBusy(false); setError(e.message); });
   };
@@ -105,8 +111,8 @@ function ShipForm({ id }: { id: string }) {
   const field = 'field w-full font-mono text-[13px]';
   let at = 0;
   return (
-    <Overlay label="Ship" wide>
-      <div className="mb-1 text-sm text-faint">Ship · {ws?.name ?? 'no workspace'}</div>
+    <Overlay label={rest ? 'Ship the rest' : 'Ship'} wide>
+      <div className="mb-1 text-sm text-faint">{rest ? 'Ship the rest' : 'Ship'} · {ws?.name ?? 'no workspace'}</div>
       <DialogTitle><span className="flex min-w-0 items-center gap-2"><TicketKey k={card.key} source={card.ticket?.source} /><span className="truncate">{card.title}</span></span></DialogTitle>
       {!plan && !error && <p className="text-sm text-faint"><span className="spinner mr-2 inline-block" />Looking at the repo{several ? 's' : ''}…</p>}
       {plan && (
@@ -115,6 +121,17 @@ function ShipForm({ id }: { id: string }) {
             <input id="ship-commit" value={commit} onChange={(e) => setCommit(e.target.value)} className={field} /></label>
           {plan.repos.map((r) => {
             const start = at;
+            if (r.pr) {
+              return (
+                <div key={r.root} className="grid gap-2 rounded-xl border border-line bg-raise/40 p-3" data-shipped={r.repo}>
+                  <div className="grid gap-3 md:grid-cols-[auto_1fr]">
+                    {several && <div className="font-mono text-[13.5px] font-semibold">{r.repo}</div>}
+                    <div className="grid gap-1.5"><span className="eyebrow">Shipped already</span>
+                      <div className="rounded-lg border border-line bg-raise px-2.5 py-1.5 font-mono text-[13px]">{r.branch} <span className="font-sans text-faint">→ {r.base} · pushed · <a className="underline" href={r.pr.url} target="_blank" rel="noreferrer">{prLine(r.pr)}</a>{r.files.length ? ` · ${r.files.length} changed file${r.files.length === 1 ? '' : 's'} here since are left alone` : ''}</span></div></div>
+                  </div>
+                </div>
+              );
+            }
             at += r.files.length;
             const mine = r.files.filter((f) => picked.has(keyOf({ root: r.root, path: f.path }))).length;
             return (
@@ -157,13 +174,15 @@ function ShipForm({ id }: { id: string }) {
       <Steps id={id} />
       {error && <div className="mt-3 rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
       <div className="mt-4 flex items-center gap-3">
-        <span className="grow text-[13px] text-faint">{several
-          ? `In each repo, in order: commits the ticked files by name, pushes, and opens its PR (a failure stops there; the repos before it are shipped). The card moves to Ship.`
+        <span className="grow text-[13px] text-faint">{rest && plan
+          ? `The repos with a PR are left alone. ${todo.map((r) => r.repo).join(' and ')}: ${todo.some((r) => r.files.length) ? 'commits the ticked files by name, ' : ''}pushes the branch and opens its PR, linking the ones open already. Then s merges them all.`
+          : several
+          ? `In each repo, in order: commits the ticked files by name, pushes, and opens its PR (a failure stops there; the repos before it are shipped, and s again ships the rest). The card moves to Ship.`
           : `${plan?.repos[0]?.newBranch ? `Makes ${plan.repos[0].newBranch}, commits` : 'Commits'} the ticked files by name, pushes, and ${plan && !plan.repos[0]?.host ? 'then you open the PR in the browser' : `opens the PR${plan?.repos[0]?.host ? ` on ${plan.repos[0].host}` : ''}`}. The card moves to Ship.`}</span>
         <button className="btn" onClick={close} disabled={busy}>Cancel<Key k="Esc" size="sm" /></button>
-        <button className="btn btn-primary" onClick={go} disabled={!plan || busy || Boolean(plan?.blockers.length)}>{busy ? 'Shipping…' : several ? `Ship ${plan!.repos.length} repos` : 'Ship it'}<Key k="Enter" size="sm" tone="ghost" /></button>
+        <button className="btn btn-primary" onClick={go} disabled={!plan || busy || Boolean(plan?.blockers.length)}>{busy ? 'Shipping…' : rest && plan ? `Ship ${todo.map((r) => r.repo).join(', ') || 'the rest'}` : several ? `Ship ${plan!.repos.length} repos` : 'Ship it'}<Key k="Enter" size="sm" tone="ghost" /></button>
       </div>
-      <DialogKeys items={[['Enter', 'ship it (Ctrl Enter while typing)'], ['↑ ↓ Space', 'pick files'], ['m / t / b', 'commit message / PR title / body'], ['Esc', 'leave the field, then cancel']]} />
+      <DialogKeys items={[['Enter', rest ? 'ship the rest (Ctrl Enter while typing)' : 'ship it (Ctrl Enter while typing)'], ['↑ ↓ Space', 'pick files'], ['m / t / b', 'commit message / PR title / body'], ['Esc', 'leave the field, then cancel']]} />
     </Overlay>
   );
 }

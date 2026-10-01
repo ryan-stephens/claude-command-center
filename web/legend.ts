@@ -104,8 +104,8 @@ export interface LineLegendInput {
   canTry?: boolean;
   appRunning?: boolean;
   appUp?: boolean;
-  /** A card (focused or open) can ship (s), or has an open PR (s merges it); a QA or review card shows its report. */
-  ship?: 'ship' | 'merge' | 'report';
+  /** A card (focused or open) can ship (s), has an open PR (s merges it), or a ship stopped part-way (s ships the rest); a QA or review card shows its report. */
+  ship?: 'ship' | 'rest' | 'merge' | 'report';
   /** A card (focused or open) in Ship: d marks it done by hand. */
   canDone?: boolean;
   /** It has a pull request to open (o, when no app is up). */
@@ -142,7 +142,7 @@ function tryKeys(x: LineLegendInput): LegendItem[] {
     ...(x.appRunning ? [{ keys: ['t'], label: 'Stop the app' }] : x.canTry ? [{ keys: ['t'], label: 'Try it', tone: 'acc' as const }] : []),
     ...(x.appUp ? [{ keys: ['o'], label: 'Open the app' }] : x.hasPr ? [{ keys: ['o'], label: 'Open the PR' }] : []),
     ...(x.hasChanges ? [{ keys: ['⇧D'], label: 'Changes' }] : []),
-    ...(x.ship ? [{ keys: ['s'], label: x.ship === 'merge' ? 'Merge' : x.ship === 'report' ? 'Report' : 'Ship' }] : []),
+    ...(x.ship ? [{ keys: ['s'], label: x.ship === 'merge' ? 'Merge' : x.ship === 'rest' ? 'Ship the rest' : x.ship === 'report' ? 'Report' : 'Ship' }] : []),
     ...(x.canDone ? [{ keys: ['d'], label: 'Done' }] : []),
   ];
 }

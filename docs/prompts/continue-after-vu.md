@@ -22,7 +22,7 @@ Everything in §54 is built and verified against stand-ins only: a stand-in `okt
 1. `t` on a workspace with no stack: does detection read the real `angular.json` / nx serve target, the real proxy file, and the manifest the helper generates? What came out as `?` that should have been `✓`?
 2. The real `okteto up -f okteto.cc-control.yml`: does a sibling copy keep the sync folder and the dev name? If not, the fallback is the `${CC_PORT:-8080}:8080` edit to the team's manifest with `CC_PORT={{port}}` on the step (§54, milestone 2).
 3. Two cards on the same stack at once: ports, deployments, the namespace's room.
-4. A real multi-repo ship to TFS: two blocks, two PRs linking each other.
+4. A real multi-repo ship to TFS: two blocks, two PRs linking each other. If it stops part-way, `s` again ships the rest (built and tried against stand-ins, 2026-10-01).
 5. The trust setting against the real `~/.claude.json`; `c` adding an API repo joining the stack.
 
 ## How we work
@@ -51,7 +51,7 @@ Two threads, both yours:
 
 **2. Keep improving the app between handoffs.** Pick from these, in this order, unless a handoff needs you:
 - The stack editor's confirmation table that §54 milestone 3 left out: the found values as a table (repo, role, container port, command, proxy rule, found in which file), `↑` `↓` to a row, `e` to change a value, `Enter` to save, `Alt+W` to the JSON as now. The JSON stays as the escape hatch.
-- Ship after a part-way failure: `s` again on a card with one PR open and one repo still to ship should ship only what is left (the block for the shipped repo says its branch is already pushed).
+- ~~Ship after a part-way failure~~ (done 2026-10-01, §54 milestone 4: `s` again ships only the repos left; the shipped block says *Shipped already*).
 - `Shift+D` changes on a worktree card across every repo, not just the home one.
 - The trust prompt for `--add-dir` folders: check whether Claude Code asks for those too; if it does, the trust setting should cover them (it marks every worktree already, so it may already be fine).
 - Anything §43's list of proposals still has that fits a calm, effective UI (`docs/prompts/continue-calm-ui.md`).

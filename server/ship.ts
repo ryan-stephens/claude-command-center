@@ -139,17 +139,23 @@ export class ShipService {
    */
   async plan(card: Card): Promise<ShipPlan> {
     const home = this.folder(card);
-    const first = await this.planRepo(card, home, true);
+    // A repo with a PR from an earlier ship (one that stopped part-way) is shown shipped and left alone.
+    const prs = prsOf(card.ship);
+    const shipped = (r: RepoShipPlan): RepoShipPlan => {
+      const pr = prs.find((p) => p.root && samePath(p.root, r.root));
+      return pr ? { ...r, pr, blockers: [], notes: r.notes.filter((n) => !/Tick/.test(n)) } : r;
+    };
+    const first = shipped(await this.planRepo(card, home, true));
     const repos: RepoShipPlan[] = [first];
     for (const f of ownFolders(card)) {
       if (samePath(f.dir, home) || samePath(f.dir, first.root)) continue;
-      const r = await this.planRepo(card, f.dir, false).catch(() => undefined);
-      if (r && (r.files.some((x) => x.mine) || r.ahead)) repos.push(r);
+      const r = await this.planRepo(card, f.dir, false).then(shipped, () => undefined);
+      if (r && (r.files.some((x) => x.mine) || r.ahead || r.pr)) repos.push(r);
     }
     const run0 = this.runs.get(card.id);
     const tried = run0 && (run0.state === 'up' || run0.state === 'done' || run0.steps.some((s) => s.state === 'up')) ? run0.steps.map((s) => s.cmd).join(' && ') : undefined;
     const several = repos.length > 1;
-    const shipping = repos.flatMap((r) => r.files.filter((f) => f.mine).map((f) => (several ? `${r.repo}/${f.path}` : f.path)));
+    const shipping = repos.filter((r) => !r.pr).flatMap((r) => r.files.filter((f) => f.mine).map((f) => (several ? `${r.repo}/${f.path}` : f.path)));
     const tag = (r: RepoShipPlan, s: string) => (several ? `${r.repo}: ${s}` : s);
     return {
       cardId: card.id, repos,
@@ -220,36 +226,42 @@ export class ShipService {
 
   /**
    * Commit, push and open a PR in each repo the request names, in the plan's order; a failure
-   * stops there, with the repos before it shipped and the rest untouched. A host cc-control
-   * doesn't know gets the push and a note to open the PR by hand. Throws with what went wrong;
-   * the card keeps the steps and the PRs opened so far.
+   * stops there, with the repos before it shipped and the rest untouched, and the card says which
+   * repos are left so s again ships only those (a repo with a PR already is skipped). A host
+   * cc-control doesn't know gets the push and a note to open the PR by hand. Throws with what went
+   * wrong; the card keeps the steps and the PRs opened so far.
    */
   async ship(id: string, req: ShipRequest): Promise<PullRequest[]> {
     if (this.busy.has(id)) throw new Error('It is already shipping.');
     const card = this.cards.get(id);
     if (!card) throw new Error('That card is no longer on the line.');
-    const open = openPrs(prsOf(card.ship));
-    if (open.length) throw new Error(`${card.key} already has ${open.length === 1 ? `PR #${open[0].number}` : `${open.length} open PRs`}. s merges ${open.length === 1 ? 'it' : 'them'}.`);
     const plan = await this.plan(card);
     if (plan.blockers.length) throw new Error(plan.blockers[0]);
-    // What to ship where: each requested repo, matched to its block, with only files that are really changed.
+    // What to ship where: each requested repo without a PR yet, matched to its block, with only files that are really changed.
     const jobs = plan.repos.flatMap((r) => {
       const want = req.repos.find((x) => samePath(x.root, r.root));
-      if (!want) return [];
+      if (!want || r.pr) return [];
       const known = new Set(r.files.map((f) => f.path));
       const paths = [...new Set(want.paths)].filter((p) => known.has(p));
       return paths.length || r.ahead ? [{ r, paths }] : [];
     });
-    if (!jobs.length) throw new Error('Nothing to ship: tick the files to commit.');
+    if (!jobs.length) {
+      const open = openPrs(prsOf(card.ship));
+      if (open.length) throw new Error(`${card.key} already has ${open.length === 1 ? `PR #${open[0].number}` : `${open.length} open PRs`}. s merges ${open.length === 1 ? 'it' : 'them'}.`);
+      throw new Error('Nothing to ship: tick the files to commit.');
+    }
     const commit = req.commit.trim();
     const title = req.title.replace(/[\r\n]+/g, ' ').trim();
     if (jobs.some((j) => j.paths.length) && !commit) throw new Error('Write a commit message.');
     if (!title) throw new Error('Give the pull request a title.');
 
     this.busy.add(id);
-    this.cards.update(id, (c) => ({ ...c, ship: { steps: [] } }));
-    const several = jobs.length > 1;
+    // The steps start over; the PRs an earlier ship opened stay (and the single `pr` of old cards becomes the list).
+    this.cards.update(id, (c) => ({ ...c, ship: { steps: [], prs: prsOf(c.ship) } }));
+    const several = plan.repos.length > 1;
     const opened: PullRequest[] = [];
+    // A PR of another block of the card: opened earlier (a ship that stopped), or in this run so far.
+    const prOf = (x: RepoShipPlan) => x.pr ?? opened.find((p) => p.root && samePath(p.root, x.root));
     try {
       for (const { r, paths } of jobs) {
         const root = r.root;
@@ -258,6 +270,8 @@ export class ShipService {
           this.step(id, `${tag}${what}: ${why(o)}`, 'bad');
           throw new Error(`${tag}${what}: ${why(o)}`);
         };
+        // Stopping here leaves this repo and the ones after it: s again ships them.
+        this.cards.update(id, (c) => ({ ...c, ship: { ...c.ship!, left: jobs.slice(jobs.findIndex((j) => j.r === r)).map((j) => j.r.repo) } }));
         let branch = r.branch;
         if (r.newBranch) {
           this.step(id, `${tag}Making branch ${r.newBranch}`, 'go');
@@ -289,8 +303,8 @@ export class ShipService {
           continue;
         }
         this.step(id, `${tag}Opening the pull request on ${host.name}`, 'go');
-        // The body the sheet showed, plus the change's other repos: the PRs opened before this one linked.
-        const others = several ? jobs.filter((j) => j !== undefined && j.r !== r).map((j) => ({ repo: j.r.repo, url: opened.find((p) => p.root && samePath(p.root, j.r.root))?.url })) : [];
+        // The body the sheet showed, plus the change's other repos: the PRs that exist linked, the ones still to open named.
+        const others = several ? plan.repos.filter((x) => x !== r && (x.pr || jobs.some((j) => j.r === x))).map((x) => ({ repo: x.repo, url: prOf(x)?.url })) : [];
         const body = [req.body.trimEnd(), partOf(card.key, others)].filter(Boolean).join('\n\n');
         let pr: PullRequest;
         try {
@@ -303,6 +317,7 @@ export class ShipService {
         opened.push(pr);
         this.savePr(id, pr);
       }
+      this.cards.update(id, (c) => { const { left: _done, ...ship } = c.ship ?? { steps: [] }; return { ...c, ship: { ...ship, steps: ship.steps ?? [] } }; });
       return opened;
     } finally {
       this.busy.delete(id);

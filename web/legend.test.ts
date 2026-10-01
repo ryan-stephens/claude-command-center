@@ -67,6 +67,7 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(labels({ view: 'board', hasFocus: true, canTry: true, bindings: {} }).includes('Try it'));
   assert.ok(labels({ view: 'board', hasFocus: true, ship: 'ship', bindings: {} }).includes('Ship'));
   assert.ok(labels({ view: 'drawer', ship: 'merge', bindings: {} }).includes('Merge'));
+  assert.ok(labels({ view: 'drawer', ship: 'rest', bindings: {} }).includes('Ship the rest'), 'a ship that stopped part-way');
   const adding = labels({ view: 'composer', pane: 'pkt', addingTo: 'SHOP-155', cardRepo: true, bindings: {} });
   assert.ok(adding.includes('Add to SHOP-155') && !adding.includes('Model') && !adding.includes('Keep for the workspace'), 'adding to a running card');
   assert.deepEqual(lineLegendFor({ view: 'board', hasSession: true, hasFocus: true, bindings: { expand: ['Alt+Enter'] } }).find((i) => i.label === 'Its session')!.keys, ['Alt+Enter']);

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import type { Card } from '../shared/cards.ts';
-import { commitMessage, prBody, prLine, prTitle } from '../shared/ship.ts';
+import { commitMessage, prBody, prLine, prTitle, shipMode } from '../shared/ship.ts';
 import { CardService } from './cards.ts';
 import { RunService } from './recipes.ts';
 import { checksOf, parseStatus, relativeTo, ShipService } from './ship.ts';
@@ -237,6 +237,55 @@ test('a card that changed two repos ships each from its worktree: two commits, t
     assert.doesNotMatch(git(api.remote, 'branch', '--list'), /shop-155/);
     assert.ok(cards.get(card.id)!.ship!.prs!.every((p) => p.state === 'MERGED'));
     assert.equal(cards.get(card.id)!.stage, 'done');
+  } finally {
+    ship.stop();
+  }
+});
+
+test('a ship that stops part-way: the first PR stays, the card says what is left, and s again ships only that', async () => {
+  const web = repo();
+  const api = repo();
+  writeFileSync(join(web.work, 'cart.js'), 'export const cart = [];\n');
+  writeFileSync(join(api.work, 'Fees.cs'), 'class Fees {}\n');
+  const card: Card = {
+    ...seed(web.work), launch: { home: join(dir, 'web'), branch: 'worktree', mode: 'default', message: '' }, branchName: 'shop-155-save-cart-signed-out',
+    folders: [{ repo: join(dir, 'web'), dir: web.work }, { repo: join(dir, 'api'), dir: api.work }],
+    files: [join(web.work, 'cart.js'), join(api.work, 'Fees.cs')],
+  };
+  store.saveCard(card, 'tok');
+  const cards = new CardService(store, { port: 7788, changed: () => {} });
+  const ship = new ShipService(cards, new RunService(() => {}, process.env), { env: { ...process.env, CC_CONTROL_GH: stub } });
+  try {
+    const plan = await ship.plan(card);
+    const n = 12 + calls().filter((a) => a.body).length;
+    const req = (p: typeof plan) => ({ commit: p.commit, title: p.title, body: p.body, repos: p.repos.map((r) => ({ root: r.root, paths: r.files.filter((f) => f.mine).map((f) => f.path) })) });
+    // The API's remote goes away after the plan: its push fails.
+    git(api.work, 'remote', 'set-url', 'origin', join(dir, 'gone.git'));
+    await assert.rejects(ship.ship(card.id, req(plan)), /^Error: api: The push failed/);
+    let saved = cards.get(card.id)!;
+    assert.equal(saved.stage, 'ship', 'in Ship from the first push');
+    assert.deepEqual(saved.ship!.prs!.map((p) => [p.repo, p.number]), [['web', n]], 'the first PR stays on the card');
+    assert.deepEqual(saved.ship!.left, ['api'], 'what is left is said');
+    assert.equal(shipMode(saved.ship), 'rest');
+    assert.equal(saved.ship!.steps.at(-1)!.state, 'bad');
+    assert.match(saved.ship!.steps.at(-1)!.text, /^api: The push failed/);
+    assert.equal(git(api.work, 'show', '--name-only', '--format=', 'HEAD'), 'Fees.cs', 'the API commit was made');
+
+    // s again: the plan shows web shipped and api with its commit to push.
+    git(api.work, 'remote', 'set-url', 'origin', api.remote);
+    const again = await ship.plan(cards.get(card.id)!);
+    assert.deepEqual(again.repos.map((r) => [r.repo, r.pr?.number, r.files.length, r.ahead]), [['web', n, 0, 1], ['api', undefined, 0, 1]]);
+    assert.doesNotMatch(again.body, /## Files/, 'nothing new to commit: no file list');
+    const prs = await ship.ship(card.id, req(again));
+    assert.deepEqual(prs.map((p) => [p.repo, p.number]), [['api', n + 1]], 'only the API shipped this time');
+    assert.ok(calls().filter((a) => a.body).at(-1)!.body.includes(`Part of SHOP-155 with [web](https://github.com/acme/web/pull/${n}).`), 'linking the PR from before');
+    assert.match(git(api.remote, 'branch', '--list'), /shop-155/, 'pushed now');
+    saved = cards.get(card.id)!;
+    assert.deepEqual(saved.ship!.prs!.map((p) => p.number), [n, n + 1]);
+    assert.equal(saved.ship!.left, undefined, 'nothing left');
+    assert.equal(shipMode(saved.ship), 'merge');
+    assert.ok(saved.ship!.steps.every((s) => /^api: /.test(s.text)), 'this run touched only the API');
+    await assert.rejects(ship.ship(card.id, req(again)), /already has 2 open PRs/);
   } finally {
     ship.stop();
   }
