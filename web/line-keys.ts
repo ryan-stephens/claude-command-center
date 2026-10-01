@@ -4,7 +4,7 @@
 // lineLegendFor (the bar at the bottom).
 
 import { askOf, cardRepos, ownFolders, waiting } from '../shared/cards.ts';
-import { cardRecipe } from '../shared/recipes.ts';
+import { cardRecipe, wsRecipeKey } from '../shared/recipes.ts';
 import type { StackChoice } from '../shared/stack.ts';
 import { repoName } from '../shared/workspaces.ts';
 import { inbox, INBOX_VIEWS, type Ticket } from '../shared/tickets.ts';
@@ -41,7 +41,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Shift+D (a card)', 'Changes: what it changed as git sees it, file by file with the diffs (↑ ↓ file, s ships from there)'],
       ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
-      ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a workspace stack, pick the environment and the APIs first'],
+      ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a workspace stack, pick the environment and the APIs first. A workspace with no stack yet: what its repos say the stack is (okteto.yml, angular.json, the proxy file), Enter keeps it, e edits it first'],
       ['t picker: ← →  /  ↑ ↓ Space  /  a n  /  Enter', 'Environment (dev, uat …)  /  which APIs run (changed ones are ticked)  /  all or none  /  start them, then the UI'],
       ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
       ['e (a card)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo, the whole workspace, or the workspace’s stack of APIs and UI)'],
@@ -283,6 +283,9 @@ export function tryIt(id: string): void {
   const home = cardRepos(card)[0];
   set({ line: { ...s.line, focus: id, drawer: id, tab: 'over' } });
   const recipe = cardRecipe(s.recipes, card.workspaceId, home);
+  // A workspace of several repos with no recipe or stack of its own: what its repos say the stack is, to keep with one key (§54).
+  const wsRepos = s.workspaces.find((w) => w.id === card.workspaceId)?.repos.length ?? 0;
+  if (card.workspaceId && !s.recipes[wsRecipeKey(card.workspaceId)] && wsRepos > 1) { set({ modal: { kind: 'tryPick', id, detect: true } }); return; }
   if (!recipe) { flash(`No run recipe for ${home ? repoName(home) : card.key} yet: e writes one`); return; }
   // A stack asks first: which environment, which APIs.
   if (recipe.stack) { set({ modal: { kind: 'tryPick', id } }); return; }

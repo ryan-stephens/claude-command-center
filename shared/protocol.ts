@@ -4,6 +4,7 @@ import type { Card, CardDraft, CardWorktree, PacketItem, PrTarget } from './card
 import type { CardRun, RunRecipe } from './recipes.ts';
 import type { ShipPlan, ShipRequest } from './ship.ts';
 import type { Stack, StackApiRow, StackChoice } from './stack.ts';
+import type { Finding } from './stack-detect.ts';
 import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 
 /**
@@ -14,7 +15,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
 
-export const PROTOCOL = 17;
+export const PROTOCOL = 18;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -370,6 +371,8 @@ export type ClientMsg =
   | { type: 'card.stackPlan'; reqId: string; id: string }
   /** Save a workspace's stack (checked on the server); null removes it. Answered with ok or an error. */
   | { type: 'stack.save'; reqId: string; workspaceId: string; stack: unknown }
+  /** What the workspace's repos say the stack is (shared/stack-detect.ts): for the editor's starting point, and t with no stack yet. */
+  | { type: 'stack.detect'; reqId: string; workspaceId: string }
   /** Stop the card's run and the app it started. */
   | { type: 'card.stopRun'; id: string }
   /** Save the run recipe you wrote for a repo; no steps goes back to the detected one. Answered with ok or an error. */
@@ -440,6 +443,7 @@ export type ServerMsg =
   | { type: 'card.worktreesRemoved'; reqId: string; id: string; removed: CardWorktree[]; kept: CardWorktree[] }
   /** The picker's rows for a card's stack, and the APIs to tick when nothing was picked before. */
   | { type: 'stack.plan'; reqId: string; rows: StackApiRow[]; suggested: string[] }
+  | { type: 'stack.detected'; reqId: string; workspaceId: string; stack?: Stack; findings: Finding[] }
   /** Run recipes by repo path: the library's, the workspaces' and the cards' repos. */
   | { type: 'recipes'; recipes: Record<string, RunRecipe>; /** Workspaces' own recipes, by workspace id. */ workspaceRecipes?: Record<string, RunRecipe> }
   /** Cards' runs of their recipes (Try it). */

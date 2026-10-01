@@ -5,6 +5,7 @@ import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
 import type { SourceState } from '../../shared/tickets.ts';
 import { parseSteps, recipeFor, wsRecipeKey } from '../../shared/recipes.ts';
 import { stackDraft, stackWarnings, unknownStackRepos } from '../../shared/stack.ts';
+import type { Finding } from '../../shared/stack-detect.ts';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
 import { HINTS_LABEL } from '../hints.ts';
@@ -13,7 +14,7 @@ import { deleteCard, openWorktrees, runWorkspaceAction, updateComposer } from '.
 import { addFolder } from '../line-model.ts';
 import { isClean, ownFolders, type CardWorktree } from '../../shared/cards.ts';
 import { flash, get, NO_BINDINGS, sessionById, set, setFilter as showWorkspace, useStore, type RepoTarget, type WorkspaceAction } from '../store.ts';
-import { cardWorktrees, createSession, removeCardWorktrees, saveRecipe, saveStack, send, setSources } from '../ws.ts';
+import { cardWorktrees, createSession, detectStack, removeCardWorktrees, saveRecipe, saveStack, send, setSources } from '../ws.ts';
 import { BindingsDialog } from './BindingsDialog.tsx';
 import { ChangesSheet } from './ChangesSheet.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
@@ -48,8 +49,8 @@ export function Dialogs() {
     case 'sources': return <SourcesDialog />;
     case 'deleteCard': return <DeleteCardDialog id={modal.id} />;
     case 'worktrees': return <WorktreesDialog id={modal.id} thenDelete={modal.thenDelete === true} />;
-    case 'recipe': return <RecipeDialog repo={modal.repo} workspaceId={modal.workspaceId} />;
-    case 'tryPick': return <TryPick id={modal.id} />;
+    case 'recipe': return <RecipeDialog repo={modal.repo} workspaceId={modal.workspaceId} initial={modal.scope} />;
+    case 'tryPick': return <TryPick id={modal.id} detect={modal.detect === true} />;
     case 'ship': return <ShipSheet id={modal.id} />;
     case 'report': return <ReportSheet id={modal.id} />;
     case 'changes': return <ChangesSheet id={modal.id} />;
@@ -629,7 +630,7 @@ function WorktreesDialog({ id, thenDelete }: { id: string; thenDelete: boolean }
  * or the workspace's stack (the APIs t can start and the UI pointed at them), as JSON. Alt+W
  * goes through the three.
  */
-function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: string }) {
+function RecipeDialog({ repo, workspaceId, initial }: { repo: string; workspaceId?: string; initial?: 'repo' | 'workspace' | 'stack' }) {
   const repoRecipe = useStore((s) => recipeFor(s.recipes, repo));
   const wsEntry = useStore((s) => (workspaceId ? s.recipes[wsRecipeKey(workspaceId)] : undefined));
   const wsName = useStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.name);
@@ -637,8 +638,10 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
   const stack = wsEntry?.stack;
   const wsRecipe = stack ? undefined : wsEntry;
   type Scope = 'repo' | 'workspace' | 'stack';
-  // Opens on what the card runs: the stack, else the workspace's recipe, else the repo's.
-  const [scope, setScope] = useState<Scope>(() => (stack ? 'stack' : wsRecipe ? 'workspace' : 'repo'));
+  // Opens on what the card runs: the stack, else the workspace's recipe, else the repo's (or where it was asked to).
+  const [scope, setScope] = useState<Scope>(() => (initial && (initial === 'repo' || workspaceId) ? initial : stack ? 'stack' : wsRecipe ? 'workspace' : 'repo'));
+  // No stack yet: what the workspace's repos say it is, read when the stack tab opens, fills the box if it is still the draft.
+  const [found, setFound] = useState<Finding[] | null>(null);
   const recipe = scope === 'workspace' ? wsRecipe : scope === 'repo' ? repoRecipe : undefined;
   // The stored list (stable), mapped outside the selector: a new array from a selector re-renders forever.
   const wsRepos = useStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.repos);
@@ -654,6 +657,17 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
   const [url, setUrl] = useState(() => recipe?.url ?? '');
   const [error, setError] = useState<string | null>(null);
   const order: Scope[] = workspaceId ? ['repo', 'workspace', 'stack'] : ['repo'];
+  useEffect(() => {
+    if (scope !== 'stack' || stack || !workspaceId || found) return;
+    let on = true;
+    detectStack(workspaceId).then((d) => {
+      if (!on) return;
+      setFound(d.findings);
+      // Only an untouched draft is replaced: anything typed stays.
+      if (d.stack) setText((t) => (t === stackText() ? JSON.stringify(d.stack, null, 2) : t));
+    }, () => { if (on) setFound([]); });
+    return () => { on = false; };
+  }, [scope, stack, workspaceId, found]);
   const switchTo = (next: Scope) => {
     if (next === scope || !order.includes(next)) return;
     // Untouched text follows the switch; edited step text stays, so a repo's recipe can become the workspace's.
@@ -712,6 +726,7 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
           {warnings.map((w) => <li key={w}>{w}</li>)}
         </ul>
       )}
+      {scope === 'stack' && !stack && found && <Findings findings={found} />}
       <label className="eyebrow mb-1.5 block" htmlFor="recipe-steps">{scope === 'stack' ? 'The stack, as JSON' : 'Steps, one per line'}</label>
       <textarea id="recipe-steps" autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={keys} rows={scope === 'stack' ? 18 : 7} spellCheck={false}
         placeholder={scope === 'workspace'
@@ -734,6 +749,35 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
         <button className="btn btn-primary" onClick={save}>Save{scope === 'workspace' ? ' for the workspace' : scope === 'stack' ? ' the stack' : ''}<Key k="Ctrl Enter" size="sm" tone="ghost" /></button>
       </div>
     </Overlay>
+  );
+}
+
+/**
+ * What the workspace's repos said the stack is: one line per thing read (✓, with the file) or
+ * assumed (?, to check). Shown over the stack editor's box and in t's offer of the found stack.
+ */
+export function Findings({ findings, title = 'Found in your repos' }: { findings: Finding[]; title?: string }) {
+  if (!findings.length) return <p className="mb-3 text-[13px] text-faint">Nothing in the repos says how they run (no okteto.yml, .csproj, angular.json, project.json or package.json). Below is a draft to change.</p>;
+  const groups = [...new Set(findings.map((f) => f.repo))];
+  return (
+    <div className="mb-3 rounded-lg border border-line bg-bg px-3 py-2" aria-label={title}>
+      <div className="eyebrow mb-1">{title}</div>
+      <ul className="grid gap-0.5 text-[12.5px]">
+        {groups.map((g) => (
+          <li key={g || '*'} className="grid grid-cols-[7rem_1fr] gap-x-2">
+            <span className="truncate font-mono text-[12px] text-sub">{g || 'the stack'}</span>
+            <ul className="grid gap-0.5">
+              {findings.filter((f) => f.repo === g).map((f, i) => (
+                <li key={i} className={f.asked ? 'text-attn' : ''}>
+                  <span className={`mr-1.5 font-mono font-bold ${f.asked ? 'text-attn' : 'text-ok'}`}>{f.asked ? '?' : '✓'}</span>{f.text}{f.from && <span className="text-faint"> · {f.from}</span>}
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-[12px] text-faint">✓ read from that file · ? assumed: check it</p>
+    </div>
   );
 }
 

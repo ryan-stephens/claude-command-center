@@ -178,6 +178,11 @@ export async function saveStack(workspaceId: string, stack: unknown): Promise<vo
   await request((reqId) => ({ type: 'stack.save', reqId, workspaceId, stack }));
 }
 
+/** What the workspace's repos say its stack is, and how each part was found. */
+export async function detectStack(workspaceId: string): Promise<Extract<ServerMsg, { type: 'stack.detected' }>> {
+  return await request((reqId) => ({ type: 'stack.detect', reqId, workspaceId }), 60_000) as Extract<ServerMsg, { type: 'stack.detected' }>;
+}
+
 /** Save the run recipe you wrote for a repo (no steps: back to the detected one), or for a workspace (no steps: none). */
 export async function saveRecipe(target: { repo: string } | { workspaceId: string }, steps: string[], url?: string): Promise<void> {
   await request((reqId) => ({ type: 'recipe.save', reqId, ...target, steps, ...(url ? { url } : {}) }));
@@ -364,6 +369,7 @@ function receive(msg: ServerMsg): void {
     case 'card.worktreesRemoved':
     case 'tickets.transitions':
     case 'stack.plan':
+    case 'stack.detected':
       return; // answered to the screen that asked, which waits on it
     case 'workspace.file':
       pendingWorkspaceFiles.get(msg.reqId)?.(msg.file);

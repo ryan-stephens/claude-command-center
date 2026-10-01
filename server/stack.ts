@@ -6,7 +6,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, runLabel, stackRules, stackSteps, uiUrlFor, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo, type StackRunContext } from '../shared/stack.ts';
+import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, readLooseJson, runLabel, stackRules, stackSteps, uiUrlFor, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo, type StackRunContext } from '../shared/stack.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import { run } from './hosts.ts';
 import { PortPool } from './ports.ts';
@@ -94,13 +94,7 @@ export function restoreLeftovers(dir: string): string[] {
   return restored;
 }
 
-/** Read a JSON file that may have comments or trailing commas (proxy configs often do). */
-export function readLooseJson(text: string): Record<string, unknown> {
-  const clean = text.replace(/^﻿/, '').replace(/("(?:[^"\\]|\\.)*")|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (_m, str: string | undefined) => str ?? '').replace(/,(\s*[}\]])/g, '$1');
-  const v = JSON.parse(clean) as unknown;
-  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('it isn’t a JSON object');
-  return v as Record<string, unknown>;
-}
+export { readLooseJson } from '../shared/stack.ts';
 
 /**
  * A run of the stack for a card: the steps for what was picked, with a local port picked for each

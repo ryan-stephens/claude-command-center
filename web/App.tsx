@@ -49,7 +49,8 @@ function Legend() {
   const drawerCard = useStore((s) => s.cards.find((c) => c.id === s.line.drawer));
   const canAdd = Boolean(drawerCard && drawerCard.stage !== 'done');
   const shown = useStore((s) => s.cards.find((c) => c.id === (s.line.drawer ?? s.line.focus)));
-  const canTry = useStore((s) => Boolean(shown && cardRecipe(s.recipes, shown.workspaceId, cardRepos(shown)[0])));
+  // A workspace card with no recipe can still try: t shows what its repos say the stack is.
+  const canTry = useStore((s) => Boolean(shown && (cardRecipe(s.recipes, shown.workspaceId, cardRepos(shown)[0]) || shown.workspaceId)));
   const run = useStore((s) => (shown ? s.runs[shown.id] : undefined));
   const appRunning = run?.state === 'running' || run?.state === 'up';
   const appUp = run?.state === 'up' && Boolean(run.url);

@@ -18,6 +18,7 @@ import { ChannelService } from './channel.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
 import { parseRange, PortPool } from './ports.ts';
 import { plainStack, prepareStackRun, restoreLeftovers, runsDir, saveStack, stackOf, stackRecipe, stackRows } from './stack.ts';
+import { detectWorkspaceStack } from './stack-detect.ts';
 import { suggested, unknownStackRepos, validateStack } from '../shared/stack.ts';
 import { ShipService } from './ship.ts';
 import { findPrIn } from './hosts.ts';
@@ -490,6 +491,14 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       if (!stack) throw new Error(`${card.key}’s workspace has no stack.`);
       const rows = await stackRows(stack, runPlaces(card), cardText(card));
       send(ws, { type: 'stack.plan', reqId: msg.reqId, rows, suggested: suggested(rows) });
+      return;
+    }
+    case 'stack.detect': {
+      const id = String(msg.workspaceId);
+      const owner = store.loadWorkspaces().find((w) => w.id === id);
+      if (!owner) throw new Error('That workspace no longer exists.');
+      const d = detectWorkspaceStack(owner.repos.filter((r) => existsSync(r)));
+      send(ws, { type: 'stack.detected', reqId: msg.reqId, workspaceId: id, ...(d.stack ? { stack: d.stack } : {}), findings: d.findings });
       return;
     }
     case 'stack.save': {

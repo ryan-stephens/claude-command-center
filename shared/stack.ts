@@ -176,9 +176,22 @@ export const STACK_EXAMPLE: Stack = {
 };
 
 /** A UI repo by its name: web, ui, client, frontend, app, spa or portal as a word in it. */
-const UI_NAME = /(^|[-_. ])(ui|web|client|frontend|front-end|app|spa|portal)([-_. ]|$)/i;
+export const UI_NAME = /(^|[-_. ])(ui|web|client|frontend|front-end|app|spa|portal)([-_. ]|$)/i;
 /** An API repo by its name. */
-const API_NAME = /(^|[-_. ])(api|apis|service|services|svc|backend|server|gateway)([-_. ]|$)/i;
+export const API_NAME = /(^|[-_. ])(api|apis|service|services|svc|backend|server|gateway)([-_. ]|$)/i;
+
+/** The route an API's name suggests: "loans-api" → "loans", "Workspaces-API" → "workspaces". */
+export function routeGuess(repo: string): string {
+  return repo.toLowerCase().replace(/[-_.]?(api|apis|service|services|svc)$/, '') || repo.toLowerCase();
+}
+
+/** Read a JSON file that may have comments or trailing commas (proxy configs often do). */
+export function readLooseJson(text: string): Record<string, unknown> {
+  const clean = text.replace(/^﻿/, '').replace(/("(?:[^"\\]|\\.)*")|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (_m, str: string | undefined) => str ?? '').replace(/,(\s*[}\]])/g, '$1');
+  const v = JSON.parse(clean) as unknown;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('it isn’t a JSON object');
+  return v as Record<string, unknown>;
+}
 
 /**
  * The stack editor's starting point for a workspace with none yet: the workspace's own repos (a UI
@@ -193,7 +206,7 @@ export function stackDraft(repoNames: string[]): Stack {
     choose: { env: ['dev', 'uat'] },
     // {{port}} is picked for each run; forward: puts it in a copy of the API's okteto.yml, so two cards can run one API at once.
     api: { steps: ['wait:port:{{port}} forward:{{port}}:{{appPort}} okteto up --namespace {{env}}', 'stop: okteto down'], proxy: { '/api/{{route}}/**': { target: 'http://localhost:{{port}}', secure: false, changeOrigin: true } } },
-    apis: apis.map((repo) => ({ repo, values: { name: repo, appPort: '8080', route: repo.toLowerCase().replace(/[-_.]?(api|service|svc)$/, '') || repo.toLowerCase() } })),
+    apis: apis.map((repo) => ({ repo, values: { name: repo, appPort: '8080', route: routeGuess(repo) } })),
     // A card's new worktree of the UI has no node_modules yet: install once, then start on the port picked for the run.
     ...(ui ? { ui: { repo: ui, proxyFile: 'proxy.conf.json', steps: ['if not exist node_modules npm install', 'npm start -- --proxy-config {{proxy}} --port {{uiPort}}'], url: 'http://localhost:{{uiPort}}' } } : {}),
   };

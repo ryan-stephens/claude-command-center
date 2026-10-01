@@ -17,6 +17,7 @@ import { recipeOf } from '../server/recipes.ts';
 import { readLooseJson, stackOf } from '../server/stack.ts';
 import { parseStep } from '../shared/recipes.ts';
 import { needsUiPort, stackWarnings } from '../shared/stack.ts';
+import { envNamesIn } from '../shared/stack-detect.ts';
 import { DB_PATH, Store } from '../server/store.ts';
 import { findQaField, jiraConfig, jiraProblem } from '../server/tickets.ts';
 import { repoName } from '../shared/workspaces.ts';
@@ -180,6 +181,17 @@ for (const w of workspaces) {
   const need = st.apis.length + (needsUiPort(st) ? 1 : 0);
   line(hi - lo + 1 >= need * 2 ? 'ok' : 'warn', 'Local ports', `${lo}-${hi} (CC_CONTROL_PORTS); a run of everything takes ${need}`, hi - lo + 1 >= need * 2 ? '' : 'Widen the range so two cards can run at once.');
   for (const w of stackWarnings(st)) line('warn', 'Two at once', w);
+  // Personal values the steps read from config.env (%KUBECONFIG_DEV%): each must be set on this machine.
+  for (const name of envNamesIn(st)) {
+    // %KUBECONFIG_{{ENV}}% is one variable per value of env: KUBECONFIG_DEV, KUBECONFIG_UAT.
+    const m = /\{\{\s*(\w+)\s*\}\}/.exec(name);
+    const key = m ? Object.keys(st.choose).find((k) => k.toLowerCase() === m[1].toLowerCase()) : undefined;
+    const names = m && key ? st.choose[key].map((v) => name.replace(m[0], m[1] === m[1].toUpperCase() ? v.toUpperCase() : v)) : [name];
+    for (const v of names) {
+      const set = Boolean(process.env[Object.keys(process.env).find((k) => k.toLowerCase() === v.toLowerCase()) ?? v]);
+      line(set ? 'ok' : 'warn', `%${v}%`, set ? 'set' : 'not set on this machine', set ? '' : `A stack step reads it: add ${v}=… to ${CONFIG_FILE} (it is yours, not the workspace’s).`);
+    }
+  }
   if (st.ui) {
     const at = inWs(st.ui.repo);
     line(at ? 'ok' : 'info', `UI ${st.ui.repo}`, at ? 'in the workspace' : 'not in the workspace', at ? '' : 'Fine if cards add it as context.');

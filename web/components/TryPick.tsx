@@ -1,40 +1,57 @@
 import { useEffect, useState } from 'react';
 import { cardRepos } from '../../shared/cards.ts';
-import { cardRecipe } from '../../shared/recipes.ts';
-import { choiceLabel, needsUiPort, type StackApiRow } from '../../shared/stack.ts';
+import { cardRecipe, recipeFor } from '../../shared/recipes.ts';
+import { choiceLabel, needsUiPort, type Stack, type StackApiRow } from '../../shared/stack.ts';
+import type { Finding } from '../../shared/stack-detect.ts';
+import { repoName } from '../../shared/workspaces.ts';
 import { listStep } from '../list-step.ts';
 import { lastPick, tryStack } from '../line-keys.ts';
-import { useStore } from '../store.ts';
-import { stackPlan } from '../ws.ts';
+import { flash, set, useStore } from '../store.ts';
+import { detectStack, saveStack, stackPlan, tryCard } from '../ws.ts';
+import { Findings } from './Dialogs.tsx';
 import { close, DialogKeys, DialogTitle, Overlay, useDialogKeys } from './Overlay.tsx';
 import { Key } from './ui.tsx';
 
 /**
  * t on a card whose workspace has a stack: what to choose (dev or uat), then which APIs to run on
  * their dev environment. APIs changed on the card's branch start ticked; the rest are served by the
- * shared environment through the UI's usual proxy rules.
+ * shared environment through the UI's usual proxy rules. With no stack yet (`detect`), it first
+ * shows what the workspace's repos say the stack is: Enter keeps that as the stack, e edits it first.
  */
-export function TryPick({ id }: { id: string }) {
+export function TryPick({ id, detect = false }: { id: string; detect?: boolean }) {
   const card = useStore((s) => s.cards.find((c) => c.id === id));
   const stack = useStore((s) => (card ? cardRecipe(s.recipes, card.workspaceId, cardRepos(card)[0])?.stack : undefined));
+  // The home repo's own recipe: what Enter runs when the repos give no stack.
+  const homeRecipe = useStore((s) => (card ? recipeFor(s.recipes, cardRepos(card)[0]) : undefined));
   const [rows, setRows] = useState<StackApiRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Detect mode: what was found, until it is kept (then the stack arrives with the recipes and the picker takes over).
+  const [found, setFound] = useState<{ findings: Finding[]; stack?: Stack } | null>(null);
+  const [keeping, setKeeping] = useState(false);
+  const detecting = detect && !stack;
   const choose = Object.entries(stack?.choose ?? {});
-  const [values, setValues] = useState<Record<string, string>>(() => {
-    const last = lastPick(id)?.values ?? {};
-    return Object.fromEntries(choose.map(([k, vals]) => [k, vals.includes(last[k]) ? last[k] : vals[0]]));
-  });
+  const [values, setValues] = useState<Record<string, string>>({});
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [at, setAt] = useState(0);
 
   useEffect(() => {
+    if (!detecting || !card?.workspaceId) return;
+    let on = true;
+    detectStack(card.workspaceId).then((d) => { if (on) setFound({ findings: d.findings, ...(d.stack ? { stack: d.stack } : {}) }); }, (e: Error) => { if (on) setError(e.message); });
+    return () => { on = false; };
+  }, [detecting, card?.workspaceId]);
+
+  useEffect(() => {
+    if (!stack) return;
+    const last = lastPick(id)?.values ?? {};
+    setValues(Object.fromEntries(Object.entries(stack.choose).map(([k, vals]) => [k, vals.includes(last[k]) ? last[k] : vals[0]])));
     stackPlan(id).then((p) => {
       setRows(p.rows);
-      const last = lastPick(id);
-      const found = new Set(p.rows.filter((r) => r.found).map((r) => r.repo));
-      setTicked(new Set((last ? last.apis : p.suggested).filter((r) => found.has(r))));
+      const l = lastPick(id);
+      const have = new Set(p.rows.filter((r) => r.found).map((r) => r.repo));
+      setTicked(new Set((l ? l.apis : p.suggested).filter((r) => have.has(r))));
     }, (e: Error) => setError(e.message));
-  }, [id]);
+  }, [id, stack]);
 
   // Rows you can move through: each question, then each API.
   const total = choose.length + (rows?.length ?? 0);
@@ -50,8 +67,31 @@ export function TryPick({ id }: { id: string }) {
     if (!rows) return;
     tryStack(id, { values, apis: rows.filter((r) => ticked.has(r.repo)).map((r) => r.repo) });
   };
+  /** Detect mode's Enter: keep what was found as the workspace's stack (the recipes update brings the picker); nothing found, run the home repo's own recipe. */
+  const keep = () => {
+    if (!card?.workspaceId || keeping) return;
+    if (!found?.stack) {
+      if (!homeRecipe) return;
+      close();
+      tryCard(id).then(() => flash(`Running ${repoName(cardRepos(card)[0])}’s own recipe`), (e: Error) => flash(e.message));
+      return;
+    }
+    setKeeping(true);
+    saveStack(card.workspaceId, found.stack).then(() => flash('Kept as the workspace’s stack · e changes it'), (e: Error) => { setError(e.message); setKeeping(false); });
+  };
+  const edit = () => {
+    if (!card) return;
+    set({ modal: { kind: 'recipe', repo: cardRepos(card)[0], ...(card.workspaceId ? { workspaceId: card.workspaceId } : {}), scope: 'stack' } });
+  };
 
   useDialogKeys((e) => {
+    if (detecting) {
+      if (e.key === 'Escape') close();
+      else if (e.key === 'Enter') keep();
+      else if (e.key === 'e') edit();
+      else return false;
+      return true;
+    }
     const onChoice = at < choose.length;
     if (e.key === 'Escape') close();
     else if (e.key === 'Enter') start();
@@ -65,7 +105,22 @@ export function TryPick({ id }: { id: string }) {
     return true;
   });
 
-  if (!card || !stack) return null;
+  if (!card) return null;
+  if (detecting) {
+    return (
+      <Overlay label="Try it" wide>
+        <DialogTitle>Try it · {card.key}</DialogTitle>
+        <p className="mb-3 text-sm text-sub">This workspace has no stack yet, so here is what its repos say: how each API starts, the port it listens on, when it is ready, how the UI serves and which proxy rule reaches each API.</p>
+        {error && <div className="mb-3 rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
+        {!found && !error && <p className="flex items-center gap-2 text-sm text-faint"><span className="spinner" />Reading the repos…</p>}
+        {found && <Findings findings={found.findings} />}
+        {found && !found.stack && <p className="text-sm text-sub">Nothing to make a stack from. <Key k="e" size="sm" inline /> opens the stack editor with a draft to fill in{homeRecipe ? <>; <Key k="Enter" size="sm" inline /> runs {repoName(cardRepos(card)[0])}’s own recipe instead ({homeRecipe.source})</> : ''}.</p>}
+        {found?.stack && <p className="text-sm text-sub"><Key k="Enter" size="sm" inline /> keeps this as {card.key}’s workspace stack and goes on to pick the environment and the APIs; the <span className="text-attn">?</span> lines are assumptions to check in the editor (<Key k="e" size="sm" inline />) when they are wrong.</p>}
+        <DialogKeys items={[...(found?.stack ? [['Enter', keeping ? 'keeping…' : 'keep it and go on'] as [string, string]] : found && homeRecipe ? [['Enter', `run ${repoName(cardRepos(card)[0])}’s recipe`] as [string, string]] : []), ['e', 'edit it first'] as [string, string], ['Esc', 'cancel'] as [string, string]]} />
+      </Overlay>
+    );
+  }
+  if (!stack) return null;
   const picked = rows?.filter((r) => ticked.has(r.repo)).map((r) => r.repo) ?? [];
   return (
     <Overlay label="Try it">

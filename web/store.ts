@@ -36,10 +36,10 @@ export type Modal =
   | { kind: 'deleteCard'; id: string }
   /** Shift+X on a card (or w in the Delete dialog): its worktrees, to remove them with their branch. */
   | { kind: 'worktrees'; id: string; thenDelete?: boolean }
-  /** Write or edit a repo's run recipe (e in a card's drawer). */
-  | { kind: 'recipe'; repo: string; workspaceId?: string }
-  /** t on a card whose workspace has a stack: pick dev / uat and the APIs to run. */
-  | { kind: 'tryPick'; id: string }
+  /** Write or edit a repo's run recipe (e in a card's drawer); `scope` opens on that tab. */
+  | { kind: 'recipe'; repo: string; workspaceId?: string; scope?: 'repo' | 'workspace' | 'stack' }
+  /** t on a card whose workspace has a stack: pick dev / uat and the APIs to run. `detect`: no stack yet; show what the repos say and offer to keep it. */
+  | { kind: 'tryPick'; id: string; detect?: boolean }
   /** Ship a card (s), or merge its PR once it has one. */
   | { kind: 'ship'; id: string }
   /** A QA or review card's report (s): copy it, or finish the card. */
