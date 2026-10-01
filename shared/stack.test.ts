@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseStep, recipeLabel, recipeText } from './recipes.ts';
-import { apiVars, choiceLabel, choiceValues, fill, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, runLabel, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiPortFor, uiProject, uiUrlFor, unknownStackRepos, staleUrl, validateStack, withPath, type Stack, type StackRunContext } from './stack.ts';
+import { apiVars, choiceLabel, choiceValues, fill, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, runLabel, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiPortFor, uiProject, uiUrlFor, unknownStackRepos, retarget, staleUrl, validateStack, withPath, type Stack, type StackRunContext } from './stack.ts';
 
 const stack: Stack = validateStack({
   choose: { env: ['dev', 'uat'] },
@@ -149,6 +149,28 @@ test('the run: each picked API’s steps in its repo, then the UI, then stop ste
   assert.equal(stop.repo, 'fees-api');
   assert.deepEqual(stackSteps(stack, { values: {}, apis: [] }, { branches: {}, proxy: 'p.json' }), ['@web-ui nx run shop:serve --proxyConfig=p.json', '@web-ui stop: echo ui gone'], 'no APIs: the UI alone');
   assert.throws(() => stackSteps(stack, { values: {}, apis: ['nope-api'] }, { branches: {} }), /no API called nope-api/);
+});
+
+test('a rule written with the container port as a literal follows the picked port', () => {
+  // VU's stack as saved: values.port 8080 (the container port) and the API's own rules on http://localhost:8080.
+  const s: Stack = validateStack({
+    api: { steps: ['okteto up'] },
+    apis: [{ repo: 'dw-api', values: { name: 'dw-api', port: '8080' }, proxy: {
+      '/azure-gateway/moa/v2/dw/**': { target: 'http://localhost:8080', secure: false, changeOrigin: true, pathRewrite: { '.*/azure-gateway/moa/v2/dw': '' } },
+      '/deny-withdraw/api/**': { target: 'http://localhost:8080/', secure: false },
+      '/other/**': { target: 'http://localhost:8081/', secure: false },
+      '/shared/**': { target: 'https://shared.example/', headers: { Origin: 'http://localhost:4200' } },
+    } }],
+  });
+  const rules = stackRules(s, { values: {}, apis: ['dw-api'] }, { branches: {}, ports: { 'dw-api': 18000 } }) as Record<string, { target: string; headers?: { Origin: string } }>;
+  assert.equal(rules['/azure-gateway/moa/v2/dw/**'].target, 'http://localhost:18000');
+  assert.equal(rules['/deny-withdraw/api/**'].target, 'http://localhost:18000/');
+  assert.equal(rules['/other/**'].target, 'http://localhost:8081/', 'another port is someone else’s');
+  assert.equal(rules['/shared/**'].headers!.Origin, 'http://localhost:4200', 'the UI’s own port is left alone');
+  assert.equal(rules['/shared/**'].target, 'https://shared.example/');
+  const none = stackRules(s, { values: {}, apis: ['dw-api'] }, { branches: {} }) as Record<string, { target: string }>;
+  assert.equal(none['/deny-withdraw/api/**'].target, 'http://localhost:8080/', 'no port picked: as written');
+  assert.deepEqual(retarget({ a: ['http://localhost:8080/x', 'http://localhost:80800'] }, 8080, 18000), { a: ['http://localhost:18000/x', 'http://localhost:80800'] }, 'the whole port, not a prefix of it');
 });
 
 test('proxy rules: the picked APIs’ first, replacing the file’s own, which keep their order', () => {

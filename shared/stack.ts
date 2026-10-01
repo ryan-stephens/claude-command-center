@@ -434,10 +434,28 @@ export function stackRules(stack: Stack, choice: StackChoice, ctx: Pick<StackRun
   const out: Record<string, unknown> = {};
   for (const api of pickedApis(stack, choice.apis)) {
     const key = api.repo.toLowerCase();
-    const vars = apiVars(values, api, ctx.branches[key] ?? 'main', ctx.ports?.[key]);
-    Object.assign(out, fillDeep(stack.api.proxy ?? {}, vars, `the proxy rules for ${api.repo}`), fillDeep(api.proxy ?? {}, vars, `${api.repo}’s own proxy rules`));
+    const port = ctx.ports?.[key];
+    const vars = apiVars(values, api, ctx.branches[key] ?? 'main', port);
+    const rules: Record<string, unknown> = Object.assign({}, fillDeep(stack.api.proxy ?? {}, vars, `the proxy rules for ${api.repo}`), fillDeep(api.proxy ?? {}, vars, `${api.repo}’s own proxy rules`));
+    Object.assign(out, port ? retarget(rules, Number(vars.appPort), port) : rules);
   }
   return out;
+}
+
+/**
+ * Rules written with the API's container port as a literal (`http://localhost:8080`, from before
+ * ports were picked per run) follow the port picked for this run: the API answers there, and a
+ * rule left on 8080 gives the UI a 504. Only that port is touched; other targets are the team's.
+ */
+export function retarget<T>(rules: T, appPort: number, port: number): T {
+  const at = new RegExp(`^(https?://(?:localhost|127\\.0\\.0\\.1)):${appPort}(?=/|$)`, 'i');
+  const walk = (v: unknown): unknown => {
+    if (typeof v === 'string') return v.replace(at, `$1:${port}`);
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, walk(x)]));
+    return v;
+  };
+  return walk(rules) as T;
 }
 
 /**

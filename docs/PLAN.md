@@ -1741,6 +1741,16 @@ What it costs: nothing. No VU dependency.
 
 **To check at VU:** `git pull`, restart, and change the UI step to `node_modules\.bin\nx.cmd run app-summary:serve:development --proxyConfig={{proxy}}`. `t`: the title should read *dev · … · app-summary :4216*, Try it *Running at http://localhost:4216/app-summary/* and `o` opens there (add the loan guid by hand). If nx rejects `--proxyConfig` on the `run` form, say so. If the port or path is wrong, say what the address bar shows.
 
+## 57a. A proxy rule written with the container port follows the picked port
+
+2026-10-01, the owner, third VU handoff: the UI came up on 4216 and the API step showed *up*, but the UI's calls to the API got a 504. The stack's API had two rules of its own (`/azure-gateway/moa/v2/…/**`, `/deny-withdraw/api/**`) with `target: http://localhost:8080` as a literal, written before §54 milestone 2 picked a port per run; the API now answers on the picked port (the `wait:http:` on it is what showed *up*), and the dev server's proxy still went to 8080, where nothing listens.
+
+**What it does.** `stackRules` runs every rule of a picked API through `retarget`: a target or any other string that starts `http://localhost:<appPort>` (or `127.0.0.1`; the API's container port, `appPort` or the old `port` value) becomes the port picked for the run. Only that exact port is touched: a rule on another port, the UI's own `Origin` header, and shared `https://` targets stay as written. With no port picked (a run outside a pool), the rules are as written. Nothing to change in the stack; the amber list already says to call the old `port` value `appPort`.
+
+**Verified:** unit tests (284 pass; `pnpm typecheck` and `tsc --noUnusedLocals` clean): the owner's stack shape (values `port: 8080`, two literal `localhost:8080` rules, one on 8081, one shared with a 4200 `Origin`): both 8080 targets on the picked port, the others untouched; no port picked: as written; `80800` not taken for `8080`.
+
+**To check at VU:** `git pull`, restart, `t` again. The proxy copy under `~/.cc-control/runs/<id>.proxy.conf.json` should show both deny-withdraw rules on `http://localhost:18000` (the picked port), and the API calls answer. If a 504 stays, open that copy and say which rule the failing request matched.
+
 ## 58. A card whose ticket has moved past the work goes to Done on its own
 
 2026-10-01, the owner, at VU: "if a jira card is already in ready for po or done, it should go to the done column on the app". VU's workflow ends *… → Ready for QA → Ready for PO → Done*; the card followed its session and its PR, never its ticket, and the Inbox's JQL (`statusCategory != Done`) never brought a finished ticket back, so a card whose ticket someone else moved on sat in Try it or Ship for good.
