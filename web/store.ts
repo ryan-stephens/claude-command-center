@@ -7,7 +7,7 @@ import { loadFolds, saveFolds, toggled, type FoldKey, type Folds } from './folds
 import type { QaState } from './questions.ts';
 import type { Flags } from './home-model.ts';
 import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
-import type { Composer, LineFilter } from './line-model.ts';
+import { asDraft, hasWork, type Composer, type LineFilter } from './line-model.ts';
 
 /** Where keys go inside the session view. Esc steps outward: composer → number pad → the line. */
 export type SessionZone = 'composer' | 'board';
@@ -107,6 +107,8 @@ interface State {
   found: Found;
   /** The new-card screen, while it is open. */
   composer: Composer | null;
+  /** The new-card screen you left with work on it (Esc, Alt+L…): c picks it up again. Kept per browser. */
+  draft: Composer | null;
   openId: string | null;
   zone: SessionZone;
   expandTools: boolean;
@@ -176,6 +178,7 @@ export const useStore = create<State>(() => ({
   line: { focus: null, drawer: null, tab: 'over', filter: loadFilter(), q: '', searching: false, view: loadView() },
   found: NO_FOUND,
   composer: null,
+  draft: loadDraft(),
   openId: null,
   zone: 'composer',
   expandTools: false,
@@ -241,6 +244,41 @@ export function currentWorkspace(s: Pick<State, 'workspaces' | 'line'>): Workspa
 export function setFilter(filter: LineFilter): void {
   set({ line: { ...get().line, filter } });
   try { localStorage.setItem('cc-control.lineFilter', filter); } catch { /* ignore */ }
+}
+
+
+// The key is written out (not a const above): the store reads the draft while this module is still loading.
+function loadDraft(): Composer | null {
+  try {
+    const raw = localStorage.getItem('cc-control.draft');
+    const d = raw ? JSON.parse(raw) as Composer : null;
+    return d && typeof d.title === 'string' && d.packet && d.launch ? d : null;
+  } catch { return null; }
+}
+
+function saveDraft(d: Composer | null): void {
+  try { if (d) localStorage.setItem('cc-control.draft', JSON.stringify(d)); else localStorage.removeItem('cc-control.draft'); } catch { /* ignore */ }
+}
+
+/**
+ * Close the new-card screen. One with work on it is kept as the draft (c picks it up); `keep: false`
+ * throws it away. Returns whether it was kept, so the caller can say so.
+ */
+export function closeComposer(keep = true): boolean {
+  const c = get().composer;
+  if (!c) return false;
+  const kept = keep && hasWork(c);
+  const draft = kept ? asDraft(c) : get().draft;
+  set({ composer: null, draft });
+  saveDraft(draft);
+  return kept;
+}
+
+/** The draft is on screen (or started, or thrown away): forget it. */
+export function takeDraft(): Composer | null {
+  const d = get().draft;
+  if (d) { set({ draft: null }); saveDraft(null); }
+  return d;
 }
 
 function loadFilter(): LineFilter {

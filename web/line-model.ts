@@ -207,6 +207,20 @@ function workspaceLayer(ws: Workspace | null, recipes: Recipes, kind: CardKind =
   ];
 }
 
+/**
+ * A new-card screen worth keeping when it closes: a title, a ticket, a note or context of its own.
+ * (Not one that adds to a running card: that is one keystroke to redo.)
+ */
+export function hasWork(c: Composer): boolean {
+  if (c.addTo) return false;
+  return Boolean(c.title.trim() || c.ticket || c.packet.note.trim() || c.packet.card.length);
+}
+
+/** The draft as it comes back: not starting, no error, the list instead of the preview. */
+export function asDraft(c: Composer): Composer {
+  return { ...c, starting: false, error: null, preview: false, q: '', prLooking: false };
+}
+
 export function newComposer(ws: Workspace | null, key: string, ticket: Ticket | null = null, recipes: Recipes = {}): Composer {
   const kind = kindForTicket(ticket);
   const { mode, branch } = kindDefaults(kind);

@@ -10,7 +10,7 @@ import type { Workspace } from '../../shared/protocol.ts';
 import { SOURCE_NAME, ticketSub } from '../../shared/tickets.ts';
 import { samePath } from '../../shared/workspaces.ts';
 import { cardFolders, cardHasRepo, cardHasTicket, composerKey, gotPr, goRows, packetRows, pickOption, pickTicket, repoOrigin, sources, ticketSources, toggleSource, togglePacketRow, wantsPr, type Composer, type Pane } from '../line-model.ts';
-import { foundFor, keepRepo, startWork, updateComposer } from '../line-keys.ts';
+import { foundFor, keepRepo, leaveComposer, startWork, updateComposer } from '../line-keys.ts';
 import { get, NO_FOUND, set, useStore } from '../store.ts';
 import { findPr, searchTickets } from '../ws.ts';
 import { Key, TicketKey, WsBadge } from './ui.tsx';
@@ -63,7 +63,7 @@ export function NewCard() {
           <b className="font-mono text-[15px] tabular-nums">{fmtK(size)}</b>
         </div>
         <button className="btn whitespace-nowrap py-1" onClick={() => updateComposer((x) => ({ ...x, preview: !x.preview }))}><Key k="p" size="sm" />{c.preview ? 'Back to the list' : 'Preview what Claude gets'}</button>
-        <button className="flex items-center gap-1.5 whitespace-nowrap text-sm text-faint hover:text-ink" onClick={() => set({ composer: null })}>Cancel <Key k="Esc" size="sm" /></button>
+        <button className="flex items-center gap-1.5 whitespace-nowrap text-sm text-faint hover:text-ink" onClick={leaveComposer}>Cancel <Key k="Esc" size="sm" /></button>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[360px_minmax(0,1fr)_420px] lg:overflow-hidden">
         <Sources c={c} />

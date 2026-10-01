@@ -3,7 +3,7 @@
 
 import type { Card } from '../shared/cards.ts';
 import type { SessionStatus, SessionSummary } from '../shared/protocol.ts';
-import { activeSession, get, markRead, set } from './store.ts';
+import { activeSession, closeComposer, get, markRead, set } from './store.ts';
 
 type Kind = 'needs' | 'done';
 
@@ -113,7 +113,8 @@ export function onCardChange(prev: Card | undefined, next: Card): void {
   });
   n.onclick = () => {
     window.focus();
-    set({ screen: 'line', openId: null, composer: null, modal: null, line: { ...get().line, focus: next.id, drawer: next.id, tab: 'over' } });
+    closeComposer(); // a half-built card is kept for c
+    set({ screen: 'line', openId: null, modal: null, line: { ...get().line, focus: next.id, drawer: next.id, tab: 'over' } });
     n.close();
   };
 }

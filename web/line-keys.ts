@@ -10,7 +10,7 @@ import { repoName } from '../shared/workspaces.ts';
 import { inbox, INBOX_VIEWS, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
 import { openSession } from './keys.ts';
-import { currentWorkspace, flash, get, set, setFilter, setInboxView, type WorkspaceAction } from './store.ts';
+import { closeComposer, currentWorkspace, flash, get, set, setFilter, setInboxView, takeDraft, type WorkspaceAction } from './store.ts';
 import {
   addComposer, additionOf, cardFolders, stepCard, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
@@ -29,7 +29,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Delete (a ticket in the Inbox)', 'Hide it from the Inbox (nothing changes in Jira or Trello; Shift+T shows it again)'],
       ['Shift+T', 'Tickets: demo tickets (D), Jira and Trello (R refreshes), which workspace each project goes to, and tickets you hid'],
       ['Ctrl+Enter', 'The card’s session in the app, to read along (Esc comes back; typing here forks it, the terminal tab is where you answer)'],
-      ['c', 'New card: build its context and start work in a terminal tab'],
+      ['c', 'New card: build its context and start work in a terminal tab. A card you left half-built (Esc, Alt+L) is picked up again; Shift+C starts a fresh one'],
       ['1–9  /  0', 'Show one workspace’s cards / all of them'],
       ['/', 'Filter the cards by words'],
       ['Tab (card open)', 'Overview or Context (on a narrow window, Transcript too)'],
@@ -118,8 +118,10 @@ export function openLine(): void {
  */
 export function goHome(): void {
   const s = get();
-  set({ openId: null, composer: null, modal: null, line: { ...s.line, drawer: null, searching: false } });
+  const kept = closeComposer();
+  set({ openId: null, modal: null, line: { ...s.line, drawer: null, searching: false } });
   openLine();
+  if (kept) flash('Kept the card you were building · c picks it up again');
 }
 
 /** The cards' sessions, in column order (what Alt+↑ ↓ walk from a session). Ctrl+K finds any other session. */
@@ -169,13 +171,31 @@ export function runWorkspaceAction(then: WorkspaceAction, id: string): void {
   }
 }
 
-/** The new-card screen: blank (c), or for a ticket (n on it in the Inbox), in its project's workspace. */
-export function openComposer(ticket: Ticket | null = null): void {
+/**
+ * The new-card screen: blank (c), or for a ticket (n on it in the Inbox), in its project's workspace.
+ * c with a card you left half-built picks that up instead (Shift+C starts fresh, keeping it).
+ */
+export function openComposer(ticket: Ticket | null = null, fresh = false): void {
   const s = get();
+  if (!ticket && !fresh && s.draft) {
+    const d = takeDraft()!;
+    set({ composer: d, line: { ...s.line, drawer: null } });
+    flash(`Picked up the card you were building${d.ticket ? ` (${d.ticket.key})` : ''} · Shift+C starts a fresh one`);
+    return;
+  }
   const mapped = ticket?.workspaceId ? s.workspaces.find((w) => w.id === ticket.workspaceId) : undefined;
   const ws = mapped ?? (s.line.filter !== 'all' ? s.workspaces.find((w) => w.id === s.line.filter) ?? null : s.workspaces[0] ?? null);
   set({ composer: newComposer(ws, s.nextKey, ticket, s.recipes), line: { ...s.line, drawer: null } });
   if (!ticket) setTimeout(() => document.getElementById('cp-title')?.focus(), 0);
+}
+
+/** Esc (or the Cancel button) on the new-card screen: a card with work on it is kept for c. */
+export function leaveComposer(): void {
+  const c = get().composer;
+  if (!c) return;
+  if (c.addTo) { set({ composer: null }); return; }
+  const kept = closeComposer();
+  if (kept) flash('Kept the card you were building · c picks it up again, Shift+C starts fresh');
 }
 
 /** c in a card's drawer: the new-card screen, adding to that card. Esc goes back to the drawer. */
@@ -386,7 +406,7 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
   if (typing) return composerTyping(e, c);
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { startWork(); return true; }
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
-  if (e.key === 'Escape') { if (c.preview) updateComposer((x) => ({ ...x, preview: false })); else set({ composer: null }); return true; }
+  if (e.key === 'Escape') { if (c.preview) updateComposer((x) => ({ ...x, preview: false })); else leaveComposer(); return true; }
   if (e.key === 'Tab') { updateComposer((x) => ({ ...x, pane: PANES[(PANES.indexOf(x.pane) + (e.shiftKey ? 2 : 1)) % 3] })); return true; }
   if (e.key === 'p') { updateComposer((x) => ({ ...x, preview: !x.preview })); return true; }
   if (e.key === 'e') { updateComposer((x) => ({ ...x, pane: 'pkt', preview: false })); focusField('cp-note'); return true; }
@@ -572,6 +592,7 @@ function boardKeys(e: KeyboardEvent): boolean {
     case 'd': if (focused) doneKey(focused); return true;
     case 'e': if (focused) editRecipe(focused); else workspaceKey('edit'); return true;
     case 'c': openComposer(); return true;
+    case 'C': openComposer(null, true); return true;
     case 'n': flash('n starts work on a ticket in the Inbox; c makes a card without one'); return true;
     case 'Delete': if (focused) set({ modal: { kind: 'deleteCard', id: focused } }); return true;
     case 'Escape': if (s.line.q) set({ line: { ...s.line, q: '' } }); return true;

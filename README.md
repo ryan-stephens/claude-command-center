@@ -84,7 +84,7 @@ If you don't write code: ask a developer to do steps 1 to 6 once on your machine
 | | `v` | Inbox: your tickets, or every ticket *Ready for QA* in your projects |
 | | `Shift+T` | Tickets: Jira and Trello status, demo tickets, which workspace each project goes to, and tickets you hid |
 | | `Delete` (a ticket in the Inbox) | Hide it from the Inbox (nothing changes in Jira or Trello) |
-| | `c` | New card: pick tickets (`/` searches Jira for anyone's), repos or any folder, write a note, `k` the kind (Develop, QA, Code review), `m` the model, `p` previews what Claude gets, `Ctrl+Enter` starts it in a terminal tab |
+| | `c` | New card: pick tickets (`/` searches Jira for anyone's), repos or any folder, write a note, `k` the kind (Develop, QA, Code review), `m` the model, `p` previews what Claude gets, `Ctrl+Enter` starts it in a terminal tab. Leave it half-built (`Esc`, `Alt+L`) and `c` picks it up again; `Shift+C` starts fresh |
 | | `← → ↑ ↓` / `Enter` | Move between cards / open one full screen: Overview or Context (`Tab`; how it started, what Claude was given) beside its live transcript; `←` / `→` the previous / next card; `Esc` back to the board |
 | | `t` / `o` (a card) | Try it: run its repo's recipe in the card's folder / open the app (`t` again stops it). With a workspace stack, `t` first asks the environment (`←` `→`) and which APIs to run (`↑` `↓` `Space`, `Enter` starts) |
 | | `e` (a card) | Write or edit the run recipe: for the card's repo, the whole workspace, or the workspace's stack (`Alt+W`) |

@@ -6,7 +6,7 @@ import type { Ticket } from '../shared/tickets.ts';
 import {
   addComposer, additionOf, cardActivity, composerKey, ticketSources, cycleModel, draftOf, dropTicket, pickTicket, ticketFocus, elapsed, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin,
   setWorkspace, sources, stepOption, togglePacketRow, toggleSource,
-  type Composer,
+  hasWork, asDraft, type Composer,
 } from './line-model.ts';
 
 const W1: Workspace = { id: 'w1', name: 'Storefront', color: 'blue', repos: ['D:\\r\\web-app', 'D:\\r\\tokens'], home: 'D:\\r\\tokens' };
@@ -15,6 +15,18 @@ const W2: Workspace = { id: 'w2', name: 'Payments', color: 'green', repos: ['D:\
 const card = (id: string, stage: Card['stage'], workspaceId: string | null = 'w1'): Card => ({
   id, key: id, title: id, workspaceId, stage, createdAt: 0, boot: [],
   packet: { workspace: [], ticket: [], card: [], note: '' }, launch: { home: '', branch: 'new', mode: 'plan', message: '' },
+});
+
+test('a new-card screen is worth keeping once it has a title, a ticket, a note or context of its own', () => {
+  const blank = newComposer(null, 'CARD-9');
+  assert.equal(hasWork(blank), false);
+  assert.equal(hasWork({ ...blank, title: '  ' }), false);
+  assert.equal(hasWork({ ...blank, title: 'Size guide' }), true);
+  assert.equal(hasWork({ ...blank, packet: { ...blank.packet, note: 'behind a flag' } }), true);
+  assert.equal(hasWork({ ...blank, packet: { ...blank.packet, card: [{ kind: 'repo', id: 'D:/x', label: 'x', text: '', on: true }] } }), true);
+  assert.equal(hasWork({ ...blank, title: 'Add to it', addTo: { id: '1', key: 'CARD-1' } as unknown as Composer['addTo'] }), false, 'adding to a card is one keystroke to redo');
+  const back = asDraft({ ...blank, title: 'Size guide', starting: true, error: 'x', preview: true, q: 'shop' });
+  assert.deepEqual([back.starting, back.error, back.preview, back.q, back.title], [false, null, false, '', 'Size guide']);
 });
 
 test('lanes put cards in their stage, and the filter keeps one workspace', () => {

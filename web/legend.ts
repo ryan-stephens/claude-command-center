@@ -94,6 +94,8 @@ export interface LineLegendInput {
   needsTab?: boolean;
   /** The focused or open card has changed files (D shows the diffs). */
   hasChanges?: boolean;
+  /** Board: a half-built card was kept (c picks it up, Shift+C starts fresh). */
+  hasDraft?: boolean;
   /** The / filter has text in it. */
   filtered?: boolean;
   /** New-card screen: adding to a running card (this key), not making one. */
@@ -186,7 +188,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     ...(x.onTicket ? [{ keys: ['n', 'Enter'], label: 'Start work', tone: 'acc' as const }, { keys: ['Delete'], label: 'Hide' }] : []),
     ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open the card' }, ...tryKeys(x), ...(x.hasTab ? [{ keys: ['g'], label: x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab ? { tone: 'attn' as const } : {}) }] : []), { keys: ['e'], label: 'Run recipe' }] : []),
     ...(x.hasSession ? [full] : []),
-    { keys: ['c'], label: 'New card', tone: 'acc' },
+    ...(x.hasDraft ? [{ keys: ['c'], label: 'Pick up your card', tone: 'acc' as const }, { keys: ['⇧C'], label: 'New card' }] : [{ keys: ['c'], label: 'New card', tone: 'acc' as const }]),
     { keys: ['⇧T'], label: 'Tickets' },
     { keys: ['v'], label: 'Inbox: mine / QA' },
     { keys: ['1–9', '0'], label: 'Workspace / all' },
