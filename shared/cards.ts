@@ -188,6 +188,14 @@ export interface Card extends CardDraft {
   cwd?: string;
   /** The Claude Code session the SessionStart hook reported. */
   sessionId?: string;
+  /** Its terminal is reachable through the channel: messages and permission answers go in from here. */
+  channel?: boolean;
+  /**
+   * The permission prompt the terminal relayed through the channel, until it is answered or the
+   * tool runs. Kept apart from live.ask: the hooks that describe the same prompt arrive in their own
+   * time (PreToolUse clears the ask, PermissionRequest rebuilds it) and must not lose the id.
+   */
+  relayed?: { requestId: string; tool: string; description?: string; at: number };
   boot: BootStep[];
   live?: CardLive;
   /** Files Claude wrote or edited, absolute, in the order first touched. */
@@ -247,6 +255,20 @@ export function waiting(c: Pick<Card, 'later'>): LaterItem[] {
 }
 
 /** Every repo the card's session can use: what it started with and any added since, home first. */
+/**
+ * What the card is asking, as the page answers it: the hook's description when it has one (fuller:
+ * the plan text, the question), else the relayed prompt alone. `answerable` means y / n go through
+ * the channel; a question is answered by typing instead.
+ */
+export function askOf(c: Pick<Card, 'live' | 'relayed' | 'channel'>): { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string; requestId?: string } | undefined {
+  const ask = c.live?.ask;
+  const r = c.relayed;
+  const matches = r && (!ask || ask.tool === r.tool);
+  if (ask) return matches && c.channel ? { ...ask, requestId: r.requestId } : ask;
+  if (r && c.channel) return { kind: r.tool === 'ExitPlanMode' ? 'plan' : 'tool', tool: r.tool, ...(r.description ? { detail: r.description } : {}), requestId: r.requestId };
+  return undefined;
+}
+
 export function cardRepos(c: Pick<Card, 'packet' | 'later'>): string[] {
   const out = includedRepos(c.packet);
   for (const i of c.later ?? []) if (i.kind === 'repo' && !out.some((r) => samePath(r, i.id))) out.push(i.id);

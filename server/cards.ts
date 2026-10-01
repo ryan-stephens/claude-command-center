@@ -25,6 +25,36 @@ import { DB_PATH, type Store } from './store.ts';
 const HOOK_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-hook.mjs', import.meta.url));
 /** How long a new tab has to report in before the card says something may be wrong. */
 const HOOK_WAIT_MS = 45_000;
+const CHANNEL_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-channel.mjs', import.meta.url));
+const LAUNCH_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-launch.ps1', import.meta.url));
+/** Cards start with a channel into their terminal (a research-preview flag); CC_CONTROL_CHANNEL=0 turns it off. */
+export const CHANNEL_ON = process.env.CC_CONTROL_CHANNEL !== '0';
+
+/**
+ * The arguments that give a card's `claude` its channel: an MCP server (the channel script) with
+ * the channel capabilities. The config is a file next to the hook settings: inline JSON doesn't
+ * survive Windows Terminal's re-quoting of the command line.
+ */
+export function channelArgs(on = CHANNEL_ON): string[] {
+  if (!on) return [];
+  const file = join(dirname(DB_PATH), 'claude-channel.json');
+  writeFileSync(file, JSON.stringify({ mcpServers: { 'cc-control': { command: 'node', args: [CHANNEL_SCRIPT.replace(/\\/g, '/')] } } }, null, 2));
+  // --channels server:… loads the channel but drops what it sends in (only approved channels get
+  // through); the development flag delivers, and its confirmation prompt is pressed by the launcher.
+  return ['--mcp-config', file, '--dangerously-load-development-channels', 'server:cc-control'];
+}
+
+/**
+ * What Windows Terminal runs in the tab. With a channel, the launcher (hooks/cc-control-launch.ps1)
+ * starts claude and presses Enter at the development-channels prompt; it gets the whole command as
+ * one base64 argument, so nothing is re-quoted on the way. Without one, claude itself, the message
+ * quoted for wt's second round of parsing.
+ */
+export function tabCommand(claude: string, args: string[], message: string, channel = CHANNEL_ON): string[] {
+  if (!channel) return [claude, ...args, '--', wtArg(message)];
+  const payload = Buffer.from(JSON.stringify([claude, ...args, '--', message]), 'utf8').toString('base64');
+  return ['powershell.exe', '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', LAUNCH_SCRIPT, payload];
+}
 
 function isDir(p: string): boolean {
   try { return statSync(p).isDirectory(); } catch { return false; }
@@ -253,9 +283,10 @@ export class CardService {
     card.model = modelFor(card.launch, this.opts.model, this.opts.userModel?.());
     const token = crypto.randomUUID();
     const others = includedRepos(card.packet).filter((r) => !samePath(r, start));
-    const args = ['-w', '0', 'nt', '--title', key, '-d', card.cwd, findClaude(), '--settings', writeHookSettings(),
+    const claudeArgs = ['--settings', writeHookSettings(), ...channelArgs(),
       '--permission-mode', card.launch.mode, ...((card.launch.model ?? this.opts.model) ? ['--model', card.launch.model ?? this.opts.model!] : []),
-      ...others.flatMap((r) => ['--add-dir', r]), '--', wtArg(card.launch.message)];
+      ...others.flatMap((r) => ['--add-dir', r])];
+    const args = ['-w', '0', 'nt', '--title', key, '-d', card.cwd, ...tabCommand(findClaude(), claudeArgs, card.launch.message)];
     await new Promise<void>((resolve, reject) => {
       const child = spawn('wt.exe', args, { env: tabEnv(process.env, card.id, token, this.opts.port), stdio: 'ignore', windowsHide: true, detached: true });
       child.on('error', (e) => reject(new Error(`Couldn't open Windows Terminal (wt.exe): ${e.message}`)));
@@ -268,6 +299,31 @@ export class CardService {
     this.opts.changed();
     this.waits.set(card.id, setTimeout(() => this.noWord(card.id), HOOK_WAIT_MS));
     return card;
+  }
+
+  /** The card's channel connected (its terminal can be typed into from here) or went away. */
+  channelState(id: string, on: boolean): void {
+    const card = this.get(id);
+    if (!card || Boolean(card.channel) === on) return;
+    this.save({ ...card, channel: on });
+  }
+
+  /**
+   * The terminal relayed a permission prompt through the channel: kept on the card until it is
+   * answered or the tool runs, beside whatever the hooks say (they arrive in their own time).
+   */
+  channelAsk(id: string, tool: string, requestId: string, description?: string): void {
+    const card = this.get(id);
+    if (!card) return;
+    this.save({ ...card, relayed: { requestId, tool, ...(description ? { description } : {}), at: Date.now() } });
+  }
+
+  /** The page answered the prompt: the hooks say what Claude does next. */
+  channelAnswered(id: string, requestId: string): void {
+    const card = this.get(id);
+    if (!card?.relayed || card.relayed.requestId !== requestId) return;
+    const { relayed: _r, ...rest } = card;
+    this.save({ ...rest, ...(rest.live ? { live: { ...rest.live, text: 'Answered from here' } } : {}) });
   }
 
   private noWord(id: string): void {
@@ -336,6 +392,11 @@ ${laterText(card.key, later)}`;
     const { card, sessionId } = this.checked(id, token, input);
     if (card.sessionId !== sessionId) return null;
     let next = applyEvent(card, event, input, Date.now());
+    // A relayed prompt is over once its tool ran (or was refused), the turn ended, or you typed in the tab.
+    if (next.relayed && ((event === 'PostToolUse' && str(input.tool_name, 80) === next.relayed.tool) || event === 'Stop' || event === 'UserPromptSubmit' || event === 'SessionEnd')) {
+      const { relayed: _r, ...rest } = next;
+      next = rest;
+    }
     const sending = event === 'UserPromptSubmit' ? waiting(next) : [];
     if (sending.length) {
       const now = Date.now();

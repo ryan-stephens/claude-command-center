@@ -103,6 +103,9 @@ export interface LineLegendInput {
   canDone?: boolean;
   /** It has a pull request to open (o, when no app is up). */
   hasPr?: boolean;
+  /** Open card: its terminal can be typed into from here (Enter), and it is asking something y / n can answer. */
+  canSay?: boolean;
+  asking?: boolean;
   /** New-card screen, panel 1: which tab (Folders has its own keys). */
   tab?: 'tickets' | 'repos' | 'folders';
   /** Drawer: the card can take more context (c), and has some still waiting (x takes it back). */
@@ -159,6 +162,8 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   if (x.view === 'drawer') {
     return [
       { keys: ['Esc'], label: 'Back to the board' },
+      ...(x.asking ? [{ keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' as const }] : []),
+      ...(x.canSay ? [{ keys: ['Enter'], label: 'Type to it', tone: x.asking ? undefined : 'acc' as const }] : []),
       { keys: ['←', '→'], label: 'Previous / next card' },
       { keys: ['Tab'], label: 'Overview · Context' },
       ...tryKeys(x),

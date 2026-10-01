@@ -129,6 +129,16 @@ export async function tryCard(id: string, choice?: StackChoice): Promise<void> {
   await request((reqId) => ({ type: 'card.try', reqId, id, ...(choice ? { choice } : {}) }), 60_000);
 }
 
+/** Type into the card's terminal session (its channel). Rejects when it can't be reached. */
+export async function sayToCard(id: string, text: string): Promise<void> {
+  await request((reqId) => ({ type: 'card.send', reqId, id, text }));
+}
+
+/** Answer the permission prompt the card's terminal relayed. */
+export async function answerCard(id: string, requestId: string, behavior: 'allow' | 'deny'): Promise<void> {
+  await request((reqId) => ({ type: 'card.answer', reqId, id, requestId, behavior }));
+}
+
 /** The picker's rows for a card's stack: which APIs it has, which changed, which to tick. */
 export async function stackPlan(id: string): Promise<Extract<ServerMsg, { type: 'stack.plan' }>> {
   return await request((reqId) => ({ type: 'card.stackPlan', reqId, id }), 60_000) as Extract<ServerMsg, { type: 'stack.plan' }>;

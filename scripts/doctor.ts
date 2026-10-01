@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findClaude } from '../server/cards.ts';
+import { CHANNEL_ON, findClaude } from '../server/cards.ts';
 import { config, CONFIG_FILE } from '../server/config.ts';
 import { AzureDevOpsHost, GitHubHost, hostFor } from '../server/hosts.ts';
 import { recipeOf } from '../server/recipes.ts';
@@ -55,6 +55,7 @@ line(major >= 24 ? 'ok' : 'bad', 'Node', process.versions.node, major >= 24 ? ''
 const claude = findClaude();
 const cv = version(claude);
 line(cv ? 'ok' : 'bad', 'Claude Code', cv ? `${cv} (${claude})` : `not found (${claude})`, cv ? '' : 'Install Claude Code and sign in (claude), or set CC_CONTROL_CLAUDE to claude.exe.');
+line(CHANNEL_ON ? 'ok' : 'info', 'Channel into card terminals', CHANNEL_ON ? 'on: messages and y / n from a card go into its terminal (a Claude Code research-preview flag)' : 'off (CC_CONTROL_CHANNEL=0): answer and type in the tab', CHANNEL_ON ? 'If a card’s tab fails to start and mentions channels, set CC_CONTROL_CHANNEL=0 in config.env.' : '');
 const wt = process.platform === 'win32' ? onPath('wt.exe') : undefined;
 line(wt ? 'ok' : process.platform === 'win32' ? 'bad' : 'warn', 'Windows Terminal', wt ?? 'wt.exe not on PATH', wt ? '' : 'Cards open their session in a Windows Terminal tab: install Windows Terminal from the Microsoft Store.');
 const gv = version('git');

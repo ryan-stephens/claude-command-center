@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import type { Card } from '../shared/cards.ts';
+import { askOf, type Card } from '../shared/cards.ts';
 import { CardService, cleanDraft, tabEnv } from './cards.ts';
 import { Store } from './store.ts';
 
@@ -172,4 +172,35 @@ test('done by hand: only a card that is in Ship (its PR merged or closed elsewhe
   store.saveCard(qa);
   cards.finish(qa.id);
   assert.equal(cards.get(qa.id)!.stage, 'done');
+});
+
+test('a relayed permission prompt survives the hooks around it, and goes when answered or when the tool ran', () => {
+  const card = seed();
+  store.saveCard({ ...card, sessionId: 'sess-00000001', channel: true, live: { phase: 'working', text: 'working', at: 1 } });
+  const hook = (event: string, input: object) => cards.hookEvent(card.id, 'secret-token', event, { session_id: 'sess-00000001', hook_event_name: event, ...input } as never);
+  const get = () => cards.get(card.id)!;
+  // The real order seen live: channel request, then PreToolUse (clears the ask), then PermissionRequest.
+  cards.channelAsk(card.id, 'Bash', 'req-1', 'Run the tests');
+  assert.deepEqual(askOf(get()), { kind: 'tool', tool: 'Bash', detail: 'Run the tests', requestId: 'req-1' }, 'answerable before any hook says a word');
+  hook('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'pnpm test', description: 'Run the tests' } });
+  hook('PermissionRequest', { tool_name: 'Bash', tool_input: { command: 'pnpm test', description: 'Run the tests' } });
+  assert.equal(get().live!.phase, 'needs');
+  assert.equal(askOf(get())!.requestId, 'req-1', 'the hook’s fuller description, with the channel’s id');
+  cards.channelAnswered(card.id, 'req-1');
+  assert.equal(get().relayed, undefined);
+  assert.equal(askOf(get())!.requestId, undefined);
+  // The tool running (or the turn ending) also clears a relayed prompt nobody answered from here.
+  cards.channelAsk(card.id, 'Edit', 'req-2');
+  hook('PostToolUse', { tool_name: 'Edit', tool_input: { file_path: 'a.ts' }, tool_response: {} });
+  assert.equal(get().relayed, undefined);
+  // A plan: with the hooks quiet (PreToolUse cleared the ask), the relayed prompt alone says it is one.
+  store.saveCard({ ...get(), live: { phase: 'working', text: 'x', at: 2 } });
+  cards.channelAsk(card.id, 'ExitPlanMode', 'req-3');
+  assert.equal(askOf(get())!.kind, 'plan');
+  hook('Stop', {});
+  assert.equal(get().relayed, undefined);
+  // Without a channel, a stale relayed entry is never offered.
+  cards.channelAsk(card.id, 'Bash', 'req-4');
+  store.saveCard({ ...get(), channel: false });
+  assert.equal(askOf(get())?.requestId, undefined);
 });

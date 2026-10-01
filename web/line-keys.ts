@@ -3,7 +3,7 @@
 // expanding a session. Every key here has a row in LINE_SECTIONS (the ? overlay) and in
 // lineLegendFor (the bar at the bottom).
 
-import { cardRepos, waiting } from '../shared/cards.ts';
+import { askOf, cardRepos, waiting } from '../shared/cards.ts';
 import { cardRecipe } from '../shared/recipes.ts';
 import type { StackChoice } from '../shared/stack.ts';
 import { repoName } from '../shared/workspaces.ts';
@@ -16,7 +16,7 @@ import {
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
-import { addCardContext, send, startCard, tryCard } from './ws.ts';
+import { addCardContext, answerCard, sayToCard, send, startCard, tryCard } from './ws.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
@@ -35,6 +35,8 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Tab (card open)', 'Overview or Context (on a narrow window, Transcript too)'],
       ['Esc (card open)', 'Back to the board, the card still focused; on the board, clear the filter'],
       ['← → (card open)', 'The previous / next card on the board, in column order'],
+      ['Enter (card open)', 'Type to its terminal: the message box under the transcript sends into the session itself (Esc leaves the box)'],
+      ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal'],
       ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a workspace stack, pick the environment and the APIs first'],
@@ -497,6 +499,8 @@ function drawerKeys(e: KeyboardEvent): boolean {
       return true;
     }
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;
+    case 'Enter': if (s.line.drawer) focusSay(s.line.drawer); return true;
+    case 'y': case 'n': if (s.line.drawer) answerAsk(s.line.drawer, e.key === 'y' ? 'allow' : 'deny'); return true;
     case 'c': if (s.line.drawer) openAddComposer(s.line.drawer); return true;
     case 'x': if (s.line.drawer) withdrawLast(s.line.drawer); return true;
     case 't': if (s.line.drawer) tryIt(s.line.drawer); return true;
@@ -569,9 +573,46 @@ function boardKeys(e: KeyboardEvent): boolean {
   return false;
 }
 
+/** Enter on an open card: the message box to its terminal (when it has a channel). */
+function focusSay(id: string): void {
+  const card = get().cards.find((c) => c.id === id);
+  if (!card?.channel) { flash(card?.sessionId ? `${card.key}’s terminal can’t be reached from here: type in its tab` : `${card?.key ?? 'It'} hasn’t started yet`); return; }
+  focusField('card-say');
+}
+
+/** Send what's in the message box into the card's terminal session. */
+export function saySubmit(id: string): void {
+  const el = document.getElementById('card-say') as HTMLTextAreaElement | null;
+  const text = el?.value.trim();
+  if (!el || !text) return;
+  const card = get().cards.find((c) => c.id === id);
+  sayToCard(id, text).then(() => { el.value = ''; flash(`Sent to ${card?.key ?? 'the card'}’s terminal`); }, (e: Error) => flash(e.message));
+}
+
+/** y / n on an open card: answer the permission prompt its terminal relayed. */
+export function answerAsk(id: string, behavior: 'allow' | 'deny'): void {
+  const card = get().cards.find((c) => c.id === id);
+  const ask = card && askOf(card);
+  if (!ask) { flash(`${card?.key ?? 'It'} isn’t asking anything`); return; }
+  if (!ask.requestId) { flash(ask.kind === 'question' ? 'Answer the question in the message box (Enter), or in its tab' : `Answer it in its terminal tab, ${card!.key}`); return; }
+  answerCard(id, ask.requestId, behavior).then(() => flash(behavior === 'allow' ? (ask.kind === 'plan' ? 'Plan approved' : `Allowed ${ask.tool}`) : `Denied ${ask.tool}`), (e: Error) => flash(e.message));
+}
+
+/** The message box on an open card: Enter sends, Shift+Enter is a new line, Esc leaves it. */
+function sayKeys(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement;
+  if (el.id !== 'card-say') return false;
+  const id = get().line.drawer;
+  if (e.key === 'Escape') { el.blur(); return true; }
+  if (e.key === 'Enter' && !e.shiftKey) { if (id) saySubmit(id); return true; }
+  // The session keys that work while typing (Ctrl+Enter, Alt+arrows) must not fire from here.
+  return e.ctrlKey || e.altKey;
+}
+
 /** The filter box (/): typing filters, Enter or ↓ goes back to the board with the filter kept, Esc clears it. */
 function searchKeys(e: KeyboardEvent): boolean {
   const el = e.target as HTMLElement;
+  if (el.id === 'card-say') return sayKeys(e);
   if (el.id !== 'line-q') return false;
   if (e.key === 'Escape') { el.blur(); set({ line: { ...get().line, q: '', searching: false } }); return true; }
   if (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'Tab') { el.blur(); set({ line: { ...get().line, searching: false } }); return true; }

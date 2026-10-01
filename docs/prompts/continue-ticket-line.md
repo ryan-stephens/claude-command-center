@@ -45,6 +45,8 @@ The owner likes the mock a lot. Keep its look, its words and its keys, including
 
 **Done (§43): a review before rollout** fixed the token leak into tabs and steps, the dev-origin hole, a dozen loop frictions (`d` done by hand, `o` opens the PR, `e` on the board, Esc fixes, column hints) and trimmed the busiest screens. §43 ends with ten proposals, the first (bring the card’s terminal tab forward from Needs you) the most valuable.
 
+**Done (§44): type to the card's terminal from the page, and answer its prompts.** Claude Code's channels, with a launcher that presses through the development-channels confirmation. Proven live on this laptop. What's next for "leave the app less" is at the end of §44 (Jira comments and transitions, PR comments inline, builds from TFS).
+
 **Next: prove it at VU.** The owner pastes their stack in (`e`, `Alt+W` to the stack tab), runs `pnpm run doctor`, and tries `t`. The open points are in §42's *Not verified*:
 - does `okteto up` run without a terminal;
 - the real deployment name;

@@ -47,6 +47,8 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(labels({ view: 'composer', pane: 'go', bindings: {} }).includes('Change'));
   assert.deepEqual(labels({ view: 'drawer', bindings: {} }), ['Back to the board', 'Previous / next card', 'Overview · Context', 'Run recipe', 'Remove card']);
   assert.ok(labels({ view: 'drawer', hasSession: true, bindings: {} }).includes('Its session'));
+  assert.deepEqual(labels({ view: 'drawer', canSay: true, asking: true, bindings: {} }).slice(0, 3), ['Back to the board', 'Allow / deny', 'Type to it'], 'a channel: y / n first while it asks, then Enter');
+  assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Type to it'), 'no channel: no message box');
   assert.deepEqual(labels({ view: 'drawer', ship: 'merge', canDone: true, hasPr: true, bindings: {} }).slice(3, 6), ['Open the PR', 'Merge', 'Done'], 'a card in Ship: o opens the PR, d is done by hand');
   assert.deepEqual(labels({ view: 'drawer', canAdd: true, hasWaiting: true, bindings: {} }).slice(3, 6), ['Run recipe', 'Add context', 'Take back']);
   assert.deepEqual(labels({ view: 'drawer', canTry: true, bindings: {} }).slice(3, 5), ['Try it', 'Run recipe']);

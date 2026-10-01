@@ -13,6 +13,8 @@ import { cardRepos, type Card } from '../shared/cards.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, cleanDraft, userModel, writeHookSettings } from './cards.ts';
+import { timingSafeEqual } from 'node:crypto';
+import { ChannelService } from './channel.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
 import { plainStack, prepareStackRun, restoreLeftovers, runsDir, saveStack, stackOf, stackRecipe, stackRows } from './stack.ts';
 import { suggested } from '../shared/stack.ts';
@@ -62,6 +64,13 @@ const commands = new CommandService(store);
 const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, changed: () => broadcast(cardsMsg()) });
 
 const tickets = new TicketService(store, () => broadcast(ticketsMsg()));
+
+// Cards' terminals, reachable through their channel (hooks/cc-control-channel.mjs).
+const channels = new ChannelService({
+  tokenOk: (id, token) => { const t = store.cardToken(id); return Boolean(t) && t!.length === token.length && timingSafeEqual(Buffer.from(t!), Buffer.from(token)); },
+  state: (id, on) => cards.channelState(id, on),
+  ask: (id, req) => cards.channelAsk(id, req.tool_name, req.request_id, req.description),
+});
 
 function ticketsMsg(): ServerMsg {
   const ids = store.loadWorkspaces().map((w) => w.id);
@@ -435,6 +444,20 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'card.stopRun':
       await runs.stop(String(msg.id));
       return;
+    case 'card.send': {
+      const text = String(msg.text ?? '').slice(0, 20_000);
+      if (!text.trim()) throw new Error('Nothing to send.');
+      channels.send(String(msg.id), text);
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    }
+    case 'card.answer': {
+      const behavior = msg.behavior === 'deny' ? 'deny' : 'allow';
+      channels.answer(String(msg.id), String(msg.requestId).slice(0, 80), behavior);
+      cards.channelAnswered(String(msg.id), String(msg.requestId));
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    }
     case 'card.stackPlan': {
       const card = cards.get(String(msg.id));
       if (!card) throw new Error('That card is no longer on the line.');
@@ -641,6 +664,11 @@ function listen(hostname: string, app: Hono, trusted: (req: IncomingMessage) => 
     process.exit(1);
   });
   server.on('upgrade', (req, socket, head) => {
+    // A card's channel: a local process, not a page, so no Origin; it proves itself with the card's token in its hello.
+    if (req.url === '/channel' && hostname === HOST && allowedHosts.has(req.headers.host ?? '')) {
+      wss.handleUpgrade(req, socket, head, (ws) => channels.accept(ws));
+      return;
+    }
     if (req.url !== '/ws' || !trusted(req)) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
@@ -697,6 +725,7 @@ process.on('unhandledRejection', (reason) => {
 function shutdown(): void {
   manager.stopAll();
   runs.stopAll();
+  channels.closeAll();
   ship.stop();
   cards.stop();
   tickets.stop();

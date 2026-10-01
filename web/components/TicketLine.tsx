@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { cardRepos, fmtK, itemTokens, kindName, memoryPct, modelName, packetText, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
+import { askOf, cardRepos, fmtK, itemTokens, kindName, memoryPct, modelName, packetText, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
 import { homeRepo, repoName, samePath } from '../../shared/workspaces.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
 import { importWorkspace } from '../commands.ts';
@@ -14,7 +14,7 @@ import { openSession } from '../keys.ts';
 import { INBOX_VIEWS, inView, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard, ticketFocus } from '../line-model.ts';
-import { boardOf, editRecipe, openAddComposer, openApp, openCard, openComposer, openNeighbour, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
+import { answerAsk, boardOf, editRecipe, openAddComposer, openApp, openCard, openComposer, openNeighbour, saySubmit, shipKey, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
 import { cardRecipe, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
 import { prLine } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
@@ -368,6 +368,7 @@ function CardView({ id }: { id: string }) {
           <div className="min-h-0 flex-1 overflow-y-auto">
             {left === 'ctx' ? <ContextTab card={card} wsName={ws?.name} /> : left === 'tx' ? <TranscriptTab card={card} /> : <Overview card={card} />}
           </div>
+          {left === 'tx' && <Say card={card} />}
         </div>
         {wide && (
           <div className="flex min-h-0 flex-col bg-col">
@@ -376,6 +377,7 @@ function CardView({ id }: { id: string }) {
               <span className="text-xs text-faint">live from the terminal tab {card.key}</span>
             </div>
             <LiveTranscript card={card} />
+            <Say card={card} />
           </div>
         )}
       </div>
@@ -642,7 +644,7 @@ function LiveNow({ card }: { card: Card }) {
   const now = useNow(true);
   const live = card.live;
   if (!live) return null;
-  const ask = live.ask;
+  const ask = askOf(card);
   if (ask) {
     return (
       <Sec>
@@ -651,7 +653,7 @@ function LiveNow({ card }: { card: Card }) {
           {ask.kind === 'plan' && ask.plan
             ? <div className="md max-h-80 overflow-y-auto rounded-lg border border-line bg-surface px-3 py-2 text-sm"><Markdown remarkPlugins={[remarkGfm]}>{ask.plan}</Markdown></div>
             : <p className="text-[15px] font-semibold">{ask.kind === 'question' ? ask.detail : `Allow ${ask.detail ?? ask.tool}?`}</p>}
-          <p className="text-sm text-sub">Answer it in the terminal tab <b>{card.key}</b>. Nothing changes until you do.</p>
+          <p className="text-sm text-sub">{ask.requestId ? <><Key k="y" size="sm" /> allows, <Key k="n" size="sm" /> denies, straight to its terminal.</> : card.channel && ask.kind === 'question' ? <>Answer in the message box (<Key k="Enter" size="sm" />): it goes into the session.</> : <>Answer it in the terminal tab <b>{card.key}</b>. Nothing changes until you do.</>}</p>
         </div>
       </Sec>
     );
@@ -754,7 +756,38 @@ function TranscriptTab({ card }: { card: Card }) {
       <div className="grid gap-3">
         {items?.length ? <Transcript items={items} cwd={card.cwd} expand={false} /> : <p className="text-sm text-faint">Nothing written yet.</p>}
       </div>
-      <p className="text-sm text-faint">Read as it is written. To answer or type, switch to its terminal tab, {card.key}.</p>
+      {!card.channel && <p className="text-sm text-faint">Read as it is written. To answer or type, switch to its terminal tab, {card.key}.</p>}
     </Sec>
+  );
+}
+
+/**
+ * The message box into the card's terminal session, through its channel: what you type here is
+ * typed there. Without a channel (the card started before channels, or the tab is gone), it says so.
+ */
+function Say({ card }: { card: Card }) {
+  if (!card.sessionId || card.live?.phase === 'ended') return null;
+  if (!card.channel) {
+    return <div className="border-t border-line px-5 py-2.5 text-[13px] text-faint">This card’s terminal can’t be reached from here (it started without a channel, or the tab closed): type in its tab, {card.key}.</div>;
+  }
+  const ask = askOf(card);
+  const answerable = Boolean(ask?.requestId);
+  return (
+    <div className="grid gap-2 border-t border-line bg-surface px-4 py-3">
+      {ask && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-attn-bg px-3 py-2 text-sm">
+          <span className="grow font-semibold text-attn">{ask.kind === 'plan' ? 'Approve the plan?' : ask.kind === 'question' ? 'Claude is asking: answer below' : `Allow ${ask.detail ?? ask.tool}?`}</span>
+          {answerable
+            ? <><button className="btn py-0.5" onClick={() => answerAsk(card.id, 'allow')}><Key k="y" size="sm" />{ask.kind === 'plan' ? 'Approve' : 'Allow'}</button>
+              <button className="btn py-0.5" onClick={() => answerAsk(card.id, 'deny')}><Key k="n" size="sm" />{ask.kind === 'plan' ? 'Not yet' : 'Deny'}</button></>
+            : ask.kind !== 'question' && <span className="text-faint">answer in its tab</span>}
+        </div>
+      )}
+      <div className="flex items-end gap-2">
+        <textarea id="card-say" rows={2} placeholder={`Type to ${card.key}’s terminal… Enter sends, Shift+Enter is a new line`} spellCheck={false}
+          className="field grow resize-none text-[13.5px]" />
+        <button className="btn btn-primary py-1.5" onClick={() => saySubmit(card.id)} title="Sends into the terminal session itself, not a copy"><Key k="Enter" size="sm" tone="ghost" />Send</button>
+      </div>
+    </div>
   );
 }

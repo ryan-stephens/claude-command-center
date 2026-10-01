@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { cardRepos, waiting } from '../shared/cards.ts';
+import { askOf, cardRepos, waiting } from '../shared/cards.ts';
 import { cardRecipe } from '../shared/recipes.ts';
 import { Dialogs } from './components/Dialogs.tsx';
 import { SessionView } from './components/SessionView.tsx';
@@ -57,12 +57,14 @@ function Legend() {
   const ship = testing ? (shown.report || shown.live?.lastMessage ? 'report' as const : undefined)
     : shown && shown.stage !== 'done' && (shown.sessionId || pr) ? (pr && pr.state === 'OPEN' ? 'merge' as const : 'ship' as const) : undefined;
   const canDone = shown?.stage === 'ship';
+  const canSay = Boolean(drawerCard?.channel);
+  const asking = Boolean(drawerCard && askOf(drawerCard)?.requestId);
   const hasPr = Boolean(pr ?? shown?.pr);
   const tab = useStore((s) => s.composer?.tab);
   const hasWaiting = Boolean(drawerCard && waiting(drawerCard).length);
   if (modal) return null;
   const items = screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, tab, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, canSay, asking, tab, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings });
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
