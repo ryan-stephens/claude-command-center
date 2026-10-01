@@ -277,6 +277,8 @@ interface CardOpts {
   userModel?: () => string | undefined;
   /** The setting: mark a card's new worktrees trusted in ~/.claude.json before its tab opens. */
   trustWorktrees?: () => boolean;
+  /** The card's repos its workspace's stack can start (Try it), for the hook's text about a repo added later. */
+  runnable?: (card: Card) => string[];
   changed: () => void;
 }
 
@@ -478,7 +480,7 @@ export class CardService {
     if (giving && later.length) {
       text += `
 
-${laterText(card.key, later, card)}`;
+${laterText(card.key, later, card, this.opts.runnable?.(card))}`;
       const now = Date.now();
       card.later = later.map((i) => (i.sent ? i : { ...i, sent: now }));
     }
@@ -513,7 +515,7 @@ ${laterText(card.key, later, card)}`;
       next = { ...next, later: next.later!.map((i) => (i.sent ? i : { ...i, sent: now })) };
     }
     if (next !== card) this.save(next);
-    return sending.length ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: laterText(card.key, sending, card) } } : null;
+    return sending.length ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: laterText(card.key, sending, card, this.opts.runnable?.(card)) } } : null;
   }
 
   /**

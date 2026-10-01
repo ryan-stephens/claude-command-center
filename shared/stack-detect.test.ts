@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { detectStack, envNamesIn, healthRoute, manifestName, ruleFor, templateRule, uiServe, type RepoFiles } from './stack-detect.ts';
+import { addRepoToStack, detectStack, envNamesIn, healthRoute, manifestName, ruleFor, templateRule, uiServe, type RepoFiles } from './stack-detect.ts';
 import { stackWarnings, validateStack } from './stack.ts';
 
 /** A repo in memory. */
@@ -96,5 +96,18 @@ test('without okteto: dotnet or npm; a UI with no proxy file; an API with a rule
   const node = detectStack([repo('notes-api', { 'package.json': JSON.stringify({ scripts: { start: 'node server.js' } }) })]);
   assert.deepEqual(validateStack(node.stack).api.steps, ['wait:http:{{port}}{{health}} PORT={{port}} npm start']);
   assert.equal(detectStack([repo('docs', { 'README.md': '' })]).stack, undefined, 'nothing to go on: no stack');
+
+  // A repo added to a card later joins the stack when it is an API the stack lacks, or the UI it has none of.
+  const joined = addRepoToStack(o, repo('fees-api', { 'okteto.yaml': 'name: fees-api\nforward:\n  - 8080:8080\n', 'src/FeesApi/FeesApi.csproj': '' }))!;
+  assert.equal(joined, undefined, 'already in the stack');
+  const more = addRepoToStack(o, repo('rates-api', { 'okteto.yml': 'name: rates-api\nforward:\n  - 8080:9000\n', 'src/RatesApi/RatesApi.csproj': '', 'src/RatesApi/Program.cs': 'app.MapGet("/ping", () => 1);' }))!;
+  assert.deepEqual(more.stack.apis.at(-1), { repo: 'rates-api', values: { name: 'rates-api', appPort: '9000', route: 'rates', dir: 'src/RatesApi', health: '/ping' } });
+  assert.equal(more.said, 'Added rates-api to the workspace’s stack as an API (from its okteto.yml, *.csproj, Program.cs): t can start it');
+  assert.equal(addRepoToStack(o, repo('docs', { 'README.md': '' })), undefined, 'nothing to go on');
+  const noUi = { ...o, ui: undefined };
+  const ui = addRepoToStack(noUi, repo('shop-ui', { 'angular.json': ANGULAR }))!;
+  assert.equal(ui.stack.ui?.repo, 'shop-ui');
+  assert.match(ui.said, /as its UI \(from its angular\.json\)/);
+  assert.equal(addRepoToStack(o, repo('other-ui', { 'angular.json': ANGULAR })), undefined, 'the stack has a UI already');
   assert.deepEqual(envNamesIn({ ...o, api: { ...o.api, steps: ['KUBECONFIG=%KUBECONFIG_{{ENV}}% okteto up', 'stop: %OKTETO% down'] } }), ['KUBECONFIG_{{ENV}}', 'OKTETO']);
 });

@@ -313,7 +313,7 @@ export function cardRepos(c: Pick<Card, 'packet' | 'later'>): string[] {
  * Exactly what Claude gets when context is added to a running card: the hook returns this as
  * additionalContext alongside your next message.
  */
-export function laterText(key: string, items: PacketItem[], c: { folders?: CardFolder[] } = {}): string {
+export function laterText(key: string, items: PacketItem[], c: { folders?: CardFolder[] } = {}, runnable: string[] = []): string {
   const repos = items.filter((i) => i.kind === 'repo');
   const notes = items.filter((i) => i.kind === 'note');
   const rest = items.filter((i) => i.kind !== 'repo' && i.kind !== 'note');
@@ -325,7 +325,9 @@ export function laterText(key: string, items: PacketItem[], c: { folders?: CardF
     const own = repos.map((r) => ({ r, dir: folderFor(c, r.id) })).filter(({ r, dir }) => !samePath(dir, r.id));
     for (const r of repos) {
       const dir = folderFor(c, r.id);
-      L.push(samePath(dir, r.id) ? `- ${r.label}: ${r.id}` : `- ${r.label}: ${dir} (a worktree of ${r.id} on this card’s branch; change it there, not in the usual folder)`);
+      // A repo the workspace's stack can start: Try it runs it from the card's folder of it, so Claude needn't.
+      const runs = runnable.some((p) => samePath(p, r.id)) ? ' Try it (t on the card) starts it from there; don’t start it yourself.' : '';
+      L.push(samePath(dir, r.id) ? `- ${r.label}: ${r.id}${runs}` : `- ${r.label}: ${dir} (a worktree of ${r.id} on this card’s branch; change it there, not in the usual folder)${runs}`);
     }
     if (own.length) L.push(`Edits in ${own.length === 1 ? 'that folder' : 'those folders'} will ask until you run ${own.map(({ dir }) => `/add-dir ${dir}`).join(' and ')} in the tab: ask for that first.`);
   }

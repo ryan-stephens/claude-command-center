@@ -32,6 +32,8 @@ test('a repo added later is handed over as its worktree, with the /add-dir to as
   assert.match(text, /- notes: D:\\repos\\notes\n/);
   assert.match(text, /until you run \/add-dir D:\\repos\\loans-api-card-4 in the tab/);
   assert.ok(!laterText('CARD-4', items).includes('/add-dir'), 'no worktrees, no ask');
+  assert.match(laterText('CARD-4', items, { folders }, ['d:/repos/LOANS-API']), /loans-api-card-4 \(a worktree[^\n]*\) Try it \(t on the card\) starts it from there; don’t start it yourself\.\n/, 'a repo the stack runs says so');
+  assert.ok(!laterText('CARD-4', items, { folders }, ['D:\\repos\\notes']).includes('loans-api-card-4 (a worktree of D:\\repos\\loans-api on this card’s branch; change it there, not in the usual folder) Try it'), 'only the runnable one');
   assert.deepEqual(ownFolders({ folders }).map((f) => f.dir), ['D:\\repos\\loans-api-card-4'], 'a folder that is the repo itself isn’t a worktree');
   assert.equal(isClean({ changed: false, unpushed: 0, missing: false }), true);
   assert.equal(isClean({ changed: true, unpushed: 0, missing: false }), false);

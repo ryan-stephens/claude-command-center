@@ -1673,10 +1673,22 @@ What changes for a user: anything added with `c` changes what `t` offers. A repo
 
 What it costs: nothing. No VU dependency.
 
+**Built (2026-10-01):**
+- **A repo added with `c` joins the stack** (`addRepoToStack` in `shared/stack-detect.ts`, `joinStack` on the server): after the card has its worktree (milestone 1), the worktree's files are read as milestone 3 reads them, named after the repo itself (not the worktree's folder); an API the stack doesn't have is appended with its values, or it becomes the stack's UI when the stack has none; nothing else changes. The card's log says so ("Added fees-api to the workspace’s stack as an API (from its okteto.yml, *.csproj, Program.cs): t can start it"), and since the picker's rows come from the stack and the card's folders, `t` lists it from the card's worktree at once.
+- **Added notes feed the picker:** the text the picker reads for *named in the ticket* now includes the notes and related tickets added since the card started; a repo added is not counted as naming itself (it is in the stack and the card, which the picker sees on its own).
+- **The hook's text says what is runnable:** a repo added later that the stack can start gets "Try it (t on the card) starts it from there; don’t start it yourself" after its worktree line (`laterText` with the card's runnable repos, from the workspace's stack).
+- The `?` row for `c` and the README say so.
+
+**Verified:**
+- Unit tests (272 pass; `pnpm typecheck` and `tsc --noUnusedLocals` clean): `addRepoToStack` (an API already there, a new API with its values and the files it was read from, nothing to go on, a UI when the stack has none, not when it has one); `joinStack` against a saved stack, once, with no stack, and from a worktree folder named after the repo; `laterText` with runnable repos.
+- A scripted walkthrough on an isolated server (:7798) with a Demo workspace of a UI and one API whose detected stack was saved, a third API only in the library, and a worktree card; 8 checks passed, screenshots looked at: the picker before (loans-api only); `c` adding fees-api from the library, its worktree made and the log line that it joined the stack; `t` listing fees-api from its worktree ("in context, unchanged") beside loans-api; a note "Also touches fees-api when rounding" added with `c`, after which `t` suggests fees-api ("named in the ticket"); the stack editor showing fees-api with its `/health` route; the `?` row. No console errors.
+
+**To check at VU:** on a card in flight, `c` an API repo from the library: its worktree appears, the card's log says it joined the stack, and `t` lists it. Then a note naming another API, and `t` ticks it.
+
 ### Order and what each depends on
 1 → 2 → 3 → 4 → 5 as the owner suggested. 2 defines the port placeholders that 3's detection fills, so 2 goes before 3. 4 needs only §53's folders and could be done any time after 1. 5 is small once 1 and 3 exist.
 
 ### Verification, each milestone
 `pnpm typecheck`, `pnpm test`, `tsc --noUnusedLocals`, unit tests for the pure parts (worktree planning, port picking, placeholder filling, manifest rewriting, detection against sample files, per-repo ship plans), and a scripted Playwright walkthrough on an isolated server with screenshots looked at. The real Okteto, kubectl, nx and the team's command are only at VU: each milestone's section ends with *To check at VU*, and the stack docs say what was tried against stand-ins.
 
-**Status:** plan agreed with the owner 2026-10-01 (order as above; the trust setting yes). Milestones 1 to 4 built and verified 2026-10-01; milestone 5 (context added later feeds the run) next.
+**Status:** plan agreed with the owner 2026-10-01 (order as above; the trust setting yes). All five milestones built and verified against stand-ins 2026-10-01. What's next is each milestone's *To check at VU* list, in order; what the owner sends back from there decides the follow-ups (the Okteto manifest shapes, the real helper step, a real multi-repo PR).

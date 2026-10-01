@@ -18,7 +18,7 @@ import { ChannelService } from './channel.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
 import { parseRange, PortPool } from './ports.ts';
 import { plainStack, prepareStackRun, restoreLeftovers, runsDir, saveStack, stackOf, stackRecipe, stackRows } from './stack.ts';
-import { detectWorkspaceStack } from './stack-detect.ts';
+import { detectWorkspaceStack, joinStack } from './stack-detect.ts';
 import { suggested, unknownStackRepos, validateStack } from '../shared/stack.ts';
 import { ShipService } from './ship.ts';
 import { findPrIn } from './hosts.ts';
@@ -63,7 +63,7 @@ const broker = new PermissionBroker(
 
 const store = new Store();
 const commands = new CommandService(store);
-const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, trustWorktrees: () => store.loadSettings().trustWorktrees === true, changed: () => broadcast(cardsMsg()) });
+const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, trustWorktrees: () => store.loadSettings().trustWorktrees === true, runnable: runnableRepos, changed: () => broadcast(cardsMsg()) });
 
 const tickets = new TicketService(store, () => broadcast(ticketsMsg()));
 
@@ -109,8 +109,17 @@ function recipesMsg(): ServerMsg {
 
 /** Where a card's run goes: its folder, and every repo it or its workspace has by folder name (its own repo is its folder, its worktree if it has one). */
 /** What a card is about, for spotting the APIs it names: its title and its ticket's. */
+/** What the picker reads to see which APIs the work names: the card, its ticket, and the notes and tickets added since it started ("also touches fees-api"); a repo added is in the stack and the card already, which the picker sees on its own. */
 function cardText(card: Card): string {
-  return [card.title, card.ticket?.title, card.ticket?.description].filter(Boolean).join('\n');
+  return [card.title, card.ticket?.title, card.ticket?.description, ...(card.later ?? []).filter((i) => i.kind !== 'repo').map((i) => i.text ?? i.label)].filter(Boolean).join('\n');
+}
+
+/** The card's repos its workspace's stack can start (by folder name), for the hook's text. */
+function runnableRepos(card: Card): string[] {
+  const st = card.workspaceId ? stackOf(store, card.workspaceId) : undefined;
+  if (!st) return [];
+  const names = new Set([...st.apis.map((a) => a.repo.toLowerCase()), ...(st.ui ? [st.ui.repo.toLowerCase()] : [])]);
+  return cardRepos(card).filter((r) => names.has(repoName(r).toLowerCase()));
 }
 
 function runPlaces(card: Card): RunPlaces {
@@ -420,11 +429,21 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       void runs.forget(String(msg.id));
       cards.delete(String(msg.id));
       return;
-    case 'card.addContext':
-      await cards.addContext(String(msg.id), msg.items, msg.note);
+    case 'card.addContext': {
+      const id = String(msg.id);
+      const added = await cards.addContext(id, msg.items, msg.note);
+      // A repo whose files say it is an API (or the UI) joins the workspace's stack, so t can start it from the card's worktree.
+      const card = cards.get(id);
+      if (card?.workspaceId) {
+        for (const i of added.filter((x) => x.kind === 'repo')) {
+          const said = joinStack(store, card.workspaceId, folderFor(card, i.id), repoName(i.id));
+          if (said) cards.update(id, (c) => ({ ...c, boot: [...c.boot, { at: Date.now(), text: said, state: 'ok' }] }));
+        }
+      }
       send(ws, { type: 'ok', reqId: msg.reqId });
       broadcast(recipesMsg());
       return;
+    }
     case 'card.worktrees':
       send(ws, { type: 'card.worktrees', reqId: msg.reqId, id: String(msg.id), worktrees: await cards.worktrees(String(msg.id)) });
       return;

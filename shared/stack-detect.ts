@@ -217,6 +217,26 @@ export function detectStack(repos: RepoFiles[]): Detected {
   return { stack, findings };
 }
 
+/**
+ * A repo added to a card later (c) joins the workspace's stack when its files say it is an API the
+ * stack doesn't have, or the UI when the stack has none: the picker then offers it. Returns the
+ * stack to save and one line saying so, or nothing when there is nothing to add.
+ */
+export function addRepoToStack(stack: Stack, repo: RepoFiles): { stack: Stack; said: string } | undefined {
+  const d = detectStack([repo]);
+  if (!d.stack) return undefined;
+  const from = [...new Set(d.findings.filter((f) => f.repo === repo.name && f.from).map((f) => f.from!.split('/').pop()!))].join(', ');
+  const api = d.stack.apis.find((a) => a.repo === repo.name);
+  if (api) {
+    if (stack.apis.some((a) => a.repo.toLowerCase() === repo.name.toLowerCase())) return undefined;
+    return { stack: { ...stack, apis: [...stack.apis, api] }, said: `Added ${repo.name} to the workspace’s stack as an API${from ? ` (from its ${from})` : ''}: t can start it` };
+  }
+  if (d.stack.ui && !stack.ui) {
+    return { stack: { ...stack, ui: d.stack.ui }, said: `Added ${repo.name} to the workspace’s stack as its UI${from ? ` (from its ${from})` : ''}` };
+  }
+  return undefined;
+}
+
 /** The %NAMES% a stack's steps read from the environment (config.env), for the doctor. */
 export function envNamesIn(stack: Stack): string[] {
   const out = new Set<string>();
