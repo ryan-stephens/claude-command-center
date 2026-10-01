@@ -27,30 +27,30 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['n / Enter (a ticket in the Inbox)', 'Start work on it: the new-card screen, with the ticket as its context'],
       ['v', 'Inbox: your tickets, or every ticket Ready for QA in your projects'],
       ['Delete (a ticket in the Inbox)', 'Hide it from the Inbox (nothing changes in Jira or Trello; Shift+T shows it again)'],
-      ['Shift+T', 'Tickets: demo tickets, Jira and Trello, and which workspace each project goes to'],
-      ['Ctrl+Enter', 'The card’s session full screen, to read and type there (Esc comes back)'],
+      ['Shift+T', 'Tickets: demo tickets (D), Jira and Trello (R refreshes), which workspace each project goes to, and tickets you hid'],
+      ['Ctrl+Enter', 'The card’s session in the app, to read along (Esc comes back; typing here forks it, the terminal tab is where you answer)'],
       ['c', 'New card: build its context and start work in a terminal tab'],
       ['1–9  /  0', 'Show one workspace’s cards / all of them'],
       ['/', 'Filter the cards by words'],
       ['Tab (card open)', 'Overview or Context (on a narrow window, Transcript too)'],
-      ['Esc (card open)', 'Back to the board, the card still focused'],
+      ['Esc (card open)', 'Back to the board, the card still focused; on the board, clear the filter'],
       ['← → (card open)', 'The previous / next card on the board, in column order'],
       ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a workspace stack, pick the environment and the APIs first'],
-      ['t picker: ← →  /  ↑ ↓ Space  /  Enter', 'Environment (dev, uat …)  /  which APIs run (changed ones are ticked)  /  start them, then the UI'],
-      ['o (a card)', 'Open the app its run is serving'],
-      ['e (card open)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo, the whole workspace, or the workspace’s stack of APIs and UI)'],
-      ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket; on a card in Ship, merge it. On a QA or review card: its report, to copy'],
+      ['t picker: ← →  /  ↑ ↓ Space  /  a n  /  Enter', 'Environment (dev, uat …)  /  which APIs run (changed ones are ticked)  /  all or none  /  start them, then the UI'],
+      ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
+      ['e (a card)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo, the whole workspace, or the workspace’s stack of APIs and UI)'],
+      ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket; on a card in Ship, merge it. On a QA or review card: its report (Enter copies, o opens the PR, d moves it to Done)'],
+      ['d (a card in Ship)', 'Done: the PR was merged or closed by hand, or the host isn’t one Ship can follow'],
       ['Delete', 'Take the card off the line (its terminal session keeps running)'],
-      ['Esc', 'Close the card, or clear the filter'],
     ],
   },
   {
     title: 'Workspaces (Ticket Line)',
     keys: [
       ['W', 'New workspace'],
-      ['E', 'Edit the workspace shown (with All showing, pick which)'],
+      ['E (or e with no card focused)', 'Edit the workspace shown (with All showing, pick which)'],
       ['+ / −', 'Add a repo from the library to the workspace shown / remove one (every card and session in it can use them all)'],
       ['F', 'Choose the folders the repo library lists'],
       ['Shift+E / Shift+I', 'Share the workspace as a file / import one'],
@@ -294,9 +294,23 @@ function rememberPick(id: string, choice: StackChoice): void {
 
 /** o: the app the card's run is serving, in a new browser tab. */
 export function openApp(id: string): void {
-  const run = get().runs[id];
+  const s = get();
+  const run = s.runs[id];
+  const card = s.cards.find((c) => c.id === id);
+  const pr = card?.ship?.pr ?? card?.pr;
   if (run?.state === 'up' && run.url) window.open(run.url, '_blank', 'noopener');
-  else flash(run?.state === 'running' ? 'The app is still starting' : 'Nothing running yet: t tries it');
+  else if (run?.state === 'running') flash('The app is still starting');
+  else if (pr) window.open(pr.url, '_blank', 'noopener');
+  else flash('Nothing running yet: t tries it');
+}
+
+/** d on a card in Ship: done by hand (the PR merged or closed elsewhere, or a host Ship can't follow). */
+export function doneKey(id: string): void {
+  const card = get().cards.find((c) => c.id === id);
+  if (!card) return;
+  if (card.stage !== 'ship') { flash(card.stage === 'done' ? `${card.key} is done` : `${card.key} isn’t in Ship yet: s ships it`); return; }
+  send({ type: 'card.done', id });
+  flash(`${card.key} is done`);
 }
 
 /** s: the Ship sheet (commit, push, PR), or once it has a PR, the merge sheet. A QA or review card: its report. */
@@ -368,7 +382,7 @@ function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
   if (typing) return composerTyping(e, c);
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { startWork(); return true; }
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
-  if (e.key === 'Escape') { set({ composer: null }); return true; }
+  if (e.key === 'Escape') { if (c.preview) updateComposer((x) => ({ ...x, preview: false })); else set({ composer: null }); return true; }
   if (e.key === 'Tab') { updateComposer((x) => ({ ...x, pane: PANES[(PANES.indexOf(x.pane) + (e.shiftKey ? 2 : 1)) % 3] })); return true; }
   if (e.key === 'p') { updateComposer((x) => ({ ...x, preview: !x.preview })); return true; }
   if (e.key === 'e') { updateComposer((x) => ({ ...x, pane: 'pkt', preview: false })); focusField('cp-note'); return true; }
@@ -489,6 +503,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
     case 'o': if (s.line.drawer) openApp(s.line.drawer); return true;
     case 'e': if (s.line.drawer) editRecipe(s.line.drawer); return true;
     case 's': if (s.line.drawer) shipKey(s.line.drawer); return true;
+    case 'd': if (s.line.drawer) doneKey(s.line.drawer); return true;
   }
   return false;
 }
@@ -522,7 +537,7 @@ function boardKeys(e: KeyboardEvent): boolean {
     flash(n === 0 ? 'Every workspace' : ws.name);
     return true;
   }
-  if (workspaceKeys(e)) return true;
+  if (e.key !== 'e' && workspaceKeys(e)) return true;
   if (e.key === '/' && !e.shiftKey) { set({ line: { ...s.line, searching: true } }); focusField('line-q'); return true; }
   if (e.key === 'T') { set({ modal: { kind: 'tickets' } }); return true; }
   if (e.key === 'v') { switchInbox(); return true; }
@@ -544,6 +559,8 @@ function boardKeys(e: KeyboardEvent): boolean {
     case 't': if (focused) tryIt(focused); else flash('Pick a card first'); return true;
     case 'o': if (focused) openApp(focused); return true;
     case 's': if (focused) shipKey(focused); return true;
+    case 'd': if (focused) doneKey(focused); return true;
+    case 'e': if (focused) editRecipe(focused); else workspaceKey('edit'); return true;
     case 'c': openComposer(); return true;
     case 'n': flash('n starts work on a ticket in the Inbox; c makes a card without one'); return true;
     case 'Delete': if (focused) set({ modal: { kind: 'deleteCard', id: focused } }); return true;

@@ -90,8 +90,9 @@ test('the tab gets the card, not the markers of a Claude Code session the server
   const env = tabEnv({
     PATH: 'x', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_CODE_SESSION_ID: 's', CLAUDE_CODE_MESSAGING_SOCKET: 'p',
     CLAUDE_CODE_BRIDGE_SESSION_ID: 'b', CLAUDE_PID: '1', CLAUDE_CODE_USE_BEDROCK: '1', CLAUDE_CONFIG_DIR: 'c',
+    CC_CONTROL_JIRA_TOKEN: 'secret', CC_CONTROL_ADO_TOKEN: 'secret', CC_CONTROL_TRELLO_KEY: 'k', CC_CONTROL_JIRA_SITE: 'https://jira',
   }, 'card-1', 'tok', 7777);
-  assert.deepEqual(Object.keys(env).sort(), ['CC_CONTROL_CARD', 'CC_CONTROL_TOKEN', 'CC_CONTROL_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CONFIG_DIR', 'PATH']);
+  assert.deepEqual(Object.keys(env).sort(), ['CC_CONTROL_CARD', 'CC_CONTROL_JIRA_SITE', 'CC_CONTROL_TOKEN', 'CC_CONTROL_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CONFIG_DIR', 'PATH'], 'the settings file’s tokens never reach the tab');
   assert.equal(env.CC_CONTROL_URL, 'http://127.0.0.1:7777');
 });
 
@@ -159,4 +160,16 @@ test('what waits before the session links goes with the packet; waiting items ca
   assert.equal(cards.hookEvent(card.id, 'secret-token', 'UserPromptSubmit', { session_id: 'tab-session-5' }), null, 'not sent twice');
   const sent = cards.get(card.id)!.later![0];
   assert.throws(() => cards.withdraw(card.id, sent.id), /already gone/);
+});
+
+test('done by hand: only a card that is in Ship (its PR merged or closed elsewhere); QA and review cards any time', () => {
+  const card = seed();
+  assert.throws(() => cards.finish(card.id), /ships with a pull request/);
+  store.saveCard({ ...card, stage: 'ship' });
+  cards.finish(card.id);
+  assert.equal(cards.get(card.id)!.stage, 'done');
+  const qa = { ...seed(), kind: 'qa' as const, stage: 'build' as const };
+  store.saveCard(qa);
+  cards.finish(qa.id);
+  assert.equal(cards.get(qa.id)!.stage, 'done');
 });

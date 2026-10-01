@@ -99,14 +99,16 @@ export function onCardChange(prev: Card | undefined, next: Card): void {
   const s = get();
   if (s.screen === 'line' && s.line.drawer === next.id && document.visibilityState === 'visible' && document.hasFocus()) return;
   const needs = next.live?.phase === 'needs' && prev.live?.phase !== 'needs';
-  const ready = next.stage === 'try' && prev.stage !== 'try';
+  // A QA or review card is done when its report lands (it goes straight to Ship, never Try it).
+  const report = Boolean(next.report) && !prev.report;
+  const ready = (next.stage === 'try' && prev.stage !== 'try') || report;
   if (!needs && !ready) return;
   const kind: Kind = needs ? 'needs' : 'done';
   if (s.sound) chime(kind);
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
   if (document.visibilityState === 'visible' && document.hasFocus()) return;
-  const n = new Notification(`${needs ? 'Needs you' : 'Ready to try'}: ${next.key} ${next.title}`, {
-    body: needs ? `${next.live?.text ?? ''}. Answer it in its terminal tab, ${next.key}.` : 'Its turn finished with changes.',
+  const n = new Notification(`${needs ? 'Needs you' : report ? 'Report ready' : 'Ready to try'}: ${next.key} ${next.title}`, {
+    body: needs ? `${next.live?.text ?? ''}. Answer it in its terminal tab, ${next.key}.` : report ? 's shows it; Enter copies it.' : 'Its turn finished with changes.',
     tag: `${next.id}:${kind}`,
   });
   n.onclick = () => {

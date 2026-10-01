@@ -471,7 +471,7 @@ export function goRows(c: Composer, workspaces: Workspace[], key: string, models
   const branches = branchOpts(c, key);
   return [
     { id: 'kind', label: 'Kind of work', opts: CARD_KINDS.map((k) => k.name), at: CARD_KINDS.findIndex((k) => k.id === c.kind) },
-    { id: 'where', label: 'Where it runs', opts: ['Terminal tab', 'In the app (later)'], at: 0, off: [1] },
+    { id: 'where', label: 'Where it runs', opts: ['Terminal tab'], at: 0 },
     { id: 'ws', label: 'Workspace', opts: [...workspaces.map((w) => w.name), 'None'], at: Math.max(0, c.workspaceId ? workspaces.findIndex((w) => w.id === c.workspaceId) : workspaces.length) },
     { id: 'home', label: 'Starts in', opts: repos.length ? repos.map(repoName) : ['(no repo)'], at: Math.max(0, repos.findIndex((r) => r === home)) },
     {

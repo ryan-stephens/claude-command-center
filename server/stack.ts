@@ -95,7 +95,7 @@ export function restoreLeftovers(dir: string): string[] {
 
 /** Read a JSON file that may have comments or trailing commas (proxy configs often do). */
 export function readLooseJson(text: string): Record<string, unknown> {
-  const clean = text.replace(/^﻿/, '').replace(/("(?:[^"\\]|\\.)*")|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (m, str: string | undefined) => str ?? '').replace(/,(\s*[}\]])/g, '$1');
+  const clean = text.replace(/^﻿/, '').replace(/("(?:[^"\\]|\\.)*")|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (_m, str: string | undefined) => str ?? '').replace(/,(\s*[}\]])/g, '$1');
   const v = JSON.parse(clean) as unknown;
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('it isn’t a JSON object');
   return v as Record<string, unknown>;

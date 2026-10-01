@@ -134,7 +134,8 @@ test('a source that fails says why, and the others still load', async () => {
 });
 
 test('Jira Cloud or Data Center, from the site; the request each needs', () => {
-  assert.equal(jiraConfig({ CC_CONTROL_JIRA_SITE: 'https://acme.atlassian.net', CC_CONTROL_JIRA_TOKEN: 't' }), undefined, 'Cloud needs the email');
+  assert.throws(() => jiraConfig({ CC_CONTROL_JIRA_SITE: 'https://acme.atlassian.net', CC_CONTROL_JIRA_TOKEN: 't' }), /needs CC_CONTROL_JIRA_EMAIL/, 'Cloud needs the email, and says so');
+  assert.throws(() => jiraConfig({ CC_CONTROL_JIRA_SITE: 'jira.company.local', CC_CONTROL_JIRA_TOKEN: 't' }), /should start with https:\/\//, 'a site without a scheme is named, not silently off');
   const cloud = jiraConfig({ CC_CONTROL_JIRA_SITE: 'https://acme.atlassian.net/', CC_CONTROL_JIRA_EMAIL: 'me@acme.com', CC_CONTROL_JIRA_TOKEN: 't' })!;
   assert.equal(cloud.kind, 'cloud');
   const c = jiraSearch(cloud);

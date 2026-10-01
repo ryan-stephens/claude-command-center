@@ -99,6 +99,10 @@ export interface LineLegendInput {
   appUp?: boolean;
   /** A card (focused or open) can ship (s), or has an open PR (s merges it); a QA or review card shows its report. */
   ship?: 'ship' | 'merge' | 'report';
+  /** A card (focused or open) in Ship: d marks it done by hand. */
+  canDone?: boolean;
+  /** It has a pull request to open (o, when no app is up). */
+  hasPr?: boolean;
   /** New-card screen, panel 1: which tab (Folders has its own keys). */
   tab?: 'tickets' | 'repos' | 'folders';
   /** Drawer: the card can take more context (c), and has some still waiting (x takes it back). */
@@ -124,8 +128,9 @@ const WORKSPACE_KEYS: LegendItem[] = [
 function tryKeys(x: LineLegendInput): LegendItem[] {
   return [
     ...(x.appRunning ? [{ keys: ['t'], label: 'Stop the app' }] : x.canTry ? [{ keys: ['t'], label: 'Try it', tone: 'acc' as const }] : []),
-    ...(x.appUp ? [{ keys: ['o'], label: 'Open the app' }] : []),
+    ...(x.appUp ? [{ keys: ['o'], label: 'Open the app' }] : x.hasPr ? [{ keys: ['o'], label: 'Open the PR' }] : []),
     ...(x.ship ? [{ keys: ['s'], label: x.ship === 'merge' ? 'Merge' : x.ship === 'report' ? 'Report' : 'Ship' }] : []),
+    ...(x.canDone ? [{ keys: ['d'], label: 'Done' }] : []),
   ];
 }
 
@@ -150,7 +155,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       { keys: ['Esc'], label: 'Cancel' },
     ];
   }
-  const full: LegendItem = { keys: [k(x.bindings, 'expand')], label: 'Full screen' };
+  const full: LegendItem = { keys: [k(x.bindings, 'expand')], label: 'Its session' };
   if (x.view === 'drawer') {
     return [
       { keys: ['Esc'], label: 'Back to the board' },
@@ -160,14 +165,14 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       { keys: ['e'], label: 'Run recipe' },
       ...(x.canAdd ? [{ keys: ['c'], label: 'Add context', tone: 'acc' as const }] : []),
       ...(x.hasWaiting ? [{ keys: ['x'], label: 'Take back' }] : []),
-      ...(x.hasSession ? [{ ...full, label: 'Type to it here' }] : []),
+      ...(x.hasSession ? [{ ...full, label: 'Its session' }] : []),
       { keys: ['Delete'], label: 'Remove card' },
     ];
   }
   return [
     { keys: ['←', '→', '↑', '↓'], label: 'Move' },
     ...(x.onTicket ? [{ keys: ['n', 'Enter'], label: 'Start work', tone: 'acc' as const }, { keys: ['Delete'], label: 'Hide' }] : []),
-    ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open' }, ...tryKeys(x)] : []),
+    ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open the card' }, ...tryKeys(x), { keys: ['e'], label: 'Run recipe' }] : []),
     ...(x.hasSession ? [full] : []),
     { keys: ['c'], label: 'New card', tone: 'acc' },
     { keys: ['⇧T'], label: 'Tickets' },

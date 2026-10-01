@@ -69,7 +69,6 @@ export function FolderPicker({ onUse, useLabel = 'Use this folder', start, autoF
   useEffect(() => {
     // A start that can't be opened still says why, over the starting points.
     void load(start).then((l) => { if (!l && start) void load(undefined, { keepError: true }); });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Typing a path jumps there as you type; a half-typed one shows its folder, filtered to the rest.
@@ -81,7 +80,6 @@ export function FolderPicker({ onUse, useLabel = 'Use this folder', start, autoF
       if (dir && (await load(dir, { quiet: true }))) setPartial(name);
     }, 250);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typed, pathy]);
 
   useEffect(() => {

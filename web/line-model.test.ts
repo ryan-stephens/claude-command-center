@@ -77,7 +77,7 @@ test('launch options: arrows skip what is not offered yet, the mode rewrites an 
   const c = newComposer(W1, 'CARD-3');
   const rows = goRows(c, [W1, W2], 'CARD-3');
   const where = rows.find((r) => r.id === 'where')!;
-  assert.equal(stepOption(c, where, 1, [W1, W2], 'CARD-3'), c, 'In the app is not offered yet');
+  assert.equal(stepOption(c, where, 1, [W1, W2], 'CARD-3'), c, 'only the terminal tab is offered');
   const auto = pickOption(c, 'mode', 2, [W1, W2], 'CARD-3');
   assert.equal(auto.launch.mode, 'auto');
   assert.equal(auto.launch.message, 'Work on CARD-3.');

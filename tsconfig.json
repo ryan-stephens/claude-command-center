@@ -11,7 +11,9 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["server", "shared", "web", "vite.config.ts"]
+  "include": ["server", "shared", "web", "scripts", "vite.config.ts"]
 }

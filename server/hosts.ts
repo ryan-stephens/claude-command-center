@@ -25,11 +25,17 @@ export function run(cmd: string, args: string[], cwd: string, input?: string, ti
     const child = spawn(cmd, args, { cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
-    const timer = setTimeout(() => child.kill(), timeout);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeout);
     child.stdout.on('data', (d: Buffer) => { out += d.toString('utf8'); });
     child.stderr.on('data', (d: Buffer) => { err += d.toString('utf8'); });
-    child.on('error', (e) => { clearTimeout(timer); resolve({ code: -1, out, err: e.message, raw: out }); });
-    child.on('close', (code) => { clearTimeout(timer); resolve({ code: code ?? -1, out: out.trim(), err: err.trim(), raw: out }); });
+    child.on('error', (e) => { clearTimeout(timer); resolve({ code: -1, out, err: (e as NodeJS.ErrnoException).code === 'ENOENT' ? `${cmd} isn’t installed (or not on PATH)` : e.message, raw: out }); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      // A credential or confirmation prompt in another window is the usual reason nothing came back.
+      const late = timedOut ? `${cmd} gave no answer in ${Math.round(timeout / 1000)}s: a sign-in or confirmation window may be waiting` : '';
+      resolve({ code: timedOut ? -1 : code ?? -1, out: out.trim(), err: late || err.trim(), raw: out });
+    });
     child.stdin.end(input ?? '');
   });
 }
@@ -230,6 +236,9 @@ export class AzureDevOpsHost implements CodeHost {
         throw new Error(`Couldn't reach ${this.repo.collection} (${code})${/CERT|ISSUER|SELF_SIGNED/.test(code) ? ': its certificate isn’t trusted; see CC_CONTROL_CA_FILE' : ''}`);
       }
       const text = await res.text();
+      if (res.status === 203 || (res.ok && text.trimStart().startsWith('<'))) {
+        throw new Error(`${this.repo.collection} answered with a sign-in page instead of data: CC_CONTROL_ADO_TOKEN is wrong or expired, or it needs the Code (read & write) scope.`);
+      }
       if (res.ok) {
         if (!this.pinned) accepted.set(this.repo.collection, v);
         return (text ? JSON.parse(text) : {}) as T;

@@ -130,8 +130,8 @@ function WorkspaceBar() {
           {act('Edit', 'E', () => workspaceKey('edit'))}
           {act('Share', '⇧E', () => workspaceKey('share'), 'Save this workspace as a file to share')}
         </>
-      ) : (
-        <span className="whitespace-nowrap text-faint">{count ? `All ${count} workspaces. Pick one (1–9) to see its repos; + and − ask which.` : 'No workspaces yet. A workspace groups the repos you work on together: W makes one.'}</span>
+      ) : count ? null : (
+        <span className="whitespace-nowrap text-faint">No workspaces yet. A workspace groups the repos you work on together: W makes one.</span>
       )}
       <span className="grow" />
       {act('Import', '⇧I', importWorkspace, 'Import a workspace someone shared')}
@@ -207,14 +207,14 @@ function TicketTile({ t, focused, color }: { t: Ticket; focused: boolean; color:
   );
 }
 
-/** What moves a card on from each column. Only Start work exists yet; the rest arrive with their milestones. */
+/** What moves a card on from each column: the key to press, or where to look. */
 const GATE: Record<Card['stage'], string> = {
   inbox: 'n starts work on a ticket',
   plan: 'Claude plans; approve it in its tab',
   build: 'Watch it work',
   needs: 'Answer in its terminal tab',
-  try: 'Its turn ended with changes',
-  ship: 'Commit, PR, review',
+  try: 't tries it · s ships it',
+  ship: 's merges the PR · o opens it',
   done: 'Merged',
 };
 const EMPTY: Record<Card['stage'], ReactNode> = {
@@ -407,8 +407,8 @@ function DrawerActions({ card }: { card: Card }) {
   return (
     <div className="flex flex-wrap gap-2 border-t border-line bg-surface px-4 py-3">
       {card.sessionId && (
-        <button className="btn py-1" disabled={!linked} onClick={() => openSession(card.sessionId!)} title={linked ? 'Read and type in this session in the app (Esc comes back)' : 'The session hasn’t shown up in the session list yet'}>
-          <Key k={expand} size="sm" />Type to it here
+        <button className="btn py-1" disabled={!linked} onClick={() => openSession(card.sessionId!)} title={linked ? 'Read along in the app (Esc comes back). Answer Claude in its terminal tab; sending from the app forks the session.' : 'The session hasn’t shown up in the session list yet'}>
+          <Key k={expand} size="sm" />Its session
         </button>
       )}
       <TryButtons card={card} />
@@ -738,7 +738,7 @@ function AddedSince({ card }: { card: Card }) {
         </ol>
       ) : <p className="text-sm text-faint">Nothing yet. Press <Key k="c" size="sm" /> to add a repo, a related ticket or a note.</p>}
       {left.length > 0 && <p className="text-sm text-faint"><Key k="x" size="sm" /> takes back the last one still waiting.</p>}
-      <p className="text-sm text-faint">This session runs in a terminal. Things you add wait here and go in with your next message in its tab {card.key}, sent by a UserPromptSubmit hook. After /clear, they go in again with the rest of the context.</p>
+      <p className="text-sm text-faint">What you add goes in with your next message in its tab, {card.key}.</p>
     </Sec>
   );
 }
@@ -754,7 +754,7 @@ function TranscriptTab({ card }: { card: Card }) {
       <div className="grid gap-3">
         {items?.length ? <Transcript items={items} cwd={card.cwd} expand={false} /> : <p className="text-sm text-faint">Nothing written yet.</p>}
       </div>
-      <p className="text-sm text-faint">Read through the SDK as it is written. To type into this session, switch to its terminal tab, {card.key}.</p>
+      <p className="text-sm text-faint">Read as it is written. To answer or type, switch to its terminal tab, {card.key}.</p>
     </Sec>
   );
 }

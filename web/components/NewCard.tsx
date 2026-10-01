@@ -58,11 +58,9 @@ export function NewCard() {
                 className="w-full rounded-lg border border-line bg-bg px-2.5 py-1.5 text-[19px] font-bold outline-none focus:border-ring focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--c-ring)_20%,transparent)]"
               />}
         </div>
-        <div className="hidden items-center gap-2 whitespace-nowrap text-[13px] lg:flex" title="About 4 characters per token">
-          <span className="text-faint">Claude will start knowing</span>
+        <div className="hidden items-center gap-2 whitespace-nowrap text-[13px] lg:flex" title={`About 4 characters per token; ${memoryPct(size)}% of what Claude can hold`}>
+          <span className="text-faint">Claude starts knowing</span>
           <b className="font-mono text-[15px] tabular-nums">{fmtK(size)}</b>
-          <span className="h-1.5 w-28 overflow-hidden rounded-full bg-raise"><i className="block h-full bg-busy" style={{ width: `${memoryPct(size)}%` }} /></span>
-          <span className="text-faint">{memoryPct(size)}% of its memory</span>
         </div>
         <button className="btn whitespace-nowrap py-1" onClick={() => updateComposer((x) => ({ ...x, preview: !x.preview }))}><Key k="p" size="sm" />{c.preview ? 'Back to the list' : 'Preview what Claude gets'}</button>
         <button className="flex items-center gap-1.5 whitespace-nowrap text-sm text-faint hover:text-ink" onClick={() => set({ composer: null })}>Cancel <Key k="Esc" size="sm" /></button>
@@ -371,7 +369,7 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
               : c.prLooking ? 'Looking for the ticket’s pull request…'
               : c.ticket ? <>No open pull request names {c.ticket.key}{c.prNotes?.length ? `: ${c.prNotes.join('; ')}` : '.'} {c.kind === 'review' ? 'Claude will look for its branch.' : ''}</>
               : 'Pick the ticket first: its pull request is looked up by its key.'}</div>}
-            {r.id === 'where' && <div className="text-[12.5px] text-faint">A new Windows Terminal tab runs claude. A SessionStart hook hands it the packet and links the session to the card. Running cards in the app comes later.</div>}
+            {r.id === 'where' && <div className="text-[12.5px] text-faint">A Windows Terminal tab runs claude with this context. The first time in a folder it asks whether to trust it: answer in the tab.</div>}
             {r.id === 'mode' && c.launch.mode === 'auto' && <div className="text-[12.5px] text-faint">Auto isn’t offered on every model{c.launch.model === 'haiku' ? ' (Haiku refuses it)' : ''}.</div>}
             {r.id === 'model' && <div className="text-[12.5px] text-faint">{c.launch.model ? `Starts with --model ${c.launch.model}.` : model ? `The default is ${model}, pinned by this server (CC_CONTROL_MODEL).` : user ? `The default is ${user}, from your Claude Code settings.` : 'Claude Code picks, as in a plain terminal.'} <Key k="m" size="sm" /> changes it from anywhere on this screen.</div>}
           </div>

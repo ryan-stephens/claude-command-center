@@ -30,19 +30,45 @@ Running several Claude Code sessions across several repos means a lot of termina
 
 ## Quick start
 
-You need **Node 24+**, **pnpm**, **git**, **Windows Terminal** and the **Claude Code CLI, logged in**. Command Center runs on your existing Claude login; no API key needed.
+You need **Node 24+**, **pnpm**, **git**, **Windows Terminal** and the **Claude Code CLI, signed in** (`gh` too, for repos on GitHub). Command Center runs on your existing Claude login; no API key needed. On a fresh Windows machine:
+
+```powershell
+winget install OpenJS.NodeJS.LTS Microsoft.WindowsTerminal Git.Git GitHub.cli
+npm i -g pnpm @anthropic-ai/claude-code
+claude              # sign in once, then exit
+```
+
+Then:
 
 ```sh
 git clone https://github.com/ryan-stephens/claude-command-center.git
 cd claude-command-center
 pnpm install
-pnpm run doctor     # checks this machine (plain `pnpm doctor` is pnpm's own check): Claude Code, Windows Terminal, git, settings, Jira, PR hosts
+pnpm run doctor     # checks this machine (plain `pnpm doctor` is pnpm's own check): Claude Code, Windows Terminal, git, settings, Jira, PR hosts, each workspace's recipe and stack
 pnpm start          # builds the app and serves http://localhost:7777
 ```
+
+**Behind a company proxy or an internal certificate authority**, `pnpm install` may fail with "fetch failed" or a certificate error before anything else can help. Run it as `$env:NODE_OPTIONS='--use-system-ca'; pnpm install` (the repo's `.npmrc` already stops pnpm fetching its own pinned version). The server itself trusts the certificates Windows trusts, so this is only for the install.
+
+**The first card in a folder** stops in its terminal tab at Claude Code's "trust this folder?" question: answer it there, and the card carries on.
 
 **Settings and tokens** go in `%USERPROFILE%\.cc-control\config.env`, one `NAME=value` per line; [`docs/config.env.example`](docs/config.env.example) lists them all. The certificates Windows trusts are trusted too, so company servers with an internal certificate authority (an on-prem Jira or TFS) work without extra setup. Run `pnpm run doctor` after changing settings: it signs in to Jira and reaches each workspace repo's PR host for real, and says what to fix.
 
 Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four groups of keys, then helps you pick your repo folder and make your first workspace. It follows your Windows light or dark setting (`Alt+T` switches).
+
+## Setting up at a company
+
+In order, once per machine. `pnpm run doctor` checks each step and says what to fix.
+
+1. **Settings file:** `copy docs\config.env.example "%USERPROFILE%\.cc-control\config.env"`, then fill in the lines you need. Save it as UTF-8 (PowerShell 5's `Out-File` writes UTF-16, which doesn't read); put quotes round a value with `#` in it. The server reads it at start, so restart after changes. The tokens stay on the server: they never reach the page, a terminal tab, a Try it step or Claude.
+2. **Jira:** Cloud needs `CC_CONTROL_JIRA_SITE`, `CC_CONTROL_JIRA_EMAIL` and an API token in `CC_CONTROL_JIRA_TOKEN`; Data Center needs the site (with its context path, `https://jira.company.local/jira`) and a personal access token. See [Connecting Jira…](#connecting-jira-trello-and-pull-request-hosts).
+3. **Pull requests:** `CC_CONTROL_ADO_TOKEN` (a PAT with *Code: read & write*) for Azure DevOps / TFS; `gh auth login` for GitHub.
+4. **Certificates:** nothing, usually. If doctor says "unable to get local issuer certificate", export the company root CA as PEM and set `CC_CONTROL_CA_FILE`.
+5. **`pnpm run doctor`**, then `pnpm start`.
+6. **A workspace** (`W`): the repos one piece of work spans. Then `Shift+T` to map each Jira project to it, so `n` on a ticket starts in the right repos. If a teammate already has one, import their workspace file with `Shift+I`: it brings the repos (matched by folder name), the notes for Claude, how the team tests, the run recipe and the stack.
+7. **How the app runs for Try it:** `e` on a card. For one repo, the detected recipe is usually right. For a backend on a dev environment plus a UI pointed at it, `Alt+W` to *The workspace's stack*: the editor opens on a worked example, with one sentence per key under the box. Replace the example's team command with yours (the first step), fill in each API's name, folder, port and route, and the UI's proxy file. `pnpm run doctor` then checks every program the stack names.
+
+If you don't write code: ask a developer to do steps 1 to 6 once on your machine (a QA card still needs the repo cloned and Claude Code signed in). You then press `n` on a ticket, `k` until it says QA, `Ctrl+Enter`, and answer Claude's questions with `Y` / `N` in its tab.
 
 ## Keys you'll use
 
@@ -60,13 +86,16 @@ Open **http://localhost:7777** in Chrome or Edge. A short tour shows the four gr
 | | `c` | New card: pick tickets (`/` searches Jira for anyone's), repos or any folder, write a note, `k` the kind (Develop, QA, Code review), `m` the model, `p` previews what Claude gets, `Ctrl+Enter` starts it in a terminal tab |
 | | `← → ↑ ↓` / `Enter` | Move between cards / open one full screen: Overview or Context (`Tab`; how it started, what Claude was given) beside its live transcript; `←` / `→` the previous / next card; `Esc` back to the board |
 | | `t` / `o` (a card) | Try it: run its repo's recipe in the card's folder / open the app (`t` again stops it). With a workspace stack, `t` first asks the environment (`←` `→`) and which APIs to run (`↑` `↓` `Space`, `Enter` starts) |
-| | `e` (card open) | Write or edit the run recipe: for the card's repo, the whole workspace, or the workspace's stack (`Alt+W`) |
-| | `s` (a card) | Ship: commit the ticked files, push, open a PR from the ticket (`gh`); on a card in Ship, merge it. On a QA or review card: its report, `Enter` copies it, `d` moves the card to Done |
+| | `e` (a card) | Write or edit the run recipe: for the card's repo, the whole workspace, or the workspace's stack (`Alt+W`) |
+| | `s` (a card) | Ship: commit the ticked files, push, open a PR from the ticket (`gh`); on a card in Ship, merge it. On a QA or review card: its report, `Enter` copies it, `o` opens the PR, `d` moves the card to Done |
+| | `d` (a card in Ship) | Done by hand: the PR was merged or closed elsewhere, or the host isn't one Ship can follow |
+| | `o` (a card) | The app its run is serving; with nothing running, its pull request |
+| | `Delete` | Take the card off the line (its terminal session keeps running); on a ticket in the Inbox, hide it |
 | | `c` (card open) | Add context to it: it waits on the card and goes in with your next message in its tab (`x` takes back the last one still waiting) |
-| | `Ctrl+Enter` | The card's session full screen (again, or `Esc`: back to the line) |
+| | `Ctrl+Enter` | The card's session in the app, to read along (`Esc`: back to the line). Answer Claude in its terminal tab; sending from the app forks the session |
 | | `1`–`9` / `0` | One workspace / all of them |
 | | `/` | Filter the cards by words |
-| | `W` / `E` / `Shift+Delete` | New workspace / edit / delete the one shown (with *All* showing, it asks which) |
+| | `W` / `E` / `Shift+Delete` | New workspace / edit / delete the one shown (with *All* showing, it asks which). `e` with no card focused also edits |
 | | `+` / `−` | Add a repo from the library to the workspace / remove one |
 | | `F` | Pick the folders the repo library lists: walk the disk with `↑ ↓ → ←`, `Space` uses the folder you're in |
 | | `Alt+Shift+N` | New session in the app, without a card |
@@ -135,6 +164,7 @@ Browser (React + Vite)  ⇄  WebSocket  ⇄  Node server on 127.0.0.1:7777
 - If a session looks open in a terminal, sending to it **forks** a copy instead of writing into the same transcript.
 - **Ticket Line cards** start `claude` in a Windows Terminal tab (`wt`) with `--settings` pointing at cc-control's own hook file, so nothing is added to your Claude Code settings and other sessions never run it. The tab's SessionStart hook (`hooks/cc-control-hook.mjs`) fetches the card's context from `127.0.0.1` with a per-card token, returns it as `additionalContext`, and links the session to the card. Without the card's variables, or with the server down, the hook exits silently. Its other hooks run async and move the card as the session works: Plan ready, Needs you, Try it, with its steps and the files it changed.
 - Voice uses the browser's Web Speech API (Chrome and Edge send the audio to Google's speech service).
+- **Where state lives:** `%USERPROFILE%\.cc-control\` holds `config.env` (settings and tokens), `cc-control.db` (workspaces, cards, recipes, stacks: delete it to start over), `claude-hooks.json` (the hook file cards start with) and `runs\` (proxy files Try it writes, and backups of ones it changed in place).
 
 **Security:** the server only listens on `127.0.0.1` and only accepts pages it served itself (Host and Origin checks). It can run tools on your machine, so treat it like a terminal and don't expose it to a network.
 

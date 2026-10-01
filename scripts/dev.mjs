@@ -2,7 +2,8 @@
 import { spawn, spawnSync } from 'node:child_process';
 
 const procs = [
-  spawn('node --watch-path=server --watch-path=shared server/index.ts', { stdio: 'inherit', shell: true }),
+  // CC_CONTROL_DEV lets the Vite page (on :5173) talk to the server; it is off otherwise.
+  spawn('node --watch-path=server --watch-path=shared server/index.ts', { stdio: 'inherit', shell: true, env: { ...process.env, CC_CONTROL_DEV: '1' } }),
   spawn('pnpm exec vite', { stdio: 'inherit', shell: true }),
 ];
 

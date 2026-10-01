@@ -180,7 +180,6 @@ export function recipeText(r: RunRecipe): string {
  * they become localhost. Colour codes are stripped first.
  */
 export function findUrl(line: string): string | undefined {
-  // eslint-disable-next-line no-control-regex
   const clean = line.replace(/\x1b\[[0-9;]*m/g, '');
   const m = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])(?::\d{2,5})?(?:\/[^\s'"`)\]]*)?/i.exec(clean);
   return m ? m[0].replace(/0\.0\.0\.0|\[::1?\]/, 'localhost').replace(/\/$/, '') : undefined;
@@ -197,7 +196,10 @@ export function portOf(url: string | undefined): number | undefined {
   }
 }
 
+/** The most steps a recipe (or a stack's template) keeps: the editor, the server and the workspace file agree. */
+export const MAX_STEPS = 20;
+
 /** A recipe typed in the editor: one command per line, blank lines dropped. */
 export function parseSteps(text: string): string[] {
-  return text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 12);
+  return text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, MAX_STEPS);
 }

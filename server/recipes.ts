@@ -9,8 +9,9 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { join } from 'node:path';
-import { findUrl, portOf, specsOf, stepLabel, waitLabel, type CardRun, type RunRecipe, type StepSpec } from '../shared/recipes.ts';
+import { findUrl, MAX_STEPS, portOf, specsOf, stepLabel, waitLabel, type CardRun, type RunRecipe, type StepSpec } from '../shared/recipes.ts';
 import { repoName } from '../shared/workspaces.ts';
+import { withoutSecrets } from './config.ts';
 import type { Store } from './store.ts';
 
 function readJson(file: string): Record<string, unknown> | undefined {
@@ -104,7 +105,7 @@ export function workspaceRecipeOf(store: Store, workspaceId: string): RunRecipe 
 
 /** Steps as typed: one line each, trimmed, at most 20. */
 function cleanSteps(steps: string[]): string[] {
-  return steps.map((s) => s.replace(/[\r\n]+/g, ' ').trim().slice(0, 500)).filter(Boolean).slice(0, 20);
+  return steps.map((s) => s.replace(/[\r\n]+/g, ' ').trim().slice(0, 500)).filter(Boolean).slice(0, MAX_STEPS);
 }
 
 function checkUrl(url?: string): string | undefined {
@@ -199,6 +200,8 @@ interface Live {
   /** Full output per step; the run carries only the tail. */
   lines: string[][];
   stopped: boolean;
+  /** The stop in progress (its stop: steps can take minutes); a start waits for it. */
+  stopping?: Promise<void>;
   /** Runs once the run is stopped and its stop: steps are done (put a proxy file back, say). */
   cleanup?: () => void;
 }
@@ -218,8 +221,8 @@ export class RunService {
 
   constructor(changed: () => void, env: NodeJS.ProcessEnv) {
     this.changed = changed;
-    // Plain output, and no dev server opening a browser of its own: o opens it.
-    this.env = { ...env, FORCE_COLOR: '0', NO_COLOR: '1', BROWSER: 'none', PYTHONUNBUFFERED: '1' };
+    // Plain output, no dev server opening a browser of its own (o opens it), and no tokens from the settings file.
+    this.env = { ...withoutSecrets(env), FORCE_COLOR: '0', NO_COLOR: '1', BROWSER: 'none', PYTHONUNBUFFERED: '1' };
   }
 
   list(): CardRun[] {
@@ -274,7 +277,7 @@ export class RunService {
     const { run } = live;
     if (live.stopped) return;
     const i = this.nextFrom(live, from);
-    const runnable = live.specs.map((s, k) => k).filter((k) => !live.specs[k].note && !live.specs[k].stop);
+    const runnable = live.specs.map((_s, k) => k).filter((k) => !live.specs[k].note && !live.specs[k].stop);
     if (i >= live.specs.length) {
       const up = run.steps.some((s) => s.state === 'up');
       run.state = up ? 'up' : 'done';
@@ -302,6 +305,7 @@ export class RunService {
     const next = () => { if (!moved) { moved = true; this.step(live, i + 1); } };
     const up = (url?: string) => {
       if (moved || step.state !== 'go') return;
+      settle();
       step.state = 'up';
       // Only the last step is the app you open: an API before it prints its own address. What the
       // app printed wins, unless the recipe named the same port (it may say localhost where the app says 127.0.0.1).
@@ -352,7 +356,6 @@ export class RunService {
     const step = live.run.steps[i];
     const onData = (buf: Buffer) => {
       for (const raw of buf.toString('utf8').split(/\r?\n/)) {
-        // eslint-disable-next-line no-control-regex
         const line = raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trimEnd();
         if (!line) continue;
         const lines = live.lines[i];
@@ -396,8 +399,15 @@ export class RunService {
   /** Stop a card's run: kill everything it started, then run its stop: steps. `quiet`: drop it (it's being started again, or forgotten). */
   async stop(cardId: string, quiet = false): Promise<void> {
     const live = this.live.get(cardId);
-    if (!live || live.stopped) { if (quiet) this.live.delete(cardId); return; }
+    if (!live) return;
+    if (live.stopped) { await live.stopping; if (quiet) this.live.delete(cardId); return; }
     live.stopped = true;
+    live.stopping = this.finish(live, quiet);
+    await live.stopping;
+  }
+
+  private async finish(live: Live, quiet: boolean): Promise<void> {
+    const cardId = live.run.cardId;
     for (const p of live.procs) killTree(p);
     for (const s of live.run.steps) if (!s.stop && (s.state === 'go' || s.state === 'up' || s.state === 'wait')) s.state = 'off';
     const was = live.run.state;

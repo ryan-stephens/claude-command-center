@@ -34,8 +34,8 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   const labels = (x: Parameters<typeof lineLegendFor>[0]) => lineLegendFor(x).map((i) => i.label);
   assert.deepEqual(labels({ view: 'board', bindings: {} }), ['Move', 'New card', 'Tickets', 'Inbox: mine / QA', 'Workspace / all', 'Filter', 'Repos', 'Workspace', 'Share / import', 'Folders']);
   const focused = labels({ view: 'board', hasFocus: true, hasSession: true, filtered: true, bindings: {} });
-  assert.ok(focused.includes('Open') && focused.includes('Full screen') && focused.includes('Clear filter') && focused.includes('Remove'));
-  assert.ok(!labels({ view: 'board', hasFocus: true, bindings: {} }).includes('Full screen'), 'no session linked yet: nothing to open');
+  assert.ok(focused.includes('Open the card') && focused.includes('Its session') && focused.includes('Clear filter') && focused.includes('Remove') && focused.includes('Run recipe'));
+  assert.ok(!labels({ view: 'board', hasFocus: true, bindings: {} }).includes('Its session'), 'no session linked yet: nothing to open');
   assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Add or remove'));
   assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Tickets / Repos / Folders'));
   assert.equal(labels({ view: 'board', onTicket: true, bindings: {} })[1], 'Start work', 'a ticket in the Inbox: n starts work');
@@ -46,7 +46,8 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(!labels({ view: 'composer', pane: 'pkt', preview: true, bindings: {} }).includes('Remove'), 'the preview has nothing to toggle');
   assert.ok(labels({ view: 'composer', pane: 'go', bindings: {} }).includes('Change'));
   assert.deepEqual(labels({ view: 'drawer', bindings: {} }), ['Back to the board', 'Previous / next card', 'Overview · Context', 'Run recipe', 'Remove card']);
-  assert.ok(labels({ view: 'drawer', hasSession: true, bindings: {} }).includes('Type to it here'));
+  assert.ok(labels({ view: 'drawer', hasSession: true, bindings: {} }).includes('Its session'));
+  assert.deepEqual(labels({ view: 'drawer', ship: 'merge', canDone: true, hasPr: true, bindings: {} }).slice(3, 6), ['Open the PR', 'Merge', 'Done'], 'a card in Ship: o opens the PR, d is done by hand');
   assert.deepEqual(labels({ view: 'drawer', canAdd: true, hasWaiting: true, bindings: {} }).slice(3, 6), ['Run recipe', 'Add context', 'Take back']);
   assert.deepEqual(labels({ view: 'drawer', canTry: true, bindings: {} }).slice(3, 5), ['Try it', 'Run recipe']);
   assert.deepEqual(labels({ view: 'drawer', canTry: true, appRunning: true, appUp: true, bindings: {} }).slice(3, 5), ['Stop the app', 'Open the app']);
@@ -55,5 +56,5 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(labels({ view: 'drawer', ship: 'merge', bindings: {} }).includes('Merge'));
   const adding = labels({ view: 'composer', pane: 'pkt', addingTo: 'SHOP-155', cardRepo: true, bindings: {} });
   assert.ok(adding.includes('Add to SHOP-155') && !adding.includes('Model') && !adding.includes('Keep for the workspace'), 'adding to a running card');
-  assert.deepEqual(lineLegendFor({ view: 'board', hasSession: true, hasFocus: true, bindings: { expand: ['Alt+Enter'] } }).find((i) => i.label === 'Full screen')!.keys, ['Alt+Enter']);
+  assert.deepEqual(lineLegendFor({ view: 'board', hasSession: true, hasFocus: true, bindings: { expand: ['Alt+Enter'] } }).find((i) => i.label === 'Its session')!.keys, ['Alt+Enter']);
 });

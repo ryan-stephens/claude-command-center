@@ -1249,3 +1249,54 @@ Unit tests cover:
 - Opening a loan. For now a `!` step says to sign in and open one; the scenario tool comes later.
 - Starting several APIs at once. They start one after another.
 - Per-developer settings on top of the shared stack. Values like ports are shared through the workspace file.
+
+## 43. Review before rollout: secrets, robustness, the daily loop, less on screen
+
+2026-09-30, asked for by the owner ("make sure it's set up in the best way to be fluid and streamlined", then "the UI is a bit too busy"). Four review passes (developer flow and keys; server robustness; onboarding and docs; code health and tests), each finding checked against the code before anything was changed. What was fixed the same evening, then what is left as proposals.
+
+**Fixed: security and robustness**
+- **Tokens from `config.env` no longer reach anything the server starts.** They were in the environment of every terminal tab (so in Claude's shell), every Try it step and every SDK session. `withoutSecrets` (`server/config.ts`) drops `CC_CONTROL_*TOKEN|SECRET|PASSWORD|KEY` from `tabEnv`, `RunService` and the SDK env. Tested.
+- **The Vite dev page's origin (`:5173`) is only trusted under `pnpm dev`** (`CC_CONTROL_DEV=1`, set by `scripts/dev.mjs`). Before, any page on `localhost:5173`, Vite's default and so very likely the UI a card is working on, could open the WebSocket and run `card.try` or `card.ship`.
+- **A second server started by mistake no longer touches the first one's files:** `writeHookSettings` and `restoreLeftovers` moved from module load to after the port is held.
+- **`t` again on a live stack run** stopped the old run *after* writing the new proxy file, so the old cleanup deleted (or overwrote) it. The old run is now stopped first, and `RunService.stop` waits on a stop already in progress instead of returning at once.
+- **The port poll stopped when a step came up** (it ran every second for the life of every app).
+- **Clear words instead of `exit -1` / JSON errors:** a command that times out says a sign-in or confirmation window may be waiting (the usual cause: Git Credential Manager on push); a missing program says so; Azure DevOps answering a sign-in page (203, or HTML) names the token and scope; Jira answering HTML names the address and token kind; `CC_CONTROL_JIRA_SITE` without `https://`, or Jira Cloud without the email, show as the source's error in `Shift+T` instead of a silent "off" and an unhandled rejection every five minutes.
+- **The settings file:** a UTF-8 BOM is dropped; a UTF-16 file (PowerShell 5.1's `Out-File` default) is named as the problem; a `CC_CONTROL_*` line that parsed to nothing (an unquoted `#`) is named; doctor prints the exact copy command for a missing file.
+- **doctor** survives a missing git or PowerShell. `scripts/` is now typechecked; `noUnusedLocals` / `noUnusedParameters` are on in `tsconfig.json` (so `pnpm typecheck` catches what `tsc --noUnusedLocals` used to); dead `eslint-disable` comments are gone; one recipe test used shell quoting that only works in cmd and failed under CI's `sh`.
+- Step caps agreed: the editor kept 12 lines while the server and the stack kept 20 (`MAX_STEPS` in `shared/recipes.ts`).
+
+**Fixed: the daily loop**
+- **`d` on a card in Ship moves it to Done by hand** (the PR merged or closed elsewhere, or a host Ship can't follow). Before, a Develop card on such a host could never reach Done. Server: `finish()` allows a Develop card once it is in Ship. Legend, `?`, README.
+- **`o` opens the pull request when no app is running** (before: "Nothing running yet"). The legend says *Open the PR*.
+- **`e` on a focused card on the board edits its run recipe**, the same as with the card open; `e` with no card focused still edits the workspace. (Before: `e` on the board always opened the workspace editor, though `?` only listed `E`.)
+- **Esc works in the run-recipe editor after a click outside its fields** (`recipe` is in `INPUT_DIALOGS`).
+- **Esc in the new card's preview returns to the list** instead of dropping the whole screen.
+- **Column hints say the key:** Try it: "t tries it · s ships it"; Ship: "s merges the PR · o opens it".
+- **After Ship, the flash says what's next:** "Opened PR #12 · o opens it; s merges it once its checks pass (looked at every few minutes)".
+- **A QA report or review findings landing now chimes and notifies** ("Report ready: s shows it"); before, those cards' one event was silent.
+- **"Type to it here" is now "Its session"** (button, legend, `?`, the rebindable action's name): the session view reads along, and sending from it forks; the terminal tab is where you answer. The old label promised the opposite of what the card view says beside it.
+- The session key only shows once the session is in the list (`hasSession` from `linked`), so it can't open an id the page doesn't have.
+- Ship sheet: `t` focuses the PR title (`m` / `t` / `b`).
+- `?` rows added or fixed: `d`, the picker's `a` / `n`, the report sheet's keys, `Shift+T`'s `D` / `R` and hidden tickets, `e` on the board, one Esc row instead of two.
+
+**Fixed: less on screen** (owner: "a bit too busy and overcomplicating things")
+- The board's third bar no longer repeats the legend ("All 1 workspaces. Pick one (1–9)…"); it keeps Import and Folders, and the "no workspaces yet" hint.
+- The new card: the memory meter and "% of its memory" are gone (the total stays, the percentage is in its tooltip); "In the app (later)" is gone from *Where it runs*; its help line now says the one thing that matters (the trust prompt) instead of describing the hook.
+- The card's Context tab: the paragraph about UserPromptSubmit and `/clear` is one line.
+- Welcome: the "Run a workflow" cluster (number pad, for sessions) is now *Start work* (`n`, `c`, `t`, `s`), which is what the first screen needs.
+
+**Fixed: onboarding** (README): a `winget` / `npm i -g` block for a fresh machine; the company-proxy `pnpm install` note (and `.npmrc` with `manage-package-manager-versions=false`, so pnpm doesn't fetch its pinned version from a company feed); the trust-prompt sentence; a **Setting up at a company** section in order (settings file, Jira, PR host, certificates, doctor, workspace and mapping, the stack editor), with a line for people who don't write code; `Delete`, `d`, `o` rows; where state lives; `config.env.example` lists the rarely used variables.
+
+**Verified:** `pnpm typecheck` (now strict on unused), `pnpm test` (229), the Vite build; a 13-check Playwright pass on an isolated server (Welcome cluster, column hints, `e` on the board, Esc in the editor, `d` on a Try it card and on a Ship card, the Ship card's legend, `?` rows, Esc in the preview; three checks that failed were regexes against rendered text and were confirmed by hand from the screenshot and a direct probe); screenshots of the board, new card and open card looked at before and after the trims. No console errors.
+
+**Proposed, not done** (judgement calls for the owner; most valuable first):
+1. **Needs you is a dead end:** every "answer it in its tab" ends with the user alt-tabbing and hunting for the tab by title. A key on a card that brings its Windows Terminal tab forward (`wt -w 0 ft` needs the tab index; `AppActivate` from PowerShell is the fallback) would be the single biggest friction cut. The channel-based `Y` / `A` / `N` from a card is the full fix (preview flag).
+2. **An open card shows every action twice** (the button bar above the legend). One should go. If the legend's items became clickable, the bar could, keeping the view to the content.
+3. **Esc Esc, `Alt+L` or the logo throw away a half-built card** with no way back. Keep the last composer so `c` offers "Resume CARD-4 you were building".
+4. **Orphaned Try it processes after a `Stop-Process` restart** (no SIGTERM, so `stopAll` never runs): write spawned PIDs to `runs/pids.json` and kill the survivors on boot, the way `restoreLeftovers` puts files back.
+5. **Deleted cards leave worktrees and branches;** a failed `wt.exe` launch leaves a branch that blocks the retry. Undo on failure; offer `git worktree remove` on delete.
+6. **Every hook event broadcasts every card to every client** and rereads `settings.json`. Debounce `changed` and send one `card.upsert`.
+7. **Claude Code found only as `claude.exe`:** an npm global install has `claude.cmd`, which neither cards nor doctor find. Also the card's "trust the folder" hint shows when `node` isn't on the tab's PATH, which is the wrong cause.
+8. Jira *Mine* with nothing assigned shows an empty Inbox with no hint; a transient Jira failure empties the Inbox (keep the last good list).
+9. Ctrl+Enter and Alt+arrows fire from the filter box and the composer's text fields.
+10. Code health: rename `line.drawer` → `line.open` and fix the "drawer" comments; split `Dialogs.tsx` (1022 lines), `TicketLine.tsx` (card view and Try it into their own files) and `server/index.ts`'s 300-line switch; `web/line-keys.ts` has no tests (pull `decideShip` / `decideTry` into `line-model.ts`); the stack tests bind fixed ports; CI has no `windows-latest` leg though the product is Windows-only where it matters; dead exports `workspacesLoaded`, `flagsFor`, `BUCKET_TITLE`, `library.scan`.

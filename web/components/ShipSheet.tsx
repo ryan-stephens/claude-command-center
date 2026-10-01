@@ -72,7 +72,7 @@ function ShipForm({ id }: { id: string }) {
       close();
       const pr = get().cards.find((c) => c.id === id)?.ship?.pr;
       set({ line: { ...get().line, focus: id, drawer: id, tab: 'over' } });
-      flash(pr ? `Opened PR #${pr.number}` : 'Shipped');
+      flash(pr ? `Opened PR #${pr.number} · o opens it; s merges it once its checks pass (looked at every few minutes)` : 'Pushed. Open the PR in the browser; d when it is merged');
     }, (e: Error) => { setBusy(false); setError(e.message); });
   };
 
@@ -89,6 +89,7 @@ function ShipForm({ id }: { id: string }) {
     if (e.key === ' ' && files[fi]) { toggle(files[fi].path); return true; }
     if (e.key === 'm') { setTimeout(() => document.getElementById('ship-commit')?.focus(), 0); return true; }
     if (e.key === 'b') { setTimeout(() => document.getElementById('ship-body')?.focus(), 0); return true; }
+    if (e.key === 't') { setTimeout(() => document.getElementById('ship-title')?.focus(), 0); return true; }
     return false;
   });
 
@@ -136,7 +137,7 @@ function ShipForm({ id }: { id: string }) {
         <button className="btn" onClick={close} disabled={busy}>Cancel<Key k="Esc" size="sm" /></button>
         <button className="btn btn-primary" onClick={go} disabled={!plan || busy || Boolean(plan?.blockers.length)}>{busy ? 'Shipping…' : 'Ship it'}<Key k="Enter" size="sm" tone="ghost" /></button>
       </div>
-      <DialogKeys items={[['Enter', 'ship it (Ctrl Enter while typing)'], ['↑ ↓ Space', 'pick files'], ['m / b', 'commit message / PR body'], ['Esc', 'leave the field, then cancel']]} />
+      <DialogKeys items={[['Enter', 'ship it (Ctrl Enter while typing)'], ['↑ ↓ Space', 'pick files'], ['m / t / b', 'commit message / PR title / body'], ['Esc', 'leave the field, then cancel']]} />
     </Overlay>
   );
 }

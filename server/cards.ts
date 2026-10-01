@@ -18,6 +18,7 @@ import type { Workspace } from '../shared/protocol.ts';
 import type { Ticket } from '../shared/tickets.ts';
 import { repoName, samePath } from '../shared/workspaces.ts';
 import { applyEvent, TRACKED_EVENTS, type HookInput } from './card-events.ts';
+import { SECRET } from './config.ts';
 import { normalizeFolder } from './fs-browse.ts';
 import { DB_PATH, type Store } from './store.ts';
 
@@ -130,10 +131,13 @@ export function writeHookSettings(): string {
  */
 const SESSION_MARKERS = /^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_CODE_(CHILD_SESSION|SESSION_ID|SESSION_ATTENDED|ENTRYPOINT|EXECPATH|SSE_PORT|MESSAGING_\w+|BRIDGE_\w+))$/;
 
-/** The environment of the new tab: the card and how to reach this server, minus the markers of any session this server runs under. */
+/**
+ * The environment of the new tab: the card and how to reach this server, minus the markers of any
+ * session this server runs under, and minus the settings file's tokens (Claude's shell would see them).
+ */
 export function tabEnv(base: NodeJS.ProcessEnv, cardId: string, token: string, port: number): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const [k, v] of Object.entries(base)) if (!SESSION_MARKERS.test(k)) env[k] = v;
+  for (const [k, v] of Object.entries(base)) if (!SESSION_MARKERS.test(k) && !SECRET.test(k)) env[k] = v;
   return { ...env, CC_CONTROL_CARD: cardId, CC_CONTROL_TOKEN: token, CC_CONTROL_URL: `http://127.0.0.1:${port}` };
 }
 
@@ -379,7 +383,8 @@ ${laterText(card.key, later)}`;
   finish(id: string): void {
     const card = this.get(id);
     if (!card) throw new Error('That card is no longer on the line.');
-    if (!card.kind || card.kind === 'build') throw new Error(`${card.key} ships with a pull request: s ships it.`);
+    // A Develop card ships through its PR; once pushed (in Ship) it can be closed by hand too: a PR merged elsewhere, or a host Ship can't follow.
+    if ((!card.kind || card.kind === 'build') && card.stage !== 'ship') throw new Error(`${card.key} ships with a pull request: s ships it.`);
     this.save({ ...card, stage: 'done' });
   }
 

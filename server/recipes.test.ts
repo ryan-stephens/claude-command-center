@@ -110,10 +110,11 @@ test('runs the steps in order; the app stays up at the URL it printed until stop
 });
 
 test('a failing step stops the run there and keeps what it printed', async () => {
-  const cwd = repo('fail', {});
+  // A file, not an inline script: the quoting differs between cmd and sh.
+  const cwd = repo('fail', { 'fail.js': "console.error('Cannot find package express'); process.exit(3)" });
   const runs = new RunService(() => {}, process.env);
   try {
-    runs.start('card-2', { repo: cwd, steps: ['node -e "console.error(\'Cannot find package express\'); process.exit(3)"', 'node -e "1"'], source: '' }, cwd);
+    runs.start('card-2', { repo: cwd, steps: ['node fail.js', 'node -e "1"'], source: '' }, cwd);
     await until(() => runs.get('card-2')?.state === 'failed');
     const run = runs.get('card-2')!;
     assert.deepEqual(run.steps.map((s) => s.state), ['bad', 'wait']);

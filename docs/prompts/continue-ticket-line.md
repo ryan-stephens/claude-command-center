@@ -43,6 +43,8 @@ The owner likes the mock a lot. Keep its look, its words and its keys, including
 - The UI starts on a proxy copy pointed at the picked APIs, and stop tears them down.
 - Tested against stand-ins only.
 
+**Done (§43): a review before rollout** fixed the token leak into tabs and steps, the dev-origin hole, a dozen loop frictions (`d` done by hand, `o` opens the PR, `e` on the board, Esc fixes, column hints) and trimmed the busiest screens. §43 ends with ten proposals, the first (bring the card’s terminal tab forward from Needs you) the most valuable.
+
 **Next: prove it at VU.** The owner pastes their stack in (`e`, `Alt+W` to the stack tab), runs `pnpm run doctor`, and tries `t`. The open points are in §42's *Not verified*:
 - does `okteto up` run without a terminal;
 - the real deployment name;

@@ -60,7 +60,6 @@ const broker = new PermissionBroker(
 const store = new Store();
 const commands = new CommandService(store);
 const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, changed: () => broadcast(cardsMsg()) });
-writeHookSettings();
 
 const tickets = new TicketService(store, () => broadcast(ticketsMsg()));
 
@@ -70,8 +69,6 @@ function ticketsMsg(): ServerMsg {
 }
 
 const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env);
-// A proxy file a run changed in place and never put back (the server stopped mid-run) goes back now.
-for (const f of restoreLeftovers(runsDir(DB_PATH))) console.log(`Put back ${f}, which Try it had changed.`);
 const ship = new ShipService(cards, runs);
 
 /** Recipes for every repo the page may show one for: the library's, the workspaces' and the cards'. */
@@ -419,6 +416,8 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         const c = (msg.choice ?? {}) as { values?: unknown; apis?: unknown };
         const values = Object.fromEntries(Object.entries((c.values ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)]));
         const apis = Array.isArray(c.apis) ? c.apis.map(String).slice(0, 30) : [];
+        // The last run goes first (its cleanup would otherwise undo the proxy file this one writes).
+        await runs.stop(card.id, true);
         const { recipe, opts } = await prepareStackRun(stack, { values, apis }, runPlaces(card), card.id, runsDir(DB_PATH));
         send(ws, { type: 'ok', reqId: msg.reqId });
         await runs.start(card.id, recipe, runPlaces(card), opts);
@@ -550,10 +549,11 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
 }
 
 // Only pages served from loopback may connect: blocks cross-site WebSocket hijacking and DNS rebinding.
+// The Vite dev page (:5173, Vite's default, so also any app Try it starts) is allowed only under pnpm dev.
 const allowedHosts = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 const allowedOrigins = new Set([
   `http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`,
-  `http://127.0.0.1:${DEV_PORT}`, `http://localhost:${DEV_PORT}`,
+  ...(process.env.CC_CONTROL_DEV === '1' ? [`http://127.0.0.1:${DEV_PORT}`, `http://localhost:${DEV_PORT}`] : []),
 ]);
 function isTrusted(req: IncomingMessage): boolean {
   return allowedHosts.has(req.headers.host ?? '') && allowedOrigins.has(req.headers.origin ?? '');
@@ -651,7 +651,13 @@ function listen(hostname: string, app: Hono, trusted: (req: IncomingMessage) => 
   return server;
 }
 
-const servers = [listen(HOST, localApp, isTrusted, () => console.log(`cc-control: http://localhost:${PORT}`))];
+const servers = [listen(HOST, localApp, isTrusted, () => {
+  console.log(`cc-control: http://localhost:${PORT}`);
+  // Only once the port is ours: a second server started by mistake must not touch the first one's files.
+  writeHookSettings();
+  // A proxy file a run changed in place and never put back (the server stopped mid-run) goes back now.
+  for (const f of restoreLeftovers(runsDir(DB_PATH))) console.log(`Put back ${f}, which Try it had changed.`);
+})];
 
 // Remote (phone) access over Tailscale: opt-in, token-guarded. See server/remote.ts.
 if (process.argv.includes('--remote') || process.env.CC_CONTROL_REMOTE === '1') {

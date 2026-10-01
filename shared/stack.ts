@@ -6,7 +6,7 @@
 // kubectl and the rest live in the steps a team writes. Pure and shared, so the page and the server
 // build the same thing.
 
-import { parseStep } from './recipes.ts';
+import { MAX_STEPS, parseStep } from './recipes.ts';
 
 /** One API the stack can start. */
 export interface StackApi {
@@ -64,7 +64,6 @@ export interface StackApiRow {
   why: string;
 }
 
-const MAX_STEPS = 20;
 const MAX_APIS = 30;
 
 const str = (v: unknown, max = 500) => (typeof v === 'string' ? v.trim().slice(0, max) : '');

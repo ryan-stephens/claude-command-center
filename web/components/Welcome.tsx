@@ -44,8 +44,8 @@ export function Welcome() {
         <Cluster title="Move around" body={<>Left and right between columns, up and down to choose. <Key k="Enter" size="sm" /> opens.</>}>
           <div className="grid grid-cols-3 gap-1.5"><span /><Key k="↑" size="lg" /><span /><Key k="←" size="lg" /><Key k="↓" size="lg" /><Key k="→" size="lg" /></div>
         </Cluster>
-        <Cluster title="Run a workflow" body="Each number-pad key is a saved instruction, like “Run the tests”. The pad on screen matches yours.">
-          <div className="grid grid-cols-3 gap-1.5">{[7, 8, 9, 4, 5, 6, 1, 2, 3].map((n) => <Key key={n} k={n} size="lg" tone={n === 5 ? 'acc' : undefined} />)}</div>
+        <Cluster title="Start work" body={<><Key k="n" size="sm" /> on a ticket (or <Key k="c" size="sm" /> for a card) builds its context and opens Claude in a terminal tab. The card moves by itself; <Key k="t" size="sm" /> tries the change, <Key k="s" size="sm" /> ships it.</>}>
+          <div className="flex gap-1.5"><Key k="n" size="lg" tone="acc" /><Key k="c" size="lg" /><Key k="t" size="lg" /><Key k="s" size="lg" /></div>
         </Cluster>
         <Cluster title="Answer Claude" body={<>Yes, always, or no, when Claude asks to do something. <Key k={k('nextAttention')} size="sm" /> finds the next question.</>}>
           <div className="flex gap-1.5"><Key k="Y" size="lg" tone="attn" /><Key k="A" size="lg" tone="attn" /><Key k="N" size="lg" tone="attn" /></div>

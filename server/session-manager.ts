@@ -2,6 +2,7 @@ import { getSessionMessages, query, renameSession, type ModelInfo, type Query, t
 import { statSync } from 'node:fs';
 import { MODES, type ImageAttachment, type PermissionMode, type SessionActivity, type SessionStatus, type SessionSummary, type Todo, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { applyEvent, backgroundRunning, idleActivity, setApproval, startTurn } from './activity.ts';
+import { withoutSecrets } from './config.ts';
 import { applyTodos, NO_TODOS, type TodoState } from './todos.ts';
 import { ACTIVE_ELSEWHERE_MS, HistoryIndex } from './history-index.ts';
 import { InputQueue } from './input-queue.ts';
@@ -10,7 +11,7 @@ import { normalize } from './transcript.ts';
 import { addPath, isInside, removePath, repoName, samePath, workspaceRepos } from '../shared/workspaces.ts';
 
 // session_state_changed is only emitted with this flag (Phase 0 finding, PLAN.md §9).
-const SDK_ENV = { ...process.env, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1' } as Record<string, string>;
+const SDK_ENV = { ...withoutSecrets(process.env), CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1' } as Record<string, string>;
 const MODEL = process.env.CC_CONTROL_MODEL || undefined;
 
 interface LiveSession {

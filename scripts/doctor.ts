@@ -64,7 +64,7 @@ line(existsSync(page) ? 'ok' : 'warn', 'The page', existsSync(page) ? 'built' : 
 
 section('Settings');
 if (config.file) line('ok', 'Settings file', `${config.file}${config.set.length ? ` (sets ${config.set.join(', ')})` : ''}${config.kept.length ? `; the environment already had ${config.kept.join(', ')}` : ''}`);
-else line('info', 'Settings file', `none at ${CONFIG_FILE}`, 'Optional: put CC_CONTROL_* settings and tokens there, one NAME=value per line (see the README).');
+else line('info', 'Settings file', `none at ${CONFIG_FILE}`, `Optional, for Jira / Azure DevOps tokens: copy docs\\config.env.example to "${CONFIG_FILE}" and fill in the lines you need (one NAME=value per line, saved as UTF-8).`);
 line(config.systemCerts ? 'ok' : 'info', 'Certificates', config.systemCerts ? `${config.systemCerts} from Windows${config.caFile ? ` and ${config.caFile}` : ''} trusted as well as Node's own` : 'only Node’s own', config.problem ?? '');
 line('info', 'Database', DB_PATH);
 
@@ -97,7 +97,7 @@ for (const w of workspaces) {
   for (const repo of w.repos) {
     const name = repoName(repo);
     if (!existsSync(repo)) { line('warn', `  ${name}`, `${repo} isn't there`); continue; }
-    const remote = spawnSync('git', ['-C', repo, 'remote', 'get-url', 'origin'], { encoding: 'utf8', windowsHide: true }).stdout.trim();
+    const remote = (spawnSync('git', ['-C', repo, 'remote', 'get-url', 'origin'], { encoding: 'utf8', windowsHide: true }).stdout ?? '').trim();
     if (!remote) line('warn', `  ${name}`, 'no origin remote: Ship can’t push');
     else {
       const host = hostFor(remote);
@@ -151,7 +151,7 @@ for (const w of workspaces) {
   for (const c of commands) {
     // With the profile, as Try it runs them; Get-Command only looks, it runs nothing.
     const r = spawnSync('powershell.exe', ['-NoLogo', '-Command', `if (Get-Command ${c} -ErrorAction SilentlyContinue) { 'yes' }`], { encoding: 'utf8', windowsHide: true, timeout: 60_000 });
-    const ok = r.stdout.includes('yes');
+    const ok = (r.stdout ?? '').includes('yes');
     line(ok ? 'ok' : 'bad', c, ok ? 'PowerShell has it' : 'PowerShell doesn’t know it', ok ? '' : 'It comes from a module or your PowerShell profile: open PowerShell and check it runs there.');
   }
   if (programs.has('okteto')) {

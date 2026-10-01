@@ -20,7 +20,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'prevSession', label: 'Previous session', defaults: ['Alt+ArrowUp'], inText: true },
   { id: 'nextSession', label: 'Next session', defaults: ['Alt+ArrowDown'], inText: true },
   { id: 'newSession', label: 'New session', defaults: ['Alt+Shift+N'], inText: true },
-  { id: 'expand', label: 'Full screen: the focused card’s session / back to the Ticket Line', defaults: ['Ctrl+Enter'], inText: true },
+  { id: 'expand', label: 'The focused card’s session in the app / back to the Ticket Line', defaults: ['Ctrl+Enter'], inText: true },
   { id: 'interrupt', label: 'Interrupt the open session (Esc also works while it is busy)', defaults: ['Ctrl+.'], inText: true },
   { id: 'background', label: 'Send the running tool or subagent to the background', defaults: ['Ctrl+B'], inText: true },
   { id: 'sound', label: 'Sound on / off', defaults: ['M'], inText: false },

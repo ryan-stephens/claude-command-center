@@ -41,7 +41,8 @@ function Legend() {
   });
   const lineFocus = useStore((s) => Boolean(s.line.focus && s.cards.some((c) => c.id === s.line.focus)));
   const onTicket = useStore((s) => Boolean(s.line.focus?.startsWith('t:')));
-  const hasSession = useStore((s) => Boolean(s.cards.find((c) => c.id === (s.line.drawer ?? s.line.focus))?.sessionId));
+  // Only once the session is in the list: before that, the key would open a session the page doesn't have.
+  const hasSession = useStore((s) => { const id = s.cards.find((c) => c.id === (s.line.drawer ?? s.line.focus))?.sessionId; return Boolean(id && s.sessions.some((x) => x.id === id)); });
   const filtered = useStore((s) => Boolean(s.line.q.trim()));
   const addingTo = useStore((s) => s.composer?.addTo?.key);
   const drawerCard = useStore((s) => s.cards.find((c) => c.id === s.line.drawer));
@@ -55,11 +56,13 @@ function Legend() {
   const testing = shown?.kind === 'qa' || shown?.kind === 'review';
   const ship = testing ? (shown.report || shown.live?.lastMessage ? 'report' as const : undefined)
     : shown && shown.stage !== 'done' && (shown.sessionId || pr) ? (pr && pr.state === 'OPEN' ? 'merge' as const : 'ship' as const) : undefined;
+  const canDone = shown?.stage === 'ship';
+  const hasPr = Boolean(pr ?? shown?.pr);
   const tab = useStore((s) => s.composer?.tab);
   const hasWaiting = Boolean(drawerCard && waiting(drawerCard).length);
   if (modal) return null;
   const items = screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, tab, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, tab, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings });
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (

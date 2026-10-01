@@ -196,10 +196,13 @@ export function jiraConfig(e: NodeJS.ProcessEnv): JiraConfig | undefined {
   const site = e.CC_CONTROL_JIRA_SITE?.trim().replace(/\/+$/, '');
   const token = e.CC_CONTROL_JIRA_TOKEN?.trim();
   if (!site || !token) return undefined;
+  if (!/^https?:\/\//i.test(site)) throw new Error(`CC_CONTROL_JIRA_SITE should start with https:// (it is ${site}).`);
+  let host: string;
+  try { host = new URL(site).hostname; } catch { throw new Error(`CC_CONTROL_JIRA_SITE isn’t a web address: ${site}`); }
   const kind = e.CC_CONTROL_JIRA_KIND === 'server' || e.CC_CONTROL_JIRA_KIND === 'cloud' ? e.CC_CONTROL_JIRA_KIND
-    : /\.atlassian\.net$/i.test(new URL(site).hostname) ? 'cloud' : 'server';
+    : /\.atlassian\.net$/i.test(host) ? 'cloud' : 'server';
   const email = e.CC_CONTROL_JIRA_EMAIL?.trim() || undefined;
-  if (kind === 'cloud' && !email) return undefined;
+  if (kind === 'cloud' && !email) throw new Error('Jira Cloud needs CC_CONTROL_JIRA_EMAIL as well as the API token.');
   return {
     site, kind, ...(email ? { email } : {}), token, jql: e.CC_CONTROL_JIRA_JQL || DEFAULT_JQL,
     ...(e.CC_CONTROL_JIRA_QA_JQL ? { qaJql: e.CC_CONTROL_JIRA_QA_JQL } : {}),
@@ -239,7 +242,9 @@ export async function fetchJira(c: JiraConfig, jql = c.jql, max = 50): Promise<T
     throw new Error(`Couldn't reach Jira at ${c.site} (${code})${/CERT|ISSUER|SELF_SIGNED/.test(code) ? ': the server’s certificate isn’t trusted; see CC_CONTROL_CA_FILE' : ''}`);
   }
   if (!res.ok) { const why = jiraProblem(res.status, c); throw new Error(`Jira said ${res.status} ${res.statusText}${why ? `: ${why}` : ''}`); }
-  const body = await res.json() as { issues?: JiraIssue[] };
+  const text = await res.text();
+  if (text.trimStart().startsWith('<')) throw new Error(`Jira at ${c.site} answered with a web page instead of data: check the address (a context path like /jira?) and that the token is a ${c.kind === 'cloud' ? 'Cloud API token' : 'personal access token'}.`);
+  const body = JSON.parse(text) as { issues?: JiraIssue[] };
   return (body.issues ?? []).map((i) => fromJira(i, c.site, c.acField));
 }
 
@@ -425,8 +430,12 @@ export class TicketService {
         return { state: 'error', message: (err as Error).message };
       }
     };
+    // A settings mistake (no https://, Cloud without the email) is shown as the source's error, not hidden.
+    let jira: JiraConfig | undefined;
+    let jiraProblem: string | undefined;
+    try { jira = jiraConfig(e); } catch (err) { jiraProblem = (err as Error).message; }
     [this.jira, this.trello] = await Promise.all([
-      run(Boolean(jiraConfig(e)), () => this.fetchJiraViews(jiraConfig(e)!)),
+      jiraProblem ? Promise.resolve<SourceState>({ state: 'error', message: jiraProblem }) : run(Boolean(jira), () => this.fetchJiraViews(jira!)),
       run(Boolean(e.CC_CONTROL_TRELLO_KEY && e.CC_CONTROL_TRELLO_TOKEN && e.CC_CONTROL_TRELLO_BOARDS),
         () => fetchTrello(e.CC_CONTROL_TRELLO_KEY!, e.CC_CONTROL_TRELLO_TOKEN!, e.CC_CONTROL_TRELLO_BOARDS!.split(',').map((s) => s.trim()).filter(Boolean))),
     ]);
