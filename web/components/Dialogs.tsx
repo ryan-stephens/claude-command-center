@@ -4,7 +4,7 @@ import { addPath, homeRepo, isInside, removePath, repoName, samePath, WORKSPACE_
 import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
 import type { SourceState } from '../../shared/tickets.ts';
 import { parseSteps, recipeFor, wsRecipeKey } from '../../shared/recipes.ts';
-import { stackDraft, unknownStackRepos } from '../../shared/stack.ts';
+import { stackDraft, stackWarnings, unknownStackRepos } from '../../shared/stack.ts';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
 import { HINTS_LABEL } from '../hints.ts';
@@ -648,6 +648,7 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
   const stackText = (st = stack) => JSON.stringify(st ?? stackDraft(wsRepoNames), null, 2);
   // A saved stack naming repos that aren't here (the old example's orders-api, say) says so.
   const strangers = stack ? unknownStackRepos(stack, [...wsRepoNames, ...libNames.map((r) => r.name)]) : [];
+  const warnings = stack ? stackWarnings(stack) : [];
   const textFor = (sc: Scope) => (sc === 'stack' ? stackText() : (sc === 'workspace' ? wsRecipe : repoRecipe)?.steps.join('\n') ?? '');
   const [text, setText] = useState(() => textFor(scope));
   const [url, setUrl] = useState(() => recipe?.url ?? '');
@@ -694,7 +695,7 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
       </div>
       <p className="mb-3 text-sm text-sub">
         {scope === 'stack'
-          ? <>{!stack && <b className="text-ink">A draft from {wsName ?? 'the workspace'}’s repos: change the commands, ports and proxy file to yours before saving. </b>}Every {wsName ?? ''} card’s <Key k="t" size="sm" inline /> asks which values to use (<code>choose</code>: dev or uat) and which APIs to run. It runs <code>api.steps</code> in each picked API’s repo, with <code>{'{{env}}'}</code>, <code>{'{{branch}}'}</code> and the API’s <code>values</code> filled in. Then it starts the UI with <code>{'{{proxy}}'}</code>: a copy of <code>ui.proxyFile</code> with each picked API’s proxy rules put first. The repo’s file isn’t touched (<code>"proxyMode": "edit"</code> changes it in place and puts it back on stop). <code>stop:</code> steps run when you stop it.{stack ? ` Now: ${wsEntry?.source}.` : ''}</>
+          ? <>{!stack && <b className="text-ink">A draft from {wsName ?? 'the workspace'}’s repos: change the commands and the proxy file to yours before saving. </b>}Every {wsName ?? ''} card’s <Key k="t" size="sm" inline /> asks which values to use (<code>choose</code>: dev or uat) and which APIs to run. It runs <code>api.steps</code> in each picked API’s repo, with <code>{'{{env}}'}</code>, <code>{'{{branch}}'}</code>, <code>{'{{deployment}}'}</code> (name-branch, cut to 50) and the API’s <code>values</code> filled in. <code>{'{{port}}'}</code> is a local port picked for that run and <code>{'{{uiPort}}'}</code> the UI’s, so two cards can run the same stack at once; <code>{'{{appPort}}'}</code> is the port the API listens on in its container. Then it starts the UI with <code>{'{{proxy}}'}</code>: a copy of <code>ui.proxyFile</code> with each picked API’s proxy rules put first. The repo’s file isn’t touched (<code>"proxyMode": "edit"</code> changes it in place and puts it back on stop). <code>stop:</code> steps run when you stop it.{stack ? ` Now: ${wsEntry?.source}.` : ''}</>
           : scope === 'workspace'
             ? <>Every {wsName ?? ''} card runs this instead of its repo’s, so it can start several repos: a backend, then the UI pointed at it.{stack ? ' The workspace has a stack, which is what its cards run; this recipe is kept but not used.' : ''}</>
             : 'Try it runs these in the card’s folder.'}
@@ -706,6 +707,11 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
           This stack names {strangers.join(', ')}, which {strangers.length === 1 ? 'isn’t a repo' : 'aren’t repos'} in {wsName ?? 'the workspace'} or the library{/orders-api|web-ui/.test(strangers.join(' ')) ? ': they are the example’s made-up names' : ''}. Put in your own repos’ folder names{wsRepoNames.length ? ` (${wsRepoNames.join(', ')})` : ''}, or empty the box and save to start again from a draft of your repos.
         </div>
       )}
+      {scope === 'stack' && warnings.length > 0 && (
+        <ul className="mb-3 grid gap-1 rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn" aria-label="Before two cards can run this at once">
+          {warnings.map((w) => <li key={w}>{w}</li>)}
+        </ul>
+      )}
       <label className="eyebrow mb-1.5 block" htmlFor="recipe-steps">{scope === 'stack' ? 'The stack, as JSON' : 'Steps, one per line'}</label>
       <textarea id="recipe-steps" autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={keys} rows={scope === 'stack' ? 18 : 7} spellCheck={false}
         placeholder={scope === 'workspace'
@@ -714,7 +720,7 @@ function RecipeDialog({ repo, workspaceId }: { repo: string; workspaceId?: strin
         className="field w-full resize-y font-mono text-[13px]" />
       <div className="mt-1.5 grid gap-0.5 text-[12.5px] text-faint">
         <span><code>@repo</code> runs a step in that repo (by folder name) · <code>NAME=value</code> before the command sets a variable for that step · <code>! …</code> is something to do by hand (shown, not run) · <code>stop: …</code> runs when the app is stopped · <code># …</code> is a comment.</span>
-        <span><code>ps:</code> runs the step in PowerShell · <code>wait:"Now listening on"</code>, <code>wait:port:8080</code> or <code>wait:http:8080/health</code> (answers below 500) says when a step that keeps running is ready · <code>answers:"y,n"</code> answers the questions it asks, in order.</span>
+        <span><code>ps:</code> runs the step in PowerShell · <code>wait:"Now listening on"</code>, <code>wait:port:8080</code> or <code>wait:http:8080/health</code> (answers below 500) says when a step that keeps running is ready · <code>answers:"y,n"</code> answers the questions it asks, in order{scope === 'stack' ? <> · <code>{'forward:{{port}}:{{appPort}}'}</code> on the <code>okteto up</code> line runs it with a copy of the folder’s okteto.yml forwarding the picked port (the copy is never committed)</> : ''}.</span>
       </div>
       {scope !== 'stack' && <>
         <label className="eyebrow mb-1.5 mt-3 block" htmlFor="recipe-url">Where the app will be (optional; otherwise read from what it prints)</label>

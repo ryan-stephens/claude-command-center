@@ -25,14 +25,17 @@ cc-control is a local web app over Claude Code terminal sessions (the Ticket Lin
 - **Server log:** `%USERPROFILE%\.cc-control\server.log`. The owner's server runs on :7777. **Ask before restarting it.** It needs a restart after `git pull` (server code changed).
 - **The stack is JSON**, edited from a card with `e`, then `Alt+W` to the third tab, *The workspace's stack*:
   - `choose`: `{ "env": ["dev", "uat"] }`; the first value is the default, and `t` asks every time.
-  - `api.steps`: how *one* API starts, run in that API's repo, with `{{env}}`, `{{branch}}` (the API repo's branch, made Kubernetes-safe) and the API's own `values` (`{{name}}`, `{{port}}`, …) filled in. Add `stop:` lines for teardown.
-  - `api.proxy`: proxy rules each picked API adds.
-  - `apis`: `[{ "repo": "<folder name>", "values": { … } }]`.
-  - `ui`: `{ "repo", "proxyFile", "steps", "url" }`. The UI starts with `{{proxy}}`, a **copy** of the proxy file with the picked APIs' rules first, so the repo's file is never changed. `"proxyMode": "edit"` changes the file in place and restores it on stop, if the dev server can't take another path.
+  - `api.steps`: how *one* API starts, run in that API's repo, with `{{env}}` (and `{{ENV}}`, upper case), `{{branch}}` (the API repo's branch, made Kubernetes-safe), `{{deployment}}` (`name-branch` cut to 50 characters, as the helper cuts it) and the API's own `values` (`{{name}}`, `{{dir}}`, `{{appPort}}` …) filled in. Add `stop:` lines for teardown.
+  - **`{{port}}` is picked per run** (§54): each API gets a free local port from `CC_CONTROL_PORTS` (18000–18999 by default), and the UI gets `{{uiPort}}`, so two cards can run the same stack at once. `{{appPort}}` is the port the API listens on in its container (8080 here); an old `"port"` value is read as that.
+  - `api.proxy`: proxy rules each picked API adds (`http://localhost:{{port}}`).
+  - `apis`: `[{ "repo": "<folder name>", "values": { "name", "dir", "appPort", "route" } }]`.
+  - `ui`: `{ "repo", "proxyFile", "steps", "url" }`. The UI starts with `{{proxy}}`, a **copy** of the proxy file with the picked APIs' rules first, so the repo's file is never changed, and with `--port {{uiPort}}`; `url` is `http://localhost:{{uiPort}}`. `"proxyMode": "edit"` changes the file in place and restores it on stop, if the dev server can't take another path.
+  - Personal values (a kubeconfig per environment) go in `config.env` and reach steps as `%NAME%`: `KUBECONFIG=%KUBECONFIG_{{ENV}}%` before the command, with `KUBECONFIG_DEV=…` and `KUBECONFIG_UAT=…` in the file.
 - **Step prefixes:**
   - `ps:` runs in PowerShell, with the profile loaded
   - `answers:"y,n"` answers the step's questions
   - `wait:"Now listening on"`, `wait:port:8080` or `wait:http:8080/self` says when a long-running step is ready. Use `wait:http:` for `dotnet watch run` behind `okteto up`: the app's logging can hide "Now listening on", and okteto opens the port before the app is up (§52)
+  - **`forward:{{port}}:{{appPort}}` on the `okteto up` line** (after the step that writes `okteto.yml`): cc-control copies the manifest to `okteto.cc-control.yml` with that forward's local side set to the picked port, lists the copy in `.git/info/exclude`, and runs `okteto up -f okteto.cc-control.yml`. The copy goes when the run stops. Without it, `okteto up` forwards 8080 and the second card's run can't get it. `pnpm run doctor` and the stack editor warn when it is missing.
   - `! …` is a step done by hand (shown, not run), which suits "open a loan" for now
 - **The known problem the owner hit:** `t` listed **orders-api**, a repo they don't have. That came from the editor's old example, saved unchanged. Since §51:
   - the editor warns about repos the workspace doesn't have
@@ -50,7 +53,7 @@ cc-control is a local web app over Claude Code terminal sessions (the Ticket Lin
    - what they do afterwards: `okteto down`, or leave it up
    - how they open a loan against the local UI (for now an `!` step that says what to do)
 3. **Write the stack JSON** with them, and have them paste it into the editor and save. Saving checks it and says what's wrong.
-4. **Have them press `t`** on a card in that workspace: pick dev, tick the API, `Enter`. The card's Try it section shows each step, its state and the last lines of output. Fix the stack until the API is ready and the UI serves through the proxy copy. Then check `o` opens the UI and calls reach the API.
+4. **Have them press `t`** on a card in that workspace: pick dev, tick the API, `Enter`. The card's Try it section shows each step, its state and the last lines of output; its title says the ports picked (`loans-api :18000 · UI :18001`). Fix the stack until the API is ready and the UI serves through the proxy copy. Then check `o` opens the UI and calls reach the API. **Then a second card** on the same stack while the first is up: it should get the next ports, its own deployment (the branch differs) and its own `okteto up -f okteto.cc-control.yml`; check `okteto up -f` keeps the sync folder and that the namespace allows two deployments of one API.
 5. **Fix code only where the app is wrong.** Examples: a step type that's missing, readiness that never fires, a proxy merge that's wrong for their file. Then:
    - run `pnpm typecheck` and `pnpm test`
    - add a PLAN section in the same commit

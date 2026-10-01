@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { cardRecipe, findUrl, parseStep, parseSteps, portOf, recipeLabel, recipeText, stepLabel, waitLabel, wsRecipeKey } from '../shared/recipes.ts';
-import { appLike, cardRecipeOf, detectRecipe, expandVars, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, urlFromScript, workspaceRecipeOf } from './recipes.ts';
+import { appLike, cardRecipeOf, detectRecipe, expandVars, forwarded, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, urlFromScript, workspaceRecipeOf } from './recipes.ts';
 import { Store } from './store.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'cc-recipes-'));
@@ -208,6 +209,34 @@ test('a step line: ps:, wait: and answers:, in any order with @repo and stop:', 
   assert.deepEqual(parseStep('WAIT:HTTP:5001 dotnet run')!.wait, { url: 'http://localhost:5001/' }, 'no path asks /');
   assert.equal(waitLabel(parseStep('wait:http:8080/self okteto up')!), 'http://localhost:8080/self');
   assert.equal(parseStep('wait:http:8080/self')!.cmd, 'wait:http:8080/self', 'a prefix needs a command after it');
+  assert.deepEqual(parseStep('wait:port:18000 forward:18000:8080 okteto up')!.forward, { local: 18000, remote: 8080 });
+  assert.deepEqual(parseStep('forward:18000 @api okteto up --namespace dev')!.forward, { local: 18000 }, 'no container port: the first forward');
+  assert.equal(parseStep('forward:18000 @api okteto up --namespace dev')!.cmd, 'okteto up --namespace dev');
+});
+
+test('a forward: step runs okteto with a copy of the manifest pointed at the picked port, kept out of git', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'cc-fwd-'));
+  try {
+    execFileSync('git', ['-C', cwd, 'init', '-q']);
+    writeFileSync(join(cwd, 'okteto.yml'), 'name: orders-api\nforward:\n  - 8080:8080\n  - 5005:5005\n');
+    const spec = parseStep('forward:18000:8080 okteto up --namespace dev')!;
+    const f = forwarded(spec, cwd);
+    assert.equal(f.cmd, 'okteto up -f okteto.cc-control.yml --namespace dev', '-f right after the subcommand');
+    assert.equal(f.made, join(cwd, 'okteto.cc-control.yml'));
+    assert.equal(readFileSync(f.made!, 'utf8'), 'name: orders-api\nforward:\n  - 18000:8080\n  - 5005:5005\n');
+    assert.match(readFileSync(join(cwd, '.git', 'info', 'exclude'), 'utf8'), /^okteto\.cc-control\.yml$/m);
+    forwarded(spec, cwd);
+    assert.equal(readFileSync(join(cwd, '.git', 'info', 'exclude'), 'utf8').split('okteto.cc-control.yml').length, 2, 'listed once');
+    assert.equal(forwarded(parseStep('forward:18000:8080 okteto exec -- sh -c "dotnet run"')!, cwd).cmd, 'okteto exec -f okteto.cc-control.yml -- sh -c "dotnet run"', 'never after the --');
+    assert.equal(forwarded(parseStep('forward:18000 node up.js')!, cwd).cmd, 'node up.js', 'not an okteto command: the copy is written, the command is left alone');
+    rmSync(join(cwd, 'okteto.yml'));
+    assert.throws(() => forwarded(spec, cwd), /No okteto\.yml in .* to forward port 18000: put forward: on the okteto up line, after the step that writes the manifest/);
+    writeFileSync(join(cwd, 'okteto.yml'), 'name: x\n');
+    assert.throws(() => forwarded(spec, cwd), /has no forward: line/);
+    assert.deepEqual(forwarded(parseStep('okteto up')!, cwd), { cmd: 'okteto up' }, 'no forward: nothing happens');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 /** A port nothing listens on yet. */

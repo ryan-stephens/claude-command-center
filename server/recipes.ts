@@ -6,13 +6,14 @@
 // wait: is ready only when that text shows or that port opens (an API on a dev environment).
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { get as httpGet } from 'node:http';
-import { connect } from 'node:net';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
+import { FORWARD_MANIFEST, rewriteForward } from '../shared/okteto.ts';
 import { findUrl, MAX_STEPS, portOf, specsOf, stepLabel, waitLabel, type CardRun, type RunRecipe, type StepSpec } from '../shared/recipes.ts';
 import { repoName } from '../shared/workspaces.ts';
 import { withoutSecrets } from './config.ts';
+import { listening } from './ports.ts';
 import type { Store } from './store.ts';
 
 function readJson(file: string): Record<string, unknown> | undefined {
@@ -148,17 +149,6 @@ export function appLike(cmd: string, last: boolean): boolean {
   return last || (/\b(dev|start|serve|preview)\b|\bup\b|^node\s+\S+\.m?js\b/.test(cmd) && !/\bup\s+-d\b|--detach/.test(cmd));
 }
 
-/** Is something listening on this port on this machine? */
-function listening(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const s = connect({ host: '127.0.0.1', port });
-    const done = (ok: boolean) => { s.destroy(); resolve(ok); };
-    s.once('connect', () => done(true));
-    s.once('error', () => done(false));
-    s.setTimeout(500, () => done(false));
-  });
-}
-
 /** How long a wait:http: step may go without an answer below 500 before the run fails. */
 const HTTP_WAIT_MS = 10 * 60_000;
 
@@ -187,16 +177,54 @@ export function expandVars(vars: Record<string, string>, env: NodeJS.ProcessEnv)
   return Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, v.replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (m, n: string) => find(n) ?? m)]));
 }
 
+/** The okteto manifest in a folder, if it has one. */
+const MANIFESTS = ['okteto.yml', 'okteto.yaml'];
+
+/**
+ * A forward: step's command: a copy of the folder's okteto manifest is written beside it with the
+ * forward pointed at the picked local port, kept out of git through .git/info/exclude, and an
+ * okteto command gets `-f <copy>` right after its subcommand (before any `--`). Throws when there
+ * is no manifest yet (the step that writes it has to come first) or it has no forward.
+ */
+export function forwarded(spec: StepSpec, cwd: string): { cmd: string; made?: string } {
+  if (!spec.forward) return { cmd: spec.cmd };
+  const manifest = MANIFESTS.map((f) => join(cwd, f)).find((f) => existsSync(f));
+  const { local, remote } = spec.forward;
+  if (!manifest) throw new Error(`No okteto.yml in ${repoName(cwd)} to forward port ${local}: put forward: on the okteto up line, after the step that writes the manifest.`);
+  let text: string;
+  try { text = rewriteForward(readFileSync(manifest, 'utf8'), local, remote); } catch (e) { throw new Error(`Couldn’t point ${repoName(cwd)}’s okteto.yml at port ${local}: ${(e as Error).message}.`); }
+  const copy = join(cwd, FORWARD_MANIFEST);
+  writeFileSync(copy, text);
+  excludeFromGit(cwd, FORWARD_MANIFEST);
+  const cmd = spec.cmd.replace(/^((?:\S*[\\/])?okteto(?:\.exe)?\s+[a-z]+)/i, `$1 -f ${FORWARD_MANIFEST}`);
+  return { cmd, made: copy };
+}
+
+/** Keep a generated file out of `git status` without touching the repo's .gitignore: .git/info/exclude of the repo (shared by its worktrees). */
+function excludeFromGit(cwd: string, name: string): void {
+  const r = spawnSync('git', ['-C', cwd, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
+  if (r.status !== 0) return;
+  const common = r.stdout.trim();
+  const file = join(isAbsolute(common) ? common : join(cwd, common), 'info', 'exclude');
+  try {
+    const have = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    if (!have.split(/\r?\n/).includes(name)) appendFileSync(file, `${have && !have.endsWith('\n') ? '\n' : ''}${name}\n`);
+  } catch { /* the step still runs; the copy may show in git status */ }
+}
+
 /**
  * Start a step: through cmd (or sh), or PowerShell for ps: steps. answers: are typed into its
  * input, one line each (PowerShell's Read-Host and choice prompts read them); otherwise it has none.
+ * `made` collects files the step had written for it (a forward: manifest copy), removed on stop.
  */
-function launch(spec: StepSpec, cwd: string, base: NodeJS.ProcessEnv, detach = process.platform !== 'win32'): ChildProcess {
+function launch(spec: StepSpec, cwd: string, base: NodeJS.ProcessEnv, detach = process.platform !== 'win32', made?: string[]): ChildProcess {
   const env = { ...base, ...expandVars(spec.env, base) };
   const stdio: ['pipe' | 'ignore', 'pipe', 'pipe'] = [spec.answers ? 'pipe' : 'ignore', 'pipe', 'pipe'];
+  const f = forwarded(spec, cwd);
+  if (f.made) made?.push(f.made);
   const child = spec.ps
-    ? spawn(process.platform === 'win32' ? 'powershell.exe' : 'pwsh', ['-NoLogo', '-Command', spec.cmd], { cwd, env, windowsHide: true, detached: detach, stdio })
-    : spawn(spec.cmd, { cwd, env, shell: true, windowsHide: true, detached: detach, stdio });
+    ? spawn(process.platform === 'win32' ? 'powershell.exe' : 'pwsh', ['-NoLogo', '-Command', f.cmd], { cwd, env, windowsHide: true, detached: detach, stdio })
+    : spawn(f.cmd, { cwd, env, shell: true, windowsHide: true, detached: detach, stdio });
   if (spec.answers) { child.stdin?.on('error', () => {}); child.stdin?.end(spec.answers.map((a) => `${a}\r\n`).join('')); }
   return child;
 }
@@ -215,6 +243,8 @@ interface Live {
   procs: ChildProcess[];
   /** Full output per step; the run carries only the tail. */
   lines: string[][];
+  /** Files written for steps (forward: manifest copies), removed when the run stops. */
+  made: string[];
   stopped: boolean;
   /** The stop in progress (its stop: steps can take minutes); a start waits for it. */
   stopping?: Promise<void>;
@@ -279,7 +309,7 @@ export class RunService {
       text: `Starting ${recipe.workspaceId ? 'the workspace' : repoName(recipe.repo)}`,
       ...(opts.choice ? { choice: opts.choice } : {}),
     };
-    const live: Live = { run, specs, places: at, procs: [], lines: specs.map(() => []), stopped: false, ...(opts.cleanup ? { cleanup: opts.cleanup } : {}) };
+    const live: Live = { run, specs, places: at, procs: [], lines: specs.map(() => []), made: [], stopped: false, ...(opts.cleanup ? { cleanup: opts.cleanup } : {}) };
     this.live.set(cardId, live);
     this.step(live, 0);
     this.changed();
@@ -318,7 +348,18 @@ export class RunService {
     step.state = 'go';
     run.text = stepLabel(spec);
     const last = i === runnable[runnable.length - 1];
-    const child = launch(spec, cwd, this.env);
+    let child: ChildProcess;
+    try {
+      child = launch(spec, cwd, this.env, undefined, live.made);
+    } catch (e) {
+      // What a forward: step needed wasn't there: the run stops here, with the reason on the step.
+      step.state = 'bad';
+      step.tail = [(e as Error).message];
+      run.state = 'failed';
+      run.text = `${stepLabel(spec)} can’t run`;
+      this.changed();
+      return;
+    }
     live.procs.push(child);
     let moved = false;
     const next = () => { if (!moved) { moved = true; this.step(live, i + 1); } };
@@ -435,7 +476,8 @@ export class RunService {
       step.state = 'go';
       live.run.text = `Stopping: ${stepLabel(spec)}`;
       this.changed();
-      const child = launch(spec, cwd, this.env, false);
+      let child: ChildProcess;
+      try { child = launch(spec, cwd, this.env, false, live.made); } catch (e) { step.state = 'bad'; step.tail = [(e as Error).message]; continue; }
       this.capture(live, i, child, () => {});
       const code = await new Promise<number | null>((resolve) => {
         const t = setTimeout(() => { killTree(child); resolve(null); }, 120_000);
@@ -483,8 +525,9 @@ export class RunService {
     this.live.clear();
   }
 
-  /** Undo what the run changed outside its processes, once. */
+  /** Undo what the run changed outside its processes, once: the files written for its steps, then what the caller asked. */
   private cleanup(live: Live): void {
+    for (const f of live.made.splice(0)) rmSync(f, { force: true });
     const c = live.cleanup;
     live.cleanup = undefined;
     try { c?.(); } catch (e) { live.run.text = `Stopped, but couldn’t undo a change: ${(e as Error).message}`; }

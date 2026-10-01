@@ -12,9 +12,11 @@ import { fileURLToPath } from 'node:url';
 import { CHANNEL_ON, findClaude } from '../server/cards.ts';
 import { config, CONFIG_FILE } from '../server/config.ts';
 import { AzureDevOpsHost, GitHubHost, hostFor } from '../server/hosts.ts';
+import { parseRange } from '../server/ports.ts';
 import { recipeOf } from '../server/recipes.ts';
 import { readLooseJson, stackOf } from '../server/stack.ts';
 import { parseStep } from '../shared/recipes.ts';
+import { needsUiPort, stackWarnings } from '../shared/stack.ts';
 import { DB_PATH, Store } from '../server/store.ts';
 import { findQaField, jiraConfig, jiraProblem } from '../server/tickets.ts';
 import { repoName } from '../shared/workspaces.ts';
@@ -170,11 +172,14 @@ for (const w of workspaces) {
   const inWs = (name: string) => w.repos.find((r) => repoName(r).toLowerCase() === name.toLowerCase());
   for (const a of st.apis) {
     const at = inWs(a.repo);
-    line(at ? 'ok' : 'info', `API ${a.repo}`, at ? `in the workspace${a.values.port ? `, port ${a.values.port}` : ''}` : 'not in the workspace', at ? '' : 'Fine if cards add it as context; otherwise add it to the workspace (+).');
+    const appPort = a.values.appPort ?? a.values.port;
+    line(at ? 'ok' : 'info', `API ${a.repo}`, at ? `in the workspace${appPort ? `, listens on ${appPort} in its container` : ''}` : 'not in the workspace', at ? '' : 'Fine if cards add it as context; otherwise add it to the workspace (+).');
   }
-  const ports = st.apis.map((a) => a.values.port).filter(Boolean);
-  const twice = [...new Set(ports.filter((p, i) => ports.indexOf(p) !== i))];
-  if (twice.length) line('warn', 'Ports', `more than one API uses ${twice.join(', ')}`, 'Only one of them can run at a time: give each its own local port.');
+  // Local ports are picked per run from a range, one per API and UI: say which, and whether it has room right now.
+  const [lo, hi] = parseRange(process.env.CC_CONTROL_PORTS);
+  const need = st.apis.length + (needsUiPort(st) ? 1 : 0);
+  line(hi - lo + 1 >= need * 2 ? 'ok' : 'warn', 'Local ports', `${lo}-${hi} (CC_CONTROL_PORTS); a run of everything takes ${need}`, hi - lo + 1 >= need * 2 ? '' : 'Widen the range so two cards can run at once.');
+  for (const w of stackWarnings(st)) line('warn', 'Two at once', w);
   if (st.ui) {
     const at = inWs(st.ui.repo);
     line(at ? 'ok' : 'info', `UI ${st.ui.repo}`, at ? 'in the workspace' : 'not in the workspace', at ? '' : 'Fine if cards add it as context.');

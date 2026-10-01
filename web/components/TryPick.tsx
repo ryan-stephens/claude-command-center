@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { cardRepos } from '../../shared/cards.ts';
 import { cardRecipe } from '../../shared/recipes.ts';
-import { choiceLabel, type StackApiRow } from '../../shared/stack.ts';
+import { choiceLabel, needsUiPort, type StackApiRow } from '../../shared/stack.ts';
 import { listStep } from '../list-step.ts';
 import { lastPick, tryStack } from '../line-keys.ts';
 import { useStore } from '../store.ts';
@@ -108,7 +108,7 @@ export function TryPick({ id }: { id: string }) {
         </ul>
       )}
       <p className="mt-3 text-[13px] text-sub">
-        {rows ? <>Starts <b>{choiceLabel(values, picked)}</b>{stack.ui ? `, then ${stack.ui.repo}${stack.ui.proxyFile ? ' with its proxy pointed at them' : ''}` : ''}. APIs left unticked are served by the shared environment.</> : null}
+        {rows ? <>Starts <b>{choiceLabel(values, picked)}</b>{stack.ui ? `, then ${stack.ui.repo}${stack.ui.proxyFile ? ' with its proxy pointed at them' : ''}` : ''}. APIs left unticked are served by the shared environment. Each API{needsUiPort(stack) ? ' and the UI' : ''} gets a local port of its own for this run, so another card can run the same stack at the same time.</> : null}
       </p>
       <DialogKeys items={[['← →', choose[0]?.[0] ?? 'Choose'], ['↑ ↓', 'Move'], ['Space', 'Tick'], ['a / n', 'All / none'], ['Enter', 'Start'], ['Esc', 'Cancel']]} />
     </Overlay>

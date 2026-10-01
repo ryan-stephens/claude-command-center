@@ -16,6 +16,7 @@ import { CardService, cleanDraft, focusTab, userModel, writeHookSettings } from 
 import { timingSafeEqual } from 'node:crypto';
 import { ChannelService } from './channel.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
+import { parseRange, PortPool } from './ports.ts';
 import { plainStack, prepareStackRun, restoreLeftovers, runsDir, saveStack, stackOf, stackRecipe, stackRows } from './stack.ts';
 import { suggested, unknownStackRepos, validateStack } from '../shared/stack.ts';
 import { ShipService } from './ship.ts';
@@ -78,6 +79,8 @@ function ticketsMsg(): ServerMsg {
 }
 
 const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env);
+// Local ports for stack runs, one per API and UI, so two cards can run the same stack at once.
+const ports = new PortPool(parseRange(process.env.CC_CONTROL_PORTS));
 const ship = new ShipService(cards, runs);
 
 /** Recipes for every repo the page may show one for: the library's, the workspaces' and the cards'. */
@@ -443,7 +446,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         const apis = Array.isArray(c.apis) ? c.apis.map(String).slice(0, 30) : [];
         // The last run goes first (its cleanup would otherwise undo the proxy file this one writes).
         await runs.stop(card.id, true);
-        const { recipe, opts } = await prepareStackRun(stack, { values, apis }, runPlaces(card), card.id, runsDir(DB_PATH));
+        const { recipe, opts } = await prepareStackRun(stack, { values, apis }, runPlaces(card), card.id, runsDir(DB_PATH), ports);
         send(ws, { type: 'ok', reqId: msg.reqId });
         await runs.start(card.id, recipe, runPlaces(card), opts);
         return;

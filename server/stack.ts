@@ -6,9 +6,10 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { choiceLabel, choiceValues, k8sName, mergeProxy, namesApi, pickedApis, stackRules, stackSteps, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo } from '../shared/stack.ts';
+import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, runLabel, stackRules, stackSteps, uiUrlFor, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo, type StackRunContext } from '../shared/stack.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import { run } from './hosts.ts';
+import { PortPool } from './ports.ts';
 import type { RunOptions, RunPlaces } from './recipes.ts';
 import type { Store } from './store.ts';
 
@@ -102,12 +103,15 @@ export function readLooseJson(text: string): Record<string, unknown> {
 }
 
 /**
- * A run of the stack for a card: the steps for what was picked, and the proxy file written. Throws
- * what's wrong (an API or UI repo the card doesn't have, a proxy file that isn't there or isn't JSON).
+ * A run of the stack for a card: the steps for what was picked, with a local port picked for each
+ * API (and the UI, when it asks for {{uiPort}}) from `pool`, and the proxy file written. Throws
+ * what's wrong (an API or UI repo the card doesn't have, a proxy file that isn't there or isn't
+ * JSON, no port left), having taken nothing.
  */
-export async function prepareStackRun(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string): Promise<{ recipe: RunRecipe; opts: RunOptions }> {
+export async function prepareStackRun(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string, pool = new PortPool()): Promise<{ recipe: RunRecipe; opts: RunOptions }> {
   const values = choiceValues(stack, choice.values);
   const apis = pickedApis(stack, choice.apis);
+  const pick = { values, apis: apis.map((a) => a.repo) };
   const where = (repo: string, what: string) => {
     const d = places.repos[repo.toLowerCase()];
     if (!d || !existsSync(d)) throw new Error(`${what} ${repo} isn’t in this card or its workspace. Add it to the card’s context, or fix the name in the stack (e, then Alt+W).`);
@@ -115,23 +119,29 @@ export async function prepareStackRun(stack: StackInfo, choice: StackChoice, pla
   };
   const branches: Record<string, string> = {};
   for (const a of apis) branches[a.repo.toLowerCase()] = await branchOf(where(a.repo, 'The API'));
-  let proxy: string | undefined;
-  let cleanup: (() => void) | undefined;
-  let write: (() => void) | undefined;
-  if (stack.ui) {
-    const uiDir = where(stack.ui.repo, 'The UI');
-    branches[stack.ui.repo.toLowerCase()] = await branchOf(uiDir);
-    if (stack.ui.proxyFile) {
+  const uiDir = stack.ui ? where(stack.ui.repo, 'The UI') : undefined;
+  if (stack.ui && uiDir) branches[stack.ui.repo.toLowerCase()] = await branchOf(uiDir);
+  // One port per API, and one for the UI when it takes one: given back when the run stops.
+  const wantUi = needsUiPort(stack);
+  const picked = await pool.take(apis.length + (wantUi ? 1 : 0));
+  const ports: Record<string, number> = {};
+  apis.forEach((a, i) => { ports[a.repo.toLowerCase()] = picked[i]; });
+  const uiPort = wantUi ? picked[picked.length - 1] : undefined;
+  const ctx: StackRunContext = { branches, ports, ...(uiPort ? { uiPort } : {}) };
+  try {
+    let cleanup: (() => void) | undefined;
+    let write: (() => void) | undefined;
+    if (stack.ui && uiDir && stack.ui.proxyFile) {
       const file = join(uiDir, stack.ui.proxyFile);
       if (!existsSync(file)) throw new Error(`${stack.ui.proxyFile} isn’t in ${stack.ui.repo}. Fix "ui.proxyFile" in the stack.`);
       const original = readFileSync(file, 'utf8');
       let base: Record<string, unknown>;
       try { base = readLooseJson(original); } catch (e) { throw new Error(`${stack.ui.proxyFile} couldn’t be read as JSON (${(e as Error).message}). Only JSON proxy files can be pointed at the APIs for now.`); }
-      const merged = `${JSON.stringify(mergeProxy(base, stackRules(stack, { values, apis: apis.map((a) => a.repo) }, branches)), null, 2)}\n`;
+      const merged = `${JSON.stringify(mergeProxy(base, stackRules(stack, pick, ctx)), null, 2)}\n`;
       const edit = stack.ui.proxyMode === 'edit';
-      proxy = edit ? file : join(dir, `${cardId}.proxy.conf.json`);
+      const out = edit ? file : join(dir, `${cardId}.proxy.conf.json`);
+      ctx.proxy = out;
       const backup = join(dir, `${cardId}.backup.json`);
-      const out = proxy;
       // Written only once every step has been built, so a mistake in the stack changes nothing.
       write = () => {
         mkdirSync(dir, { recursive: true });
@@ -140,11 +150,16 @@ export async function prepareStackRun(stack: StackInfo, choice: StackChoice, pla
       };
       cleanup = edit ? () => { writeFileSync(file, original); rmSync(backup, { force: true }); } : () => rmSync(out, { force: true });
     }
+    const steps = stackSteps(stack, pick, ctx);
+    const url = uiUrlFor(stack, pick, ctx);
+    write?.();
+    const undo = cleanup;
+    return {
+      recipe: { repo: '', workspaceId: stack.workspaceId, steps, ...(url ? { url } : {}), source: stack.source },
+      opts: { choice: runLabel(values, pick.apis, ports, uiPort), cleanup: () => { pool.free(picked); undo?.(); } },
+    };
+  } catch (e) {
+    pool.free(picked);
+    throw e;
   }
-  const steps = stackSteps(stack, { values, apis: apis.map((a) => a.repo) }, branches, proxy);
-  write?.();
-  return {
-    recipe: { repo: '', workspaceId: stack.workspaceId, steps, ...(stack.ui?.url ? { url: stack.ui.url } : {}), source: stack.source },
-    opts: { choice: choiceLabel(values, apis.map((a) => a.repo)), ...(cleanup ? { cleanup } : {}) },
-  };
 }

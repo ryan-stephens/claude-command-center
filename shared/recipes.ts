@@ -4,12 +4,14 @@
 // The server runs it as child processes. Pure and shared, so the drawer, the packet text and the
 // server say the same thing.
 //
-// A step is one line: `[stop:] [ps:] [wait:…] [answers:…] [@repo] [NAME=value …] command`, or
-// `! something to do by hand`. The prefixes come in any order. @repo runs it in that repo (the card's
-// folder for its own repo); NAME=value sets the step's environment (parsed here, so it works in
-// cmd.exe too); stop: lines run when the app is stopped; ps: runs it in PowerShell instead of cmd;
+// A step is one line: `[stop:] [ps:] [wait:…] [forward:…] [answers:…] [@repo] [NAME=value …] command`,
+// or `! something to do by hand`. The prefixes come in any order. @repo runs it in that repo (the
+// card's folder for its own repo); NAME=value sets the step's environment (parsed here, so it works
+// in cmd.exe too); stop: lines run when the app is stopped; ps: runs it in PowerShell instead of cmd;
 // wait:"text", wait:port:8080 or wait:http:8080/health says when a step that keeps running is ready;
-// answers:"y,n" types those lines into the questions it asks; lines starting with # are comments.
+// forward:18000:8080 runs an okteto command with a copy of the folder's okteto.yml whose forward of
+// container port 8080 is local port 18000 (shared/okteto.ts), so two runs of one API never want the
+// same port; answers:"y,n" types those lines into the questions it asks; lines starting with # are comments.
 
 import { stackText, type Stack } from './stack.ts';
 import { repoName, samePath } from './workspaces.ts';
@@ -100,6 +102,8 @@ export interface StepSpec {
    * address answering below 500 (a forwarded port can be open before the app behind it is).
    */
   wait?: { text: string } | { port: number } | { url: string };
+  /** Run with a copy of the folder's okteto manifest forwarding `local` to the container's `remote` port (the first forward when unset). */
+  forward?: { local: number; remote?: number };
   /** Lines typed into the step's input, one per question it asks. */
   answers?: string[];
 }
@@ -115,6 +119,7 @@ export function parseStep(line: string): StepSpec | undefined {
   let ps = false;
   let repo: string | undefined;
   let wait: StepSpec['wait'];
+  let forward: StepSpec['forward'];
   let answers: string[] | undefined;
   // The prefixes, in any order, so a stack can put @repo in front of a line that starts with stop:.
   for (;;) {
@@ -124,6 +129,7 @@ export function parseStep(line: string): StepSpec | undefined {
     else if ((m = /^wait:port:(\d{2,5})\s+/i.exec(rest))) wait = { port: Number(m[1]) };
     else if ((m = /^wait:http:(\d{2,5})(\/\S*)?\s+/i.exec(rest))) wait = { url: `http://localhost:${m[1]}${m[2] ?? '/'}` };
     else if ((m = /^wait:"([^"]+)"\s+/i.exec(rest))) wait = { text: m[1] };
+    else if ((m = /^forward:(\d{2,5})(?::(\d{2,5}))?\s+/i.exec(rest))) forward = { local: Number(m[1]), ...(m[2] ? { remote: Number(m[2]) } : {}) };
     else if ((m = /^answers:"([^"]*)"\s+/i.exec(rest))) answers = m[1].split(',').map((a) => a.trim());
     else if ((m = /^@(\S+)\s+/.exec(rest))) repo = m[1];
     else break;
@@ -136,7 +142,7 @@ export function parseStep(line: string): StepSpec | undefined {
   }
   return {
     line, cmd: rest.trim(), ...(repo ? { repo } : {}), env, stop, note: false,
-    ...(ps ? { ps } : {}), ...(wait ? { wait } : {}), ...(answers ? { answers } : {}),
+    ...(ps ? { ps } : {}), ...(wait ? { wait } : {}), ...(forward ? { forward } : {}), ...(answers ? { answers } : {}),
   };
 }
 

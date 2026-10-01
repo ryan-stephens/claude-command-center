@@ -12,7 +12,11 @@ import { MAX_STEPS, parseStep } from './recipes.ts';
 export interface StackApi {
   /** Its repo, by folder name (a card's repo, or its workspace's). */
   repo: string;
-  /** Its values for the template: {{name}}, {{dir}}, {{port}} … */
+  /**
+   * Its values for the template: {{name}}, {{dir}}, {{appPort}} (the port it listens on in its
+   * container; a `port` value is read as that too, from before ports were picked per run) …
+   * {{port}}, the local port, is picked by cc-control for each run, never written here.
+   */
   values: Record<string, string>;
   /** Proxy rules of its own, on top of the template's (a route only this API has). */
   proxy?: Record<string, unknown>;
@@ -24,7 +28,7 @@ export interface Stack {
   /** How one API starts: step lines (run-recipe syntax, stop: lines for teardown), and its proxy rules. */
   api: { steps: string[]; proxy?: Record<string, unknown> };
   apis: StackApi[];
-  /** The UI: its repo, its proxy file, and how it starts ({{proxy}} is the proxy file to use). */
+  /** The UI: its repo, its proxy file, and how it starts ({{proxy}} is the proxy file to use, {{uiPort}} the port picked for this run). */
   ui?: {
     repo: string;
     /** The proxy config in the UI repo (JSON), relative to it. */
@@ -32,8 +36,21 @@ export interface Stack {
     /** override (default): write a copy with the rules outside the repo and pass it as {{proxy}}. edit: change the file in place and put it back on stop. */
     proxyMode?: 'override' | 'edit';
     steps: string[];
+    /** Where it serves; may use {{uiPort}}. */
     url?: string;
   };
+}
+
+/** What one run of the stack knows besides the pick: each repo's branch, the proxy copy, and the ports picked for it. */
+export interface StackRunContext {
+  /** Each repo's branch (lower-case repo name → branch), already made safe for a name. */
+  branches: Record<string, string>;
+  /** The proxy file the UI starts with. */
+  proxy?: string;
+  /** The local port picked for each API (lower-case repo name → port). An API without one falls back to its `port` value. */
+  ports?: Record<string, number>;
+  /** The port picked for the UI, when its steps or url ask for {{uiPort}}. */
+  uiPort?: number;
 }
 
 /** A stack as the page gets it: where it came from. */
@@ -120,7 +137,7 @@ export function validateStack(raw: unknown): Stack {
     if (proxyFile && (/^[a-z]:|^[\\/]/i.test(proxyFile) || proxyFile.split(/[\\/]/).includes('..'))) throw new Error('"ui.proxyFile" should be a path inside the UI repo, like "apps/web/proxy.conf.json".');
     const mode = u.proxyMode === 'edit' ? 'edit' : 'override';
     const url = str(u.url, 300);
-    if (url && !/^https?:\/\/\S+$/.test(url)) throw new Error('"ui.url" should look like http://localhost:4200.');
+    if (url && !/^https?:\/\/\S+$/.test(url)) throw new Error('"ui.url" should look like http://localhost:{{uiPort}}.');
     const uiSteps = steps(u.steps, '"ui.steps"');
     if (!uiSteps.length) throw new Error('"ui.steps" is empty: say how the UI starts.');
     ui = { repo, ...(proxyFile ? { proxyFile, proxyMode: mode } : {}), steps: uiSteps, ...(url ? { url } : {}) };
@@ -137,24 +154,24 @@ export const STACK_EXAMPLE: Stack = {
   choose: { env: ['dev', 'uat'] },
   api: {
     steps: [
-      'ps: answers:"y,n" if (-not (kubectl get deployment {{name}}-{{branch}} -n team-{{env}} 2>$null)) { New-DevEnvironment -Name {{name}} -Environment {{env}}; kubectl apply -f deployment.json }',
-      'wait:port:{{port}} okteto up',
-      'wait:http:{{port}} okteto exec -- sh -c "cd src/{{dir}} && dotnet watch run"',
-      'stop: okteto down',
-      'stop: kubectl delete deployment {{name}}-{{branch}} -n team-{{env}}',
+      'ps: answers:"y,n" KUBECONFIG=%KUBECONFIG_{{ENV}}% if (-not (kubectl get deployment {{deployment}} -n team-{{env}} 2>$null)) { New-DevEnvironment -Name {{name}} -Environment {{env}}; kubectl apply -f deployment.json }',
+      'wait:port:{{port}} forward:{{port}}:{{appPort}} KUBECONFIG=%KUBECONFIG_{{ENV}}% okteto up',
+      'wait:http:{{port}} KUBECONFIG=%KUBECONFIG_{{ENV}}% okteto exec -- sh -c "cd src/{{dir}} && dotnet watch run"',
+      'stop: KUBECONFIG=%KUBECONFIG_{{ENV}}% okteto down',
+      'stop: KUBECONFIG=%KUBECONFIG_{{ENV}}% kubectl delete deployment {{deployment}} -n team-{{env}}',
     ],
     proxy: {
       '/gateway/team/{{route}}/**': { target: 'http://localhost:{{port}}', secure: false, changeOrigin: true, pathRewrite: { '.*/gateway/team/{{route}}': '' }, logLevel: 'debug' },
     },
   },
   apis: [
-    { repo: 'orders-api', values: { name: 'orders-api', dir: 'OrdersApi', port: '8080', route: 'orders' } },
+    { repo: 'orders-api', values: { name: 'orders-api', dir: 'OrdersApi', appPort: '8080', route: 'orders' } },
   ],
   ui: {
     repo: 'web-ui',
     proxyFile: 'apps/shop/proxy.conf.json',
-    steps: ['node_modules\\.bin\\nx.cmd run shop:serve:development --proxyConfig={{proxy}}'],
-    url: 'http://localhost:4200',
+    steps: ['node_modules\\.bin\\nx.cmd run shop:serve:development --proxyConfig={{proxy}} --port {{uiPort}}'],
+    url: 'http://localhost:{{uiPort}}',
   },
 };
 
@@ -174,11 +191,40 @@ export function stackDraft(repoNames: string[]): Stack {
   const apis = rest.some((n) => API_NAME.test(n)) ? rest.filter((n) => API_NAME.test(n)) : rest;
   return {
     choose: { env: ['dev', 'uat'] },
-    api: { steps: ['wait:port:{{port}} okteto up --namespace {{env}}', 'stop: okteto down'], proxy: { '/api/{{route}}/**': { target: 'http://localhost:{{port}}', secure: false, changeOrigin: true } } },
-    apis: apis.map((repo, i) => ({ repo, values: { name: repo, port: String(5001 + i), route: repo.toLowerCase().replace(/[-_.]?(api|service|svc)$/, '') || repo.toLowerCase() } })),
-    // A card's new worktree of the UI has no node_modules yet: install once, then start.
-    ...(ui ? { ui: { repo: ui, proxyFile: 'proxy.conf.json', steps: ['if not exist node_modules npm install', 'npm start -- --proxy-config {{proxy}}'], url: 'http://localhost:4200' } } : {}),
+    // {{port}} is picked for each run; forward: puts it in a copy of the API's okteto.yml, so two cards can run one API at once.
+    api: { steps: ['wait:port:{{port}} forward:{{port}}:{{appPort}} okteto up --namespace {{env}}', 'stop: okteto down'], proxy: { '/api/{{route}}/**': { target: 'http://localhost:{{port}}', secure: false, changeOrigin: true } } },
+    apis: apis.map((repo) => ({ repo, values: { name: repo, appPort: '8080', route: repo.toLowerCase().replace(/[-_.]?(api|service|svc)$/, '') || repo.toLowerCase() } })),
+    // A card's new worktree of the UI has no node_modules yet: install once, then start on the port picked for the run.
+    ...(ui ? { ui: { repo: ui, proxyFile: 'proxy.conf.json', steps: ['if not exist node_modules npm install', 'npm start -- --proxy-config {{proxy}} --port {{uiPort}}'], url: 'http://localhost:{{uiPort}}' } } : {}),
   };
+}
+
+const USES = (what: string) => new RegExp(`\\{\\{\\s*${what}\\s*\\}\\}`);
+
+/**
+ * What would stop a stack running twice at once, or would mislead: said in the editor and by the
+ * doctor, never enforced (a team that runs one card at a time can leave it).
+ */
+export function stackWarnings(stack: Stack): string[] {
+  const out: string[] = [];
+  const apiLines = [...stack.api.steps, JSON.stringify(stack.api.proxy ?? {}), ...stack.apis.map((a) => JSON.stringify(a.proxy ?? {}))].join('\n');
+  const specs = stack.api.steps.map(parseStep).filter((s): s is NonNullable<typeof s> => Boolean(s && !s.note));
+  const okteto = specs.filter((s) => /(^|[\\/\s])okteto(\.exe)?\s+up\b/i.test(s.cmd));
+  if (USES('port').test(apiLines) && okteto.length && !okteto.some((s) => /forward:/i.test(s.line))) {
+    out.push('{{port}} is picked for each run, but the okteto up step doesn’t forward it: put forward:{{port}}:{{appPort}} on that line, or the proxy points at a port nothing answers on.');
+  }
+  const legacy = stack.apis.filter((a) => a.values.port && !a.values.appPort).map((a) => a.repo);
+  if (legacy.length) out.push(`${legacy.join(', ')}: "port" in values now means the port inside the container ({{appPort}}); the local port is picked per run. Call it "appPort" to say so.`);
+  if (/\{\{\s*name\s*\}\}-\{\{\s*branch\s*\}\}/.test(apiLines)) out.push('Use {{deployment}} for the deployment’s name: it is {{name}}-{{branch}} cut to 50 characters, as Kubernetes needs.');
+  if (stack.ui && !USES('uiPort').test([...stack.ui.steps, stack.ui.url ?? ''].join('\n'))) {
+    out.push('The UI starts on a fixed port, so two cards can’t run it at once: add --port {{uiPort}} to its start step and put {{uiPort}} in ui.url.');
+  }
+  return out;
+}
+
+/** Does the UI want a port picked for it? */
+export function needsUiPort(stack: Pick<Stack, 'ui'>): boolean {
+  return Boolean(stack.ui && USES('uiPort').test([...stack.ui.steps, stack.ui.url ?? ''].join('\n')));
 }
 
 /** The repos a stack names that aren't in `known` (folder names, any case): a stack still holding an example's names. */
@@ -208,6 +254,20 @@ export function k8sName(branch: string): string {
   return branch.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
 }
 
+/**
+ * The deployment made for an API on a branch: its name, a dash, the branch, cut to 50 characters
+ * (the limit the team's helper applies), so a long name doesn't end in a dash.
+ */
+export function k8sDeployment(name: string, branch: string): string {
+  return `${k8sName(name)}-${k8sName(branch)}`.slice(0, 50).replace(/-+$/, '');
+}
+
+/** "uat · orders-api :18000, fees-api :18001 · UI :18002": what was picked, with the ports picked for it. */
+export function runLabel(values: Record<string, string>, apis: string[], ports: Record<string, number> = {}, uiPort?: number): string {
+  const api = apis.map((a) => (ports[a.toLowerCase()] ? `${a} :${ports[a.toLowerCase()]}` : a));
+  return [...Object.values(values), api.length ? api.join(', ') : 'UI only', ...(uiPort ? [`UI :${uiPort}`] : [])].join(' · ');
+}
+
 /** The picked values, each checked against what the stack offers; missing ones get the default. */
 export function choiceValues(stack: Pick<Stack, 'choose'>, picked: Record<string, string> = {}): Record<string, string> {
   const out: Record<string, string> = {};
@@ -231,17 +291,39 @@ export function pickedApis(stack: Stack, names: string[]): StackApi[] {
   return stack.apis.filter((a) => want.includes(a.repo.toLowerCase()));
 }
 
-/** Everything an API's template can use: the picked values, its repo and branch, then its own values. */
-export function apiVars(values: Record<string, string>, api: StackApi, branch: string): Record<string, string> {
-  return { ...values, repo: api.repo, branch, ...api.values };
+/** The picked values, plus each in upper case under its upper-case name ({{ENV}} = DEV), for %KUBECONFIG_{{ENV}}%-style variables. */
+function chosenVars(values: Record<string, string>): Record<string, string> {
+  const upper = Object.fromEntries(Object.entries(values).filter(([k]) => k !== k.toUpperCase()).map(([k, v]) => [k.toUpperCase(), v.toUpperCase()]));
+  return { ...upper, ...values };
+}
+
+/**
+ * Everything an API's template can use: the picked values, its repo and branch, its own values,
+ * {{appPort}} (its `appPort` value, else its old `port` value, else 8080), {{deployment}}, and
+ * {{port}}: the local port picked for this run, or the `port` value when none was picked.
+ */
+export function apiVars(values: Record<string, string>, api: StackApi, branch: string, port?: number): Record<string, string> {
+  const name = api.values.name ?? api.repo;
+  const appPort = api.values.appPort ?? api.values.port ?? '8080';
+  return { ...chosenVars(values), repo: api.repo, branch, ...api.values, name, appPort, deployment: k8sDeployment(name, branch), ...(port !== undefined ? { port: String(port) } : {}) };
+}
+
+/** Everything the UI's template can use. */
+function uiVars(values: Record<string, string>, ui: NonNullable<Stack['ui']>, ctx: StackRunContext): Record<string, string> {
+  return { ...chosenVars(values), repo: ui.repo, branch: ctx.branches[ui.repo.toLowerCase()] ?? 'main', ...(ctx.proxy ? { proxy: ctx.proxy } : {}), ...(ctx.uiPort ? { uiPort: String(ctx.uiPort) } : {}) };
+}
+
+/** Where the UI will serve for this run, when the stack says. */
+export function uiUrlFor(stack: Stack, choice: StackChoice, ctx: StackRunContext): string | undefined {
+  if (!stack.ui?.url) return undefined;
+  return fill(stack.ui.url, uiVars(choiceValues(stack, choice.values), stack.ui, ctx), 'the UI’s url');
 }
 
 /**
  * The run: each picked API's steps in its repo, then the UI's, then every stop: step (the UI's
- * first, then the APIs' in reverse, so what started last stops first). `branches` holds each
- * repo's branch, already made safe for a name.
+ * first, then the APIs' in reverse, so what started last stops first).
  */
-export function stackSteps(stack: Stack, choice: StackChoice, branches: Record<string, string>, proxy?: string): string[] {
+export function stackSteps(stack: Stack, choice: StackChoice, ctx: StackRunContext): string[] {
   const values = choiceValues(stack, choice.values);
   const run: string[] = [];
   const stops: string[][] = [];
@@ -258,21 +340,20 @@ export function stackSteps(stack: Stack, choice: StackChoice, branches: Record<s
     stops.push(mine);
   };
   for (const api of pickedApis(stack, choice.apis)) {
-    add(stack.api.steps, api.repo, apiVars(values, api, branches[api.repo.toLowerCase()] ?? 'main'), `${api.repo}’s steps`);
+    const key = api.repo.toLowerCase();
+    add(stack.api.steps, api.repo, apiVars(values, api, ctx.branches[key] ?? 'main', ctx.ports?.[key]), `${api.repo}’s steps`);
   }
-  if (stack.ui) {
-    const vars = { ...values, repo: stack.ui.repo, branch: branches[stack.ui.repo.toLowerCase()] ?? 'main', ...(proxy ? { proxy } : {}) };
-    add(stack.ui.steps, stack.ui.repo, vars, 'the UI’s steps');
-  }
+  if (stack.ui) add(stack.ui.steps, stack.ui.repo, uiVars(values, stack.ui, ctx), 'the UI’s steps');
   return [...run, ...stops.reverse().flat()];
 }
 
 /** The proxy rules the picked APIs add, in order: each one's template rules, then its own. */
-export function stackRules(stack: Stack, choice: StackChoice, branches: Record<string, string>): Record<string, unknown> {
+export function stackRules(stack: Stack, choice: StackChoice, ctx: Pick<StackRunContext, 'branches' | 'ports'>): Record<string, unknown> {
   const values = choiceValues(stack, choice.values);
   const out: Record<string, unknown> = {};
   for (const api of pickedApis(stack, choice.apis)) {
-    const vars = apiVars(values, api, branches[api.repo.toLowerCase()] ?? 'main');
+    const key = api.repo.toLowerCase();
+    const vars = apiVars(values, api, ctx.branches[key] ?? 'main', ctx.ports?.[key]);
     Object.assign(out, fillDeep(stack.api.proxy ?? {}, vars, `the proxy rules for ${api.repo}`), fillDeep(api.proxy ?? {}, vars, `${api.repo}’s own proxy rules`));
   }
   return out;
@@ -304,8 +385,8 @@ export function suggested(rows: StackApiRow[]): string[] {
 /** What a card's context tells Claude about the stack, under "Running the app". */
 export function stackText(stack: Stack): string {
   const ask = Object.entries(stack.choose).map(([k, v]) => `${k} (${v.join(' / ')})`).join(', ');
-  const L = [`The workspace’s stack starts the app. When you press Try it, you pick ${ask ? `${ask} and ` : ''}which APIs to run: ${stack.apis.map((a) => a.repo).join(', ') || 'none set up'}.`];
-  if (stack.ui) L.push(`Then ${stack.ui.repo} starts${stack.ui.proxyFile ? `, with ${stack.ui.proxyFile} pointed at the APIs that run (${stack.ui.proxyMode === 'edit' ? 'changed in place and put back on stop: never commit that change' : 'a copy; the repo’s file isn’t changed'})` : ''}${stack.ui.url ? `, at ${stack.ui.url}` : ''}.`);
+  const L = [`The workspace’s stack starts the app. When you press Try it, you pick ${ask ? `${ask} and ` : ''}which APIs to run: ${stack.apis.map((a) => a.repo).join(', ') || 'none set up'}. Each gets a local port of its own for that run.`];
+  if (stack.ui) L.push(`Then ${stack.ui.repo} starts${stack.ui.proxyFile ? `, with ${stack.ui.proxyFile} pointed at the APIs that run (${stack.ui.proxyMode === 'edit' ? 'changed in place and put back on stop: never commit that change' : 'a copy; the repo’s file isn’t changed'})` : ''}${stack.ui.url ? `, at ${stack.ui.url.replace(/\{\{\s*uiPort\s*\}\}/, '<a port picked for the run>')}` : ''}.`);
   L.push('cc-control does this; don’t start the APIs or the UI yourself, and don’t edit the proxy file to point at them.');
   return L.join(' ');
 }
