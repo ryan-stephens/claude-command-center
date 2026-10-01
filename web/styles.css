@@ -92,6 +92,10 @@ kbd:not(.kc) { font: 600 12px var(--font-mono); padding: 0 5px; border: 1px soli
    keycaps are content and a .kc-keep container (?, the shortcuts dialog, the tour) keeps its keys. */
 [data-hints] .kc:not(.kc-lg, .kc-inline, .kc-keep *) { display: none !important; } /* over md:inline-flex on a few keys */
 [data-hints="hover"] :is(button, a, label, li, [role="option"], [role="radio"]):hover .kc { display: inline-flex !important; }
+/* .kc-hint: words that only make sense next to their keycap ("click, or Space"); go with the keycaps.
+   .kc-legend: a strip of keys and labels (a dialog's footer); keeps its keycaps on hover, goes when off. */
+[data-hints] .kc-hint { display: none !important; }
+[data-hints="never"] .kc-legend { display: none !important; }
 [data-hints="never"] .kc-inline { display: inline; min-width: 0; height: auto; padding: 0 1px; border: 0; box-shadow: none; background: transparent; color: inherit; font: 700 inherit var(--font-mono); }
 
 /* A focused row or tile: lifted with the accent ring, so where the keys go is obvious. */

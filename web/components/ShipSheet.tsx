@@ -124,7 +124,7 @@ function ShipForm({ id }: { id: string }) {
           <label className="grid gap-1.5"><span className="eyebrow">Pull request, written from the ticket</span>
             <input id="ship-title" value={title} onChange={(e) => setTitle(e.target.value)} className="field w-full text-[14px] font-semibold" />
             <textarea id="ship-body" value={body} onChange={(e) => setBody(e.target.value)} rows={9} className={`${field} resize-y text-[12.5px]`} />
-            <span className="text-[12.5px] text-faint"><Key k="b" size="sm" /> edits the body. Slack posts come later.</span>
+            <span className="text-[12.5px] text-faint"><Key k="b" size="sm" inline /> edits the body. Slack posts come later.</span>
           </label>
           {plan.notes.map((n) => <p key={n} className="text-[13px] text-faint">{n}</p>)}
           {plan.blockers.map((b) => <div key={b} className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">{b}</div>)}

@@ -24,7 +24,7 @@ export function DialogTitle({ children, hint = 'Esc' }: { children: ReactNode; h
 /** The keys that work in a dialog, as a footer line. */
 export function DialogKeys({ items }: { items: [string, string][] }) {
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-faint">
+    <div className="kc-legend kc-keep mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-faint">
       {items.map(([k, label]) => <span key={label} className="flex items-center gap-1.5"><Key k={k} size="sm" />{label}</span>)}
     </div>
   );

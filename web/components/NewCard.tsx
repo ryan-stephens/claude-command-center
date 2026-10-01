@@ -181,7 +181,7 @@ function Sources({ c }: { c: Composer }) {
       className={`rounded-md border px-1.5 py-0.5 text-[12.5px] ${c.tab === id ? 'border-line bg-raise font-semibold' : 'border-transparent text-faint hover:text-ink'}`}>{name}</button>
   );
   return (
-    <PaneBox pane="src" n={1} title="Add context" c={c} right={<><span className="text-xs text-faint">click, or</span><Key k="Space" size="sm" /></>}>
+    <PaneBox pane="src" n={1} title="Add context" c={c} right={<span className="kc-hint flex items-center gap-2"><span className="text-xs text-faint">click, or</span><Key k="Space" size="sm" /></span>}>
       <div className="flex items-center gap-1 px-3 pb-2">
         {tab('tickets', 'Tickets')}{tab('repos', 'Repos')}{tab('folders', 'Folders')}
         <span className="grow" />
@@ -318,7 +318,7 @@ function PacketPane({ c, text, card }: { c: Composer; text: string; card?: Card 
   );
   return (
     <PaneBox pane="pkt" n={2} c={c} title={c.preview ? 'Exactly what Claude receives' : card ? 'What you are adding' : 'What Claude will know'}
-      right={c.preview ? <span className="text-xs text-faint">{card ? 'sent by a UserPromptSubmit hook' : 'returned by the SessionStart hook as additionalContext'}</span> : <><Key k="Space" size="sm" /><span className="text-xs text-faint">include or leave out</span></>}>
+      right={c.preview ? <span className="text-xs text-faint">{card ? 'sent by a UserPromptSubmit hook' : 'returned by the SessionStart hook as additionalContext'}</span> : <span className="kc-hint flex items-center gap-2"><Key k="Space" size="sm" /><span className="text-xs text-faint">include or leave out</span></span>}>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3.5 pb-3.5 pt-0.5">
         {over && <div className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">Over {HOOK_CONTEXT_LIMIT.toLocaleString()} characters: Claude Code will hand Claude a file with a preview instead of the whole text. Leave something out.</div>}
         {c.preview
@@ -346,7 +346,7 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
   const gi = Math.min(c.gi, rows.length - 1);
   const focused = c.pane === 'go';
   return (
-    <PaneBox pane="go" n={3} c={c} title="How it starts" right={<><Key k="↑" size="sm" /><Key k="↓" size="sm" /><span className="text-xs text-faint">then</span><Key k="←" size="sm" /><Key k="→" size="sm" /></>}>
+    <PaneBox pane="go" n={3} c={c} title="How it starts" right={<span className="kc-hint flex items-center gap-2"><Key k="↑" size="sm" /><Key k="↓" size="sm" /><span className="text-xs text-faint">then</span><Key k="←" size="sm" /><Key k="→" size="sm" /></span>}>
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3.5 pb-3.5 pt-0.5">
         {rows.map((r, i) => (
           <div key={r.id} onMouseDown={() => updateComposer((x) => ({ ...x, gi: i }))}
@@ -417,7 +417,7 @@ function DeliverPane({ c, card }: { c: Composer; card: Card }) {
   const rows = goRows(c, workspaces, card.key);
   const focused = c.pane === 'go';
   return (
-    <PaneBox pane="go" n={3} c={c} title="Deliver" right={<><Key k="↑" size="sm" /><Key k="↓" size="sm" /><span className="text-xs text-faint">then</span><Key k="←" size="sm" /><Key k="→" size="sm" /></>}>
+    <PaneBox pane="go" n={3} c={c} title="Deliver" right={<span className="kc-hint flex items-center gap-2"><Key k="↑" size="sm" /><Key k="↓" size="sm" /><span className="text-xs text-faint">then</span><Key k="←" size="sm" /><Key k="→" size="sm" /></span>}>
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3.5 pb-3.5 pt-0.5">
         {rows.map((r) => (
           <div key={r.id} className={`grid gap-1.5 rounded-xl border border-transparent px-2.5 py-2 ${focused ? 'is-focus' : ''}`}>

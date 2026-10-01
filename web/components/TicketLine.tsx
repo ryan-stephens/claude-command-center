@@ -349,9 +349,9 @@ function CardView({ id }: { id: string }) {
         </div>
         {place.at >= 0 && place.total > 1 && (
           <div className="flex shrink-0 items-center gap-1.5 text-sm text-faint">
-            <button className="hover:text-ink disabled:opacity-40" disabled={place.at === 0} onClick={() => openNeighbour(id, -1)} title="The previous card on the board"><Key k="←" size="sm" /></button>
+            <button className="hover:text-ink disabled:opacity-40" disabled={place.at === 0} onClick={() => openNeighbour(id, -1)} title="The previous card on the board" aria-label="The previous card"><span className="flex items-center gap-1"><Icon name="back" size={15} /><Key k="←" size="sm" /></span></button>
             <span className="tabular-nums">Card {place.at + 1} of {place.total}</span>
-            <button className="hover:text-ink disabled:opacity-40" disabled={place.at === place.total - 1} onClick={() => openNeighbour(id, 1)} title="The next card on the board"><Key k="→" size="sm" /></button>
+            <button className="hover:text-ink disabled:opacity-40" disabled={place.at === place.total - 1} onClick={() => openNeighbour(id, 1)} title="The next card on the board" aria-label="The next card"><span className="flex items-center gap-1"><Key k="→" size="sm" /><Icon name="right" size={15} /></span></button>
           </div>
         )}
         <button className="flex shrink-0 items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={() => set({ line: { ...get().line, drawer: null } })}>Back to the board <Key k="Esc" size="sm" /></button>

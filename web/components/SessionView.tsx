@@ -138,8 +138,8 @@ function SessionHeader({ id }: { id: string }) {
       {status?.text && <Pill tone={status.tone} spin={status.tone === 'blue'}>{status.text}{clock && status.tone === 'blue' ? ` · ${clock}` : ''}</Pill>}
       <span className="ml-auto" />
       <span className="hidden items-center gap-1.5 text-sm text-faint lg:flex">
-        <button onClick={() => hop(-1)} title="Previous session"><Key k={k('prevSession')} size="sm" /></button>
-        <button onClick={() => hop(1)} title="Next session"><Key k={k('nextSession')} size="sm" /></button>
+        <button onClick={() => hop(-1)} title="Previous session" aria-label="Previous session" className="flex items-center gap-1"><Icon name="back" size={15} /><Key k={k('prevSession')} size="sm" /></button>
+        <button onClick={() => hop(1)} title="Next session" aria-label="Next session" className="flex items-center gap-1"><Key k={k('nextSession')} size="sm" /><Icon name="right" size={15} /></button>
         other sessions
       </span>
       {session?.live && (
@@ -398,7 +398,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
                 {c.hint && <span className="min-w-0 max-w-[30%] shrink truncate font-mono text-xs text-faint">{c.hint}</span>}
               </li>
             ))}
-            <li className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 pb-0.5 pt-1.5 text-xs text-faint" role="presentation">
+            <li className="kc-legend kc-keep flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 pb-0.5 pt-1.5 text-xs text-faint" role="presentation">
               <span className="flex items-center gap-1"><Key k="↑ ↓" size="sm" />choose</span>
               <span className="flex items-center gap-1"><Key k="Tab" size="sm" />{slashQ !== null ? 'complete' : argChoices ? 'pick' : 'insert'}</span>
               <span className="flex items-center gap-1"><Key k="Enter" size="sm" />{chosen?.enter}</span>

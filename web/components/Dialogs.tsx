@@ -993,7 +993,7 @@ function SourcesDialog() {
       <p className="mb-4 text-sub">Pick the folder (or folders) that hold your projects. Every git repo directly inside shows up in the repo library, ready to drag into a workspace.</p>
       {library.sources.length > 0 && (
         <div className="mb-4">
-          <div className="eyebrow mb-1.5 flex items-center gap-2">Your folders<span className="font-normal normal-case tracking-normal text-faint">· <Key k="Tab" size="sm" /> then <Key k="Delete" size="sm" /> removes one</span></div>
+          <div className="eyebrow mb-1.5 flex items-center gap-2">Your folders<span className="font-normal normal-case tracking-normal text-faint">· <Key k="Tab" size="sm" inline /> then <Key k="Delete" size="sm" inline /> removes one</span></div>
           <ul className="space-y-1.5" aria-label="Your repo folders">
             {library.sources.map((src, i) => (
               <li
