@@ -172,8 +172,19 @@ export interface CardTodo {
   activeForm?: string;
 }
 
+/** A repo the card works on in a folder of its own: a worktree on the card's branch. */
+export interface CardFolder {
+  repo: string;
+  dir: string;
+}
+
 export interface Card extends CardDraft {
   id: string;
+  /**
+   * The card's worktrees, one per git repo in its context (a worktree card), or the PR's copy (a
+   * review): Claude, Try it and the stack's APIs use these in place of the repos' own folders.
+   */
+  folders?: CardFolder[];
   /** "CARD-3", or the ticket's key (SHOP-155): what the board and the terminal tab show. */
   key: string;
   /** The ticket as it was when the card started. */
@@ -319,7 +330,12 @@ export function branchFor(key: string, title: string): string {
   return [key.toLowerCase(), ...words].join('-').replace(/-+/g, '-').slice(0, 60).replace(/-$/, '');
 }
 
-/** The folder a worktree for the card goes in: next to the home repo. */
+/** Where the card works on a repo: its worktree of it, else the repo's own folder. */
+export function folderFor(c: { folders?: CardFolder[] }, repo: string): string {
+  return c.folders?.find((f) => samePath(f.repo, repo))?.dir ?? repo;
+}
+
+/** The folder a worktree for the card goes in: next to the repo it is of. */
 export function worktreeFor(home: string, key: string): string {
   return `${home.replace(/[\\/]+$/, '')}-${key.toLowerCase()}`;
 }
@@ -385,7 +401,7 @@ export function jobText(kind: CardKind | undefined, key: string, pr?: PrTarget, 
  * Exactly what Claude receives: the SessionStart hook returns this as additionalContext.
  * `key` and `branch` are known once the card exists; the preview passes what they will be.
  */
-export function packetText(d: Pick<CardDraft, 'title' | 'packet' | 'launch' | 'kind' | 'pr'> & { ticket?: Pick<Ticket, 'key' | 'source'> | null }, key: string, branch?: string): string {
+export function packetText(d: Pick<CardDraft, 'title' | 'packet' | 'launch' | 'kind' | 'pr'> & { ticket?: Pick<Ticket, 'key' | 'source'> | null; folders?: CardFolder[] }, key: string, branch?: string): string {
   const L: string[] = [];
   const title = d.title.trim() || 'New card';
   const kind = d.kind ?? 'build';
@@ -397,9 +413,10 @@ export function packetText(d: Pick<CardDraft, 'title' | 'packet' | 'launch' | 'k
   const home = homeOf(d.packet, d.launch);
   if (repos.length) {
     L.push('', '## Repos');
-    for (const r of repos) L.push(`- ${repoName(r)} (${r === home ? 'you start here' : kind === 'review' ? 'also yours to read' : 'also yours to read and edit'}): ${r}`);
+    for (const r of repos) L.push(`- ${repoName(r)} (${r === home ? 'you start here' : kind === 'review' ? 'also yours to read' : 'also yours to read and edit'}): ${folderFor(d, r)}`);
   }
-  if (branch) L.push('', kind === 'build' ? `Work on the branch ${branch}.` : `You are on ${branch}.`);
+  const own = (d.folders ?? []).filter((f) => !samePath(f.dir, f.repo)).length;
+  if (branch) L.push('', kind === 'build' ? `Work on the branch ${branch}.${own > 1 ? ' Each repo above is a worktree of its own on that branch: change them there, not in the repos’ usual folders.' : ''}` : `You are on ${branch}.`);
   const all = [...d.packet.workspace, ...d.packet.ticket, ...d.packet.card].filter((i) => i.kind === 'note' && i.on);
   const testing = all.filter((i) => i.id === TESTING_NOTES);
   const notes = all.filter((i) => i.id !== TESTING_NOTES);
@@ -482,10 +499,13 @@ export function launchLines(d: Pick<CardDraft, 'title' | 'packet' | 'launch' | '
   const branch = branchFor(key, d.title || 'new');
   const L: string[] = [];
   let dir = home;
+  let add = others;
   if (d.launch.branch === 'new') L.push(`git -C ${home} switch -c ${branch}`);
   if (d.launch.branch === 'worktree') {
+    // A worktree for every repo, all on the card's branch: Try it then runs each from the card's own code.
     dir = worktreeFor(home, key);
-    L.push(`git -C ${home} worktree add ${dir} -b ${branch}`);
+    for (const r of [home, ...others]) L.push(`git -C ${r} worktree add ${worktreeFor(r, key)} -b ${branch}`);
+    add = others.map((r) => worktreeFor(r, key));
   }
   if (d.launch.branch === 'pr' && d.pr) {
     dir = worktreeFor(home, key);
@@ -495,7 +515,7 @@ export function launchLines(d: Pick<CardDraft, 'title' | 'packet' | 'launch' | '
   L.push(`set CC_CONTROL_CARD=${key}`);
   L.push(`wt -w 0 nt --title ${key} -d ${dir} claude --settings <cc-control hook> --permission-mode ${d.launch.mode}`
     + (model ? ` --model ${model}` : '')
-    + others.map((r) => ` --add-dir ${r}`).join('')
+    + add.map((r) => ` --add-dir ${r}`).join('')
     + ` -- "${d.launch.message}"`);
   return L;
 }

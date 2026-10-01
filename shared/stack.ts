@@ -176,7 +176,8 @@ export function stackDraft(repoNames: string[]): Stack {
     choose: { env: ['dev', 'uat'] },
     api: { steps: ['wait:port:{{port}} okteto up --namespace {{env}}', 'stop: okteto down'], proxy: { '/api/{{route}}/**': { target: 'http://localhost:{{port}}', secure: false, changeOrigin: true } } },
     apis: apis.map((repo, i) => ({ repo, values: { name: repo, port: String(5001 + i), route: repo.toLowerCase().replace(/[-_.]?(api|service|svc)$/, '') || repo.toLowerCase() } })),
-    ...(ui ? { ui: { repo: ui, proxyFile: 'proxy.conf.json', steps: ['npm start -- --proxy-config {{proxy}}'], url: 'http://localhost:4200' } } : {}),
+    // A card's new worktree of the UI has no node_modules yet: install once, then start.
+    ...(ui ? { ui: { repo: ui, proxyFile: 'proxy.conf.json', steps: ['if not exist node_modules npm install', 'npm start -- --proxy-config {{proxy}}'], url: 'http://localhost:4200' } } : {}),
   };
 }
 

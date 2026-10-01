@@ -503,7 +503,7 @@ export function goRows(c: Composer, workspaces: Workspace[], key: string, models
  * there: the current checkout, or a copy of the repo on the pull request's branch once it is found.
  */
 export function branchOpts(c: Composer, key: string): { id: BranchChoice; name: string; off?: boolean }[] {
-  if (c.kind === 'build') return [{ id: 'new', name: `New: ${branchFor(key, c.title || 'new')}` }, { id: 'current', name: 'Current branch' }, { id: 'worktree', name: 'New worktree' }];
+  if (c.kind === 'build') return [{ id: 'new', name: `New: ${branchFor(key, c.title || 'new')}` }, { id: 'current', name: 'Current branch' }, { id: 'worktree', name: includedRepos(c.packet).length > 1 ? 'New worktree of each repo' : 'New worktree' }];
   return [
     { id: 'current', name: 'Current branch' },
     c.pr ? { id: 'pr', name: `PR #${c.pr.number}’s branch, in a copy` } : { id: 'pr', name: c.prLooking ? 'PR’s branch (looking…)' : 'PR’s branch (none found)', off: true },

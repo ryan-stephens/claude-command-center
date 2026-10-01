@@ -11,8 +11,8 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  BRANCH_NAME, branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, PACKET_KINDS, homeOf, includedRepos, LAUNCH_MODES, laterText, modelFor, packetText, tokens, fmtK, waiting, worktreeFor, wtArg,
-  type BranchChoice, type BootStep, type Card, type CardDraft, type CardKind, type LaterItem, type LaunchMode, type Packet, type PacketItem, type PrTarget,
+  BRANCH_NAME, branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, folderFor, PACKET_KINDS, homeOf, includedRepos, LAUNCH_MODES, laterText, modelFor, packetText, tokens, fmtK, waiting, worktreeFor, wtArg,
+  type BranchChoice, type BootStep, type Card, type CardDraft, type CardFolder, type CardKind, type LaterItem, type LaunchMode, type Packet, type PacketItem, type PrTarget,
 } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
 import type { Ticket } from '../shared/tickets.ts';
@@ -138,6 +138,38 @@ function git(cwd: string, args: string[]): Promise<string> {
       else resolve(stdout.trim());
     });
   });
+}
+
+/**
+ * A worktree card's folders: a worktree of every repo, each on a new `branch`, next to the repo.
+ * A folder that isn't the top of a git repo (any folder can be context) is left as it is and named
+ * in `skipped`, except the home repo, which must be one. If any worktree can't be made, the ones
+ * already made are removed with their branches, so nothing is left half done.
+ */
+export async function makeWorktrees(repos: string[], home: string, key: string, branch: string): Promise<{ folders: CardFolder[]; skipped: string[] }> {
+  const folders: CardFolder[] = [];
+  const skipped: string[] = [];
+  try {
+    for (const repo of repos) {
+      const top = await git(repo, ['rev-parse', '--show-toplevel']).catch(() => '');
+      if (!top || !samePath(top, repo)) {
+        if (samePath(repo, home)) throw new Error(`${repoName(repo)} isn’t a git repo, so it can’t have a worktree.`);
+        skipped.push(repo);
+        continue;
+      }
+      const dir = worktreeFor(repo, key);
+      if (existsSync(dir)) throw new Error(`${dir} already exists, so the worktree for ${repoName(repo)} can’t go there.`);
+      await git(repo, ['worktree', 'add', dir, '-b', branch]).catch((e: Error) => { throw new Error(`Couldn't make a worktree for ${repoName(repo)}: ${e.message}`); });
+      folders.push({ repo, dir });
+    }
+  } catch (e) {
+    for (const f of folders) {
+      await git(f.repo, ['worktree', 'remove', '--force', f.dir]).catch(() => {});
+      await git(f.repo, ['branch', '-D', branch]).catch(() => {});
+    }
+    throw e;
+  }
+  return { folders, skipped };
 }
 
 /** claude.exe on PATH, so Windows Terminal starts the same one a terminal would. */
@@ -288,17 +320,20 @@ export class CardService {
       card.branchName = branch;
       this.step(card, `Made branch ${branch} in ${repoName(home)}`);
     } else {
-      const dir = worktreeFor(home, key);
-      if (existsSync(dir)) throw new Error(`${dir} already exists, so the worktree can't go there.`);
-      await git(home, ['worktree', 'add', dir, '-b', branch]).catch((e: Error) => { throw new Error(`Couldn't make a worktree for ${repoName(home)}: ${e.message}`); });
-      card.cwd = dir;
+      // Every repo gets its own worktree on the card's branch, so the card's code is what Try it runs, whatever the repos' usual folders are on.
+      const repos = includedRepos(card.packet);
+      const { folders, skipped } = await makeWorktrees([home, ...repos.filter((r) => !samePath(r, home))], home, key, branch);
+      card.folders = folders;
+      card.cwd = folderFor(card, home);
       card.branchName = branch;
-      this.step(card, `Made a worktree ${repoName(dir)} on ${branch}`);
+      this.step(card, folders.length === 1 ? `Made a worktree ${repoName(card.cwd)} on ${branch}` : `Made worktrees on ${branch}: ${folders.map((f) => repoName(f.dir)).join(', ')}`);
+      if (skipped.length) this.step(card, `Left ${skipped.map(repoName).join(', ')} as ${skipped.length === 1 ? 'it is' : 'they are'}: not a git repo`);
     }
+    if (card.launch.branch === 'pr' && card.pr) card.folders = [{ repo: start, dir: card.cwd }];
 
     card.model = modelFor(card.launch, this.opts.model, this.opts.userModel?.());
     const token = crypto.randomUUID();
-    const others = includedRepos(card.packet).filter((r) => !samePath(r, start));
+    const others = includedRepos(card.packet).filter((r) => !samePath(r, start)).map((r) => folderFor(card, r));
     const claudeArgs = ['--settings', writeHookSettings(), ...channelArgs(),
       '--permission-mode', card.launch.mode, ...((card.launch.model ?? this.opts.model) ? ['--model', card.launch.model ?? this.opts.model!] : []),
       ...others.flatMap((r) => ['--add-dir', r])];

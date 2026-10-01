@@ -8,6 +8,7 @@ import { normalize } from 'node:path';
 import { branchFor, cardRepos, type BootStep, type Card } from '../shared/cards.ts';
 import { parsePatch, type Changes } from '../shared/changes.ts';
 import { commitMessage, prBody, prTitle, type PullRequest, type ShipFile, type ShipPlan, type ShipRequest } from '../shared/ship.ts';
+import { isInside, samePath } from '../shared/workspaces.ts';
 
 /** A diff bigger than this is cut: the sheet says so. */
 const MAX_PATCH = 2 * 1024 * 1024;
@@ -119,7 +120,9 @@ export class ShipService {
     const others = files.filter((f) => !f.mine).length;
     if (others) notes.push(`${others} changed file${others === 1 ? '' : 's'} not written by this card ${others === 1 ? 'is' : 'are'} left out. Tick ${others === 1 ? 'it' : 'them'} to include.`);
     const elsewhere = (card.files ?? []).length - relativeTo(root, card.files ?? []).length;
-    if (elsewhere) notes.push(`${elsewhere} file${elsewhere === 1 ? '' : 's'} it changed in other repos ${elsewhere === 1 ? 'isn’t' : 'aren’t'} part of this PR.`);
+    // A worktree card's other repos: say which of its worktrees they are in, so they can be shipped from there.
+    const where = (card.folders ?? []).filter((f) => !samePath(f.dir, root) && (card.files ?? []).some((p) => isInside(p, f.dir))).map((f) => f.dir);
+    if (elsewhere) notes.push(`${elsewhere} file${elsewhere === 1 ? '' : 's'} it changed in other repos ${elsewhere === 1 ? 'isn’t' : 'aren’t'} part of this PR${where.length ? ` (in ${where.join(', ')}, on the same branch)` : ''}.`);
 
     let ahead = 0;
     if (branch && branch !== base) {

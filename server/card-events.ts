@@ -119,7 +119,7 @@ export function applyEvent(card: Card, event: string, input: HookInput, now: num
     case 'PostToolUse': {
       const path = s(toolInput.file_path) || s(toolInput.notebook_path);
       // Only the card's own repos count: a plan written to ~/.claude/plans is not a change to try.
-      const ours = [card.cwd, ...cardRepos(card)].some((r) => r && isInside(path, r));
+      const ours = [card.cwd, ...cardRepos(card), ...(card.folders ?? []).map((f) => f.dir)].some((r) => r && isInside(path, r));
       if (EDIT_TOOLS.has(tool) && path && ours && !files.includes(path)) files = [...files, path];
       if (!sub) {
         const content = typeof input.tool_response === 'string' ? input.tool_response : JSON.stringify(input.tool_response ?? '');

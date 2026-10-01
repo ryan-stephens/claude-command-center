@@ -1490,3 +1490,50 @@ Jira has no standard field for a QA reviewer. Teams add a custom one, and its id
 - Opening the loan through the scenario tool (for now a `!` step says to do it by hand).
 - More APIs at once: each needs its own port, and okteto forwards 8080 by default.
 - `pnpm run doctor` shows `okteto context` as invalid, because it runs without `KUBECONFIG`.
+
+## 53. A worktree card gets a worktree of every repo, and Try it runs the card's own code
+
+2026-10-01, the owner: working on several tickets at once, Try it should start the related APIs and the UI from *that card's* branches, not from whatever the repos' usual folders have checked out.
+
+**Why:**
+- A *New branch* card switches the branch in the repo's usual folder. Two cards in the same repo share that folder, so starting the second one changes the files under the first one's session and its Try it.
+- A *New worktree* card got a worktree of its **home repo only**. Every other repo, and so every API in the stack, ran from its usual folder, on whatever branch was there. `{{branch}}`, and so the Okteto deployment name, came from that folder too.
+
+**What changed:**
+- **Every git repo in the card's context gets a worktree** on the card's one branch, next to the repo: `loans-api` → `loans-api-card-4` (`makeWorktrees` in `server/cards.ts`).
+  - A folder that isn't the top of a git repo (the *Folders* tab can add any folder) is left as it is and named in the start-up log.
+  - If any worktree can't be made (the folder is taken, the branch exists), the ones already made are removed with their branches, and the card doesn't start, as before.
+- **The card keeps them** in `card.folders` (`{ repo, dir }`); `folderFor(card, repo)` gives the folder to use. A review card's copy of the PR's branch is recorded the same way.
+- **Claude works in them:** `--add-dir` gets the worktrees, and the packet's *Repos* section lists their paths, with "Each repo above is a worktree of its own on that branch: change them there, not in the repos' usual folders." The home repo's line used to show its usual folder even on a worktree card; it now shows where Claude actually starts.
+- **Try it uses them:** `runPlaces` maps each repo name to the card's worktree of it. So a recipe's `@repo` steps, the stack's APIs and its UI all run from the card's folders. The picker's *changed on this branch* looks at the worktree, and `{{branch}}` is the card's branch.
+- **Edits in the worktrees count as the card's** files (the list Ship uses to tick files and to note what is elsewhere). `D` still shows the home repo only.
+- **Ship is still one repo** (the home repo's worktree). Its note about changes in other repos now names the worktrees they are in, so they can be shipped from there by hand.
+- **The new-card screen** calls the choice *New worktree of each repo* when the card has more than one repo, and *What happens* shows a `git worktree add` line per repo.
+- **The stack editor's draft** (`stackDraft`) starts the UI with `if not exist node_modules npm install`, because a new worktree of the UI has no `node_modules`.
+
+**Verified:**
+- Unit tests:
+  - `makeWorktrees` against real git repos: two repos and a plain folder give two worktrees on the same branch, the plain folder skipped, and the API's usual folder still on someone else's branch;
+  - a clash on the second repo removes the first worktree and its branch, but keeps a branch that was already there;
+  - a home folder that isn't a git repo is refused;
+  - `folderFor`, the packet's paths and sentence, and *What happens*.
+- A scripted walkthrough on an isolated server (:7792), with a worktree card seeded through `makeWorktrees` (no terminal tab opened). The workspace had real git repos `loans-api` and `shop-ui` and a stack. The card's change was only in its worktree of `loans-api`, and the usual `loans-api` folder had been switched to another branch.
+  - The picker ticked `loans-api` as *changed on this branch*.
+  - The API ran from `loans-api-card-4` on `card-4-fee-rounding`, with the card's change.
+  - The UI ran from `shop-ui-card-4` on the same branch, checked by asking the UI itself.
+  - Nothing ran from the usual folder. No console errors. Screenshots looked at.
+- `pnpm typecheck`, `pnpm test` (250) and `tsc --noUnusedLocals` pass.
+
+**Not verified:** a real card start through Windows Terminal with several worktrees: it opens a tab, which stops at Claude Code's trust prompt for the new folder. The start path is the tested `makeWorktrees` plus the existing tab launch.
+
+**Costs to know about:**
+- Each worktree needs its own install (`npm install` for a UI; `dotnet` restores on its first build).
+- Claude Code asks to trust the new home folder once, in the tab.
+- The worktrees stay when a card is removed; delete them with `git worktree remove` for now.
+- Two cards can't run the same API at once: they would want the same forwarded port.
+
+**Not yet:**
+- Ship for every repo the card changed (a commit, push and PR per repo).
+- A worktree for a repo added later with `c`: it is used from its usual folder.
+- Worktrees as a workspace's default for new cards, and removing a card's worktrees from the app when it's done.
+- A warning before Try it when a repo it will run from its usual folder is on a different branch from the card's.

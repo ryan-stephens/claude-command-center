@@ -9,7 +9,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { KEY_HINTS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
-import { cardRepos, type Card } from '../shared/cards.ts';
+import { cardRepos, folderFor, type Card } from '../shared/cards.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, cleanDraft, focusTab, userModel, writeHookSettings } from './cards.ts';
@@ -114,7 +114,8 @@ function runPlaces(card: Card): RunPlaces {
   const cwd = card.cwd ?? home;
   const repos: Record<string, string> = {};
   const ws = store.loadWorkspaces().find((w) => w.id === card.workspaceId);
-  for (const p of [...(ws?.repos ?? []), ...cardRepos(card)]) repos[repoName(p).toLowerCase()] = p;
+  // Each repo by its usual folder name, run from the card's worktree of it when it has one.
+  for (const p of [...(ws?.repos ?? []), ...cardRepos(card)]) repos[repoName(p).toLowerCase()] = folderFor(card, p);
   if (home) repos[repoName(home).toLowerCase()] = cwd;
   return { cwd, repos };
 }

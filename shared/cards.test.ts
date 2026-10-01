@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { branchFor, fmtK, homeOf, includedRepos, launchLines, memoryPct, modelFor, modelName, packetText, worktreeFor, wtArg, type CardDraft, type Packet } from './cards.ts';
+import { branchFor, fmtK, folderFor, homeOf, includedRepos, launchLines, memoryPct, modelFor, modelName, packetText, worktreeFor, wtArg, type CardDraft, type Packet } from './cards.ts';
 
 const repo = (id: string, on = true) => ({ kind: 'repo' as const, id, label: id.split('\\').pop()!, on });
 const packet = (over: Partial<Packet> = {}): Packet => ({
@@ -57,6 +57,19 @@ test('sizes read like the mock: tenths of a thousand tokens, and at least 1% of 
   assert.equal(memoryPct(20_000), 10);
 });
 
+test('a worktree card tells Claude its worktrees, not the repos’ usual folders', () => {
+  const folders = [{ repo: 'D:\\repos\\web-app', dir: 'D:\\repos\\web-app-card-3' }, { repo: 'D:\\repos\\design-tokens', dir: 'D:\\repos\\design-tokens-card-3' }];
+  assert.equal(folderFor({ folders }, 'd:/repos/design-tokens/'), 'D:\\repos\\design-tokens-card-3', 'paths compared as Windows does');
+  assert.equal(folderFor({ folders }, 'D:\\repos\\cdn-worker'), 'D:\\repos\\cdn-worker', 'no worktree: its own folder');
+  assert.equal(folderFor({}, 'D:\\repos\\web-app'), 'D:\\repos\\web-app');
+  const text = packetText({ ...draft({ launch: { ...draft().launch, branch: 'worktree' } }), folders }, 'CARD-3', 'card-3-x');
+  assert.match(text, /- web-app \(you start here\): D:\\repos\\web-app-card-3\n/);
+  assert.match(text, /- design-tokens \(also yours to read and edit\): D:\\repos\\design-tokens-card-3\n/);
+  assert.match(text, /- cdn-worker \(also yours to read and edit\): D:\\repos\\cdn-worker\n/);
+  assert.match(text, /Work on the branch card-3-x\. Each repo above is a worktree of its own/);
+  assert.doesNotMatch(packetText(draft(), 'CARD-3', 'card-3-x'), /worktree of its own/);
+});
+
 test('wt arguments survive Windows Terminal re-quoting them', () => {
   assert.equal(wtArg('reply "ok"'), 'reply \\"ok\\"');
   assert.equal(wtArg('a; b'), 'a\\; b');
@@ -81,7 +94,9 @@ test('what happens: branch, then the terminal tab with the extra repos and the m
   assert.match(lines[2], /--permission-mode plan --model haiku --add-dir D:\\repos\\design-tokens --add-dir D:\\repos\\cdn-worker -- "Plan CARD-3\."$/);
   const wt = launchLines(draft({ launch: { ...draft().launch, branch: 'worktree' } }), 'CARD-3');
   assert.match(wt[0], /worktree add D:\\repos\\web-app-card-3 -b card-3/);
-  assert.match(wt[2], /-d D:\\repos\\web-app-card-3 /);
+  assert.match(wt[1], /git -C D:\\repos\\design-tokens worktree add D:\\repos\\design-tokens-card-3 -b card-3/, 'every repo gets a worktree on the same branch');
+  assert.match(wt[2], /git -C D:\\repos\\cdn-worker worktree add D:\\repos\\cdn-worker-card-3 -b card-3/);
+  assert.match(wt[4], /-d D:\\repos\\web-app-card-3 .*--add-dir D:\\repos\\design-tokens-card-3 --add-dir D:\\repos\\cdn-worker-card-3 /, 'Claude gets the worktrees, not the usual folders');
   assert.equal(launchLines(draft({ launch: { ...draft().launch, branch: 'current' } }), 'CARD-3').length, 2);
   assert.match(launchLines(draft({ launch: { ...draft().launch, model: 'opus' } }), 'CARD-3', 'haiku')[2], /--model opus /, 'the card’s choice wins over the server’s');
   assert.doesNotMatch(launchLines(draft(), 'CARD-3')[2], /--model/, 'no choice, no pin: Claude Code decides');
