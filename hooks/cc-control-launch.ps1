@@ -16,6 +16,8 @@
 # survive Windows Terminal re-quoting the command line, and are quoted here the way Windows wants.
 param([Parameter(Mandatory = $true)][string]$Payload)
 $ErrorActionPreference = 'Stop'
+# No progress bar from the web requests: it is drawn in this console, over claude's screen.
+$ProgressPreference = 'SilentlyContinue'
 
 # PowerShell 5.1 hands a top-level JSON array back as one nested object; the pipeline unrolls it.
 $decoded = ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Payload)))
@@ -87,16 +89,23 @@ public static bool Type(char c) {
 }
 '@
 
-# What the page sends is typed as a person would: one character at a time, a newline as a
-# backslash then Enter (how Claude Code's prompt takes a new line), and Enter at the end.
+# What the page sends is typed as a person would: the characters, a newline as a backslash then
+# Enter (how Claude Code's prompt takes a new line), then a pause, then Enter on its own. The
+# pause matters: characters that arrive together read as a paste, and an Enter inside a paste is
+# a line break, not a send; one that comes after the paste has settled sends.
 function Type-Text([string]$text) {
   $lines = $text -replace "`r`n", "`n" -split "`n"
   for ($i = 0; $i -lt $lines.Length; $i++) {
     foreach ($ch in $lines[$i].ToCharArray()) { [void][CcControl.Con]::Type($ch) }
-    if ($i -lt $lines.Length - 1) { [void][CcControl.Con]::Type('\'); [void][CcControl.Con]::PressEnter(); Start-Sleep -Milliseconds 30 }
+    if ($i -lt $lines.Length - 1) { [void][CcControl.Con]::Type('\'); [void][CcControl.Con]::PressEnter(); Start-Sleep -Milliseconds 60 }
   }
-  Start-Sleep -Milliseconds 120
+  Start-Sleep -Milliseconds 700
   [void][CcControl.Con]::PressEnter()
+}
+# Claude Code's prompt is on screen (its shortcut hint under the input box); before that, keys would be lost.
+function Prompt-Ready() {
+  $screen = [CcControl.Con]::Screen()
+  return ($screen -match '\? for shortcuts') -or ($screen -match 'Try "')
 }
 function Press-Keys([string[]]$keys) {
   foreach ($k in $keys) {
@@ -133,17 +142,27 @@ $p = [System.Diagnostics.Process]::Start($psi)
 # the prompt may still come, long ones after).
 $deadline = (Get-Date).AddSeconds(30)
 $watching = $true
+# Nothing is typed until the prompt is on screen (or 40 s have passed, in case its hint changes).
+$readyBy = (Get-Date).AddSeconds(40)
+$ready = $false
+# What came before the prompt was ready waits here, in order; the polls go on meanwhile so the server keeps seeing the tab alive.
+$pending = New-Object System.Collections.ArrayList
+function Type-Item($item) {
+  if ($item.kind -eq 'text' -and $item.text) { Type-Text ([string]$item.text) }
+  elseif ($item.kind -eq 'keys' -and $item.keys) { Press-Keys @($item.keys | ForEach-Object { [string]$_ }) }
+}
 while (-not $p.HasExited) {
   if ($watching) {
     $screen = [CcControl.Con]::Screen()
     if ($screen -match 'Loading development channels' -and $screen -match 'I am using this for local development') { [void][CcControl.Con]::PressEnter(); $watching = $false }
     elseif ((Get-Date) -ge $deadline) { $watching = $false }
   }
+  if (-not $ready) { $ready = (Prompt-Ready) -or ((Get-Date) -ge $readyBy) }
+  if ($ready -and $pending.Count -gt 0) { foreach ($item in @($pending)) { Type-Item $item }; $pending.Clear() }
   if ($polling) {
-    $next = Poll-Next $(if ($watching) { 1 } else { 20 })
+    $next = Poll-Next $(if ($watching -or -not $ready) { 1 } else { 20 })
     if ($next -and -not $p.HasExited) {
-      if ($next.kind -eq 'text' -and $next.text) { Type-Text ([string]$next.text) }
-      elseif ($next.kind -eq 'keys' -and $next.keys) { Press-Keys @($next.keys | ForEach-Object { [string]$_ }) }
+      if ($ready) { Type-Item $next } else { [void]$pending.Add($next) }
     }
   } else {
     if (-not $watching) { $p.WaitForExit(); break }

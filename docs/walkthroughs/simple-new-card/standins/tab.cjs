@@ -4,6 +4,8 @@
 const fs = require('node:fs');
 const out = process.argv[2];
 fs.writeFileSync(out, '');
+// What Claude Code shows under its input box: the launcher types nothing until it sees this.
+process.stdout.write('\n> \n  ? for shortcuts\n');
 process.stdin.setRawMode(true);
 process.stdin.resume();
 process.stdin.setEncoding('utf8');
