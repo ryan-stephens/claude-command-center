@@ -1970,3 +1970,13 @@ They are two different things, and the preview now says so by putting them in th
 **What it does.** The controls take their own weight, case and spacing back (`fieldClass`); the body is in the text face at 14px (it is prose with `{{placeholders}}`, not code; the placeholder buttons beside it stay mono); the example box is the text face too, in the secondary colour on a soft ground; the names in the list are medium rather than semibold. Nothing moved and no key changed.
 
 **Verified:** `pnpm typecheck`; computed weights of the textarea, the name box and the example are 400 with normal letter-spacing; dark-mode screenshots of the list and the editor looked at (`colorScheme: 'dark'` and the theme set to dark); `walk-simple` (43) and `walk-prompts` (40) still pass.
+
+## 75. The hand on everything clickable
+
+2026-10-02, the owner: "make sure that things that are clickable make the mouse change to the clickable pointer on hover, site wide".
+
+**Cause.** Tailwind v4's reset leaves buttons on the arrow cursor (v3 gave them the hand), and most of the app's clickable things are buttons.
+
+**What it does.** One rule in `web/styles.css`: every enabled button, link with an href, `role` of button / option / tab / radio / menuitem / switch / checkbox, `label[for]`, select, summary, checkbox and radio input shows the hand; a disabled button or an `aria-disabled` option keeps the arrow. The few plain elements that take clicks (the `?` `B` rows, an approval question and its options, the source heading in the Add context popup) carry `cursor-pointer` themselves; the line's filter label, which only focuses its box, shows the text cursor.
+
+**Verified:** an ad hoc Playwright pass reading the computed cursor: every header button and link, 17 buttons, links, options, tabs and radios on the new-card popup, the ticket's counts row and *(change)*, the Add context rows, the prompts dialog's rows and the `?` `B` rows all answer `pointer`; a disabled button does not. `walk-simple` (43) still passes.

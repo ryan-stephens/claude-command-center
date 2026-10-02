@@ -120,6 +120,11 @@ kbd:not(.kc) { font: 600 12px var(--font-mono); padding: 0 5px; border: 1px soli
 .btn-ghost:hover { background: var(--c-raise); color: var(--c-ink); }
 .btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
 
+/* Anything clickable shows the hand (§75): Tailwind's reset leaves buttons on the arrow. Plain elements that take clicks carry cursor-pointer themselves. */
+button:not(:disabled), [role="button"], [role="option"]:not([aria-disabled="true"]), [role="tab"], [role="radio"]:not(:disabled), [role="menuitem"], [role="switch"], [role="checkbox"],
+a[href], label[for], select:not(:disabled), summary, input[type="checkbox"]:not(:disabled), input[type="radio"]:not(:disabled) { cursor: pointer; }
+button:disabled, [role="option"][aria-disabled="true"] { cursor: default; }
+
 .field { width: 100%; border: 1px solid var(--c-line); border-radius: 10px; background: var(--c-surface); color: var(--c-ink); padding: 0.55rem 0.75rem; outline: none; }
 .field:focus { border-color: var(--c-ring); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-ring) 20%, transparent); }
 

@@ -70,12 +70,12 @@ export function BindingsDialog() {
         <h2 className="mb-1 text-[19px] font-bold tracking-tight">Keys and hints</h2>
         <p className="mb-4 text-sm text-sub">Saved on this computer, for every browser you open Command Center in.</p>
         <ul className="space-y-0.5">
-          <li onClick={() => { setIndex(0); cycleHints(); }} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${index === 0 ? 'is-focus bg-raise' : ''}`} title="The keycaps on buttons, chips and headers, and the key bar at the bottom. The keys work whatever you pick; ? always lists them.">
+          <li onClick={() => { setIndex(0); cycleHints(); }} className={`cursor-pointer flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${index === 0 ? 'is-focus bg-raise' : ''}`} title="The keycaps on buttons, chips and headers, and the key bar at the bottom. The keys work whatever you pick; ? always lists them.">
             <span className="grow text-sub">Key hints on the screens</span>
             <span className="font-semibold">{HINTS_LABEL[hints]}</span>
             <span className="text-xs text-faint">always · on hover · off</span>
           </li>
-          <li onClick={() => { setIndex(1); toggleTrust(); }} className={`grid gap-0.5 rounded-xl px-3 py-2 text-sm ${index === 1 ? 'is-focus bg-raise' : ''}`}>
+          <li onClick={() => { setIndex(1); toggleTrust(); }} className={`cursor-pointer grid gap-0.5 rounded-xl px-3 py-2 text-sm ${index === 1 ? 'is-focus bg-raise' : ''}`}>
             <div className="flex items-center gap-3">
               <span className="grow text-sub">Trust a card’s new worktrees in Claude Code</span>
               <span className="font-semibold">{trust ? 'On' : 'Off'}</span>
@@ -83,7 +83,7 @@ export function BindingsDialog() {
             </div>
             <span className="text-xs text-faint">On: before a worktree card’s tab opens, cc-control sets <span className="font-mono">projects["&lt;folder&gt;"].hasTrustDialogAccepted = true</span> for each new folder in <span className="font-mono">~/.claude.json</span>, Claude Code’s own file, so the tab doesn’t stop at “trust this folder?”. Nothing else in that file is touched. Off: answer the prompt in the tab.</span>
           </li>
-          <li onClick={() => { setIndex(2); switchLook(); }} className={`grid gap-0.5 rounded-xl px-3 py-2 text-sm ${index === 2 ? 'is-focus bg-raise' : ''}`}>
+          <li onClick={() => { setIndex(2); switchLook(); }} className={`cursor-pointer grid gap-0.5 rounded-xl px-3 py-2 text-sm ${index === 2 ? 'is-focus bg-raise' : ''}`}>
             <div className="flex items-center gap-3">
               <span className="grow text-sub">The new-card screen</span>
               <span className="font-semibold">{look === 'simple' ? 'Simple' : 'Full'}</span>
@@ -95,7 +95,7 @@ export function BindingsDialog() {
             const at = i + SETTING_ROWS;
             const custom = Boolean(overrides[a.id]);
             return (
-              <li key={a.id} onClick={() => setIndex(at)} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${at === index ? 'is-focus bg-raise' : ''}`}>
+              <li key={a.id} onClick={() => setIndex(at)} className={`cursor-pointer flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${at === index ? 'is-focus bg-raise' : ''}`}>
                 <span className="grow text-sub">{a.label}</span>
                 {capturing && at === index
                   ? <span className="pulse font-semibold text-acc">press the new keys…</span>

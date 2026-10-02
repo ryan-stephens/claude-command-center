@@ -85,7 +85,7 @@ function QuestionBlock({ q, qi, qa, current, readOnly, onChange }: { q: Question
   const keyboard = useStore((s) => s.zone === 'board') && current;
   const lit = (row: number) => keyboard && qa.hl === row;
   return (
-    <section className={`rounded-xl ${current ? 'bg-raise/50 p-3 outline-2 outline-acc/50' : readOnly ? '' : 'p-3 opacity-80'}`} onClick={() => !readOnly && onChange({ ...qa, at: qi })}>
+    <section className={`${readOnly ? '' : 'cursor-pointer'} rounded-xl ${current ? 'bg-raise/50 p-3 outline-2 outline-acc/50' : readOnly ? '' : 'p-3 opacity-80'}`} onClick={() => !readOnly && onChange({ ...qa, at: qi })}>
       <div className="mb-1.5 flex items-center gap-2">
         {q.header && <span className="rounded bg-raise px-1.5 text-xs font-semibold text-sub">{q.header}</span>}
         {q.multiSelect && <span className="text-xs text-faint">pick any</span>}
@@ -114,7 +114,7 @@ function QuestionBlock({ q, qi, qa, current, readOnly, onChange }: { q: Question
         })}
       </ul>
       {!readOnly && (
-        <label className={`mt-1.5 flex items-center gap-2.5 rounded-xl px-1 py-0.5 ${lit(q.options.length) ? 'is-focus' : ''}`} onClick={(e) => e.stopPropagation()}>
+        <label className={`cursor-pointer mt-1.5 flex items-center gap-2.5 rounded-xl px-1 py-0.5 ${lit(q.options.length) ? 'is-focus' : ''}`} onClick={(e) => e.stopPropagation()}>
           <Key k="O" size="sm" />
           <input
             id={`qa-other-${qi}`}

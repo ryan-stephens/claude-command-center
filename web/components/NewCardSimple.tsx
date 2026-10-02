@@ -471,7 +471,7 @@ function Picker({ c, embedded = false }: { c: Composer; embedded?: boolean }) {
           // A folder of repos added for this card (§65) heads its repos: its path, and × takes it off; the last row adds another.
           row.role === 'source'
             ? <div key={row.id} id={`pick-${i}`} role="heading" aria-level={3} onClick={() => updateComposer((x) => withSimple(x, { ai: i }))}
-                className={`mt-1.5 flex items-center gap-2.5 rounded-lg border-t border-line/60 px-2.5 pb-1 pt-2 text-[12.5px] ${i === ai ? 'is-focus bg-raise' : ''}`}>
+                className={`mt-1.5 flex cursor-pointer items-center gap-2.5 rounded-lg border-t border-line/60 px-2.5 pb-1 pt-2 text-[12.5px] ${i === ai ? 'is-focus bg-raise' : ''}`}>
                 <span className="min-w-0 grow truncate font-mono text-sub" title={row.label}>{row.label}</span>
                 <span className="shrink-0 text-xs text-faint">{row.sub}</span>
                 <button className="shrink-0 text-faint hover:text-ink" onClick={(e) => { e.stopPropagation(); pickAt(c, i, true); }} title="Take this folder off the list (x)" aria-label={`Take ${row.label} off the list`}>×</button>

@@ -91,7 +91,7 @@ function SearchBox() {
   const ref = useRef<HTMLInputElement>(null);
   const open = searching || Boolean(q);
   return (
-    <label className={`flex items-center gap-2 rounded-lg border bg-surface py-1 pl-2 pr-1.5 ${open ? 'border-ring' : 'border-line text-faint'}`} onClick={() => ref.current?.focus()}>
+    <label className={`flex cursor-text items-center gap-2 rounded-lg border bg-surface py-1 pl-2 pr-1.5 ${open ? 'border-ring' : 'border-line text-faint'}`} onClick={() => ref.current?.focus()}>
       <Key k="/" size="sm" />
       <input
         id="line-q" ref={ref} type="text" autoComplete="off" value={q} placeholder="Filter"
