@@ -79,7 +79,7 @@ function Legend() {
   const hasStack = useStore((s) => Boolean(shown && cardRecipe(s.recipes, shown.workspaceId, cardRepos(shown)[0])?.stack));
   const hasWorktrees = Boolean(shown && ownFolders(shown).length);
   const hints = useStore((s) => s.settings.keyHints ?? 'always');
-  const isSimple = useStore((s) => Boolean(s.composer && !s.composer.addTo && (s.settings.newCardLook ?? 'simple') === 'simple'));
+  const isSimple = useStore((s) => Boolean(s.composer && (s.settings.newCardLook ?? 'simple') === 'simple'));
   const spBlock = useStore((s) => (s.composer ? simpleOf(s.composer).block : 'ticket'));
   const spAdding = useStore((s) => Boolean(s.composer && simpleOf(s.composer).adding));
   const spContext = useStore((s) => Boolean(s.composer && simpleOf(s.composer).adding === 'context'));

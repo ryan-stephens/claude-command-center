@@ -4,7 +4,7 @@
 
 import { unrenderPrompt } from '../shared/prompts.ts';
 import { flash, get, set } from './store.ts';
-import { addFolder, addSource, cardFolders, composerKey, cycleKind, cycleModel, dropTicket, looksLikePath, nextTab, packetRows, pickTicket, removeSource, repoOrigin, sourceRows, stepOption, ticketSources, togglePacketRow, toggleSource, type Composer, type SourceTab } from './line-model.ts';
+import { addFolder, addSource, cardFolders, cardHasRepo, cardHasTicket, composerKey, cycleKind, cycleModel, dropTicket, looksLikePath, nextTab, packetRows, pickTicket, removeSource, repoOrigin, sourceRows, stepOption, ticketSources, togglePacketRow, toggleSource, type Composer, type SourceTab } from './line-model.ts';
 import { foundFor, keepRepo, leaveComposer, startWork, updateComposer } from './line-keys.ts';
 import { chips, howRows, ownMessage, promptContext, promptRows, simpleOf, stepBlock, usePrompt, withSimple } from './simple-model.ts';
 import { listFolder, peekRepoSource, pickFolderOnDisk, send, writeMessageWithClaude } from './ws.ts';
@@ -14,10 +14,10 @@ export function develop(c: Composer): Composer {
   return c.kind === 'build' && c.launch.branch !== 'worktree' ? { ...c, launch: { ...c.launch, branch: 'worktree' } } : c;
 }
 
-/** Is the new-card screen in its simple look right now? (Adding to a running card always uses the full screen.) */
+/** Is the new-card screen in its simple look right now? (Adding to a running card is then the + Context popup over the chat, §88.) */
 export function simpleLook(): boolean {
   const s = get();
-  return Boolean(s.composer && !s.composer.addTo) && (s.settings.newCardLook ?? 'simple') === 'simple';
+  return Boolean(s.composer) && (s.settings.newCardLook ?? 'simple') === 'simple';
 }
 
 /** Shift+L: the other look, remembered on the server like the other settings. */
@@ -76,6 +76,8 @@ export function openPicker(kind: 'context' | 'replace', tab: SourceTab = 'repos'
 }
 
 export function closePicker(): void {
+  // The + Context popup on an open card is the picker alone: closing it is leaving (§88).
+  if (get().composer?.addTo) { leaveComposer(); return; }
   updateComposer((x) => withSimple({ ...x, q: '' }, { adding: null, ai: 0, note: undefined }));
 }
 
@@ -124,9 +126,11 @@ export function pickerList(c: Composer): PickerRow[] {
           : { id: 'more', label: '+ Another folder of repos…', sub: bare ? 'the library is empty · browse, or paste a path above' : 'for this card only · browse, or paste a path above', role: 'more' };
       }
       const r = row.repo;
+      // Adding to a running card: what it can already use is marked, not offered again.
+      if (c.addTo && cardHasRepo(c, r.path)) return { id: r.path, label: r.name, sub: 'has it', in: true };
       const where = repoOrigin(c, r.path);
       const on = where === 'workspace' ? c.packet.workspace.find((x) => x.id === r.path)?.on !== false : where === 'card';
-      return { id: r.path, label: r.name, sub: where === 'workspace' ? (on ? 'lane' : 'lane · left out') : where === 'card' ? 'added' : r.branch ?? '', in: Boolean(on) };
+      return { id: r.path, label: r.name, sub: where === 'workspace' ? (on ? 'lane' : 'lane · left out') : where === 'card' ? (c.addTo ? 'adding' : 'added') : r.branch ?? '', in: Boolean(on) };
     });
   }
   if (tab === 'folders') {
@@ -138,8 +142,9 @@ export function pickerList(c: Composer): PickerRow[] {
     .filter((t) => !(one && c.ticket?.key === t.key)) // choosing another: this card's own is not a choice
     .map((t) => {
       const own = c.ticket?.key === t.key;
+      const had = Boolean(c.addTo) && cardHasTicket(c, t.key);
       const related = c.packet.card.some((x) => x.id === `ticket:${t.key}`);
-      return { id: t.key, key: t.key, label: t.title, sub: own ? 'this card’s' : related ? 'related' : t.found ? 'found in Jira' : t.status, in: !one && (own || related) };
+      return { id: t.key, key: t.key, label: t.title, sub: had ? 'has it' : own ? 'this card’s' : related ? (c.addTo ? 'adding' : 'related') : t.found ? 'found in Jira' : t.status, in: !one && (own || related || had) };
     });
 }
 
@@ -234,6 +239,7 @@ export function pickAt(c: Composer, at: number, remove = false): void {
       else say('The × at the end takes this folder and its unpicked repos off the list.');
       return;
     }
+    if (c.addTo && cardHasRepo(c, row.repo.path)) { say(`${c.addTo.key} can already use ${row.repo.name}.`); return; }
     if (remove && repoOrigin(c, row.repo.path) !== 'card') { say('Only a repo this card added can be taken out; a lane repo is left out instead.', true); return; }
     updatePicker((x) => clearNote(toggleSource(x, row.repo.path)));
     return;
@@ -246,6 +252,7 @@ export function pickAt(c: Composer, at: number, remove = false): void {
   }
   const t = ticketSources(c, s.tickets, started(), foundFor(s, c.q))[at];
   if (!t) { if (!s.tickets.length) say('No tickets yet. Connect Jira or Trello from the board, or show the demo tickets.', true); return; }
+  if (c.addTo && cardHasTicket(c, t.key)) { say(`${c.addTo.key} already has ${t.key}.`); return; }
   updatePicker((x) => {
     if (sp.adding === 'context' && x.packet.card.some((i) => i.id === `ticket:${t.key}`)) {
       // Already related: Enter takes it out again.
@@ -253,7 +260,8 @@ export function pickAt(c: Composer, at: number, remove = false): void {
       return { ...x, packet: { ...x.packet, card: x.packet.card.filter((_, i) => i !== row) } };
     }
     const base = sp.adding === 'replace' ? dropTicket(x, s.nextKey) : x;
-    const r = pickTicket(base, t, s.workspaces, started(), s.recipes);
+    // Adding to a running card: a ticket another card has is still a fine thing to relate.
+    const r = pickTicket(base, t, s.workspaces, x.addTo ? new Set() : started(), s.recipes);
     if (typeof r === 'string') return r;
     // A card with no ticket takes the first as its own and the search closes; otherwise the picker stays for more.
     const closes = sp.adding !== 'context' || !x.ticket;
@@ -341,10 +349,12 @@ function simpleTyping(e: KeyboardEvent, c: Composer): boolean {
   const el = e.target as HTMLElement;
   const sp = simpleOf(c);
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { el.blur(); startWork(); return true; }
+  // The + Context popup (§88) opens with the cursor in its search box: Esc there is Esc on the popup, back to the chat.
+  if (e.key === 'Escape' && c.addTo && el.id === 'cp-q') { el.blur(); leaveComposer(); return true; }
   if (e.key === 'Escape') { el.blur(); return true; }
   if (e.key === 'Tab') {
     el.blur();
-    if (sp.adding === 'context') pickerTab(e.shiftKey ? -1 : 1);
+    if (sp.adding === 'context' && el.id === 'cp-q') pickerTab(e.shiftKey ? -1 : 1);
     else if (!sp.adding) updateComposer((x) => stepBlock(x, e.shiftKey ? -1 : 1));
     return true;
   }
@@ -370,8 +380,9 @@ export function simpleKeys(e: KeyboardEvent, typing: boolean): boolean {
   const sp = simpleOf(c);
   if (typing) return simpleTyping(e, c);
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { startWork(); return true; }
-  if (e.key === 'L' && e.shiftKey && !e.ctrlKey && !e.altKey) { switchLook(); return true; }
-  if (e.key === 'E' && e.shiftKey && !e.ctrlKey && !e.altKey && !c.preview) { openPromptsDialog(); return true; }
+  // The + Context popup on an open card (§88) is the picker alone: no look to switch, no kind, model or preview.
+  if (e.key === 'L' && e.shiftKey && !e.ctrlKey && !e.altKey && !c.addTo) { switchLook(); return true; }
+  if (e.key === 'E' && e.shiftKey && !e.ctrlKey && !e.altKey && !c.preview && !c.addTo) { openPromptsDialog(); return true; }
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
   if (e.key === 'Escape') {
     if (sp.adding) closePicker();
@@ -380,6 +391,7 @@ export function simpleKeys(e: KeyboardEvent, typing: boolean): boolean {
     else leaveComposer();
     return true;
   }
+  if (c.addTo && (e.key === 'p' || e.key === 'k' || e.key === 'm')) return false;
   if (e.key === 'p') { updateComposer((x) => ({ ...x, preview: !x.preview })); return true; }
   if (e.key === 'k') { updateComposer((x) => develop(cycleKind(x, composerKey(x, s.nextKey), s.workspaces, s.recipes))); return true; }
   if (e.key === 'm') { updateComposer(cycleModel); return true; }

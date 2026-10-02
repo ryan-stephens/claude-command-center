@@ -12,6 +12,7 @@ let n = 0; const results = [];
 const check = (name, ok, extra = '') => { results.push([ok ? 'PASS' : 'FAIL', name, extra]); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${extra}`); };
 const shot = async (page, name) => { n += 1; await page.screenshot({ path: path.join(OUT, `${String(n).padStart(2, '0')}-${name}.png`) }); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (fn, ms = 20000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await fn()) return true; await sleep(250); } return false; };
 
 /** Ask the server something through the page's own socket (the server checks Origin) and wait for the reply with the same reqId. */
 async function ask(page, msg) {
@@ -156,6 +157,23 @@ async function ask(page, msg) {
   const ctx = view().getByRole('region', { name: 'Context' });
   check('Shift+C: Context, with what was added since', await ctx.isVisible() && await ctx.getByText('Round money down').isVisible());
   await shot(page, 'plan-context');
+  // c: + Context is a popup over the chat (§88), the new-card screen's picker with a note; Ctrl+Enter adds, the card stays open.
+  await page.keyboard.press('c');
+  await sleep(500);
+  const popup = page.getByRole('group', { name: 'Add context to SHOP-150' });
+  check('c opens the Add context popup over the card', await popup.isVisible() && await view().isVisible() && (await page.getByText('Add context to a running card').count()) === 0);
+  check('the card’s repos are marked as already there', (await popup.getByText('has it').count()) >= 1);
+  await shot(page, 'plan-add-context');
+  await popup.locator('#cp-note').fill('Round the fee down, never up');
+  await page.keyboard.press('Control+Enter');
+  await sleep(800);
+  check('Ctrl+Enter adds the note and closes the popup', !(await popup.isVisible().catch(() => false)));
+  check('the note waits under Added since', await until(async () => /Round the fee down, never up/.test(await view().getByRole('region', { name: 'Context' }).innerText()), 5000));
+  await page.keyboard.press('c');
+  await sleep(400);
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  check('Esc on the popup goes back to the chat', (await page.getByRole('group', { name: 'Add context to SHOP-150' }).count()) === 0 && await view().isVisible());
   await page.keyboard.press('m');
   await sleep(300);
   const more = view().getByRole('region', { name: 'More' });

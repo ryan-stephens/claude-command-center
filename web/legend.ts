@@ -147,7 +147,8 @@ function simpleLegend(x: LineLegendInput): LegendItem[] {
       ...(sp.folders ? [{ keys: ['b'], label: 'Browse' }, { keys: ['x'], label: 'Take off' }]
         : sp.repos ? [{ keys: ['b'], label: 'A folder of repos' }, ...(sp.onSource ? [{ keys: ['x'], label: 'Take the folder off' }] : []), { keys: ['/'], label: 'Search' }]
         : [{ keys: ['/'], label: 'Search' }]),
-      { keys: ['Esc'], label: sp.context ? 'Done' : 'Close' },
+      // + Context on an open card (§88): Ctrl+Enter adds to it, Esc goes back to the chat.
+      ...(x.addingTo ? [{ keys: ['Ctrl Enter'], label: `Add to ${x.addingTo}`, tone: 'acc' as const }, { keys: ['Esc'], label: 'Cancel' }] : [{ keys: ['Esc'], label: sp.context ? 'Done' : 'Close' }]),
     ];
   }
   const here: LegendItem[] = sp.block === 'ticket' ? [{ keys: ['Enter'], label: sp.hasTicket ? 'Change ticket' : 'Find a ticket' }, ...(sp.hasTicket ? [{ keys: ['Space'], label: sp.details ? 'Hide details' : 'Details' }, ...(sp.ticketLink ? [{ keys: ['o'], label: 'Open in the tracker' }] : []), { keys: ['x'], label: 'No ticket' }] : [])]

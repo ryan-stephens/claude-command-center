@@ -30,8 +30,8 @@ export function useExpandKey(): string {
 
 export function TicketLine() {
   const composer = useStore((s) => Boolean(s.composer));
-  // The simple look (§59) makes cards; adding to a running card keeps the full screen, which knows that job.
-  const simple = useStore((s) => Boolean(s.composer && !s.composer.addTo && (s.settings.newCardLook ?? 'simple') === 'simple'));
+  // The simple look (§59) makes cards and, on an open card, is the + Context popup over the chat (§88); the full look keeps its screens for both.
+  const simple = useStore((s) => Boolean(s.composer && (s.settings.newCardLook ?? 'simple') === 'simple'));
   const drawer = useStore((s) => s.line.drawer);
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">

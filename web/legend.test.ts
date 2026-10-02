@@ -76,6 +76,7 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.deepEqual(lineLegendFor({ view: 'board', hasSession: true, hasFocus: true, bindings: { expand: ['Alt+Enter'] } }).find((i) => i.label === 'Its session')!.keys, ['Alt+Enter']);
   // The simple look's Add context popup on Repos: b adds a folder of repos for this card; x only on a folder's heading (§65).
   const base = { block: 'context' as const, adding: true, context: true, more: false, hasTicket: true, ownChip: false };
+  assert.deepEqual(labels({ view: 'composer', addingTo: 'SHOP-160', simple: { ...base, repos: true }, bindings: {} }).slice(-2), ['Add to SHOP-160', 'Cancel'], '+ Context on an open card (§88): Ctrl+Enter adds, Esc cancels');
   const onRepos = labels({ view: 'composer', simple: { ...base, repos: true }, bindings: {} });
   assert.ok(onRepos.includes('A folder of repos') && !onRepos.includes('Take the folder off'), onRepos.join(','));
   assert.ok(labels({ view: 'composer', simple: { ...base, repos: true, onSource: true }, bindings: {} }).includes('Take the folder off'));

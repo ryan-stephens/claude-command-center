@@ -18,6 +18,7 @@ import {
   type Composer,
 } from './line-model.ts';
 import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
+import { withSimple } from './simple-model.ts';
 import { addCardContext, answerCard, focusCardTab, sayToCard, send, startCard, stopRun, tryCard } from './ws.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
@@ -45,7 +46,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal'],
       ['g (a card)', 'Go to its terminal tab: brings the Windows Terminal tab forward, for what the page can’t relay (the trust-the-folder prompt, a picker)'],
       ['Shift+D (a card on the board)', 'Changes full width: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
-      ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
+      ['c (card open)', '+ Context: the same popup the new-card screen has, over the chat (Repos, Folders and Tickets tabs, ← → or Tab switch, / searches, Enter ticks, and a note), Ctrl+Enter adds, Esc goes back. What you add waits on the card and goes in with your next message in its tab. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['t (a card)', 'Try it: start its app in the card’s own folder; again stops it. With a lane stack, the Try it panel’s ticked services start, each on a port of its own. A lane with no stack yet: the stack form opens, filled from what the repos say (okteto.yml, angular.json, the proxy file), and Save and start goes on'],
       ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
@@ -233,13 +234,19 @@ export function leaveComposer(): void {
   if (kept) flash('Kept the card you were building · c picks it up again, Shift+C starts fresh');
 }
 
-/** c in a card's drawer: the new-card screen, adding to that card. Esc goes back to the drawer. */
+/**
+ * c on an open card: + Context, the same popup the new-card screen has (Repos, Folders, Tickets and
+ * a note), over the chat, adding to that card (§88). Esc goes back to the chat. The full look keeps
+ * its three-panel screen for it.
+ */
 export function openAddComposer(id: string): void {
   const s = get();
   const card = s.cards.find((c) => c.id === id);
   if (!card) return;
   if (card.stage === 'done') { flash(`${card.key} is done`); return; }
-  set({ composer: addComposer(card, s.tickets) });
+  const c = addComposer(card, s.tickets);
+  set({ composer: (s.settings.newCardLook ?? 'simple') === 'simple' ? withSimple({ ...c, tab: 'repos' }, { adding: 'context', ai: 0 }) : c });
+  if ((s.settings.newCardLook ?? 'simple') === 'simple') setTimeout(() => document.getElementById('cp-q')?.focus(), 0);
 }
 
 export function updateComposer(change: (c: Composer) => Composer | string): void {

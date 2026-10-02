@@ -41,6 +41,14 @@ export function NewCardSimple() {
   const ws = workspaces.find((w) => w.id === c.workspaceId) ?? null;
   const focus = (block: SimpleBlock) => sp.block === block && !sp.adding;
   const go = (block: SimpleBlock) => updateComposer((x) => withSimple(x, { block }));
+  // + Context on an open card (§88): the picker alone, over the chat; a click outside goes back to it.
+  if (c.addTo) {
+    return (
+      <div className="absolute inset-0 z-30 flex items-start justify-center bg-ink/30 px-6 pt-16" onMouseDown={(e) => { if (e.target === e.currentTarget) leaveComposer(); }}>
+        <Picker c={c} />
+      </div>
+    );
+  }
   return (
     // A popup over the board, nearly the whole page: the board stays behind it, a click outside keeps the card for c and closes.
     <div className="absolute inset-0 z-20 flex items-stretch justify-center bg-ink/30 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) leaveComposer(); }}>
@@ -431,7 +439,8 @@ function Picker({ c, embedded = false }: { c: Composer; embedded?: boolean }) {
   const context = sp.adding === 'context';
   const tab: SourceTab = context ? c.tab : 'tickets';
   const one = singlePick(c);
-  const title = context ? 'Add context' : sp.adding === 'replace' ? 'Change the ticket' : 'Tickets';
+  const addTo = c.addTo;
+  const title = addTo ? `Add context to ${addTo.key}` : context ? 'Add context' : sp.adding === 'replace' ? 'Change the ticket' : 'Tickets';
   useEffect(() => { if (ai >= 0) document.getElementById(`pick-${ai}`)?.scrollIntoView({ block: 'nearest' }); }, [ai]);
   const empty = c.q.trim() ? `Nothing matches “${c.q}”`
     : tab === 'repos' ? 'The repo library is empty: on the board, pick the folders it scans.'
@@ -452,6 +461,7 @@ function Picker({ c, embedded = false }: { c: Composer; embedded?: boolean }) {
             </div>
           )}
           {!context && <button className="text-[13px] text-faint hover:text-ink" onClick={closePicker}>Close <Key k="Esc" size="sm" /></button>}
+          {addTo && <CornerClose onClick={leaveComposer} />}
         </div>
         {tab === 'folders'
           ? <div className="flex items-center gap-2">
@@ -487,7 +497,20 @@ function Picker({ c, embedded = false }: { c: Composer; embedded?: boolean }) {
               </button>
         )) : <div className="rounded-lg border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{empty}</div>}
       </div>
-      {!embedded && context && (
+      {!embedded && context && addTo && (
+        <>
+          <label className="grid gap-1 text-[12.5px]">
+            <span className="font-semibold text-sub">A note for Claude <span className="font-normal text-faint">optional</span></span>
+            <textarea id="cp-note" rows={2} value={c.packet.note} onChange={(e) => updateComposer((x) => ({ ...x, packet: { ...x.packet, note: e.target.value } }))} placeholder="Anything Claude should know from here on…" spellCheck={false} className="field resize-none text-[13.5px]" />
+          </label>
+          {c.error && <div className="rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{c.error}</div>}
+          <div className="flex items-end justify-between gap-4 border-t border-line pt-3">
+            <div className="text-[12.5px] text-faint">What you tick and the note wait on the card and go in with your next message in its tab; a repo gets a worktree on the card’s branch. <span className="text-sub">has it</span> marks what the card can already use.</div>
+            <button className="btn btn-primary shrink-0 px-4 py-2" onClick={startWork} disabled={c.starting}>{c.starting ? 'Adding…' : `Add to ${addTo.key}`} <Key k="Ctrl Enter" size="sm" tone="ghost" /></button>
+          </div>
+        </>
+      )}
+      {!embedded && context && !addTo && (
         <div className="flex items-end justify-between gap-4 border-t border-line pt-3">
           <div className="text-[12.5px] text-faint">{tab === 'folders' ? 'Folders from disk (docs, a spec, a tool’s): Claude can read and edit what is inside. Type or paste a path, or browse for one; a folder listed can be left out, brought back or taken off the card.' : tab === 'repos' ? 'Picking a repo keeps the list open; picking it again takes it out. Another folder of repos lists its repos here for this card only, never the lane.' : 'Picking a ticket keeps the list open; picking it again takes it out.'} Everything you add is on the card already.</div>
           <button className="btn btn-primary shrink-0 px-4 py-2" onClick={closePicker}>Done <Key k="Esc" size="sm" tone="ghost" /></button>

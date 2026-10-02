@@ -297,7 +297,7 @@ function Say({ card }: { card: Card }) {
       )}
       <div className="mx-auto flex w-full max-w-[880px] items-end gap-2">
         <textarea id="card-say" rows={2} placeholder={reachable ? `Type to ${card.key}’s terminal… Enter sends, Shift+Enter is a new line` : `Type to ${card.key}’s session… Enter opens a new tab on it and sends`} spellCheck={false} className="field grow resize-none text-[13.5px]" />
-        {card.stage !== 'done' && <button className="btn py-1.5" onClick={() => openAddComposer(card.id)} title="Add a repo, a ticket or a note: it goes in with your next message"><Key k="c" size="sm" />Context</button>}
+        {card.stage !== 'done' && <button className="btn py-1.5" onClick={() => openAddComposer(card.id)} title="Add a repo, a folder, a ticket or a note: it goes in with your next message"><Key k="c" size="sm" />+ Context</button>}
         <button className="btn btn-primary py-1.5" onClick={() => saySubmit(card.id)} title={reachable ? (card.channel ? 'Sends into the terminal session itself, not a copy' : 'Typed into its terminal tab by the launcher there (channels aren’t allowed, so this is the way in)') : 'Opens a new terminal tab on the session (claude --resume) and sends once it connects'}><Key k="Enter" size="sm" tone="ghost" />{reachable ? 'Send' : 'Resume and send'}</button>
       </div>
       {!reachable && (
@@ -664,7 +664,7 @@ function AddedSince({ card }: { card: Card }) {
   const later = card.later ?? [];
   const left = waiting(card);
   return (
-    <Sec id="added-since" title="Added since it started" right={card.stage !== 'done' && <button className="btn py-0.5 text-[12.5px]" onClick={() => openAddComposer(card.id)}><Key k="c" size="sm" />Add</button>}>
+    <Sec id="added-since" title="Added since it started" right={card.stage !== 'done' && <button className="btn py-0.5 text-[12.5px]" onClick={() => openAddComposer(card.id)}><Key k="c" size="sm" />+ Context</button>}>
       {later.length ? (
         <ol className="grid min-w-0 gap-1.5 text-[13px]">
           {later.map((i) => (
