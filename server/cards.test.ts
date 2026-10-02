@@ -22,7 +22,7 @@ test('a draft needs a title and a real repo; unknown workspaces and modes fall b
   const d = cleanDraft({
     title: ' Size guide ', workspaceId: 'gone',
     packet: { workspace: [repoItem(dir)], card: [{ kind: 'shell', id: 'rm -rf' }], note: 'hi' },
-    launch: { home: 'elsewhere', mode: 'bypassPermissions', branch: 'yolo', message: 'Plan\nit' },
+    launch: { home: 'elsewhere', mode: 'bypassPermissions', branch: 'yolo', message: 'Plan \r\nit\n\n\n\nnow ' },
   }, []);
   assert.equal(d.title, 'Size guide');
   assert.equal(d.workspaceId, null);
@@ -30,7 +30,7 @@ test('a draft needs a title and a real repo; unknown workspaces and modes fall b
   assert.equal(d.launch.home, dir, 'the home falls back to an included repo');
   assert.equal(d.launch.mode, 'plan', 'never a mode the page did not offer');
   assert.equal(d.launch.branch, 'worktree', 'development works in worktrees unless the page said otherwise');
-  assert.equal(d.launch.message, 'Plan it');
+  assert.equal(d.launch.message, 'Plan\nit\n\nnow', 'the lines stay (§69); only trailing spaces and runs of blank lines go');
 });
 
 function seed(): Card {

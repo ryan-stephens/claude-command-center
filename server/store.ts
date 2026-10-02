@@ -54,6 +54,15 @@ export class Store {
       for (const p of DEFAULT_PROMPTS) this.savePrompt({ ...p, id: crypto.randomUUID(), updatedAt: now });
       this.setMeta('prompts.seeded', new Date(now).toISOString());
     }
+    // §69: the defaults gained blank lines between their parts. A seeded prompt whose words are still the default's gets the new spacing, once; an edited one is left alone.
+    if (!this.getMeta('prompts.spaced')) {
+      const words = (s: string) => s.replace(/\s+/g, ' ').trim();
+      for (const p of this.loadPrompts()) {
+        const d = DEFAULT_PROMPTS.find((x) => x.name === p.name);
+        if (d && words(d.body) === words(p.body) && d.body !== p.body) this.savePrompt({ ...p, body: d.body });
+      }
+      this.setMeta('prompts.spaced', new Date().toISOString());
+    }
   }
 
   loadPrompts(): SavedPrompt[] {

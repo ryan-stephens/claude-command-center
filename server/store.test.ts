@@ -28,6 +28,23 @@ test('a new store starts with the three default prompts, written once', () => {
   again.close();
 });
 
+test('a default prompt seeded before §69 gets its blank lines once; an edited one is left alone', () => {
+  const path = join(dir, 'prompts-spacing.db');
+  const store = new Store(path);
+  const [review, bug] = store.loadPrompts();
+  // As the first seeding wrote them: the same words, one line per part.
+  store.savePrompt({ ...review, body: review.body.replace(/\n\n/g, '\n') });
+  store.savePrompt({ ...bug, body: 'My own words.' });
+  store.setMeta('prompts.spaced', ''); // as a store from before §69 has it: unset
+  store.close();
+  const again = new Store(path);
+  const [review2, bug2] = again.loadPrompts();
+  assert.equal(review2.body, DEFAULT_PROMPTS[0].body, 'the default wording is respaced');
+  assert.equal(bug2.body, 'My own words.');
+  assert.ok(again.getMeta('prompts.spaced'));
+  again.close();
+});
+
 test('a saved prompt keeps its place; a new one goes to the end', () => {
   const store = new Store(join(dir, 'order.db'));
   const [a, b, c] = store.loadPrompts();

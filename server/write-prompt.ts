@@ -15,7 +15,7 @@ const SYSTEM = [
   'Keep every fact and instruction from the notes; make them clear and well ordered; add nothing the notes and the context don’t support, and never name a system, tool, file or tracker they don’t mention.',
   'Name the context the session was given (its ticket, repos, folders, branch) where it helps the session know what to look at first.',
   'The session already runs in the worktree this card made, so it must not create branches or worktrees itself; say so once if the notes don’t.',
-  'Plain prose or a short numbered list; under 200 words unless the notes are longer.',
+  'Shape: short paragraphs separated by blank lines, one per concern, in this order where the notes give them something to say: what to do; what to look at (the ticket, the repos, the folders); the constraints; how to start and what to report. A short numbered list is fine for steps. Under 200 words unless the notes are longer.',
 ].join(' ');
 
 /** The one user turn: the notes, then what the card gave the session. Pure, so it can be tested. */

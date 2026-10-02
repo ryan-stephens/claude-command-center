@@ -138,7 +138,7 @@ export function promptsFor(prompts: SavedPrompt[], kind: CardKind): SavedPrompt[
   return [...prompts].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
-/** The three the store starts with, editable like any other. Each says the worktree is already made: the card makes it. */
+/** The three the store starts with, editable like any other. Each says the worktree is already made: the card makes it. A blank line between the parts (what to do, where to look, the constraint, how to start), so the message reads in sections (§69). */
 export const DEFAULT_PROMPTS: Omit<SavedPrompt, 'id' | 'updatedAt'>[] = [
   {
     name: 'Review and plan',
@@ -149,7 +149,7 @@ export const DEFAULT_PROMPTS: Omit<SavedPrompt, 'id' | 'updatedAt'>[] = [
       'Extracted business logic and other material is in {{folders}}.',
       'This card already made a worktree of each repo on branch {{branch}}, and you are in it: don’t create branches or worktrees yourself.',
       'Before changing anything, read the relevant code, then write a short plan: the changes, the files they touch, and what you’ll test. Wait for my approval.',
-    ].join('\n'),
+    ].join('\n\n'),
   },
   {
     name: 'Fix a bug',
@@ -160,7 +160,7 @@ export const DEFAULT_PROMPTS: Omit<SavedPrompt, 'id' | 'updatedAt'>[] = [
       'Related material is in {{folders}}.',
       'You’re in a worktree this card made on branch {{branch}}: don’t create branches or worktrees yourself.',
       'Find the cause before changing anything and explain it in a few lines. Then propose the smallest fix and a test that would have caught it, and wait for my approval before editing.',
-    ].join('\n'),
+    ].join('\n\n'),
   },
   {
     name: 'QA this change',
@@ -171,6 +171,6 @@ export const DEFAULT_PROMPTS: Omit<SavedPrompt, 'id' | 'updatedAt'>[] = [
       'Test notes and data are in {{folders}}.',
       'Start with a test plan: what to check, how, and what data it needs. Then run it and report what passed, what failed, and anything that looks wrong beyond the ticket.',
       'Don’t create branches or worktrees: this card has already set up where you work.',
-    ].join('\n'),
+    ].join('\n\n'),
   },
 ];

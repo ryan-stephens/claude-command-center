@@ -6,7 +6,7 @@
 // between them with nothing lost. Keys: web/simple-keys.ts. Only Esc, Ctrl+Enter and ? show as
 // keycaps here; the legend has the rest.
 
-import { Fragment, useEffect } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import { fmtK, modelFor, packetText, tokens } from '../../shared/cards.ts';
 import { renderPrompt } from '../../shared/prompts.ts';
 import { SOURCE_NAME } from '../../shared/tickets.ts';
@@ -201,6 +201,9 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
   const used = c.promptId ? prompts.find((p) => p.id === c.promptId) : undefined;
   const rendered = used && !c.msgTouched ? renderPrompt(used.body, promptContext(c, workspaces, composerKey(c, nextKey), library)) : null;
   useEffect(() => { if (open) document.getElementById(`prompt-${ai}`)?.scrollIntoView({ block: 'nearest' }); }, [open, ai]);
+  // The box grows with its text (§69): never a scrollbar of its own; the popup's body scrolls instead, so the whole message is always in view while typing.
+  const box = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { const el = box.current; if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } }, [c.launch.message]);
   const note = c.msgTouched && used ? 'Edited, so it no longer follows the card. Pick the prompt again to fill it in afresh.'
     : rendered ? `Filled in from the card${rendered.missing.length ? `; nothing yet for ${rendered.missing.map((n) => `{{${n}}}`).join(', ')}` : ''}. It follows the card as you add context.`
     : 'The first thing Claude is told. The context itself arrives through the SessionStart hook, so keep this to a prompt.';
@@ -233,9 +236,9 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
             ))}
           </div>
         )}
-        <textarea id="cp-msg" rows={9} value={c.launch.message} placeholder="What should Claude do first? Space picks a saved prompt; or type rough words and w has Claude write it." readOnly={Boolean(sp.writing)}
+        <textarea id="cp-msg" ref={box} rows={9} value={c.launch.message} placeholder="What should Claude do first? Space picks a saved prompt; or type rough words and w has Claude write it." readOnly={Boolean(sp.writing)}
           onChange={(e) => updateComposer((x) => ({ ...x, msgTouched: true, launch: { ...x.launch, message: e.target.value } }))}
-          className="field resize-none rounded-none border-0 bg-transparent text-[14px] leading-relaxed focus:ring-0" spellCheck={false} />
+          className="field min-h-[200px] resize-none overflow-hidden rounded-none border-0 bg-transparent text-[14px] leading-relaxed focus:ring-0" spellCheck={false} />
         <div className="border-t border-line/60 px-4 py-2 text-[12.5px] text-faint">{note}</div>
       </div>
     </section>
