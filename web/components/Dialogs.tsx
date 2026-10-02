@@ -24,6 +24,7 @@ import { PromptsDialog } from './PromptsDialog.tsx';
 import { ReportSheet } from './ReportSheet.tsx';
 import { ShipSheet } from './ShipSheet.tsx';
 import { TryPick } from './TryPick.tsx';
+import { StackSetup } from './StackSetup.tsx';
 import { Welcome } from './Welcome.tsx';
 import { close, DialogKeys, DialogTitle, Overlay, useDialogKeys } from './Overlay.tsx';
 import { Icon, Key, SWATCH, TicketKey, WsBadge } from './ui.tsx';
@@ -52,6 +53,7 @@ export function Dialogs() {
     case 'worktrees': return <WorktreesDialog id={modal.id} thenDelete={modal.thenDelete === true} />;
     case 'recipe': return <RecipeDialog repo={modal.repo} workspaceId={modal.workspaceId} initial={modal.scope} />;
     case 'tryPick': return <TryPick id={modal.id} detect={modal.detect === true} />;
+    case 'stackSetup': return <StackSetup workspaceId={modal.workspaceId} />;
     case 'ship': return <ShipSheet id={modal.id} />;
     case 'report': return <ReportSheet id={modal.id} />;
     case 'changes': return <ChangesSheet id={modal.id} at={modal.at} />;

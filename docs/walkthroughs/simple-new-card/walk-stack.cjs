@@ -105,6 +105,25 @@ async function ask(page, msg) {
   check('t stops them all', allDown);
   check('the Start button is back', await panel.getByRole('button', { name: /Start 1 API and the UI/ }).isVisible());
   await shot(page, 'all-stopped');
+  // e: the lane's stack as a form (§83), filled from the saved stack: the UI, the API ticked, the lines kept as written (custom).
+  await page.keyboard.press('e');
+  await sleep(1500);
+  const sheet = page.getByRole('dialog', { name: 'Set up the stack' });
+  check('e opens the setup sheet', await sheet.isVisible());
+  check('the UI repo is picked', (await sheet.locator('select').inputValue()) === 'web-app');
+  check('the API is ticked with its values', (await sheet.getByRole('checkbox', { name: 'payments-api is part of the stack' }).isChecked()) && (await sheet.getByLabel('payments-api: route').inputValue()) === 'payments');
+  check('the hand-written lines are kept and shown', /edited by hand/.test(await sheet.innerText()) && /api\.cjs/.test(await sheet.getByLabel('The step lines').inputValue()));
+  await shot(page, 'setup');
+  // Changing an answer writes the lines afresh.
+  await sheet.getByPlaceholder('New-DevDeployment -Name {{name}} -Environment {{env}}').fill('Make-It {{name}} {{env}}');
+  await sleep(200);
+  const lines = await sheet.getByLabel('The step lines').inputValue();
+  check('an answer writes the step lines', /^ps: KUBECONFIG=%KUBECONFIG_\{\{ENV\}\}% Make-It \{\{name\}\} \{\{env\}\}/m.test(lines) && /okteto up/.test(lines), lines.split(/\r?\n/)[0]);
+  await shot(page, 'setup-written');
+  await page.keyboard.press('Escape'); // leaves the field
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  check('Esc closes it without saving', !(await sheet.isVisible().catch(() => false)));
   check('no console errors', errors.length === 0, errors.join(' | ').slice(0, 300));
   // Leave the server as it was found: the card and the lane go (the other walkthroughs press 1 for the Demo lane).
   await page.evaluate((id) => new Promise((resolve) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => { ws.send(JSON.stringify({ type: 'card.delete', id })); ws.send(JSON.stringify({ type: 'workspace.delete', id: 'ws-demo-stack' })); setTimeout(() => { ws.close(); resolve(); }, 400); }; }), seeded.id);

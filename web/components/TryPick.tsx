@@ -81,7 +81,8 @@ export function TryPick({ id, detect = false }: { id: string; detect?: boolean }
   };
   const edit = () => {
     if (!card) return;
-    set({ modal: { kind: 'recipe', repo: cardRepos(card)[0], ...(card.workspaceId ? { workspaceId: card.workspaceId } : {}), scope: 'table' } });
+    if (card.workspaceId) set({ modal: { kind: 'stackSetup', workspaceId: card.workspaceId } });
+    else set({ modal: { kind: 'recipe', repo: cardRepos(card)[0] } });
   };
 
   useDialogKeys((e) => {

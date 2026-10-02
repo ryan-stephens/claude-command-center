@@ -470,7 +470,8 @@ export type ServerMsg =
   | { type: 'card.worktreesRemoved'; reqId: string; id: string; removed: CardWorktree[]; kept: CardWorktree[] }
   /** The picker's rows for a card's stack, and the APIs to tick when nothing was picked before. */
   | { type: 'stack.plan'; reqId: string; rows: StackApiRow[]; suggested: string[] }
-  | { type: 'stack.detected'; reqId: string; workspaceId: string; stack?: Stack; findings: Finding[] }
+  /** `kubeconfigs`: the KUBECONFIG_* names set in the server's environment (config.env), names only, for the setup sheet. */
+  | { type: 'stack.detected'; reqId: string; workspaceId: string; stack?: Stack; findings: Finding[]; kubeconfigs?: string[] }
   /** Run recipes by repo path: the library's, the workspaces' and the cards' repos. */
   | { type: 'recipes'; recipes: Record<string, RunRecipe>; /** Workspaces' own recipes, by workspace id. */ workspaceRecipes?: Record<string, RunRecipe> }
   /** Cards' runs of their recipes (Try it). */

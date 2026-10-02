@@ -613,7 +613,8 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const owner = store.loadWorkspaces().find((w) => w.id === id);
       if (!owner) throw new Error('That workspace no longer exists.');
       const d = detectWorkspaceStack(owner.repos.filter((r) => existsSync(r)));
-      send(ws, { type: 'stack.detected', reqId: msg.reqId, workspaceId: id, ...(d.stack ? { stack: d.stack } : {}), findings: d.findings });
+      const kubeconfigs = Object.keys(process.env).filter((k) => /^KUBECONFIG_[A-Z0-9_]+$/i.test(k)).map((k) => k.toUpperCase());
+      send(ws, { type: 'stack.detected', reqId: msg.reqId, workspaceId: id, ...(d.stack ? { stack: d.stack } : {}), findings: d.findings, kubeconfigs });
       return;
     }
     case 'stack.save': {

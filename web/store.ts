@@ -48,6 +48,8 @@ export type Modal =
   | { kind: 'recipe'; repo: string; workspaceId?: string; scope?: 'repo' | 'workspace' | 'table' | 'stack' }
   /** t on a card whose workspace has a stack: pick dev / uat and the APIs to run. `detect`: no stack yet; show what the repos say and offer to keep it. */
   | { kind: 'tryPick'; id: string; detect?: boolean }
+  /** The lane's stack as a form (§83). */
+  | { kind: 'stackSetup'; workspaceId: string }
   /** Ship a card (s), or merge its PR once it has one. */
   | { kind: 'ship'; id: string }
   /** A QA or review card's report (s): copy it, or finish the card. */

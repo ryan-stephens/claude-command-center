@@ -49,7 +49,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a lane stack, pick the environment and the APIs first. A lane with no stack yet: what its repos say the stack is (okteto.yml, angular.json, the proxy file), Enter keeps it, e edits it first'],
       ['t picker: ← →  /  ↑ ↓ Space  /  a n  /  Enter', 'Environment (dev, uat …)  /  which APIs run (changed ones are ticked)  /  all or none  /  start them, then the UI'],
       ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
-      ['e (a card)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo, the whole lane, the lane’s stack of APIs and UI as a table (↑ ↓ a row, e changes it, Delete drops an API, Enter saves), or that stack as JSON)'],
+      ['e (a card)', 'Set up how Try it starts things. A lane of several repos: its stack as a form (the environments, the UI and its proxy file, each API’s name, port, folder, health path and route, and how an API starts on the dev environment in three answers; the step lines are written from them, or edited by hand; Ctrl+Enter saves). A single repo: its run recipe'],
       ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket, in each repo the card changed (one block per repo in the sheet; the PRs link each other); if it stops part-way, s again ships only the repos left; on a card in Ship with every PR open, merge them. On a QA or review card: its report (Enter copies, j posts it on the Jira ticket and m moves the ticket, each after you confirm; o opens the PR, d moves the card to Done)'],
       ['d (a card in Ship)', 'Done: the PR was merged or closed by hand, or the host isn’t one Ship can follow'],
       ['Shift+X (a card)', 'Worktrees: the folders the card made, with what each still holds; on a Done card, remove them and their branch (Enter the clean ones, f all of them)'],
@@ -455,9 +455,14 @@ export function shipKey(id: string): void {
 
 /** e in a card's drawer: write or edit the run recipe: its workspace's if it has one, else its repo's (the dialog switches). */
 export function editRecipe(id: string): void {
-  const card = get().cards.find((c) => c.id === id);
+  const s = get();
+  const card = s.cards.find((c) => c.id === id);
   const home = card && cardRepos(card)[0];
-  if (home) set({ modal: { kind: 'recipe', repo: home, ...(card.workspaceId ? { workspaceId: card.workspaceId } : {}) } });
+  if (!home) return;
+  // A lane of several repos: its stack, as a form (§83). A single repo: its own recipe.
+  const wsRepos = s.workspaces.find((w) => w.id === card.workspaceId)?.repos.length ?? 0;
+  if (card.workspaceId && (wsRepos > 1 || s.recipes[wsRecipeKey(card.workspaceId)]?.stack)) { set({ modal: { kind: 'stackSetup', workspaceId: card.workspaceId } }); return; }
+  set({ modal: { kind: 'recipe', repo: home, ...(card.workspaceId ? { workspaceId: card.workspaceId } : {}) } });
 }
 
 export function openCard(id: string): void {
