@@ -190,10 +190,11 @@ function ModelPick({ c, pinned, user }: { c: Composer; pinned: string | null; us
         <div role="listbox" aria-label="Model" className="absolute bottom-full right-0 z-20 mb-2 flex w-[320px] flex-col rounded-xl border border-ink/20 bg-surface p-1.5 shadow-[0_6px_14px_rgba(0,0,0,.12),0_28px_70px_rgba(0,0,0,.35)] ring-1 ring-black/5">
           <div className="flex items-baseline justify-between px-2.5 pb-1.5 pt-1.5"><span className="eyebrow">Model</span><span className="text-[11.5px] text-faint">m cycles</span></div>
           {opts.map((o, i) => (
+            // The one in use is told by its tick and the accent colour, never by a raised ground: that is the hover's, and the two must not look alike.
             <button key={o} role="option" aria-selected={i === at} onClick={() => { updateComposer((x) => pickOption(x, 'model', i, get().workspaces, '', get().recipes)); setOpen(false); }}
-              className={`flex items-center gap-2.5 rounded-lg border-l-[3px] px-2.5 py-2 text-left text-[13.5px] ${i === at ? 'border-acc bg-raise' : 'border-transparent hover:bg-raise'}`}>
-              <span className="grid h-4 w-4 shrink-0 place-items-center">{i === at && <Icon name="check" size={14} className="text-ok" />}</span>
-              <span className="flex min-w-0 grow flex-col"><span>{name(i)}</span>{i === 0 && def && <span className="truncate font-mono text-[11.5px] text-faint">{def}</span>}</span>
+              className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13.5px] hover:bg-raise ${i === at ? 'font-semibold text-acc' : ''}`}>
+              <span className="grid h-4 w-4 shrink-0 place-items-center">{i === at && <Icon name="check" size={14} className="text-acc" />}</span>
+              <span className="flex min-w-0 grow flex-col"><span>{name(i)}</span>{i === 0 && def && <span className="truncate font-mono text-[11.5px] font-normal text-faint">{def}</span>}</span>
               {i === 0 && <span className="shrink-0 text-xs text-faint">{pinned ? 'pinned by this server' : user ? 'your Claude Code setting' : 'whatever Claude Code picks'}</span>}
             </button>
           ))}
