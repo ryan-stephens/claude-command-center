@@ -188,7 +188,7 @@ function ModelPick({ c, pinned, user }: { c: Composer; pinned: string | null; us
       </button>
       {open && (
         <div role="listbox" aria-label="Model" className="absolute bottom-full right-0 z-20 mb-2 flex w-[320px] flex-col rounded-xl border border-ink/20 bg-surface p-1.5 shadow-[0_6px_14px_rgba(0,0,0,.12),0_28px_70px_rgba(0,0,0,.35)] ring-1 ring-black/5">
-          <div className="flex items-baseline justify-between px-2.5 pb-1.5 pt-1.5"><span className="eyebrow">Model</span><span className="text-[11.5px] text-faint">m cycles</span></div>
+          <div className="px-2.5 pb-1.5 pt-1.5"><span className="eyebrow">Model</span></div>
           {opts.map((o, i) => (
             // The one in use is told by its tick and the accent colour, never by a raised ground: that is the hover's, and the two must not look alike.
             <button key={o} role="option" aria-selected={i === at} onClick={() => { updateComposer((x) => pickOption(x, 'model', i, get().workspaces, '', get().recipes)); setOpen(false); }}
