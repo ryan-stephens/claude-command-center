@@ -23,7 +23,7 @@ export interface SeedOptions {
   key?: string;
   title?: string;
   /** plan: a plan waiting for approval · tool: a tool asking to run · working: Claude is on it · idle: it finished its turn · done: shipped and merged. */
-  state?: 'plan' | 'tool' | 'working' | 'idle' | 'done';
+  state?: 'plan' | 'tool' | 'working' | 'idle' | 'done' | 'question';
   /** The channel is up, so y / n and the message box work. Default true. */
   channel?: boolean;
   /** Files the card wrote (absolute), for the dock's badge and What changed. */
@@ -43,11 +43,16 @@ function live(state: NonNullable<SeedOptions['state']>, at: number): CardLive {
     case 'working': return { phase: 'working', text: 'editing sign-in.ts', at, mode: 'default', turnSince: at - 11 * 60_000 };
     case 'idle': return { phase: 'waiting', text: 'Finished its turn', at, mode: 'default', lastMessage: 'Done. The guest cart persists for 30 days and merges on sign-in with gift cards attached. Both apps are up on this card’s ports if you want to try it.' };
     case 'done': return { phase: 'ended', text: 'The session closed', at, mode: 'default' };
+    // Claude's question form (§91): two questions, one of them a multi choice, as the tool's input gives them.
+    case 'question': return { phase: 'needs', text: 'Asking: Where should the guest cart live?', at, mode: 'default', turnSince: at - 3 * 60_000, ask: { kind: 'question', tool: 'AskUserQuestion', detail: 'Where should the guest cart live?', questions: [
+      { question: 'Where should the guest cart live?', header: 'Storage', options: [{ label: 'localStorage', description: 'Survives a closed tab; 30-day stamp' }, { label: 'sessionStorage', description: 'Gone when the tab closes' }, { label: 'A cookie', description: 'Sent with every request' }] },
+      { question: 'Which paths need a test?', header: 'Tests', multiSelect: true, options: [{ label: 'Merge on sign-in' }, { label: 'Gift cards through the merge' }, { label: 'Expiry after 30 days' }] },
+    ] } };
   }
 }
 
 function todos(state: NonNullable<SeedOptions['state']>): CardTodo[] {
-  const done = state === 'plan' ? 1 : state === 'tool' || state === 'working' ? 2 : 4;
+  const done = state === 'plan' ? 1 : state === 'tool' || state === 'working' || state === 'question' ? 2 : 4;
   const names = ['Read the cart store and the sign-in flow', 'Persist the guest cart', 'Merge on sign-in, with tests', 'Keep gift cards through the merge'];
   return names.map((content, i) => ({ id: `t${i + 1}`, content, status: i < done ? 'completed' : i === done ? 'in_progress' : 'pending', ...(i === done ? { activeForm: content.replace(/^(\w+)/, (w) => `${w}ing`.replace(/eing$/, 'ing')) } : {}) }));
 }
@@ -67,6 +72,7 @@ export function seedTranscript(key: string, state: NonNullable<SeedOptions['stat
   items.push({ kind: 'tool_result', uuid: u(7), toolUseId: 'tu-2', text: 'ok', isError: false });
   items.push({ kind: 'assistant', uuid: u(8), text: 'The guest cart now survives a closed tab. I keyed lines on sku + options so the merge can’t double them up.' });
   if (state === 'tool') return [...items, { kind: 'assistant', uuid: u(9), text: 'Before I write the gift-card test I want to run the cart tests to make sure nothing broke.' }];
+  if (state === 'question') return [...items, { kind: 'assistant', uuid: u(9), text: 'Two things I need from you before the merge: where the guest cart should live, and which paths you want tests for.' }];
   if (state === 'working') return [...items, { kind: 'tool', uuid: u(9), toolUseId: 'tu-3', name: 'Edit', input: '{"file_path":"src/auth/sign-in.ts"}' }];
   items.push({ kind: 'tool', uuid: u(9), toolUseId: 'tu-3', name: 'Bash', input: '{"command":"pnpm vitest run src/cart"}' });
   items.push({ kind: 'tool_result', uuid: u(10), toolUseId: 'tu-3', text: 'Test Files  3 passed (3)\n     Tests  14 passed (14)', isError: false });
@@ -92,8 +98,10 @@ export function seedCard(o: SeedOptions, id: string, now: number): Card {
     packet: { workspace: repos.map((r) => ({ kind: 'repo', id: r, label: name(r), on: true })), ticket: [], card: [], note: '' },
     launch: { home, branch: dirs === repos ? 'current' : 'worktree', mode: 'plan', model: 'sonnet', message: `Plan ${key}.` },
     kind: 'build',
-    stage: state === 'plan' || state === 'tool' ? 'needs' : state === 'working' ? 'build' : state === 'idle' ? 'try' : 'done',
+    stage: state === 'plan' || state === 'tool' || state === 'question' ? 'needs' : state === 'working' ? 'build' : state === 'idle' ? 'try' : 'done',
     createdAt: started, branchName: branch, model: 'sonnet', cwd: dirs[0], sessionId: o.sessionId ?? `seed-${id}`, channel: o.channel ?? true,
+    // A question is answered through the tab's launcher (§91): the seeded card says one is there, so the form is live on the page.
+    ...(state === 'question' ? { keys: true } : {}),
     folders: repos.map((repo, i) => ({ repo, dir: dirs[i] })),
     boot: [
       { at: started, text: 'Saved the context packet (4.1k)', state: 'ok' },
@@ -119,7 +127,7 @@ export function cleanSeed(raw: unknown): SeedOptions {
   const repos = strs(r.repos, 10);
   if (!repos.length) throw new Error('cards.seed needs at least one repo folder.');
   const worktrees = strs(r.worktrees, 10);
-  const states = ['plan', 'tool', 'working', 'idle', 'done'] as const;
+  const states = ['plan', 'tool', 'working', 'idle', 'done', 'question'] as const;
   const state = states.find((s) => s === r.state);
   return {
     repos, ...(worktrees.length ? { worktrees } : {}),

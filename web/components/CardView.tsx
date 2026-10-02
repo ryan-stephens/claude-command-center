@@ -16,6 +16,7 @@ import { SOURCE_NAME } from '../../shared/tickets.ts';
 import { repoName } from '../../shared/workspaces.ts';
 import { CARD_PANELS, type CardPanel } from '../line-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard } from '../line-model.ts';
+import { QuestionForm } from './QuestionForm.tsx';
 import { answerAsk, boardOf, changeHooks, editRecipe, goToTab, lastPick, openAddComposer, openApp, openChanges, openNeighbour, openOutput, openWorktrees, rememberPick, saySubmit, setChangeCount, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
 import { openSession } from '../keys.ts';
 import { get, set, setPanelW, useStore } from '../store.ts';
@@ -281,7 +282,12 @@ function Say({ card }: { card: Card }) {
   const answerable = Boolean(ask?.requestId || ask?.typed);
   return (
     <div className="grid gap-2.5 border-t border-line bg-surface px-5 py-3">
-      {ask && (
+      {ask?.kind === 'question' && ask.questions?.length ? (
+        // Claude's question form (§91): the same form its tab shows, answered from here through the launcher.
+        <div className="mx-auto w-full max-w-[880px] rounded-xl border border-attn/45 bg-attn-bg px-3.5 py-2.5 text-sm">
+          <QuestionForm cardId={card.id} questions={ask.questions} canAnswer={Boolean(card.keys) && !ended} />
+        </div>
+      ) : ask && (
         <div className="mx-auto grid w-full max-w-[880px] gap-2 rounded-xl border border-attn/45 bg-attn-bg px-3.5 py-2.5 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <span className="grow font-semibold text-attn">{ask.kind === 'plan' ? 'Approve the plan?' : ask.kind === 'question' ? 'Claude is asking' : <>Run <span className="font-mono font-medium">{ask.detail ?? ask.tool}</span>?</>}</span>
@@ -296,7 +302,7 @@ function Say({ card }: { card: Card }) {
         </div>
       )}
       <div className="mx-auto flex w-full max-w-[880px] items-end gap-2">
-        <textarea id="card-say" rows={2} placeholder={reachable ? `Type to ${card.key}’s terminal… Enter sends, Shift+Enter is a new line` : `Type to ${card.key}’s session… Enter opens a new tab on it and sends`} spellCheck={false} className="field grow resize-none text-[13.5px]" />
+        <textarea id="card-say" rows={2} placeholder={ask?.kind === 'question' && ask.questions?.length && reachable ? 'Or answer in words: this closes the form in its tab and sends what you type' : reachable ? `Type to ${card.key}’s terminal… Enter sends, Shift+Enter is a new line` : `Type to ${card.key}’s session… Enter opens a new tab on it and sends`} spellCheck={false} className="field grow resize-none text-[13.5px]" />
         {card.stage !== 'done' && <button className="btn py-1.5" onClick={() => openAddComposer(card.id)} title="Add a repo, a folder, a ticket or a note: it goes in with your next message"><Key k="c" size="sm" />+ Context</button>}
         <button className="btn btn-primary py-1.5" onClick={() => saySubmit(card.id)} title={reachable ? (card.keys ? 'Typed into its terminal tab by the launcher there, the way the keyboard would' : 'Sent into the terminal session through its channel') : 'Opens a new terminal tab on the session (claude --resume) and sends once it connects'}><Key k="Enter" size="sm" tone="ghost" />{reachable ? 'Send' : 'Resume and send'}</button>
       </div>

@@ -208,6 +208,11 @@ export async function answerCard(id: string, requestId: string | undefined, beha
   await request((reqId) => ({ type: 'card.answer', reqId, id, ...(requestId ? { requestId } : {}), behavior }), 30_000);
 }
 
+/** The answers to Claude's question form (§91), pressed into the tab by its launcher. */
+export async function answerQuestionCard(id: string, answers: { picks: number[]; other?: string }[]): Promise<void> {
+  await request((reqId) => ({ type: 'card.answerQuestion', reqId, id, answers }), 30_000);
+}
+
 /** Bring the card's terminal tab to the front (the UI Automation walk can take a moment). True when there was no tab and a new one was opened on the session (§85). */
 export async function focusCardTab(id: string): Promise<boolean> {
   const reply = await request((reqId) => ({ type: 'card.focusTab', reqId, id }), 20_000);

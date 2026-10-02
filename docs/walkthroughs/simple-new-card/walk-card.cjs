@@ -58,14 +58,14 @@ async function ask(page, msg) {
   for (const id of old) await page.evaluate((id) => new Promise((resolve) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => { ws.send(JSON.stringify({ type: 'card.delete', id })); setTimeout(() => { ws.close(); resolve(); }, 150); }; }), id);
 
   // One card per state. Changes needs real folders: the demo repos themselves (web-app has uncommitted edits to show).
-  const states = ['plan', 'tool', 'working', 'idle', 'done'];
+  const states = ['plan', 'tool', 'working', 'idle', 'done', 'question'];
   const ids = {};
   for (const [i, state] of states.entries()) {
     // The idle card has no channel (its tab closed, say): the message box stays and says what sending does (§85).
     const r = await ask(page, { type: 'cards.seed', options: { repos: [`${DEMO}/web-app`, `${DEMO}/payments-api`], workspaceId: 'ws-demo-simple', key: `SHOP-${150 + i}`, state, title: `${state[0].toUpperCase()}${state.slice(1)}: save cart for signed-out users`, ...(state === 'idle' ? { channel: false } : {}) } });
     ids[state] = r.id;
   }
-  check('five cards seeded', Object.keys(ids).length === 5);
+  check('six cards seeded', Object.keys(ids).length === 6);
   await sleep(500);
   await page.keyboard.press('1');
   await sleep(400);
@@ -253,6 +253,40 @@ async function ask(page, msg) {
   check('done: More shows the merged PR', await view().getByRole('region', { name: 'More' }).getByRole('link', { name: /#418/ }).isVisible());
   await shot(page, 'done-more');
   await page.keyboard.press('m');
+
+  // Claude's question form (§91): drawn on the card as it is in the tab; digits pick, Tab moves on, Submit reviews.
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  await page.locator(`#card-${ids.question}`).click();
+  await sleep(900);
+  const form = view().getByRole('group', { name: 'Claude’s question' });
+  check('question: the form shows its tabs (Storage, Tests, Submit) and the first question', await form.isVisible() && (await form.getByRole('tab').count()) === 3 && await form.getByText('Where should the guest cart live?').isVisible());
+  check('question: the options carry their digits and descriptions', (await form.getByRole('radio').count()) === 3 && await form.getByText('Survives a closed tab; 30-day stamp').isVisible());
+  await shot(page, 'question');
+  await page.keyboard.press('2');
+  await sleep(250);
+  check('a digit picks a single choice and moves on to the next question (boxes)', (await form.getByRole('tab', { selected: true }).innerText()).includes('Tests') && (await form.getByRole('checkbox').count()) === 3);
+  await page.keyboard.press('1');
+  await page.keyboard.press('3');
+  await sleep(250);
+  check('digits toggle boxes and stay on the question', (await form.getByRole('checkbox', { checked: true }).count()) === 2 && (await form.getByRole('tab', { selected: true }).innerText()).includes('Tests'));
+  await page.keyboard.press('Tab');
+  await sleep(250);
+  check('Tab moves to Submit, which reviews the answers', (await form.getByRole('tab', { selected: true }).innerText()).includes('Submit') && await form.getByText('sessionStorage', { exact: true }).isVisible() && await form.getByText('Merge on sign-in, Expiry after 30 days').isVisible());
+  await shot(page, 'question-submit');
+  await page.keyboard.press('Shift+Tab');
+  await sleep(250);
+  check('Shift+Tab goes back a question', (await form.getByRole('tab', { selected: true }).innerText()).includes('Tests'));
+  await page.keyboard.press('Tab');
+  await sleep(250);
+  // y submits: the seeded card has no real launcher, so the server says its tab can't be reached, next to the button.
+  await page.keyboard.press('y');
+  await sleep(1200);
+  check('y submits (here the server says the seeded tab can’t be reached, beside the button)', /can’t be reached/.test(await form.getByRole('alert').innerText().catch(() => '')));
+  // The legend bar is a setting kept on the server (walk-chrome turns it off on this one): read it when it is there.
+  const legendOn = (await page.locator('footer[aria-label="Keys you can press now"]').count()) > 0;
+  const legendNow = legendOn ? await page.locator('footer[aria-label="Keys you can press now"]').innerText() : '';
+  check('the legend shows Pick, Next question and Submit answers (when the legend is on)', !legendOn || (/Pick/.test(legendNow) && /Submit answers/.test(legendNow)), legendOn ? legendNow.replace(/\n/g, ' ').slice(0, 120) : '(legend off on this server; the legend test covers the rows)');
 
   // Back to the board with Esc, then reopen the plan card: the "new since you last looked" line is not there (nothing new).
   await page.keyboard.press('Escape');

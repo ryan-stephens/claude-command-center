@@ -2,6 +2,7 @@
 // Pure and erasable TS, shared by the server (what the hook returns, what gets launched) and the
 // web app (the new-card screen's preview and command), so both always say the same thing.
 
+import type { AskQuestion } from './questions.ts';
 import type { PullRequest } from './ship.ts';
 import { ticketText, type Ticket } from './tickets.ts';
 import { repoName, samePath } from './workspaces.ts';
@@ -158,7 +159,7 @@ export interface CardLive {
   /** Claude Code's permission mode as the session last reported it. */
   mode?: string;
   /** What it is asking in the tab: a tool to allow, a question, or a plan to approve (with its text). */
-  ask?: { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string };
+  ask?: { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string; /** The question form (AskUserQuestion, §91): the page draws it and answers it. */ questions?: AskQuestion[] };
   /** When the current turn began (for elapsed time). */
   turnSince?: number;
   /** Claude's last message, from the Stop hook. */
@@ -297,7 +298,7 @@ export function waiting(c: Pick<Card, 'later'>): LaterItem[] {
  * the plan text, the question), else the relayed prompt alone. `answerable` means y / n go through
  * the channel; a question is answered by typing instead.
  */
-export function askOf(c: Pick<Card, 'live' | 'relayed' | 'channel' | 'keys'>): { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string; requestId?: string; /** y / n are typed into the tab (§87): its launcher is there and no prompt was relayed (the channel is absent, or the org has channels off and it delivers nothing, §89). */ typed?: true } | undefined {
+export function askOf(c: Pick<Card, 'live' | 'relayed' | 'channel' | 'keys'>): { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string; questions?: AskQuestion[]; requestId?: string; /** y / n are typed into the tab (§87): its launcher is there and no prompt was relayed (the channel is absent, or the org has channels off and it delivers nothing, §89). */ typed?: true } | undefined {
   const ask = c.live?.ask;
   const r = c.relayed;
   const matches = r && (!ask || ask.tool === r.tool);

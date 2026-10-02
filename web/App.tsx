@@ -67,6 +67,8 @@ function Legend() {
   // Any card with a session can be typed to: without a channel, the session is resumed in a new tab first (§85).
   const canSay = Boolean(drawerCard?.sessionId);
   const asking = Boolean(drawerCard && (askOf(drawerCard)?.requestId || askOf(drawerCard)?.typed));
+  // Claude's question form (§91): drawn on the card and answered through the tab's launcher.
+  const question = Boolean(drawerCard?.keys && askOf(drawerCard)?.questions?.length);
   const hasTab = Boolean(shown?.cwd);
   // Waiting on you in the tab, and the page can't answer it: g is the way.
   const needsTab = Boolean(shown?.live?.phase === 'needs' && !asking);
@@ -95,7 +97,7 @@ function Legend() {
   const simple = isSimple ? { block: spBlock, adding: spAdding, context: spContext, folders: spFolders, repos: spRepos, onSource: spOnSource, prompt: spPrompt, more: spMore, hasTicket: spTicket, details: spDetails, ticketLink: spTicketLink, ownChip: spOwn } : undefined;
   if (modal) return null;
   const items = trimLegend(screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, hasTab, needsTab, hasChanges, hasDraft, tab, simple, panel, hasStack, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, question, hasTab, needsTab, hasChanges, hasDraft, tab, simple, panel, hasStack, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings }), hints);
   if (!items) return null;
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');

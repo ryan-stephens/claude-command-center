@@ -3,6 +3,7 @@
 // card-events.test.ts). Stages the hooks never leave: Ship and Done belong to you.
 
 import { cardRepos, reportIn, type Card, type CardLive, type CardReport, type Stage } from '../shared/cards.ts';
+import { readQuestions } from '../shared/questions.ts';
 import { isInside } from '../shared/workspaces.ts';
 import { applyTodos, NO_TODOS } from './todos.ts';
 
@@ -107,8 +108,10 @@ export function applyEvent(card: Card, event: string, input: HookInput, now: num
         live = { ...live, phase: 'needs', text: 'Plan ready: approve it in the tab', ask: { kind: 'plan', tool, plan: s(toolInput.plan) } };
         move('plan');
       } else if (tool === 'AskUserQuestion') {
-        const q = Array.isArray(toolInput.questions) ? s((toolInput.questions[0] as Record<string, unknown>)?.question) : '';
-        live = { ...live, phase: 'needs', text: `Asking: ${firstLine(q) || 'a question'}`, ask: { kind: 'question', tool, detail: q } };
+        // The whole form (§91): the page draws its questions and answers them through the tab's launcher.
+        const questions = readQuestions(toolInput.questions);
+        const q = questions?.[0]?.question ?? '';
+        live = { ...live, phase: 'needs', text: `Asking: ${firstLine(q) || 'a question'}`, ask: { kind: 'question', tool, detail: q, ...(questions ? { questions } : {}) } };
         move('needs');
       } else {
         const what = describeTool(tool, toolInput);

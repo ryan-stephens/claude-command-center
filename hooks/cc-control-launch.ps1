@@ -116,14 +116,24 @@ function Prompt-Ready() {
   $screen = [CcControl.Con]::Screen()
   return ($screen -match '\? for \w+') -or ($screen -match 'shift\+tab to cycle') -or ($screen -match 'Try "')
 }
+# The keys a prompt takes, by name (Claude Code's question form moves with arrows and Tab, §91) or as characters to type.
 function Press-Keys([string[]]$keys) {
   foreach ($k in $keys) {
     switch ($k) {
       'Enter' { [void][CcControl.Con]::PressEnter() }
       'Escape' { [void][CcControl.Con]::Press(0x1B, [char]27, 0) }
-      default { foreach ($ch in $k.ToCharArray()) { [void][CcControl.Con]::Type($ch) } }
+      'Tab' { [void][CcControl.Con]::Press(0x09, [char]9, 0) }
+      'Shift+Tab' { [void][CcControl.Con]::Press(0x09, [char]9, 0x10) }
+      'Space' { [void][CcControl.Con]::Press(0x20, ' ', 0) }
+      'Up' { [void][CcControl.Con]::Press(0x26, [char]0, 0) }
+      'Down' { [void][CcControl.Con]::Press(0x28, [char]0, 0) }
+      'Left' { [void][CcControl.Con]::Press(0x25, [char]0, 0) }
+      'Right' { [void][CcControl.Con]::Press(0x27, [char]0, 0) }
+      'Backspace' { [void][CcControl.Con]::Press(0x08, [char]8, 0) }
+      # "type:" and text: typed as it is, whatever it says (an answer that happens to read "Enter" is still text).
+      default { $t = $(if ($k.StartsWith('type:')) { $k.Substring(5) } else { $k }); foreach ($ch in $t.ToCharArray()) { [void][CcControl.Con]::Type($ch) } }
     }
-    Start-Sleep -Milliseconds 80
+    Start-Sleep -Milliseconds 120
   }
 }
 
@@ -213,6 +223,11 @@ while (-not $p.HasExited) {
     }
   }
   if ($ready -and $pending.Count -gt 0) { Log ("typing {0} item(s) that waited for the prompt" -f $pending.Count); foreach ($item in @($pending)) { Type-Item $item }; $pending.Clear() }
+  # CC_CONTROL_LAUNCH_TRACE=1: the whole screen is written to launcher-trace.log whenever it changes (for working out a prompt's keys; never on by default).
+  if ($env:CC_CONTROL_LAUNCH_TRACE -eq '1') {
+    $now = [CcControl.Con]::Screen()
+    if ($now -ne $script:lastScreen) { $script:lastScreen = $now; try { Add-Content -Path (Join-Path $env:USERPROFILE '.cc-control\launcher-trace.log') -Value ("===== {0}`n{1}" -f (Get-Date).ToString('o'), (($now -split "(.{$([Console]::BufferWidth)})" | Where-Object { $_ -ne '' }) -join "`n")) -ErrorAction SilentlyContinue } catch {} }
+  }
   if ($polling) {
     $next = Poll-Next $(if ($watching -or -not $ready) { 1 } else { 20 })
     if ($next -and -not $p.HasExited) {

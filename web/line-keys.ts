@@ -45,6 +45,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['← → (card open)', 'The previous / next card on the board, in column order'],
       ['Enter (card open)', 'Type to its terminal: the message box under the transcript sends into the session itself (Esc leaves the box). When its tab is gone or the session ended, sending opens a new tab that resumes the session first, and g does the same when there is no tab to bring forward'],
       ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal'],
+      ['1–9  ·  Tab / Shift+Tab  ·  y (a question on the card)', 'Claude’s question form, drawn as it is in the tab: a digit picks an option (a single choice moves on to the next question; boxes toggle), the digit after the options is Type something  ·  the next / previous question, or Submit at the end  ·  submit the answers, pressed into the tab by its launcher. Typing in the message box instead cancels the form and sends your message as the answer'],
       ['g (a card)', 'Go to its terminal tab: brings the Windows Terminal tab forward, for what the page can’t relay (the trust-the-folder prompt, a picker)'],
       ['Shift+D (a card on the board)', 'Changes full width: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
       ['c (card open)', '+ Context: the same popup the new-card screen has, over the chat (Repos, Folders and Tickets tabs, ← → or Tab switch, / searches, Enter ticks, and a note), Ctrl+Enter adds, Esc goes back. What you add waits on the card and goes in with your next message in its tab. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
@@ -488,6 +489,12 @@ export function stepChange(delta: number, count: number): void {
   set({ line: { ...s.line, at: Math.max(0, Math.min(Math.max(0, count - 1), s.line.at + delta)) } });
 }
 
+/**
+ * Claude's question form on the open card (§91): while it is up, digits pick, Tab / Shift+Tab move
+ * between its questions, y submits. The form sets these while it is on screen.
+ */
+export const questionHooks = { on: false, digit: (_d: number): void => {}, next: (): void => {}, prev: (): void => {}, submit: (): void => {}, otherDone: (): void => {} };
+
 /** How many files the Changes panel shows right now (it keeps the count here for j / k). */
 export let changeCount = 0;
 /** The panel's shown files, each as its index in the full list (a folded repo's files are left out, §90): f pops the sheet out on the right one. */
@@ -644,6 +651,12 @@ function started(s: ReturnType<typeof get>): Set<string> {
 function drawerKeys(e: KeyboardEvent): boolean {
   const s = get();
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
+  // Claude's question form (§91) takes digits, Tab and y first while it is up.
+  if (questionHooks.on) {
+    if (e.key === 'Tab') { if (e.shiftKey) questionHooks.prev(); else questionHooks.next(); return true; }
+    if (e.key === 'y') { questionHooks.submit(); return true; }
+    if (/^[1-9]$/.test(e.key)) { questionHooks.digit(Number(e.key)); return true; }
+  }
   switch (e.key) {
     case 'Escape': set({ line: { ...s.line, drawer: null } }); return true;
     case 'ArrowLeft': case 'ArrowRight': if (s.line.drawer) openNeighbour(s.line.drawer, e.key === 'ArrowRight' ? 1 : -1); return true;
@@ -825,6 +838,12 @@ function sayKeys(e: KeyboardEvent): boolean {
 function searchKeys(e: KeyboardEvent): boolean {
   const el = e.target as HTMLElement;
   if (el.id === 'card-say') return sayKeys(e);
+  // The question form's "Type something" box (§91): Enter is done with it, Esc leaves it; the rest types.
+  if (el.id.startsWith('q-other-')) {
+    if (e.key === 'Escape') { el.blur(); return true; }
+    if (e.key === 'Enter') { el.blur(); questionHooks.otherDone(); return true; }
+    return false;
+  }
   if (el.id !== 'line-q') return false;
   if (e.key === 'Escape') { el.blur(); set({ line: { ...get().line, q: '', searching: false } }); return true; }
   if (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'Tab') { el.blur(); set({ line: { ...get().line, searching: false } }); return true; }

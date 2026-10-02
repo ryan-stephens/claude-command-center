@@ -116,6 +116,8 @@ export interface LineLegendInput {
   /** Open card: its terminal can be typed into from here (Enter), and it is asking something y / n can answer. */
   canSay?: boolean;
   asking?: boolean;
+  /** Open card: Claude's question form is up (§91): digits pick, Tab moves on, y submits. */
+  question?: boolean;
   /** New-card screen, panel 1: which tab (Folders has its own keys). */
   tab?: 'tickets' | 'repos' | 'folders';
   /** Drawer: the card can take more context (c), and has some still waiting (x takes it back). */
@@ -214,7 +216,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   if (x.view === 'drawer') {
     return [
       { keys: ['Esc'], label: 'Back to the board' },
-      ...(x.asking ? [{ keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' as const }] : []),
+      ...(x.question ? [{ keys: ['1', '9'], label: 'Pick', tone: 'attn' as const }, { keys: ['Tab'], label: 'Next question' }, { keys: ['y'], label: 'Submit answers', tone: 'attn' as const }] : x.asking ? [{ keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' as const }] : []),
       ...(x.canSay ? [{ keys: ['Enter'], label: 'Type to it', tone: x.asking ? undefined : 'acc' as const }] : []),
       ...(x.hasTab ? [{ keys: ['g'], label: x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab ? { tone: 'attn' as const } : {}) }] : []),
       { keys: ['←', '→'], label: 'Previous / next card' },

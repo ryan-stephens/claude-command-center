@@ -18,6 +18,7 @@ import { runKey, type RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, cleanDraft, focusTab, userModel, writeHookSettings } from './cards.ts';
 import { cleanSeed, seedAllowed, seedCard, seedTranscript } from './seed.ts';
+import { answersComplete, questionKeys, readAnswers } from '../shared/questions.ts';
 import { timingSafeEqual } from 'node:crypto';
 import { ChannelService } from './channel.ts';
 import { Typist } from './typist.ts';
@@ -638,6 +639,9 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         logSend(id, `the tab answered after ${Date.now() - t0} ms (channel ${channels.has(id)}, launcher ${typist.alive(id)})`);
       }
       try {
+        // A message typed while Claude's question form is up (§91) answers it in words: Escape closes the form first, then the text is the next prompt.
+        const form = cards.get(id)?.live?.ask;
+        if (form?.kind === 'question' && form.questions?.length && typist.alive(id)) { await typist.send(id, { kind: 'keys', keys: ['Escape'] }); logSend(id, 'closed the question form first (Escape)'); }
         const way = await typeInto(id, text);
         logSend(id, `${text.length} chars through the ${way}`);
       } catch (e) {
@@ -673,6 +677,30 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         await typist.send(id, { kind: 'keys', keys: behavior === 'allow' ? ['1'] : ['Escape'] });
         cards.typedAnswer(id);
       }
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    }
+    case 'card.answerQuestion': {
+      // The question form answered from the page (§91): its keys are pressed in the tab by the launcher.
+      const id = String(msg.id);
+      const card = cards.get(id);
+      const questions = card?.live?.ask?.kind === 'question' ? card.live.ask.questions : undefined;
+      if (!questions?.length) throw new Error('No question is open on this card any more.');
+      if (!typist.alive(id)) throw new Error('This card’s tab can’t be reached from here: answer in its tab (g).');
+      const answers = readAnswers(msg.answers, questions);
+      if (!answersComplete(questions, answers)) throw new Error('Answer every question first.');
+      await typist.send(id, { kind: 'keys', keys: questionKeys(questions, answers) });
+      cards.typedAnswer(id);
+      logSend(id, `answered ${questions.length} question(s) through the launcher`);
+      send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    }
+    case 'card.keys': {
+      // Keys pressed in the card's tab by name (test servers only, §91): how a prompt's key sequence is worked out against the real thing.
+      if (!seedAllowed(PORT)) throw new Error('card.keys only works on a test server.');
+      const id = String(msg.id);
+      if (!typist.alive(id)) throw new Error('This card’s tab can’t be typed into from here.');
+      await typist.send(id, { kind: 'keys', keys: (Array.isArray(msg.keys) ? msg.keys : []).map(String).slice(0, 40) });
       send(ws, { type: 'ok', reqId: msg.reqId });
       return;
     }
