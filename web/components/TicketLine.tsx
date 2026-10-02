@@ -343,6 +343,10 @@ function CardView({ id }: { id: string }) {
   return (
     <section className="absolute inset-0 z-20 flex flex-col bg-bg" aria-label={`${card.key} ${card.title}`}>
       <div className="flex items-center gap-4 border-b border-line bg-surface px-4 py-3">
+        {/* The way back is at the top left, where the eye looks for it (§63); Esc and the browser's back do the same. */}
+        <button className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-bg px-2.5 py-1.5 text-sm text-sub hover:border-ring hover:text-ink" onClick={() => set({ line: { ...get().line, drawer: null } })} title="Back to the board" aria-label="Back to the board">
+          <Icon name="back" size={16} /><Key k="Esc" size="sm" />
+        </button>
         <WsBadge ws={ws} size={30} />
         <div className="flex min-w-0 grow flex-col gap-1">
           <div className="flex flex-wrap items-center gap-1.5 text-sm">
@@ -361,7 +365,6 @@ function CardView({ id }: { id: string }) {
             <button className="hover:text-ink disabled:opacity-40" disabled={place.at === place.total - 1} onClick={() => openNeighbour(id, 1)} title="The next card on the board" aria-label="The next card"><span className="flex items-center gap-1"><Key k="→" size="sm" /><Icon name="right" size={15} /></span></button>
           </div>
         )}
-        <button className="flex shrink-0 items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={() => set({ line: { ...get().line, drawer: null } })}>Back to the board <Key k="Esc" size="sm" /></button>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="flex min-h-0 flex-col border-line bg-surface lg:border-r">

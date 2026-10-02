@@ -4,7 +4,7 @@ import { cardRecipe } from '../shared/recipes.ts';
 import { openPrs, prsOf, shipMode } from '../shared/ship.ts';
 import { Dialogs } from './components/Dialogs.tsx';
 import { SessionView } from './components/SessionView.tsx';
-import { Icon, Key, KeyHint } from './components/ui.tsx';
+import { Icon, Key, KeyHint, TicketKey } from './components/ui.tsx';
 import { armOnFirstGesture, setNotificationHandler } from './attention.ts';
 import { bindingsFor, displayCombo, type ActionId } from './bindings.ts';
 import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession } from './keys.ts';
@@ -112,6 +112,8 @@ function Header() {
   const needYou = useStore((s) => attention(s).length);
   const waiting = useStore((s) => Object.keys(s.permissions).length);
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
+  const openCard = useStore((s) => (s.screen === 'line' && s.line.drawer ? s.cards.find((c) => c.id === s.line.drawer) : undefined));
+  const openSessionName = useStore((s) => (s.screen === 'session' ? s.sessions.find((x) => x.id === s.openId)?.title ?? s.cards.find((c) => c.sessionId === s.openId)?.title : undefined));
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
     <header className="flex items-center gap-3 border-b border-line bg-col px-3 py-2 md:px-4">
@@ -119,11 +121,17 @@ function Header() {
         <Icon name="grid" size={17} className="text-acc" />Command Center
         <Key k={k('ticketLine')} size="sm" className="hidden md:inline-flex" />
       </button>
-      {/* The board is where sessions are managed; the workspace chips under the header say which one is showing. */}
+      {/* The breadcrumb says where you are: Sessions, then the card or session that is open, with Sessions the way back (§63). */}
       <span className="hidden min-w-0 items-center gap-2 text-sub md:flex">
         <span className="text-faint">/</span>
-        {screen === 'session'
-          ? <button className="flex items-center gap-1.5 hover:text-ink" onClick={goHome} title="Back to your sessions">Sessions</button>
+        {screen === 'session' || openCard
+          ? <>
+              <button className="flex items-center gap-1.5 hover:text-ink" onClick={goHome} title="Back to the board (Esc)">Sessions</button>
+              <span className="text-faint">/</span>
+              <span className="flex min-w-0 items-center gap-1.5 font-semibold text-ink">
+                {openCard ? <><TicketKey k={openCard.key} source={openCard.ticket?.source} /><span className="truncate">{openCard.title}</span></> : <span className="truncate">{openSessionName ?? 'Session'}</span>}
+              </span>
+            </>
           : <span className="font-semibold text-ink">Sessions</span>}
       </span>
       {flash && <span className="truncate text-sm text-busy" role="status">{flash}</span>}
