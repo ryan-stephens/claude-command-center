@@ -8,7 +8,7 @@ import { branchFor, CARD_KINDS, homeOf, includedRepos, kindName, LAUNCH_MODES, m
 import type { RepoInfo, Workspace } from '../shared/protocol.ts';
 import { promptsFor, renderPrompt, type PromptContext, type PromptTicket, type SavedPrompt } from '../shared/prompts.ts';
 import { repoName, samePath } from '../shared/workspaces.ts';
-import { cardFolders, goRows, packetRows, type Composer, type GoRow, type ModelDefaults } from './line-model.ts';
+import { cardFolders, goRows, packetRows, sourceOf, type Composer, type GoRow, type ModelDefaults } from './line-model.ts';
 
 /** The column's stops, top to bottom (two columns at a wide window: ticket and context, then the message and settings). */
 export type SimpleBlock = 'ticket' | 'context' | 'msg' | 'how' | 'start';
@@ -75,7 +75,9 @@ export function chips(c: Composer, library: RepoInfo[]): Chip[] {
     const own = r.layer === 'card';
     if (r.item.kind === 'repo') {
       const isLib = library.some((x) => samePath(x.path, r.item.id)) || c.packet.workspace.some((w) => w.id === r.item.id);
-      out.push({ id: `${r.layer}:${r.item.id}`, label: repoName(r.item.id), sub: own ? (isLib ? undefined : r.item.on ? 'folder' : 'folder · left out') : r.item.on ? 'lane' : 'lane · left out', kind: 'repo', on: r.item.on, own, row: i });
+      // A repo picked from a folder added for this card (§65) says which folder, so it is clear where it came from.
+      const from = own && !isLib ? sourceOf(c, r.item.id) : null;
+      out.push({ id: `${r.layer}:${r.item.id}`, label: repoName(r.item.id), sub: own ? (isLib ? undefined : from ? repoName(from.path) : r.item.on ? 'folder' : 'folder · left out') : r.item.on ? 'lane' : 'lane · left out', kind: 'repo', on: r.item.on, own, row: i });
     } else {
       out.push({ id: `${r.layer}:${r.item.id}`, label: r.item.id.replace(/^ticket:/, ''), sub: 'related', kind: 'ticket', on: r.item.on, own, row: i });
     }

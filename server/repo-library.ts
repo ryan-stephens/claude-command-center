@@ -66,6 +66,17 @@ export function scanSources(sources: string[]): RepoInfo[] {
 }
 
 /**
+ * One folder scanned for repos without being saved anywhere (§65): a source for one card. The
+ * path must be a real, absolute folder, as a library source must; the repos come back sorted as
+ * the library's are. A folder with no repos in it answers with an empty list, so the page can say so.
+ */
+export function peekSource(raw: unknown, platform: string = process.platform): { source: string; repos: RepoInfo[] } {
+  const { sources, problem } = cleanSources([raw], [], platform);
+  if (problem || !sources[0]) throw new Error(problem ?? 'Type or paste a folder path first.');
+  return { source: sources[0], repos: scanSources([sources[0]]) };
+}
+
+/**
  * Source folders as typed or picked, made canonical (see normalizeFolder) and deduplicated.
  * New ones must be real folders; ones already saved may be offline (an unplugged drive) and stay,
  * so removing one source never fails because of another. `problem` says what was wrong, and with which path.

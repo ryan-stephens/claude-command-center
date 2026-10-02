@@ -137,7 +137,72 @@ export function nextTab(t: SourceTab, delta: number): SourceTab {
  * docs, a spec folder, a tool's install). They go in like extra repos, with --add-dir.
  */
 export function cardFolders(c: Composer, library: RepoInfo[]): PacketItem[] {
-  return c.packet.card.filter((i) => i.kind === 'repo' && !library.some((r) => samePath(r.path, i.id)));
+  return c.packet.card.filter((i) => i.kind === 'repo' && !library.some((r) => samePath(r.path, i.id)) && !sourceOf(c, i.id));
+}
+
+// ---- Extra sources of repos, for this card only (§65) --------------------------------------
+
+/**
+ * A folder of repos the card picks from besides the library: its path and the git repos inside it,
+ * as the server scanned them. One taken off the list (`hidden`) keeps only the repos picked from
+ * it, so their chips still say where they came from.
+ */
+export interface RepoSource { path: string; repos: RepoInfo[]; hidden?: boolean }
+
+/** Which extra source lists this repo, if any. */
+export function sourceOf(c: Composer, path: string): RepoSource | null {
+  return c.sources?.find((s) => s.repos.some((r) => samePath(r.path, path))) ?? null;
+}
+
+/** Does the search box hold a folder path rather than words to search for? (`D:\…`, `\\server\…`, `/…`, `~/…`) */
+export function looksLikePath(q: string): boolean {
+  return /^\s*"?([a-zA-Z]:[\\/]|\\\\|\/|~[\\/])/.test(q);
+}
+
+/**
+ * A folder scanned for this card joins the list, unless it is there already (or is the library's
+ * own folder: its repos are listed already). Its repos that the library lists are left to the library.
+ */
+export function addSource(c: Composer, source: RepoSource, librarySources: string[] = []): Composer | string {
+  if (c.sources?.some((s) => !s.hidden && samePath(s.path, source.path))) return `${source.path} is listed already.`;
+  if (librarySources.some((s) => samePath(s, source.path))) return `${source.path} is in the repo library already: its repos are in the list.`;
+  if (!source.repos.length) return `No git repos in ${source.path}. A folder Claude should read goes on the Folders tab.`;
+  // Back after being taken off: the fresh scan takes the hidden one's place.
+  return { ...c, sources: [...(c.sources ?? []).filter((s) => !samePath(s.path, source.path)), { path: source.path, repos: source.repos }] };
+}
+
+/** x on a source's heading: the folder and its unpicked repos leave the list; repos picked from it stay on the card, and the source stays hidden behind them so their chips still name it. */
+export function removeSource(c: Composer, path: string): Composer {
+  const sources = (c.sources ?? []).flatMap((s) => {
+    if (!samePath(s.path, path)) return [s];
+    const picked = s.repos.filter((r) => c.packet.card.some((i) => i.kind === 'repo' && samePath(i.id, r.path)));
+    return picked.length ? [{ path: s.path, repos: picked, hidden: true }] : [];
+  });
+  const { sources: _, ...rest } = c;
+  return sources.length ? { ...rest, sources } : rest;
+}
+
+/** A row of the Repos tab on the simple look: a repo (from the library, or from an extra source), an extra source's heading, or the way to add another source. */
+export type SourceRow = { kind: 'repo'; repo: RepoInfo; from?: string } | { kind: 'source'; path: string } | { kind: 'more' };
+
+/**
+ * The Repos tab with the extra sources: the library's repos, then each extra source's under a
+ * heading with its path, then the row that adds another. The search filters the repos (a heading
+ * stays while any of its repos match, or nothing is searched); a path in the box filters nothing out,
+ * so the row that adds it is the one highlighted.
+ */
+export function sourceRows(c: Composer, library: RepoInfo[]): SourceRow[] {
+  const path = looksLikePath(c.q);
+  const q = path ? '' : c.q.trim().toLowerCase();
+  const hit = (r: RepoInfo) => !q || `${r.name} ${r.path}`.toLowerCase().includes(q);
+  const out: SourceRow[] = library.filter(hit).map((repo) => ({ kind: 'repo', repo }));
+  for (const s of c.sources ?? []) {
+    if (s.hidden) continue;
+    const repos = s.repos.filter((r) => hit(r) && !library.some((l) => samePath(l.path, r.path)));
+    if (!q || repos.length) out.push({ kind: 'source', path: s.path }, ...repos.map((repo) => ({ kind: 'repo' as const, repo, from: s.path })));
+  }
+  out.push({ kind: 'more' });
+  return out;
 }
 
 /** A folder from the picker: added to the card, unless it has it already. */
@@ -185,6 +250,8 @@ export interface Composer {
   prNotes?: string[];
   /** The simple look's own state (web/simple-model.ts); unset means its defaults. The full look ignores it. */
   simple?: import('./simple-model.ts').SimpleState;
+  /** Folders of repos this card picks from besides the library (§65): kept with the draft, saved nowhere else. */
+  sources?: RepoSource[];
 }
 
 /** The running card the new-card screen adds to, and what it already has (so it isn't added twice). */
@@ -392,10 +459,9 @@ export function setWorkspace(c: Composer, ws: Workspace | null, recipes: Recipes
   return { ...c, workspaceId: ws?.id ?? null, packet, launch: { ...c.launch, home } };
 }
 
-/** Panel 1: the repo library, filtered by the search. */
+/** Panel 1: the repo library and the card's extra sources (§65) as one list, filtered by the search. */
 export function sources(c: Composer, repos: RepoInfo[]): RepoInfo[] {
-  const q = c.q.trim().toLowerCase();
-  return q ? repos.filter((r) => `${r.name} ${r.path}`.toLowerCase().includes(q)) : repos;
+  return sourceRows(c, repos).flatMap((r) => (r.kind === 'repo' ? [r.repo] : []));
 }
 
 /** Is this repo in the packet (switched on)? */

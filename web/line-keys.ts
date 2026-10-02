@@ -74,6 +74,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['← → (what Claude can see)', 'Move along the chips: the lane’s repos, this card’s repos, folders and related tickets, then + Context'],
       ['Enter / Space (a chip)', 'Include or leave out a lane repo; on + Context, open the picker'],
       ['+ or a (what Claude can see)', 'Add context: a popup with Repos (the library), Folders (ones from disk: type or paste a path and Enter, or b browses in the Windows folder dialog; on one listed, Enter leaves it out or brings it back, x takes it off) and Tickets (related ones; Jira is searched too). ← → or Tab switch tabs, ↑ ↓ move, Enter adds one and keeps the list open (on one already ticked, takes it out), Esc closes'],
+      ['b (Repos tab)', 'Another folder of repos to pick from, for this card only (the lane and the library are not changed): b browses in the Windows folder dialog, or paste the folder’s path in the box and Enter, or Enter on the last row. Its repos are listed under its path; x on that heading takes the folder off, and repos you picked from it stay on the card'],
       ['x (a chip)', 'Take out something this card added'],
       ['w (a chip)', 'Keep a repo you added for the whole lane'],
       ['Enter or e (opening message)', 'Write the first thing Claude is told (the context itself arrives through the hook, so keep it to a prompt)'],

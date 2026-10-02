@@ -4,10 +4,10 @@
 
 import { unrenderPrompt } from '../shared/prompts.ts';
 import { flash, get, set } from './store.ts';
-import { addFolder, cardFolders, composerKey, cycleKind, cycleModel, dropTicket, nextTab, packetRows, pickTicket, repoOrigin, sources, stepOption, ticketSources, togglePacketRow, toggleSource, type Composer, type SourceTab } from './line-model.ts';
+import { addFolder, addSource, cardFolders, composerKey, cycleKind, cycleModel, dropTicket, looksLikePath, nextTab, packetRows, pickTicket, removeSource, repoOrigin, sourceRows, stepOption, ticketSources, togglePacketRow, toggleSource, type Composer, type SourceTab } from './line-model.ts';
 import { foundFor, keepRepo, leaveComposer, startWork, updateComposer } from './line-keys.ts';
 import { chips, howRows, ownMessage, promptContext, promptRows, simpleOf, stepBlock, usePrompt, withSimple } from './simple-model.ts';
-import { listFolder, pickFolderOnDisk, send, writeMessageWithClaude } from './ws.ts';
+import { listFolder, peekRepoSource, pickFolderOnDisk, send, writeMessageWithClaude } from './ws.ts';
 
 /** The simple look has no branch choice for Develop: a worktree of each repo, always, so cards never share a checkout. */
 export function develop(c: Composer): Composer {
@@ -50,7 +50,17 @@ export function pickerTab(delta: number): void {
   focusField('cp-q');
 }
 
-export interface PickerRow { id: string; label: string; sub: string; /** Already in the card (Enter takes it out again). */ in?: boolean; /** A ticket row: its key, shown as a badge before the title. */ key?: string }
+export interface PickerRow {
+  id: string;
+  label: string;
+  sub: string;
+  /** Already in the card (Enter takes it out again). */
+  in?: boolean;
+  /** A ticket row: its key, shown as a badge before the title. */
+  key?: string;
+  /** Not something to tick: the heading of a folder of repos added for this card (`x` takes it off), or the row that adds another (§65). */
+  role?: 'source' | 'more';
+}
 
 /** The picker chooses one ticket (in place of this card's, or a card with none yet) rather than ticking several. */
 export function singlePick(c: Composer): boolean {
@@ -65,7 +75,15 @@ export function pickerList(c: Composer): PickerRow[] {
   if (!sp.adding) return [];
   const tab: SourceTab = sp.adding === 'context' ? c.tab : 'tickets';
   if (tab === 'repos') {
-    return sources(c, s.library.repos).map((r) => {
+    const path = looksLikePath(c.q);
+    const bare = !s.library.repos.length && !c.sources?.length;
+    return sourceRows(c, s.library.repos).map((row): PickerRow => {
+      if (row.kind === 'source') return { id: `source:${row.path}`, label: row.path, sub: 'for this card · x takes it off', role: 'source' };
+      if (row.kind === 'more') {
+        return path ? { id: 'more', label: `Scan ${c.q.trim()} for repos`, sub: 'Enter · for this card only', role: 'more' }
+          : { id: 'more', label: '+ Another folder of repos…', sub: bare ? 'the library is empty (F on the board fills it) · b browses, or paste a path above' : 'for this card only · b browses, or paste a path above', role: 'more' };
+      }
+      const r = row.repo;
       const where = repoOrigin(c, r.path);
       const on = where === 'workspace' ? c.packet.workspace.find((x) => x.id === r.path)?.on !== false : where === 'card';
       return { id: r.path, label: r.name, sub: where === 'workspace' ? (on ? 'lane' : 'lane · left out') : where === 'card' ? 'added' : r.branch ?? '', in: Boolean(on) };
@@ -100,7 +118,48 @@ export function addTypedFolder(): void {
   );
 }
 
+/**
+ * A folder of repos for this card (§65): scanned on the server, saved nowhere, listed under its own
+ * heading on the Repos tab. The highlight lands on its first repo. A folder with no repos in it is
+ * refused with a pointer to the Folders tab.
+ */
+function addRepoSource(path: string): void {
+  peekRepoSource(path).then(
+    (source) => {
+      const c = get().composer;
+      if (!c) return;
+      const r = addSource(c, source, get().library.sources);
+      if (typeof r === 'string') { flash(r); return; }
+      const next = withSimple({ ...r, q: '' }, {});
+      const at = pickerList(next).findIndex((row) => row.id === `source:${source.path}`) + 1;
+      updateComposer(() => withSimple(next, { ai: at }));
+      flash(`${source.repos.length} ${source.repos.length === 1 ? 'repo' : 'repos'} in ${source.path}, for this card only`);
+    },
+    (e: Error) => flash(e.message),
+  );
+}
+
+/** The Repos tab's box with a path in it: Enter scans that folder for repos, for this card. */
+export function addTypedSource(): void {
+  const c = get().composer;
+  if (!c) return;
+  const path = c.q.trim().replace(/^"(.*)"$/, '$1').replace(/[\\/]+$/, '');
+  if (!path || !looksLikePath(path)) { flash('Paste a folder path in the box first (like D:\\side-projects), or b browses for one.'); return; }
+  addRepoSource(path);
+}
+
 let browsing = false;
+
+/** b on the Repos tab: the machine's own dialog picks a folder of repos for this card. */
+export function browseRepoSource(): void {
+  if (browsing) { flash('The folder dialog is already open: it may be behind this window.'); return; }
+  browsing = true;
+  flash('Pick a folder of repos in the Windows dialog (it may open behind this window)');
+  pickFolderOnDisk().then(
+    (path) => { browsing = false; if (path) addRepoSource(path); },
+    (e: Error) => { browsing = false; flash(e.message); },
+  );
+}
 
 /** Browse for a folder: the machine's own dialog opens (the server runs here); the folder chosen joins the card. */
 export function browseFolder(): void {
@@ -129,9 +188,17 @@ export function pickAt(c: Composer, at: number, remove = false): void {
   const sp = simpleOf(c);
   const tab: SourceTab = sp.adding === 'context' ? c.tab : 'tickets';
   if (tab === 'repos') {
-    const r = sources(c, s.library.repos)[at];
-    if (!r) { if (!s.library.repos.length) flash('The repo library is empty. On the board, F picks the folders it scans.'); return; }
-    updateComposer((x) => toggleSource(x, r.path));
+    const row = sourceRows(c, s.library.repos)[at];
+    if (!row) return;
+    if (row.kind === 'more') { if (remove) return; if (looksLikePath(c.q)) addTypedSource(); else browseRepoSource(); return; }
+    if (row.kind === 'source') {
+      // The heading of a folder added for this card: x takes it off; Enter says so.
+      if (remove) { updateComposer((x) => withSimple(removeSource(x, row.path), { ai: Math.max(0, at - 1) })); flash(`${row.path} is off the list; the repos you picked from it stay on the card.`); }
+      else flash('x takes this folder and its unpicked repos off the list.');
+      return;
+    }
+    if (remove && repoOrigin(c, row.repo.path) !== 'card') { flash('Only a repo this card added can be taken out. Enter leaves a lane repo out.'); return; }
+    updateComposer((x) => toggleSource(x, row.repo.path));
     return;
   }
   if (tab === 'folders') {
@@ -245,8 +312,9 @@ function simpleTyping(e: KeyboardEvent, c: Composer): boolean {
     return true;
   }
   if (el.id === 'cp-q') {
-    // The Folders tab's box is a path: Enter adds it. Elsewhere Enter picks the highlighted row.
+    // The Folders tab's box is a path: Enter adds it. On the Repos tab a path in the box is a folder of repos to scan (§65). Elsewhere Enter picks the highlighted row.
     if (e.key === 'Enter' && sp.adding === 'context' && c.tab === 'folders') { addTypedFolder(); return true; }
+    if (e.key === 'Enter' && sp.adding === 'context' && c.tab === 'repos' && looksLikePath(c.q)) { addTypedSource(); return true; }
     if (e.key === 'Enter') { pickAt(c, sp.ai); return true; }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       const n = pickerList(c).length;
@@ -294,8 +362,9 @@ export function simpleKeys(e: KeyboardEvent, typing: boolean): boolean {
     if (sp.adding === 'context' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { pickerTab(e.key === 'ArrowRight' ? 1 : -1); return true; }
     if (e.key === '/') { focusField('cp-q'); return true; }
     if (e.key === 'Enter' || e.key === ' ') { pickAt(c, sp.ai); return true; }
-    if ((e.key === 'x' || e.key === 'Delete') && c.tab === 'folders') { pickAt(c, sp.ai, true); return true; }
+    if ((e.key === 'x' || e.key === 'Delete') && sp.adding === 'context' && c.tab !== 'tickets') { pickAt(c, sp.ai, true); return true; }
     if (e.key === 'b' && sp.adding === 'context' && c.tab === 'folders') { browseFolder(); return true; }
+    if (e.key === 'b' && sp.adding === 'context' && c.tab === 'repos') { browseRepoSource(); return true; }
     return false;
   }
   if (c.preview) return false;

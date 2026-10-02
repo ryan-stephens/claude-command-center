@@ -126,7 +126,7 @@ export interface LineLegendInput {
   /** New-card screen, panel 2: the highlighted row is a repo this card added (w keeps it for the workspace). */
   cardRepo?: boolean;
   /** New-card screen in its simple look (§59): which block, a picker open, the options open, a ticket picked. */
-  simple?: { block: 'ticket' | 'context' | 'msg' | 'how' | 'start'; adding: boolean; /** The context picker (Repos / Folders / Tickets tabs), not the ticket search. */ context?: boolean; /** Its Folders tab is showing. */ folders?: boolean; /** The list of saved prompts is open under the opening message. */ prompt?: boolean; more: boolean; hasTicket: boolean; ownChip: boolean };
+  simple?: { block: 'ticket' | 'context' | 'msg' | 'how' | 'start'; adding: boolean; /** The context picker (Repos / Folders / Tickets tabs), not the ticket search. */ context?: boolean; /** Its Folders tab is showing. */ folders?: boolean; /** Its Repos tab is showing; `onSource`: the highlighted row is the heading of a folder added for this card (§65). */ repos?: boolean; onSource?: boolean; /** The list of saved prompts is open under the opening message. */ prompt?: boolean; more: boolean; hasTicket: boolean; ownChip: boolean };
   bindings: Bindings;
 }
 
@@ -140,7 +140,9 @@ function simpleLegend(x: LineLegendInput): LegendItem[] {
       ...(sp.context ? [{ keys: ['←', '→'], label: 'Repos · Folders · Tickets' }] : []),
       { keys: ['↑', '↓'], label: 'Move' },
       { keys: ['Enter'], label: sp.folders ? 'Add the path / leave out' : sp.context ? 'Add / take out' : 'Choose this ticket', tone: 'acc' },
-      ...(sp.folders ? [{ keys: ['b'], label: 'Browse' }, { keys: ['x'], label: 'Take off' }] : [{ keys: ['/'], label: 'Search' }]),
+      ...(sp.folders ? [{ keys: ['b'], label: 'Browse' }, { keys: ['x'], label: 'Take off' }]
+        : sp.repos ? [{ keys: ['b'], label: 'A folder of repos' }, ...(sp.onSource ? [{ keys: ['x'], label: 'Take the folder off' }] : []), { keys: ['/'], label: 'Search' }]
+        : [{ keys: ['/'], label: 'Search' }]),
       { keys: ['Esc'], label: sp.context ? 'Done' : 'Close' },
     ];
   }

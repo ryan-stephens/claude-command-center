@@ -353,25 +353,33 @@ function Picker({ c, embedded = false }: { c: Composer; embedded?: boolean }) {
               <button className="btn h-[38px] px-2.5" onClick={addTypedFolder} title="Add the folder typed (Enter)" aria-label="Add the folder typed"><Icon name="check" size={17} /></button>
               <button className="btn h-[38px] px-2.5" onClick={browseFolder} title="Browse for a folder in the Windows dialog (b)" aria-label="Browse for a folder"><Icon name="folder" size={17} /></button>
             </div>
-          : <input id="cp-q" type="text" autoComplete="off" value={c.q} placeholder={tab === 'repos' ? 'Search the repo library' : 'A key like SHOP-160, or words from the title (Jira is searched too)'}
+          : <input id="cp-q" type="text" autoComplete="off" value={c.q} placeholder={tab === 'repos' ? 'Search the repos, or paste a folder of repos to list for this card' : 'A key like SHOP-160, or words from the title (Jira is searched too)'}
               onChange={(e) => updateComposer((x) => withSimple({ ...x, q: e.target.value }, { ai: 0 }))}
               className="field text-[14px]" />}
       </>}
       {tab === 'tickets' && c.q.trim().length >= 2 && (found.looking || found.problem) && <div className={`text-[12.5px] ${found.problem ? 'text-attn' : 'text-faint'}`}>{found.problem ?? 'Searching Jira for anyone’s tickets…'}</div>}
       <div className="flex max-h-[320px] flex-col gap-0.5 overflow-y-auto">
         {list.length ? list.map((row, i) => (
-          <button key={row.id} id={`pick-${i}`} onClick={() => pickAt(c, i)}
-            className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${i === ai ? 'is-focus bg-raise' : 'hover:bg-raise'}`}>
-            {!one && <span className="grid h-4 w-4 shrink-0 place-items-center rounded border-[1.5px] border-line font-mono text-[11px] font-bold text-ok">{row.in ? '✓' : ''}</span>}
-            {row.key && <TicketKey k={row.key} />}
-            <span className="min-w-0 grow truncate">{row.label}</span>
-            {row.sub && <span className="shrink-0 text-xs text-faint">{row.sub}</span>}
-          </button>
+          // A folder of repos added for this card (§65) heads its repos: its path, and × takes it off; the last row adds another.
+          row.role === 'source'
+            ? <div key={row.id} id={`pick-${i}`} role="heading" aria-level={3} onClick={() => updateComposer((x) => withSimple(x, { ai: i }))}
+                className={`mt-1.5 flex items-center gap-2.5 rounded-lg border-t border-line/60 px-2.5 pb-1 pt-2 text-[12.5px] ${i === ai ? 'is-focus bg-raise' : ''}`}>
+                <span className="min-w-0 grow truncate font-mono text-sub" title={row.label}>{row.label}</span>
+                <span className="shrink-0 text-xs text-faint">{row.sub}</span>
+                <button className="shrink-0 text-faint hover:text-ink" onClick={(e) => { e.stopPropagation(); pickAt(c, i, true); }} title="Take this folder off the list (x)" aria-label={`Take ${row.label} off the list`}>×</button>
+              </div>
+            : <button key={row.id} id={`pick-${i}`} onClick={() => pickAt(c, i)}
+                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${row.role === 'more' ? 'mt-1 border border-dashed border-line text-sub' : ''} ${i === ai ? 'is-focus bg-raise' : 'hover:bg-raise'}`}>
+                {!one && !row.role && <span className="grid h-4 w-4 shrink-0 place-items-center rounded border-[1.5px] border-line font-mono text-[11px] font-bold text-ok">{row.in ? '✓' : ''}</span>}
+                {row.key && <TicketKey k={row.key} />}
+                <span className="min-w-0 grow truncate">{row.label}</span>
+                {row.sub && <span className="shrink-0 text-xs text-faint">{row.sub}</span>}
+              </button>
         )) : <div className="rounded-lg border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{empty}</div>}
       </div>
       {!embedded && context && (
         <div className="flex items-end justify-between gap-4 border-t border-line pt-3">
-          <div className="text-[12.5px] text-faint">{tab === 'folders' ? 'Folders from disk (docs, a spec, a tool’s): Claude can read and edit what is inside. Type a path and Enter, or b browses in the Windows dialog; on one listed, Enter leaves it out or brings it back, x takes it off the card.' : 'Enter adds one and keeps the list open (on one already ticked, takes it out).'} ← → or Tab switch tabs. Everything you add is on the card already.</div>
+          <div className="text-[12.5px] text-faint">{tab === 'folders' ? 'Folders from disk (docs, a spec, a tool’s): Claude can read and edit what is inside. Type a path and Enter, or b browses in the Windows dialog; on one listed, Enter leaves it out or brings it back, x takes it off the card.' : tab === 'repos' ? 'Enter adds one and keeps the list open (on one already ticked, takes it out). Another folder of repos, for this card only and never the lane: b browses, or paste its path above; x on its heading takes it off.' : 'Enter adds one and keeps the list open (on one already ticked, takes it out).'} ← → or Tab switch tabs. Everything you add is on the card already.</div>
           <button className="btn btn-primary shrink-0 px-4 py-2" onClick={closePicker}>Done <Key k="Esc" size="sm" tone="ghost" /></button>
         </div>
       )}

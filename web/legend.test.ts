@@ -71,4 +71,10 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   const adding = labels({ view: 'composer', pane: 'pkt', addingTo: 'SHOP-155', cardRepo: true, bindings: {} });
   assert.ok(adding.includes('Add to SHOP-155') && !adding.includes('Model') && !adding.includes('Keep for the lane'), 'adding to a running card');
   assert.deepEqual(lineLegendFor({ view: 'board', hasSession: true, hasFocus: true, bindings: { expand: ['Alt+Enter'] } }).find((i) => i.label === 'Its session')!.keys, ['Alt+Enter']);
+  // The simple look's Add context popup on Repos: b adds a folder of repos for this card; x only on a folder's heading (§65).
+  const base = { block: 'context' as const, adding: true, context: true, more: false, hasTicket: true, ownChip: false };
+  const onRepos = labels({ view: 'composer', simple: { ...base, repos: true }, bindings: {} });
+  assert.ok(onRepos.includes('A folder of repos') && !onRepos.includes('Take the folder off'), onRepos.join(','));
+  assert.ok(labels({ view: 'composer', simple: { ...base, repos: true, onSource: true }, bindings: {} }).includes('Take the folder off'));
+  assert.ok(!labels({ view: 'composer', simple: { ...base, folders: true }, bindings: {} }).includes('A folder of repos'));
 });

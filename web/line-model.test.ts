@@ -7,6 +7,7 @@ import {
   addComposer, additionOf, cardActivity, composerKey, ticketSources, cycleModel, draftOf, dropTicket, pickTicket, ticketFocus, elapsed, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin,
   setWorkspace, sources, stepOption, togglePacketRow, toggleSource,
   hasWork, asDraft, type Composer,
+  addSource, cardFolders, looksLikePath, removeSource, sourceOf, sourceRows, type RepoSource,
 } from './line-model.ts';
 
 const W1: Workspace = { id: 'w1', name: 'Storefront', color: 'blue', repos: ['D:\\r\\web-app', 'D:\\r\\tokens'], home: 'D:\\r\\tokens' };
@@ -70,6 +71,44 @@ test('Space on a library repo adds it to the card, again takes it out; a workspa
 test('the search filters the library', () => {
   const repos = [{ path: 'D:\\r\\web-app', name: 'web-app' }, { path: 'D:\\r\\pay', name: 'pay' }];
   assert.deepEqual(sources({ ...newComposer(W1, 'K'), q: 'PAY' }, repos).map((r) => r.name), ['pay']);
+});
+
+test('a folder of repos for one card: listed under its heading after the library, taken off again with what was picked kept', () => {
+  const library = [{ path: 'D:\\r\\web-app', name: 'web-app' }, { path: 'D:\\r\\pay', name: 'pay' }];
+  const side: RepoSource = { path: 'E:\\side', repos: [{ path: 'E:\\side\\api', name: 'api' }, { path: 'E:\\side\\web', name: 'web' }, { path: 'd:/r/pay', name: 'pay' }] };
+  const kinds = (c: Composer) => sourceRows(c, library).map((r) => (r.kind === 'repo' ? `${r.from ? 'src:' : ''}${r.repo.name}` : r.kind));
+  let c = newComposer(W1, 'K');
+  assert.deepEqual(kinds(c), ['web-app', 'pay', 'more'], 'the library, then the row that adds a folder');
+  const added = addSource(c, side);
+  assert.ok(typeof added !== 'string');
+  c = added;
+  assert.deepEqual(kinds(c), ['web-app', 'pay', 'source', 'src:api', 'src:web', 'more'], 'a repo the library has is left to the library');
+  assert.match(String(addSource(c, side)), /listed already/);
+  assert.match(String(addSource(c, { path: 'D:\\r', repos: library }, ['d:/r/'])), /in the repo library already/);
+  assert.match(String(addSource(c, { path: 'E:\\docs', repos: [] })), /No git repos in E:\\docs/);
+  assert.deepEqual(kinds({ ...c, q: 'we' }), ['web-app', 'source', 'src:web', 'more'], 'the search filters every group');
+  assert.deepEqual(kinds({ ...c, q: 'zzz' }), ['more'], 'a heading goes when nothing under it matches');
+  assert.deepEqual(kinds({ ...c, q: 'E:\\other' }), ['web-app', 'pay', 'source', 'src:api', 'src:web', 'more'], 'a path in the box filters nothing out');
+  assert.ok(looksLikePath('D:\\repos') && looksLikePath(' "C:/x"') && looksLikePath('\\\\nas\\repos') && looksLikePath('~/src') && !looksLikePath('web') && !looksLikePath('D:repos'));
+  // A repo picked from the extra source is a card repo like any other, and the source knows it.
+  c = toggleSource(c, 'E:\\side\\api');
+  assert.equal(repoOrigin(c, 'e:/side/api'), 'card');
+  assert.equal(sourceOf(c, 'E:\\side\\api')?.path, 'E:\\side');
+  assert.deepEqual(cardFolders(c, library), [], 'a repo from a source is not a folder from disk');
+  assert.deepEqual(sources(c, library).map((r) => r.name), ['web-app', 'pay', 'api', 'web'], 'the full look sees one flat list');
+  // x on the heading: the folder and its unpicked repos go; api stays on the card, and still knows its folder.
+  c = removeSource(c, 'e:/side');
+  assert.deepEqual(kinds(c), ['web-app', 'pay', 'more']);
+  assert.equal(repoOrigin(c, 'E:\\side\\api'), 'card');
+  assert.equal(sourceOf(c, 'E:\\side\\api')?.path, 'E:\\side', 'the chip still says where it came from');
+  assert.equal(sourceOf(c, 'E:\\side\\web'), null);
+  assert.deepEqual(cardFolders(c, library), [], 'and it is still not a folder from disk');
+  // The folder again: back in full, in the hidden one's place.
+  c = addSource(c, side) as Composer;
+  assert.deepEqual(kinds(c), ['web-app', 'pay', 'source', 'src:api', 'src:web', 'more']);
+  assert.equal(c.sources?.length, 1);
+  // Nothing picked from it: taking it off leaves nothing behind.
+  assert.equal(removeSource(toggleSource(c, 'E:\\side\\api'), 'E:\\side').sources, undefined);
 });
 
 test('packet rows: include, leave out, remove only what the card added, never the last repo', () => {

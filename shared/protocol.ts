@@ -16,7 +16,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
 
-export const PROTOCOL = 22;
+export const PROTOCOL = 23;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -355,6 +355,8 @@ export type ClientMsg =
   /** The folders the repo library scans for git repos. */
   | { type: 'library.setSources'; sources: string[]; /** Answered with `ok` or an `error` carrying it. */ reqId?: string }
   | { type: 'library.scan' }
+  /** Scan one folder for git repos without saving it anywhere: a source of repos for one card (§65). Answered with `library.peeked`, or an `error`. */
+  | { type: 'library.peek'; reqId: string; path: string }
   /** Subfolders of `path`, for the folder picker; no path lists the starting points. Read-only. */
   | { type: 'fs.list'; reqId: string; path?: string }
   /** Open the machine's own folder dialog (Windows Explorer's) and answer with the folder chosen, or none. */
@@ -443,6 +445,8 @@ export type ServerMsg =
   | { type: 'workspaces'; workspaces: Workspace[] }
   /** `suggested`: likely source folders, from where past sessions ran, for the first-run setup. */
   | { type: 'library'; sources: string[]; repos: RepoInfo[]; suggested: string[] }
+  /** The folder asked about with `library.peek`, made canonical, and the git repos directly inside it (none: not a folder of repos). */
+  | { type: 'library.peeked'; reqId: string; source: string; repos: RepoInfo[] }
   | { type: 'workspace.file'; reqId: string; file: WorkspaceFile }
   | { type: 'fs.list'; reqId: string; listing: FolderListing }
   /** The folder picked in the machine's dialog; none when it was cancelled. */

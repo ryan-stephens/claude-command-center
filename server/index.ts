@@ -34,7 +34,7 @@ import { COOKIE, cookieToken, findRemoteIp, remoteHostAllowed, remoteToken, remo
 import { searchFiles } from './file-search.ts';
 import { listFolder, listRoots, normalizeFolder, notAFullPath } from './fs-browse.ts';
 import { pickFolder } from './pick-folder.ts';
-import { cleanSources, scanSources } from './repo-library.ts';
+import { cleanSources, peekSource, scanSources } from './repo-library.ts';
 import { workspaceFromFile, workspaceToFile } from './workspace-file.ts';
 import { SessionManager } from './session-manager.ts';
 import { DB_PATH, Store } from './store.ts';
@@ -465,6 +465,12 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       send(ws, library(true));
       send(ws, recipesMsg());
       return;
+    case 'library.peek': {
+      // A folder of repos for one card (§65): scanned, never saved.
+      const { source, repos } = peekSource(msg.path);
+      send(ws, { type: 'library.peeked', reqId: msg.reqId, source, repos });
+      return;
+    }
     case 'workspace.export': {
       const w = store.loadWorkspaces().find((x) => x.id === msg.id);
       if (!w) throw new Error('That workspace no longer exists.');

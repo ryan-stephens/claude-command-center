@@ -4,7 +4,7 @@ import type { StackChoice } from '../shared/stack.ts';
 import type { Changes } from '../shared/changes.ts';
 import type { TicketTransition } from '../shared/tickets.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
-import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
+import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type RepoInfo, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import type { PromptContext } from '../shared/prompts.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
 import { activeSession, flash, get, groupKeyOf, set, setFilter } from './store.ts';
@@ -104,6 +104,13 @@ export async function listFolder(path?: string): Promise<FolderListing> {
 export async function pickFolderOnDisk(): Promise<string | null> {
   const reply = await request((reqId) => ({ type: 'fs.pickFolder', reqId }), 10 * 60_000);
   return (reply as Extract<ServerMsg, { type: 'fs.picked' }>).path ?? null;
+}
+
+/** A folder of repos for one card (§65): scanned on the server, saved nowhere. The canonical path and the repos inside it (none: not a folder of repos). */
+export async function peekRepoSource(path: string): Promise<{ path: string; repos: RepoInfo[] }> {
+  const reply = await request((reqId) => ({ type: 'library.peek', reqId, path }), 30_000);
+  const { source, repos } = reply as Extract<ServerMsg, { type: 'library.peeked' }>;
+  return { path: source, repos };
 }
 
 /** Have Claude write the opening message from rough text and the card's context (§62). A cheap model, one turn; up to a minute. */
@@ -399,6 +406,7 @@ function receive(msg: ServerMsg): void {
     case 'fs.files':
     case 'fs.picked':
     case 'prompt.written':
+    case 'library.peeked':
       return; // answers to requests nobody is waiting for any more
     case 'pack':
       pendingExports.get(msg.reqId)?.(msg.pack);
