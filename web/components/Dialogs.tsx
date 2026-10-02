@@ -207,7 +207,7 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
                 else if (matches[index]) pick(matches[index].path);
               }
             }}
-            placeholder={choices.length ? 'Type to filter, or paste a full folder path' : 'Paste the full path of a folder, or press Enter to browse'}
+            placeholder={choices.length ? 'Type to filter, or paste a full folder path' : 'Paste the full path of a folder, or browse for one'}
             className="field"
           />
           <ul className="mt-2 space-y-0.5" role="listbox" aria-label="Repos">
@@ -490,7 +490,7 @@ function WorkspaceDialog({ id }: { id: string | null }) {
                       onUse={async (p) => { await setSources(addPath(library.sources, p)); setAdding('repos'); setIndex(0); }} />
                   </>}
               <div className="flex items-end justify-between gap-4 border-t border-line pt-3">
-                <div className="text-[12.5px] text-faint">{adding === 'repos' ? 'Enter adds one and keeps the list open (on one already ticked, takes it out); h makes it the home repo.' : 'Every repo in a folder you add appears under Repos.'} ← → or Tab switch tabs. Everything you add is in the lane already.</div>
+                <div className="text-[12.5px] text-faint">{adding === 'repos' ? 'Picking a repo keeps the list open; picking it again takes it out. One of them is the home repo, where new sessions start.' : 'Every repo in a folder you add appears under Repos.'} Everything you add is in the lane already.</div>
                 <button type="button" className="btn btn-primary shrink-0 px-4 py-2" onClick={donePicking}>Done <Key k="Esc" size="sm" tone="ghost" /></button>
               </div>
             </section>
@@ -951,7 +951,7 @@ function TicketsDialog() {
             );
           })}
         </ul>
-      ) : <p className="text-sm text-faint">None. Delete on a ticket in the Inbox hides it here; nothing changes in Jira or Trello. To leave whole groups out, narrow CC_CONTROL_JIRA_JQL instead.</p>}
+      ) : <p className="text-sm text-faint">None. Hiding a ticket in the Inbox lists it here; nothing changes in Jira or Trello. To leave whole groups out, narrow CC_CONTROL_JIRA_JQL instead.</p>}
       <DialogKeys items={[['↑ ↓', 'Project or hidden ticket'], ['← →', 'Workspace'], ['Enter', 'Show a hidden ticket again'], ['D', 'Demo tickets'], ['R', 'Fetch again'], ['Esc', 'Close']]} />
     </Overlay>
   );
@@ -1070,7 +1070,7 @@ function RepoPicker({ target }: { target: RepoTarget }) {
             {has(p) && <span className="ml-auto shrink-0 text-xs text-faint">already in</span>}
           </li>
         ))}
-        {!matches.length && !typedPath && <li className="px-2.5 py-2 text-sm text-sub">{library.sources.length ? 'No repo matches.' : 'Your repo library is empty. Browse to the repo below, or press Esc and choose your repo folder (F in the library).'}</li>}
+        {!matches.length && !typedPath && <li className="px-2.5 py-2 text-sm text-sub">{library.sources.length ? 'No repo matches.' : 'Your repo library is empty. Browse to the repo below, or close this and pick your repo folder for the library.'}</li>}
         <AnotherFolderRow
           active={index >= anotherRow}
           label={typedPath ? <>Open <span className="font-mono">{typedPath}</span> in the folder picker</> : 'Another folder…'}

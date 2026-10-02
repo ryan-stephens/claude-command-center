@@ -369,7 +369,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
 
   const placeholder = pending ? 'Answer Claude above, or type a different instruction'
     : status === 'running' ? 'Claude is working. Type your next message; it waits its turn.'
-    : 'Tell Claude what you want · / for commands · @ for files · Enter to send';
+    : 'Tell Claude what you want · / for commands · @ for files';
   return (
     <div className="border-t border-line px-3 py-3 md:px-6">
       {voice && (

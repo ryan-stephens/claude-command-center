@@ -70,8 +70,8 @@ export function Palette() {
       }
       if (open.live) {
         actions.push(
-          action('interrupt', 'Stop Claude now (Esc)', () => interrupt(open.id), open.title),
-          action('background', 'Let the running step continue in the background (Ctrl+B)', () => send({ type: 'session.background', id: open.id }), open.title),
+          action('interrupt', 'Stop Claude now', () => interrupt(open.id), open.title),
+          action('background', 'Let the running step continue in the background', () => send({ type: 'session.background', id: open.id }), open.title),
           action('stop', 'End this session', () => askStop(open.id), open.title),
         );
         const running = (activity?.tasks ?? []).filter(taskRunning);

@@ -56,7 +56,7 @@ export function StackTable({ stack, findings, detected, onChange, onSave, onNext
   const drop = () => {
     if (!row || !row.id.startsWith('api:')) return;
     onChange(withoutApi(stack, row.repo));
-    setSaid(`${row.repo} taken out of the stack (Esc cancels without saving).`);
+    setSaid(`${row.repo} taken out of the stack.`);
     setAt((i) => Math.max(0, Math.min(i, rows.length - 2)));
   };
 

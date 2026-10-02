@@ -60,7 +60,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.keyboard.press('Enter');
   await sleep(800);
   check('a folder with no repos is refused inside the popup, pointing at Folders', /No git repos in/.test(await flash()) && /Folders tab/.test(await flash()) && !/No git repos/.test(await page.locator('header').innerText()), await flash());
-  check('nothing was added for it', !(await rows()).some((r) => /notes-only/.test(r) && /x takes it off/.test(r)));
+  check('nothing was added for it', !(await rows()).some((r) => /notes-only/.test(r) && /for this card$/.test(r.trim())));
   await page.keyboard.press('Control+A');
   await page.keyboard.press('Backspace');
 
@@ -82,7 +82,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.keyboard.press('Enter');
   await sleep(600);
   check('the same folder again: listed already', /listed already/.test(await flash()));
-  check('still one heading', (await rows()).filter((r) => /for this card · x/.test(r)).length === 1);
+  check('still one heading', (await rows()).filter((r) => /cc-extra\s*\n?\s*for this card\s*(×)?$/.test(r.trim())).length === 1);
   await page.keyboard.press('Control+A');
   await page.keyboard.press('Backspace');
   await page.keyboard.press('Escape'); // leave the box; the popup stays
@@ -140,7 +140,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await shot(page, 'on-heading');
   await page.keyboard.press('Enter');
   await sleep(300);
-  check('Enter on the heading only says what x does', /x takes this folder/.test(await flash()));
+  check('Enter on the heading only says how to take it off', /takes this folder/.test(await flash()));
   await page.keyboard.press('x');
   await sleep(300);
   const r7 = await rows();

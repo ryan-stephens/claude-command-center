@@ -339,7 +339,7 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
             })}
           </div>
         )}
-        <textarea id="cp-msg" ref={box} rows={9} value={c.launch.message} placeholder="What should Claude do first? Space picks a saved prompt; or type rough words and w has Claude write it." readOnly={Boolean(sp.writing)}
+        <textarea id="cp-msg" ref={box} rows={9} value={c.launch.message} placeholder="What should Claude do first? Pick a saved prompt above, or type rough words and have Claude write it." readOnly={Boolean(sp.writing)}
           onChange={(e) => updateComposer((x) => ({ ...x, msgTouched: true, launch: { ...x.launch, message: e.target.value } }))}
           className="field min-h-[200px] resize-none overflow-hidden rounded-none border-0 bg-transparent text-[14px] leading-relaxed focus:ring-0" spellCheck={false} />
         <div className="border-t border-line/60 px-4 py-2 text-[12.5px] text-faint">{note}</div>
@@ -433,9 +433,9 @@ function Picker({ c, embedded = false }: { c: Composer; embedded?: boolean }) {
   const title = context ? 'Add context' : sp.adding === 'replace' ? 'Change the ticket' : 'Tickets';
   useEffect(() => { if (ai >= 0) document.getElementById(`pick-${ai}`)?.scrollIntoView({ block: 'nearest' }); }, [ai]);
   const empty = c.q.trim() ? `Nothing matches “${c.q}”`
-    : tab === 'repos' ? 'The repo library is empty. F on the board picks the folders it scans.'
+    : tab === 'repos' ? 'The repo library is empty: on the board, pick the folders it scans.'
     : tab === 'folders' ? 'No folders from disk yet. Type a path above, or browse for one.'
-    : 'No tickets yet. Shift+T on the board connects Jira or Trello, or shows demo tickets.';
+    : 'No tickets yet. Connect Jira or Trello from the board, or show the demo tickets.';
   return (
     <section className={`flex w-full max-w-[640px] flex-col gap-3 rounded-xl border bg-surface p-4 ${embedded ? 'border-line' : 'border-line shadow-[0_24px_60px_rgba(0,0,0,.25)]'}`} role="group" aria-label={title}>
       {!embedded && <>
@@ -488,7 +488,7 @@ function Picker({ c, embedded = false }: { c: Composer; embedded?: boolean }) {
       </div>
       {!embedded && context && (
         <div className="flex items-end justify-between gap-4 border-t border-line pt-3">
-          <div className="text-[12.5px] text-faint">{tab === 'folders' ? 'Folders from disk (docs, a spec, a tool’s): Claude can read and edit what is inside. Type a path and Enter, or b browses in the Windows dialog; on one listed, Enter leaves it out or brings it back, x takes it off the card.' : tab === 'repos' ? 'Enter adds one and keeps the list open (on one already ticked, takes it out). Another folder of repos, for this card only and never the lane: b browses, or paste its path above; x on its heading takes it off.' : 'Enter adds one and keeps the list open (on one already ticked, takes it out).'} ← → or Tab switch tabs. Everything you add is on the card already.</div>
+          <div className="text-[12.5px] text-faint">{tab === 'folders' ? 'Folders from disk (docs, a spec, a tool’s): Claude can read and edit what is inside. Type or paste a path, or browse for one; a folder listed can be left out, brought back or taken off the card.' : tab === 'repos' ? 'Picking a repo keeps the list open; picking it again takes it out. Another folder of repos lists its repos here for this card only, never the lane.' : 'Picking a ticket keeps the list open; picking it again takes it out.'} Everything you add is on the card already.</div>
           <button className="btn btn-primary shrink-0 px-4 py-2" onClick={closePicker}>Done <Key k="Esc" size="sm" tone="ghost" /></button>
         </div>
       )}

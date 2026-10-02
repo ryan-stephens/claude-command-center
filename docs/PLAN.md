@@ -1980,3 +1980,11 @@ They are two different things, and the preview now says so by putting them in th
 **What it does.** One rule in `web/styles.css`: every enabled button, link with an href, `role` of button / option / tab / radio / menuitem / switch / checkbox, `label[for]`, select, summary, checkbox and radio input shows the hand; a disabled button or an `aria-disabled` option keeps the arrow. The few plain elements that take clicks (the `?` `B` rows, an approval question and its options, the source heading in the Add context popup) carry `cursor-pointer` themselves; the line's filter label, which only focuses its box, shows the text cursor.
 
 **Verified:** an ad hoc Playwright pass reading the computed cursor: every header button and link, 17 buttons, links, options, tabs and radios on the new-card popup, the ticket's counts row and *(change)*, the Add context rows, the prompts dialog's rows and the `?` `B` rows all answer `pointer`; a disabled button does not. `walk-simple` (43) still passes.
+
+## 76. Keys live in keycaps, not in prose
+
+2026-10-02, the owner, after the two dropdowns lost their *m cycles* and *Enter picks · Esc closes* lines: "get rid of these site wide", and "only the text ones, I still want the ability to hide/show the keyboard shortcuts the way we are".
+
+**What it does.** Visible prose no longer names keys: the Add context popup's footer line and empty states, its rows' subs, the lane dialog's popup footer, the message box's placeholder, the flash and note messages the new-card screen gives (a refusal says *browse for one* rather than *b browses*), the folder picker's messages, the session composer's placeholder, the palette's two action labels, the stack table's message, the Hidden tickets note and the look row in `?` `B`. Where a hint named a key, the sentence now says what to do or what the control is (*the × at the end takes this folder off*). The keycap system is untouched: `<Key>` keycaps everywhere, the legend bar, the `?` overlay and its show/hide switch, the dialogs' key footers, and hover tooltips.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (303); all eight walkthroughs pass (two of `walk-sources.cjs`'s checks matched the old wording and were updated).

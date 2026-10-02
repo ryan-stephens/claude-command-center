@@ -99,7 +99,7 @@ export function FolderPicker({ onUse, useLabel = 'Use this folder', start, autoF
   }
 
   async function use(path: string | null) {
-    if (!path) { setError('Open a folder first: → or Enter goes into the highlighted one.'); return; }
+    if (!path) { setError('Open a folder first: go into the highlighted one.'); return; }
     setBusy(true);
     setError('');
     try {
@@ -211,7 +211,7 @@ export function FolderPicker({ onUse, useLabel = 'Use this folder', start, autoF
           );
         })}
         {!loading && listing && shown.length === 0 && (
-          <li className="px-2.5 py-2 text-sm text-sub">{typed && !pathy ? 'No folder here matches. Esc clears the filter.' : 'No folders in here.'}</li>
+          <li className="px-2.5 py-2 text-sm text-sub">{typed && !pathy ? 'No folder here matches.' : 'No folders in here.'}</li>
         )}
         {listing?.truncated && <li className="px-2.5 py-1 text-xs text-faint">Showing the first {listing.entries.length} folders. Type to filter.</li>}
       </ul>

@@ -89,7 +89,7 @@ export function BindingsDialog() {
               <span className="font-semibold">{look === 'simple' ? 'Simple' : 'Full'}</span>
               <span className="text-xs text-faint">simple · full</span>
             </div>
-            <span className="text-xs text-faint">Simple: one column, the ticket, what Claude can see, your note, one line on how it starts. Full: the three panels with every option in view. Shift+L on the screen switches too. Adding context to a running card always uses the full screen.</span>
+            <span className="text-xs text-faint">Simple: one column, the ticket, what Claude can see, your note, one line on how it starts. Full: the three panels with every option in view. Adding context to a running card always uses the full screen.</span>
           </li>
           {ACTIONS.map((a, i) => {
             const at = i + SETTING_ROWS;

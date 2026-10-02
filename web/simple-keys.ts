@@ -25,7 +25,7 @@ export function switchLook(): void {
   const now = get().settings.newCardLook ?? 'simple';
   const next = now === 'simple' ? 'full' : 'simple';
   send({ type: 'settings.set', settings: { ...get().settings, newCardLook: next } });
-  flash(next === 'simple' ? 'New card: the simple look (Shift+L for the full one)' : 'New card: the full look (Shift+L for the simple one)');
+  flash(next === 'simple' ? 'New card: the simple look' : 'New card: the full look');
 }
 
 function focusField(id: string): void {
@@ -118,10 +118,10 @@ export function pickerList(c: Composer): PickerRow[] {
     const path = looksLikePath(c.q);
     const bare = !s.library.repos.length && !c.sources?.length;
     return sourceRows(c, s.library.repos).map((row): PickerRow => {
-      if (row.kind === 'source') return { id: `source:${row.path}`, label: row.path, sub: 'for this card · x takes it off', role: 'source' };
+      if (row.kind === 'source') return { id: `source:${row.path}`, label: row.path, sub: 'for this card', role: 'source' };
       if (row.kind === 'more') {
-        return path ? { id: 'more', label: `Scan ${c.q.trim()} for repos`, sub: 'Enter · for this card only', role: 'more' }
-          : { id: 'more', label: '+ Another folder of repos…', sub: bare ? 'the library is empty (F on the board fills it) · b browses, or paste a path above' : 'for this card only · b browses, or paste a path above', role: 'more' };
+        return path ? { id: 'more', label: `Scan ${c.q.trim()} for repos`, sub: 'for this card only', role: 'more' }
+          : { id: 'more', label: '+ Another folder of repos…', sub: bare ? 'the library is empty · browse, or paste a path above' : 'for this card only · browse, or paste a path above', role: 'more' };
       }
       const r = row.repo;
       const where = repoOrigin(c, r.path);
@@ -172,7 +172,7 @@ function addRepoSource(path: string): void {
       if (typeof r === 'string') { say(r, true); return; }
       const next = withSimple({ ...r, q: '' }, {});
       const at = pickerList(next).findIndex((row) => row.id === `source:${source.path}`) + 1;
-      updateComposer(() => withSimple(next, { ai: at, note: { text: `${source.repos.length} ${source.repos.length === 1 ? 'repo' : 'repos'} in ${source.path}, listed below for this card only. Enter picks one.` } }));
+      updateComposer(() => withSimple(next, { ai: at, note: { text: `${source.repos.length} ${source.repos.length === 1 ? 'repo' : 'repos'} in ${source.path}, listed below for this card only.` } }));
     },
     (e: Error) => say(e.message, true),
   );
@@ -183,7 +183,7 @@ export function addTypedSource(): void {
   const c = get().composer;
   if (!c) return;
   const path = c.q.trim().replace(/^"(.*)"$/, '$1').replace(/[\\/]+$/, '');
-  if (!path || !looksLikePath(path)) { say('Paste a folder path in the box first (like D:\\side-projects), or b browses for one.', true); return; }
+  if (!path || !looksLikePath(path)) { say('Paste a folder path in the box first (like D:\\side-projects), or browse for one.', true); return; }
   addRepoSource(path);
 }
 
@@ -231,10 +231,10 @@ export function pickAt(c: Composer, at: number, remove = false): void {
     if (row.kind === 'source') {
       // The heading of a folder added for this card: x takes it off; Enter says so.
       if (remove) updateComposer((x) => withSimple(removeSource(x, row.path), { ai: Math.max(0, at - 1), note: { text: `${row.path} is off the list; the repos you picked from it stay on the card.` } }));
-      else say('x takes this folder and its unpicked repos off the list.');
+      else say('The × at the end takes this folder and its unpicked repos off the list.');
       return;
     }
-    if (remove && repoOrigin(c, row.repo.path) !== 'card') { say('Only a repo this card added can be taken out. Enter leaves a lane repo out.', true); return; }
+    if (remove && repoOrigin(c, row.repo.path) !== 'card') { say('Only a repo this card added can be taken out; a lane repo is left out instead.', true); return; }
     updatePicker((x) => clearNote(toggleSource(x, row.repo.path)));
     return;
   }
@@ -245,7 +245,7 @@ export function pickAt(c: Composer, at: number, remove = false): void {
     return;
   }
   const t = ticketSources(c, s.tickets, started(), foundFor(s, c.q))[at];
-  if (!t) { if (!s.tickets.length) say('No tickets yet. Shift+T on the board connects them, or shows demo tickets.', true); return; }
+  if (!t) { if (!s.tickets.length) say('No tickets yet. Connect Jira or Trello from the board, or show the demo tickets.', true); return; }
   updatePicker((x) => {
     if (sp.adding === 'context' && x.packet.card.some((i) => i.id === `ticket:${t.key}`)) {
       // Already related: Enter takes it out again.
@@ -288,7 +288,7 @@ export function saveAsPrompt(): void {
   const s = get();
   const c = s.composer;
   if (!c) return;
-  if (!c.launch.message.trim()) { flash('Write the message first; then s saves it as a prompt.'); return; }
+  if (!c.launch.message.trim()) { flash('Write the message first; then save it as a prompt.'); return; }
   const body = unrenderPrompt(c.launch.message, promptContext(c, s.workspaces, composerKey(c, s.nextKey), s.library.repos));
   set({ modal: { kind: 'prompts', draft: { body } } });
 }
@@ -304,7 +304,7 @@ export function writeWithClaude(): void {
   if (!c) return;
   if (simpleOf(c).writing) { flash('Claude is writing it…'); return; }
   const rough = c.launch.message.trim();
-  if (!rough) { flash('Write a few rough words in the box first; w has Claude write the message from them.'); return; }
+  if (!rough) { flash('Write a few rough words in the box first; Claude writes the message from them.'); return; }
   updateComposer((x) => withSimple(x, { writing: true, block: 'msg' }));
   flash('Claude is writing the opening message…');
   writeMessageWithClaude(rough, promptContext(c, s.workspaces, composerKey(c, s.nextKey), s.library.repos)).then(
