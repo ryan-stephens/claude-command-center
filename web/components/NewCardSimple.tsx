@@ -261,22 +261,31 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
         </div>
       </div>
       <div className={`relative flex flex-col overflow-visible rounded-xl border border-line bg-surface ${focused ? 'blk-focus' : ''}`}>
-        <button type="button" aria-haspopup="listbox" aria-expanded={open} title="Space"
-          onClick={() => { if (open) closePicker(); else openPromptList(); }}
-          className="flex items-center justify-between gap-3 rounded-t-xl border-b border-line px-4 py-2.5 text-left text-[13.5px] hover:bg-raise">
-          <span className="min-w-0 truncate"><span className="text-faint">Prompt · </span><b>{label}</b></span>
-          <span className="text-faint" aria-hidden="true">▾</span>
-        </button>
+        {/* The prompt picker (§71): a select-looking control, so it reads as a dropdown; the list under it marks the row the keys are on softly, the one in use with a tick. */}
+        <div className="flex items-center gap-3 rounded-t-xl border-b border-line bg-raise/40 px-4 py-2">
+          <span className="text-[12.5px] text-faint">Prompt</span>
+          <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`Prompt · ${label}`} title="Space"
+            onClick={() => { if (open) closePicker(); else openPromptList(); }}
+            className={`flex min-w-0 max-w-[420px] items-center gap-2 rounded-lg border bg-surface py-1 pl-3 pr-2 text-left text-[13.5px] font-medium hover:border-ring ${open ? 'border-ring ring-2 ring-ring/25' : 'border-line'}`}>
+            <span className="min-w-0 truncate">{label}</span>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" className={`shrink-0 text-faint transition-transform ${open ? 'rotate-180' : ''}`}><path d="M3.5 6l4.5 4.5L12.5 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          <span className="truncate text-[12px] text-faint">{open ? '↑ ↓ then Enter · Esc closes' : 'Space opens the list'}</span>
+        </div>
         {open && (
-          <div role="listbox" aria-label="Saved prompts" className="absolute left-0 right-0 top-[44px] z-10 flex max-h-[300px] flex-col gap-0.5 overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-[0_24px_60px_rgba(0,0,0,.25)]">
-            {rows.map((r, i) => (
-              <button key={r.id ?? 'own'} id={`prompt-${i}`} role="option" aria-selected={i === ai} onClick={() => choosePromptAt(c, i)}
-                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${i === ai ? 'is-focus bg-raise' : 'hover:bg-raise'}`}>
-                <span className="min-w-0 grow truncate">{r.name}</span>
-                <span className="shrink-0 text-xs text-faint">{r.sub}</span>
-                {r.id !== null && r.id === c.promptId && <Icon name="check" size={13} className="shrink-0 text-ok" />}
-              </button>
-            ))}
+          <div role="listbox" aria-label="Saved prompts" className="absolute left-3 right-3 top-[46px] z-10 flex max-h-[320px] flex-col overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-[0_24px_60px_rgba(0,0,0,.25)]">
+            {rows.map((r, i) => {
+              // The tick: the prompt in use, or Write your own once the text is yours (the default message is neither).
+              const using = r.id === null ? !c.promptId && c.msgTouched : r.id === c.promptId;
+              return (
+                <button key={r.id ?? 'own'} id={`prompt-${i}`} role="option" aria-selected={i === ai} onClick={() => choosePromptAt(c, i)}
+                  className={`flex items-center gap-2.5 rounded-lg border-l-[3px] px-2.5 py-2 text-left text-[13.5px] ${i === ai ? 'border-acc bg-raise' : 'border-transparent hover:bg-raise'} ${i === 1 ? 'mt-1 border-t border-t-line/60 pt-2.5' : ''}`}>
+                  <span className="grid h-4 w-4 shrink-0 place-items-center">{using && <Icon name="check" size={14} className="text-ok" />}</span>
+                  <span className="min-w-0 grow truncate">{r.name}</span>
+                  <span className="shrink-0 text-xs text-faint">{r.sub}</span>
+                </button>
+              );
+            })}
           </div>
         )}
         <textarea id="cp-msg" ref={box} rows={9} value={c.launch.message} placeholder="What should Claude do first? Space picks a saved prompt; or type rough words and w has Claude write it." readOnly={Boolean(sp.writing)}
