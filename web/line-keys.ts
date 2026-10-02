@@ -35,7 +35,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['1–9  /  0', 'Show one lane’s cards / all of them'],
       ['/', 'Filter the cards by words'],
       ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, the run recipe), Verify (the team’s apps, later), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
-      ['j / k  ·  f (Changes panel)', 'The next / previous file, its diff under it  ·  the diffs full width'],
+      ['j / k  ·  f (Changes panel)', 'The next / previous file, its diff under it  ·  pop the diff out full width, on the same file'],
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
       ['Esc (card open)', 'Back to the board, the card still focused; on the board, clear the filter'],
       ['← → (card open)', 'The previous / next card on the board, in column order'],
@@ -576,7 +576,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
     case 'm': togglePanel('more'); return true;
     case '[': case ']': if (s.line.panel) { setPanelW(s.line.panelW + (e.key === ']' ? 40 : -40)); return true; } return false;
     case 'j': case 'k': if (s.line.panel === 'changes') { stepChange(e.key === 'j' ? 1 : -1, changeCount); return true; } return false;
-    case 'f': if (s.line.panel === 'changes' && s.line.drawer) { openChanges(s.line.drawer); return true; } return false;
+    case 'f': if (s.line.panel === 'changes' && s.line.drawer) { openChanges(s.line.drawer, s.line.at); return true; } return false;
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;
     case 'X': if (s.line.drawer) openWorktrees(s.line.drawer); return true;
     case 'Enter': if (s.line.drawer) focusSay(s.line.drawer); return true;
@@ -684,11 +684,11 @@ export function openWorktrees(id: string, thenDelete = false): void {
 }
 
 /** D: what the card changed, file by file with the diffs, without leaving for an editor. */
-export function openChanges(id: string): void {
+export function openChanges(id: string, at?: number): void {
   const card = get().cards.find((c) => c.id === id);
   if (!card) return;
   if (!card.cwd) { flash(`${card.key} hasn’t started yet: nothing changed`); return; }
-  set({ modal: { kind: 'changes', id } });
+  set({ modal: { kind: 'changes', id, ...(at !== undefined ? { at } : {}) } });
 }
 
 /** g: the card's Windows Terminal tab, brought to the front (the trust prompt, or anything the channel can't relay). */

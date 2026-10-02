@@ -217,7 +217,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       ...(x.hasTab ? [{ keys: ['g'], label: x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab ? { tone: 'attn' as const } : {}) }] : []),
       { keys: ['←', '→'], label: 'Previous / next card' },
       // The dock: the panel open is named, the rest are one key each.
-      ...(x.panel === 'changes' ? [{ keys: ['j', 'k'], label: 'File' }, { keys: ['f'], label: 'Full width' }] : []),
+      ...(x.panel === 'changes' ? [{ keys: ['j', 'k'], label: 'File' }, { keys: ['f'], label: 'Pop out' }] : []),
       ...CARD_PANELS.map((p) => ({ keys: [p.key], label: x.panel === p.id ? `Close ${p.name}` : p.name })),
       ...(x.panel ? [{ keys: ['[', ']'], label: 'Panel width' }] : []),
       ...tryKeys(x).filter((i) => i.keys[0] !== '⇧D'),

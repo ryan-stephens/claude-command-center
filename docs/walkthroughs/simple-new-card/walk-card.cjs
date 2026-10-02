@@ -124,9 +124,13 @@ async function ask(page, msg) {
   check('[ narrows it back', Math.round((await changes.boundingBox()).width) === Math.round(w0), String((await changes.boundingBox()).width));
   check('the width is remembered', (await page.evaluate(() => localStorage.getItem('cc-control.panelWidth'))) === String(Math.round(w0)));
   }
+  check('a Pop out link sits under the open diff', await changes.getByRole('button', { name: /Pop out/ }).isVisible());
   await page.keyboard.press('f');
   await sleep(600);
-  check('f opens the full-width Changes sheet', await page.getByRole('dialog', { name: 'Changes' }).isVisible());
+  const sheet = page.getByRole('dialog', { name: 'Changes' });
+  check('f pops the Changes sheet out', await sheet.isVisible());
+  const chosenInSheet = await sheet.locator('[role=option][aria-selected="true"]').innerText();
+  check('the sheet opens on the file the panel had chosen (the second)', chosenInSheet.includes('dist/app.min.js'), chosenInSheet.replace(/\s+/g, ' '));
   await shot(page, 'plan-changes-full');
   await page.keyboard.press('Escape');
   await sleep(300);

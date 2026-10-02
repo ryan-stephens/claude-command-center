@@ -347,19 +347,27 @@ function ChangesPanel({ card }: { card: Card }) {
                 {x.file.mine && <span className="shrink-0 rounded-full bg-ok-bg px-1.5 text-[10.5px] font-semibold text-ok" title="Written by this card’s session">card</span>}
                 <span className="shrink-0 font-mono text-[11px] tabular-nums"><span className="text-ok">+{x.file.added}</span> <span className="text-bad">−{x.file.removed}</span></span>
               </button>
-              {x.index === chosen && (x.file.binary
-                ? <p className="px-3 py-1.5 text-[12px] text-faint">A binary file: nothing to show.</p>
-                : <pre className="m-0 max-h-[42vh] overflow-auto border-t border-line/60 bg-bg py-1 font-mono text-[11.5px] leading-[1.45]">
-                  {patchLines(x.file.patch).filter((l) => l.kind !== 'meta').map((l, i) => (
-                    <div key={i} className={`whitespace-pre px-3 ${l.kind === 'add' ? 'bg-ok-bg text-ok' : l.kind === 'del' ? 'bg-bad-bg text-bad' : l.kind === 'hunk' ? 'bg-raise text-busy' : 'text-sub'}`}>{l.text || ' '}</div>
-                  ))}
-                </pre>)}
+              {x.index === chosen && (
+                <>
+                  {x.file.binary
+                    ? <p className="px-3 py-1.5 text-[12px] text-faint">A binary file: nothing to show.</p>
+                    : <pre className="m-0 max-h-[42vh] overflow-auto border-t border-line/60 bg-bg py-1 font-mono text-[11.5px] leading-[1.45]">
+                      {patchLines(x.file.patch).filter((l) => l.kind !== 'meta').map((l, i) => (
+                        <div key={i} className={`whitespace-pre px-3 ${l.kind === 'add' ? 'bg-ok-bg text-ok' : l.kind === 'del' ? 'bg-bad-bg text-bad' : l.kind === 'hunk' ? 'bg-raise text-busy' : 'text-sub'}`}>{l.text || ' '}</div>
+                      ))}
+                    </pre>}
+                  {/* The same file, full width: the sheet opens on it. */}
+                  <div className="flex justify-end border-t border-line/60 px-3 py-1">
+                    <button className="flex items-center gap-1.5 text-[12px] text-acc underline decoration-dotted underline-offset-2 hover:decoration-solid" onClick={() => openChanges(card.id, x.index)} title="This diff full width, in its own window">
+                      <Icon name="popout" size={13} />Pop out<Key k="f" size="sm" />
+                    </button>
+                  </div>
+                </>)}
             </div>
           ))}
         </section>
       ))}
       {totals.truncated && <p className="px-1 text-[12.5px] text-attn">The diff was cut: it is very large.</p>}
-      {totals.files > 0 && <button className="flex items-center gap-1.5 px-1 text-[12.5px] text-faint hover:text-ink" onClick={() => openChanges(card.id)}>full width <Key k="f" size="sm" /></button>}
     </div>
   );
 }

@@ -53,7 +53,7 @@ export type Modal =
   /** A QA or review card's report (s): copy it, or finish the card. */
   | { kind: 'report'; id: string }
   /** D on a card: what it changed, file by file, with the diffs. */
-  | { kind: 'changes'; id: string }
+  | { kind: 'changes'; id: string; /** The file to open on (the panel's choice when popped out). */ at?: number }
   /** The new-card screen's Folders tab: pick any folder on disk to add as context. */
   | { kind: 'addFolder' }
   /** Where tickets come from, and which workspace each project goes to. */

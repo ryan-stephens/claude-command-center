@@ -58,7 +58,7 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.deepEqual(labels({ view: 'drawer', canSay: true, asking: true, bindings: {} }).slice(0, 3), ['Back to the board', 'Allow / deny', 'Type to it'], 'a channel: y / n first while it asks, then Enter');
   assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Type to it'), 'no channel: no message box');
   assert.deepEqual(labels({ view: 'drawer', ship: 'merge', canDone: true, hasPr: true, bindings: {} }).slice(7, 10), ['Open the PR', 'Merge', 'Done'], 'a card in Ship: o opens the PR, d is done by hand (after the five dock keys)');
-  assert.deepEqual(labels({ view: 'drawer', panel: 'changes', bindings: {} }).slice(2, 5), ['File', 'Full width', 'Close Changes'], 'the Changes panel open: j k walk files, f is the full sheet, its key closes it');
+  assert.deepEqual(labels({ view: 'drawer', panel: 'changes', bindings: {} }).slice(2, 5), ['File', 'Pop out', 'Close Changes'], 'the Changes panel open: j k walk files, f is the full sheet, its key closes it');
   assert.deepEqual(labels({ view: 'drawer', canAdd: true, hasWaiting: true, bindings: {} }).slice(7, 10), ['Run recipe', 'Add context', 'Take back']);
   assert.deepEqual(labels({ view: 'drawer', hasWorktrees: true, bindings: {} }).slice(-2), ['Worktrees', 'Remove card'], 'a worktree card: Shift+X before Delete');
   assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Worktrees'));

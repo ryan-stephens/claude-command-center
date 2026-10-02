@@ -12,11 +12,12 @@ import { Key, TicketKey } from './ui.tsx';
 
 const KIND: Record<string, string> = { added: 'added', modified: 'changed', deleted: 'deleted', renamed: 'renamed', new: 'new' };
 
-export function ChangesSheet({ id }: { id: string }) {
+/** `at`: the file to open on (the panel's choice, when popped out from the open card). */
+export function ChangesSheet({ id, at: start = 0 }: { id: string; at?: number }) {
   const card = useStore((s) => s.cards.find((c) => c.id === id));
   const [changes, setChanges] = useState<Changes | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [at, setAt] = useState(0);
+  const [at, setAt] = useState(start);
 
   useEffect(() => { cardChanges(id).then(setChanges, (e: Error) => setError(e.message)); }, [id]);
 

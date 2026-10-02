@@ -54,7 +54,7 @@ export function Dialogs() {
     case 'tryPick': return <TryPick id={modal.id} detect={modal.detect === true} />;
     case 'ship': return <ShipSheet id={modal.id} />;
     case 'report': return <ReportSheet id={modal.id} />;
-    case 'changes': return <ChangesSheet id={modal.id} />;
+    case 'changes': return <ChangesSheet id={modal.id} at={modal.at} />;
     case 'addFolder': return <AddFolderDialog />;
     case 'pickWorkspace': return <PickWorkspaceDialog then={modal.then} />;
     case 'tickets': return <TicketsDialog />;
