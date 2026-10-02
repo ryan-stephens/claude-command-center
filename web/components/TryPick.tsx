@@ -77,7 +77,7 @@ export function TryPick({ id, detect = false }: { id: string; detect?: boolean }
       return;
     }
     setKeeping(true);
-    saveStack(card.workspaceId, found.stack).then(() => flash('Kept as the workspace’s stack · e changes it'), (e: Error) => { setError(e.message); setKeeping(false); });
+    saveStack(card.workspaceId, found.stack).then(() => flash('Kept as the lane’s stack · e changes it'), (e: Error) => { setError(e.message); setKeeping(false); });
   };
   const edit = () => {
     if (!card) return;
@@ -110,7 +110,7 @@ export function TryPick({ id, detect = false }: { id: string; detect?: boolean }
     return (
       <Overlay label="Try it" wide>
         <DialogTitle>Try it · {card.key}</DialogTitle>
-        <p className="mb-3 text-sm text-sub">This workspace has no stack yet, so here is what its repos say: how each API starts, the port it listens on, when it is ready, how the UI serves and which proxy rule reaches each API.</p>
+        <p className="mb-3 text-sm text-sub">This lane has no stack yet, so here is what its repos say: how each API starts, the port it listens on, when it is ready, how the UI serves and which proxy rule reaches each API.</p>
         {error && <div className="mb-3 rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
         {!found && !error && <p className="flex items-center gap-2 text-sm text-faint"><span className="spinner" />Reading the repos…</p>}
         {found && <Findings findings={found.findings} />}

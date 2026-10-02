@@ -163,7 +163,7 @@ function OutdatedBanner() {
     <div className="flex items-center gap-2.5 border-b border-line bg-bad-bg px-4 py-2 text-sm text-bad" role="alert">
       <Icon name="warn" size={16} />
       {outdated === 'server'
-        ? <span><strong>The cc-control server is out of date.</strong> It started before the last update, so workspaces and the repo library can’t save. Restart it: stop it and run <code className="font-mono">pnpm start</code>.</span>
+        ? <span><strong>The cc-control server is out of date.</strong> It started before the last update, so lanes and the repo library can’t save. Restart it: stop it and run <code className="font-mono">pnpm start</code>.</span>
         : <span><strong>This page is older than the cc-control server.</strong> Reload it (<Key k="F5" size="sm" inline />).</span>}
     </div>
   );

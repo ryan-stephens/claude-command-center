@@ -252,7 +252,7 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
             <span className="inline-flex items-center gap-1.5 rounded-full bg-raise px-2.5 py-0.5 font-semibold" title={cwd}><Icon name="repo" size={14} />{repoName(cwd)}</span>
             {workspaceRepos(cwd, workspaces).map((d) => {
               const owner = workspacesFor(cwd, workspaces).find((w) => w.repos.some((r) => samePath(r, d))) ?? null;
-              return <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5" title={`${d}\nFrom the ${owner?.name ?? ''} workspace`}><WsBadge ws={owner} size={14} />{repoName(d)}</span>;
+              return <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5" title={`${d}\nFrom the ${owner?.name ?? ''} lane`}><WsBadge ws={owner} size={14} />{repoName(d)}</span>;
             })}
             {extras.filter((d) => !workspaceRepos(cwd, workspaces).some((w) => samePath(w, d))).map((d) => <span key={d} className="inline-flex items-center gap-1.5 rounded-full bg-raise px-2.5 py-0.5" title={d}><Icon name="link" size={13} />{repoName(d)}</span>)}
             {choices.length > 1 && <button className="text-faint underline hover:text-ink" onClick={() => setStep('where')}>change</button>}
@@ -364,7 +364,7 @@ function WorkspaceDialog({ id }: { id: string | null }) {
   const toggle = (p: string) => setRepos((x) => (picked(p) ? removePath(x, p) : addPath(x, p)));
 
   function save() {
-    if (!name.trim()) { setError('Give the workspace a name.'); return; }
+    if (!name.trim()) { setError('Give the lane a name.'); return; }
     const workspaceId = existing?.id ?? crypto.randomUUID();
     const homePath = home && repos.some((r) => samePath(r, home)) ? home : undefined;
     send({ type: 'workspace.save', workspace: { id: workspaceId, name: name.trim(), color, repos, home: homePath, notes, testing }, template: existing ? undefined : template });
@@ -386,9 +386,9 @@ function WorkspaceDialog({ id }: { id: string | null }) {
   };
 
   return (
-    <Overlay label={existing ? 'Edit workspace' : 'New workspace'} wide>
+    <Overlay label={existing ? 'Edit lane' : 'New lane'} wide>
       <div onKeyDown={onKey}>
-        <DialogTitle>{existing ? 'Edit workspace' : 'New workspace'}</DialogTitle>
+        <DialogTitle>{existing ? 'Edit lane' : 'New lane'}</DialogTitle>
         <div className="flex flex-wrap items-end gap-4">
           <label className="min-w-0 grow">
             <span className="eyebrow mb-1.5 block">Name</span>
@@ -492,8 +492,8 @@ function WorkspaceDialog({ id }: { id: string | null }) {
         {error && <p className="mt-3 text-sm text-bad">{error}</p>}
         <div className="mt-5 flex items-center gap-3">
           <DialogKeys items={[['Tab', 'next part'], ['↑ ↓', 'choose repo'], ['Space', 'pick'], ['H', 'home repo'], ['Ctrl Enter', 'save from a note']]} />
-          {existing && <button className="btn btn-ghost ml-auto" onClick={() => exportWorkspace(existing.id)} title="Save this workspace and its workflows as a file to share (Shift+E on the Ticket Line)"><Icon name="file" size={16} />Export</button>}
-          <button className={`btn btn-primary ${existing ? '' : 'ml-auto'}`} onClick={save}>{existing ? 'Save' : 'Create workspace'}<Key k="Enter" size="sm" tone="ghost" /></button>
+          {existing && <button className="btn btn-ghost ml-auto" onClick={() => exportWorkspace(existing.id)} title="Save this lane and its workflows as a file to share (Shift+E on the Ticket Line)"><Icon name="file" size={16} />Export</button>}
+          <button className={`btn btn-primary ${existing ? '' : 'ml-auto'}`} onClick={save}>{existing ? 'Save' : 'Create lane'}<Key k="Enter" size="sm" tone="ghost" /></button>
         </div>
       </div>
     </Overlay>
@@ -530,7 +530,7 @@ function DeleteWorkspaceDialog({ id }: { id: string }) {
     return true;
   });
   return (
-    <Overlay label="Delete workspace">
+    <Overlay label="Delete lane">
       <DialogTitle>Delete {ws?.name ?? 'workspace'}?</DialogTitle>
       <p className="text-sub">Only the grouping and its workflows go. The repos and every session in them stay where they are.</p>
       <div className="mt-5 flex justify-end gap-2.5">
@@ -730,25 +730,25 @@ function RecipeDialog({ repo, workspaceId, initial }: { repo: string; workspaceI
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
         <span className="eyebrow mr-1">For</span>
         {tab('repo', `This repo: ${repoName(repo)}`)}
-        {tab('workspace', workspaceId ? `The whole workspace: ${wsName ?? 'this one'}` : 'The whole workspace (the card has none)', !workspaceId)}
-        {tab('table', workspaceId ? 'The workspace’s stack: APIs + UI' : 'A stack (the card has no workspace)', !workspaceId)}
+        {tab('workspace', workspaceId ? `The whole lane: ${wsName ?? 'this one'}` : 'The whole lane (the card has none)', !workspaceId)}
+        {tab('table', workspaceId ? 'The lane’s stack: APIs + UI' : 'A stack (the card has no lane)', !workspaceId)}
         {tab('stack', 'as JSON', !workspaceId)}
         <Key k="Alt W" size="sm" />
       </div>
       <p className="mb-3 text-sm text-sub">
         {scope === 'table'
-          ? <>{!stack && <b className="text-ink">{found ? `What ${wsName ?? 'the workspace'}’s repos say the stack is: check it and save. ` : `Reading ${wsName ?? 'the workspace'}’s repos… `}</b>}Every {wsName ?? ''} card’s <Key k="t" size="sm" inline /> asks the values in the first row and which APIs to run, runs the template’s steps in each picked API’s repo with that API’s values filled in (each on a local port picked for the run), then starts the UI with its proxy file pointed at them. <Key k="e" size="sm" inline /> on a row changes it; the last column says which files it was read from{stack ? ', and where the repos now say otherwise' : ''}.{stack ? ` Now: ${wsEntry?.source}.` : ''}</>
+          ? <>{!stack && <b className="text-ink">{found ? `What ${wsName ?? 'the lane'}’s repos say the stack is: check it and save. ` : `Reading ${wsName ?? 'the lane'}’s repos… `}</b>}Every {wsName ?? ''} card’s <Key k="t" size="sm" inline /> asks the values in the first row and which APIs to run, runs the template’s steps in each picked API’s repo with that API’s values filled in (each on a local port picked for the run), then starts the UI with its proxy file pointed at them. <Key k="e" size="sm" inline /> on a row changes it; the last column says which files it was read from{stack ? ', and where the repos now say otherwise' : ''}.{stack ? ` Now: ${wsEntry?.source}.` : ''}</>
           : scope === 'stack'
-          ? <>{!stack && <b className="text-ink">A draft from {wsName ?? 'the workspace'}’s repos: change the commands and the proxy file to yours before saving. </b>}Every {wsName ?? ''} card’s <Key k="t" size="sm" inline /> asks which values to use (<code>choose</code>: dev or uat) and which APIs to run. It runs <code>api.steps</code> in each picked API’s repo, with <code>{'{{env}}'}</code>, <code>{'{{branch}}'}</code>, <code>{'{{deployment}}'}</code> (name-branch, cut to 50) and the API’s <code>values</code> filled in. <code>{'{{port}}'}</code> is a local port picked for that run and <code>{'{{uiPort}}'}</code> the UI’s, so two cards can run the same stack at once; <code>{'{{appPort}}'}</code> is the port the API listens on in its container. Then it starts the UI with <code>{'{{proxy}}'}</code>: a copy of <code>ui.proxyFile</code> with each picked API’s proxy rules put first. The repo’s file isn’t touched (<code>"proxyMode": "edit"</code> changes it in place and puts it back on stop). <code>stop:</code> steps run when you stop it.{stack ? ` Now: ${wsEntry?.source}.` : ''}</>
+          ? <>{!stack && <b className="text-ink">A draft from {wsName ?? 'the lane'}’s repos: change the commands and the proxy file to yours before saving. </b>}Every {wsName ?? ''} card’s <Key k="t" size="sm" inline /> asks which values to use (<code>choose</code>: dev or uat) and which APIs to run. It runs <code>api.steps</code> in each picked API’s repo, with <code>{'{{env}}'}</code>, <code>{'{{branch}}'}</code>, <code>{'{{deployment}}'}</code> (name-branch, cut to 50) and the API’s <code>values</code> filled in. <code>{'{{port}}'}</code> is a local port picked for that run and <code>{'{{uiPort}}'}</code> the UI’s, so two cards can run the same stack at once; <code>{'{{appPort}}'}</code> is the port the API listens on in its container. Then it starts the UI with <code>{'{{proxy}}'}</code>: a copy of <code>ui.proxyFile</code> with each picked API’s proxy rules put first. The repo’s file isn’t touched (<code>"proxyMode": "edit"</code> changes it in place and puts it back on stop). <code>stop:</code> steps run when you stop it.{stack ? ` Now: ${wsEntry?.source}.` : ''}</>
           : scope === 'workspace'
-            ? <>Every {wsName ?? ''} card runs this instead of its repo’s, so it can start several repos: a backend, then the UI pointed at it.{stack ? ' The workspace has a stack, which is what its cards run; this recipe is kept but not used.' : ''}</>
+            ? <>Every {wsName ?? ''} card runs this instead of its repo’s, so it can start several repos: a backend, then the UI pointed at it.{stack ? ' The lane has a stack, which is what its cards run; this recipe is kept but not used.' : ''}</>
             : 'Try it runs these in the card’s folder.'}
         {scope !== 'stack' && scope !== 'table' && <>{' '}Steps run one after another; a step that keeps running and serves is the app, and the next step starts.
-        {recipe ? ` Now: ${recipe.source}.` : scope === 'repo' ? ' Nothing was detected for this repo.' : ' The workspace has none yet.'}</>}
+        {recipe ? ` Now: ${recipe.source}.` : scope === 'repo' ? ' Nothing was detected for this repo.' : ' The lane has none yet.'}</>}
       </p>
       {(scope === 'stack' || scope === 'table') && strangers.length > 0 && (
         <div className="mb-3 rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn" role="alert">
-          This stack names {strangers.join(', ')}, which {strangers.length === 1 ? 'isn’t a repo' : 'aren’t repos'} in {wsName ?? 'the workspace'} or the library{/orders-api|web-ui/.test(strangers.join(' ')) ? ': they are the example’s made-up names' : ''}. Put in your own repos’ folder names{wsRepoNames.length ? ` (${wsRepoNames.join(', ')})` : ''}, or empty the box and save to start again from a draft of your repos.
+          This stack names {strangers.join(', ')}, which {strangers.length === 1 ? 'isn’t a repo' : 'aren’t repos'} in {wsName ?? 'the lane'} or the library{/orders-api|web-ui/.test(strangers.join(' ')) ? ': they are the example’s made-up names' : ''}. Put in your own repos’ folder names{wsRepoNames.length ? ` (${wsRepoNames.join(', ')})` : ''}, or empty the box and save to start again from a draft of your repos.
         </div>
       )}
       {(scope === 'stack' || scope === 'table') && warnings.length > 0 && (
@@ -777,11 +777,11 @@ function RecipeDialog({ repo, workspaceId, initial }: { repo: string; workspaceI
         <input id="recipe-url" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={keys} placeholder="http://localhost:5173" className="field w-full font-mono text-[13px]" />
       </>}
       {scope === 'table' ? null : scope === 'stack' ? stack && <p className="mt-2 text-[13px] text-faint">Empty the box and save to remove the stack (cards go back to the workspace’s or the repo’s recipe).</p>
-        : recipe?.edited && <p className="mt-2 text-[13px] text-faint">{scope === 'workspace' ? 'Empty the steps and save to remove the workspace’s recipe (cards go back to their repo’s).' : 'Empty the steps and save to go back to the detected recipe.'}</p>}
+        : recipe?.edited && <p className="mt-2 text-[13px] text-faint">{scope === 'workspace' ? 'Empty the steps and save to remove the lane’s recipe (cards go back to their repo’s).' : 'Empty the steps and save to go back to the detected recipe.'}</p>}
       {error && <div className="mt-3 rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
       <div className="mt-5 flex items-center justify-end gap-2.5">
         <button className="btn" onClick={close}>Cancel<Key k="Esc" size="sm" /></button>
-        <button className="btn btn-primary" onClick={save}>Save{scope === 'workspace' ? ' for the workspace' : scope === 'stack' || scope === 'table' ? ' the stack' : ''}<Key k={scope === 'table' ? 'Enter' : 'Ctrl Enter'} size="sm" tone="ghost" /></button>
+        <button className="btn btn-primary" onClick={save}>Save{scope === 'workspace' ? ' for the lane' : scope === 'stack' || scope === 'table' ? ' the stack' : ''}<Key k={scope === 'table' ? 'Enter' : 'Ctrl Enter'} size="sm" tone="ghost" /></button>
       </div>
     </Overlay>
   );
@@ -883,7 +883,7 @@ function TicketsDialog() {
           <Key k="D" size="sm" />
         </button>
       </div>
-      <h3 className="eyebrow mb-2 mt-5">Which workspace each project goes to</h3>
+      <h3 className="eyebrow mb-2 mt-5">Which lane each project goes to</h3>
       {projects.length ? (
         <ul className="space-y-1" role="listbox" aria-label="Projects">
           {projects.map((p, i) => {
@@ -893,9 +893,9 @@ function TicketsDialog() {
                 className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 ${i === at ? 'is-focus bg-raise' : ''}`}>
                 <span className="w-14 shrink-0 text-xs text-faint">{p.source === 'jira' ? 'Jira' : 'Trello'}</span>
                 <span className="min-w-0 grow truncate font-semibold">{p.name}<span className="ml-2 font-normal text-faint">{p.source === 'jira' ? p.id : ''} · {p.count} ticket{p.count === 1 ? '' : 's'}</span></span>
-                <button className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-surface hover:text-ink" onClick={() => map(i, -1)} aria-label="Previous workspace"><Icon name="back" size={14} /></button>
+                <button className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-surface hover:text-ink" onClick={() => map(i, -1)} aria-label="Previous lane"><Icon name="back" size={14} /></button>
                 <span className="flex w-40 items-center gap-2 truncate text-sm">{ws ? <><WsBadge ws={ws} size={18} />{ws.name}</> : <span className="text-faint">No workspace (All only)</span>}</span>
-                <button className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-surface hover:text-ink" onClick={() => map(i, 1)} aria-label="Next workspace"><Icon name="right" size={14} /></button>
+                <button className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-surface hover:text-ink" onClick={() => map(i, 1)} aria-label="Next lane"><Icon name="right" size={14} /></button>
               </li>
             );
           })}
@@ -923,11 +923,11 @@ function TicketsDialog() {
 }
 
 const PICK_TITLE: Record<WorkspaceAction, string> = {
-  addRepo: 'Add a repo to which workspace?',
-  removeRepo: 'Remove a repo from which workspace?',
-  edit: 'Edit which workspace?',
-  share: 'Share which workspace?',
-  delete: 'Delete which workspace?',
+  addRepo: 'Add a repo to which lane?',
+  removeRepo: 'Remove a repo from which lane?',
+  edit: 'Edit which lane?',
+  share: 'Share which lane?',
+  delete: 'Delete which lane?',
 };
 
 /** All is showing on the line and a workspace key was pressed: which workspace it is for. */
@@ -991,7 +991,7 @@ function RepoPicker({ target }: { target: RepoTarget }) {
     close();
   }
 
-  const title = target.kind === 'workspace' ? `Add a repo to ${ws?.name ?? 'the workspace'}` : 'Let this session work in another repo';
+  const title = target.kind === 'workspace' ? `Add a repo to ${ws?.name ?? 'the lane'}` : 'Let this session work in another repo';
   if (browseFrom !== null) {
     return (
       <Overlay label={title}>
@@ -1084,7 +1084,7 @@ function RepoRemover({ target }: { target: RepoTarget }) {
       <DialogTitle>{title}</DialogTitle>
       <p className="mb-3 text-sm text-sub">
         {ws
-          ? 'Sessions in this workspace stop using it (a session that is working finishes first). Sessions that run in it leave the workspace. The repo itself is untouched.'
+          ? 'Sessions in this lane stop using it (a session that is working finishes first). Sessions that run in it leave the lane. The repo itself is untouched.'
           : session?.live ? 'The session restarts in place without it; the conversation is kept.' : 'It takes effect the next time the session runs.'}
       </p>
       <ul className="space-y-0.5" role="listbox" aria-label="Repos">
@@ -1104,7 +1104,7 @@ function RepoRemover({ target }: { target: RepoTarget }) {
               <span className="w-5" />
               <WsBadge ws={owner} size={16} />
               <span className="shrink-0 whitespace-nowrap">{repoName(d)}</span>
-              <span className="min-w-0 truncate text-xs">from {owner?.name ?? 'its workspace'}: remove it there (− on the Ticket Line)</span>
+              <span className="min-w-0 truncate text-xs">from {owner?.name ?? 'its lane'}: remove it there (− on the Ticket Line)</span>
             </li>
           );
         })}

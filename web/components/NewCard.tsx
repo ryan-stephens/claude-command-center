@@ -39,7 +39,7 @@ export function NewCard() {
         <WsBadge ws={ws} size={30} />
         <div className="flex min-w-0 grow flex-col gap-1">
           <div className="flex items-center gap-1.5 text-sm text-faint">
-            New card · {key} · {ws?.name ?? 'no workspace'} · {t ? `from ${SOURCE_NAME[t.source]}${t.demo ? ' (demo)' : ''}` : 'no ticket yet'} ·
+            New card · {key} · {ws?.name ?? 'no lane'} · {t ? `from ${SOURCE_NAME[t.source]}${t.demo ? ' (demo)' : ''}` : 'no ticket yet'} ·
             <button className="flex items-center gap-1.5 rounded-md border border-line bg-raise px-1.5 font-semibold text-ink hover:border-ring" onClick={() => updateComposer((x) => ({ ...x, pane: 'go', gi: 0 }))}
               title="The kind of work: Develop, QA or Code review. k changes it.">
               {kindName(c.kind)}<Key k="k" size="sm" />
@@ -243,7 +243,7 @@ function Sources({ c }: { c: Composer }) {
               <span className="rounded border border-line px-1 font-mono text-[10px] font-bold uppercase text-faint">repo</span>
               <span className="min-w-0 grow">
                 <span className="block truncate">{r.name}</span>
-                <span className="block truncate text-xs text-faint">{had ? `${c.addTo!.key} can use it` : where === 'workspace' ? 'in this workspace' : 'from the library'}{r.branch ? ` · ${r.branch}` : ''}</span>
+                <span className="block truncate text-xs text-faint">{had ? `${c.addTo!.key} can use it` : where === 'workspace' ? 'in this lane' : 'from the library'}{r.branch ? ` · ${r.branch}` : ''}</span>
               </span>
               {had ? <span className="rounded-full bg-raise px-2 text-[11px] font-semibold text-faint">has it</span> : inPacket ? <span className="rounded-full bg-ok-bg px-2 text-[11px] font-semibold text-ok">added</span> : <span className="w-4 text-center font-mono text-[17px] font-bold text-faint">+</span>}
             </button>
@@ -284,7 +284,7 @@ function PacketPane({ c, text, card }: { c: Composer; text: string; card?: Card 
         {item.kind === 'repo' && item.on && !isHome && !card && <span className="text-xs text-faint">--add-dir</span>}
         <span className={`font-mono text-[11.5px] font-semibold tabular-nums text-faint ${item.on ? '' : 'line-through'}`}>{fmtK(itemTokens(item))}</span>
         {layer === 'card' && item.kind === 'repo' && c.workspaceId && !card && (
-          <button className="flex items-center gap-1 whitespace-nowrap text-xs text-faint hover:text-ink" title="Keep this repo for the whole workspace: every card there gets it"
+          <button className="flex items-center gap-1 whitespace-nowrap text-xs text-faint hover:text-ink" title="Keep this repo for the whole lane: every card there gets it"
             onClick={(e) => { e.stopPropagation(); keepRepo(at); }}>Keep for {wsName ?? 'workspace'}<Key k="w" size="sm" /></button>
         )}
         {layer === 'card' && <Key k="x" size="sm" />}
@@ -328,9 +328,9 @@ function PacketPane({ c, text, card }: { c: Composer; text: string; card?: Card 
             <AlreadyHas card={card} />
           </>
           : <>
-            {layer('Workspace', wsName ? `shared by every ${wsName} card · set once` : 'no workspace', 'workspace', 'Pick a workspace under How it starts, or add repos from the library.')}
+            {layer('Workspace', wsName ? `shared by every ${wsName} card · set once` : 'no lane', 'workspace', 'Pick a lane under How it starts, or add repos from the library.')}
             {layer('Ticket', c.ticket ? `from ${SOURCE_NAME[c.ticket.source]} ${c.ticket.key}` : 'none yet', 'ticket', 'No ticket. Pick one under Tickets, or describe the work in the title.')}
-            {layer('This card', 'only this card gets these', 'card', <>Add repos from the library with <Key k="Space" size="sm" inline />. <Key k="w" size="sm" inline /> on one keeps it for the whole workspace.</>,
+            {layer('This card', 'only this card gets these', 'card', <>Add repos from the library with <Key k="Space" size="sm" inline />. <Key k="w" size="sm" inline /> on one keeps it for the whole lane.</>,
               noteRow('Anything else Claude should know? e.g. Keep it behind the size_guide flag.'))}
           </>}
       </div>

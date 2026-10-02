@@ -11,7 +11,7 @@ import { close, DialogKeys, Overlay } from './Overlay.tsx';
 
 interface Item {
   key: string;
-  kind: 'Action' | 'Workflow' | 'Session' | 'Workspace';
+  kind: 'Action' | 'Workflow' | 'Session' | 'Lane';
   label: string;
   detail?: string;
   run: () => void;
@@ -37,17 +37,17 @@ export function Palette() {
     const actions: Item[] = [
       action('new', 'New session', () => newSession(), ws ? `in ${ws.name}` : undefined),
       action('attention', 'Jump to the next session that needs you', jumpToAttention),
-      action('workspace', 'New workspace', () => set({ modal: { kind: 'workspace', id: null } })),
+      action('workspace', 'New lane', () => set({ modal: { kind: 'workspace', id: null } })),
     ];
     if (ws) {
       actions.push(
         action('addrepo', `Add a repo to ${ws.name}`, () => set({ modal: { kind: 'repoPicker', target: { kind: 'workspace', id: ws.id } } })),
-        action('editws', `Edit workspace ${ws.name}`, () => set({ modal: { kind: 'workspace', id: ws.id } })),
-        action('exportws', `Export workspace ${ws.name} to share it`, () => exportWorkspace(ws.id)),
+        action('editws', `Edit lane ${ws.name}`, () => set({ modal: { kind: 'workspace', id: ws.id } })),
+        action('exportws', `Export lane ${ws.name} to share it`, () => exportWorkspace(ws.id)),
       );
     }
     actions.push(
-      action('importws', 'Import a workspace file', importWorkspace),
+      action('importws', 'Import a lane file', importWorkspace),
       action('sources', 'Choose the folders the repo library lists', () => set({ modal: { kind: 'sources' } })),
       action('home', 'Go to the Ticket Line', backToLine),
       action('theme', 'Switch theme (match Windows, light, dark)', cycleTheme),
@@ -84,8 +84,8 @@ export function Palette() {
       }
     }
     const wsItems: Item[] = [
-      ...workspaces.map((w, i): Item => ({ key: `w:${w.id}`, kind: 'Workspace', label: w.name, detail: `key ${i + 1}`, run: () => { setFilter(w.id); backToLine(); } })),
-      { key: 'w:all', kind: 'Workspace', label: 'All workspaces', detail: 'key 0', run: () => { setFilter('all'); backToLine(); } },
+      ...workspaces.map((w, i): Item => ({ key: `w:${w.id}`, kind: 'Lane', label: w.name, detail: `key ${i + 1}`, run: () => { setFilter(w.id); backToLine(); } })),
+      { key: 'w:all', kind: 'Lane', label: 'All lanes', detail: 'key 0', run: () => { setFilter('all'); backToLine(); } },
     ];
     const commands: Item[] = open && board?.sessionId === open.id
       ? board.groups.flatMap((g) => g.commands.map((c) => ({
@@ -141,7 +141,7 @@ export function Palette() {
           else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - listStep(e))); }
           else if (e.key === 'Enter') { e.preventDefault(); run(results[index]); }
         }}
-        placeholder="Search actions, workflows, workspaces and sessions…"
+        placeholder="Search actions, workflows, lanes and sessions…"
         aria-label="Search"
         className="field text-[16px]"
       />

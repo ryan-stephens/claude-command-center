@@ -1811,3 +1811,13 @@ Alongside it, three small things on the same screens:
 - The `?` overlay has a switch for the shortcut hints on the page (`H` there): on or off. *On hover* stays as a choice in `?` `B` (`cycleHints` is still what the dialog uses); `toggleHints` in `web/keys.ts` goes always ↔ never. The overlay itself always keeps its keycaps.
 
 **Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (284; the legend tests still run on the computed bar), and the `walk-chrome.cjs` walkthrough in `docs/walkthroughs/simple-new-card/`: the bar without its buttons and filter, no legend, no repos row, the Inbox note, the `?` switch.
+
+## 61. Lanes
+
+2026-10-01, the owner: a "workspace" is a lane on the board, a named group of repos whose cards share them. Every visible *Workspace* now reads *Lane*: the line's bar and its `W` button, the `?` sections and rows, the legend, the lane dialogs (new, edit, delete, which one), the palette, the recipe editor's tabs, the Tickets dialog's mapping, the new-card screen's layer and messages, the Ship sheet, the card's Context tab, the Welcome screen, and the flash messages.
+
+**Prose only.** Identifiers, message types (`workspace.save`, `workspace.addRepo`, …), setting ids, `Settings`, the SQLite tables and the shared workspace file format are unchanged, so nothing on disk changes and an older page or server still talks to a newer one. A blanket rename across the code broke identifiers once; a pass over string literals with a space in them and JSX text was the safe shape. Two test expectations changed with the words (`legend.test.ts`, `line-model.test.ts`).
+
+**Not renamed, pending the owner's say:** the hook text Claude receives still says *Workspace notes* (shared code in the delivered context; a card started before and after the change would otherwise read differently).
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (284).

@@ -40,7 +40,7 @@ test('a question or a plan changes the answer keys', () => {
 
 test('the Ticket Line bar follows the view and the new-card panel', () => {
   const labels = (x: Parameters<typeof lineLegendFor>[0]) => lineLegendFor(x).map((i) => i.label);
-  assert.deepEqual(labels({ view: 'board', bindings: {} }), ['Move', 'New card', 'Tickets', 'Inbox: mine / QA', 'Workspace / all', 'Filter', 'Repos', 'Workspace', 'Share / import', 'Folders']);
+  assert.deepEqual(labels({ view: 'board', bindings: {} }), ['Move', 'New card', 'Tickets', 'Inbox: mine / QA', 'Lane / all', 'Filter', 'Repos', 'Lane', 'Share / import', 'Folders']);
   const focused = labels({ view: 'board', hasFocus: true, hasSession: true, filtered: true, bindings: {} });
   assert.ok(focused.includes('Open the card') && focused.includes('Its session') && focused.includes('Clear filter') && focused.includes('Remove') && focused.includes('Run recipe'));
   assert.ok(!labels({ view: 'board', hasFocus: true, bindings: {} }).includes('Its session'), 'no session linked yet: nothing to open');
@@ -49,8 +49,8 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.equal(labels({ view: 'board', onTicket: true, bindings: {} })[1], 'Start work', 'a ticket in the Inbox: n starts work');
   assert.equal(labels({ view: 'board', onTicket: true, bindings: {} })[2], 'Hide', 'and Delete hides it');
   assert.ok(labels({ view: 'composer', pane: 'pkt', bindings: {} }).includes('Include or leave out'));
-  assert.ok(!labels({ view: 'composer', pane: 'pkt', bindings: {} }).includes('Keep for the workspace'));
-  assert.ok(labels({ view: 'composer', pane: 'pkt', cardRepo: true, bindings: {} }).includes('Keep for the workspace'));
+  assert.ok(!labels({ view: 'composer', pane: 'pkt', bindings: {} }).includes('Keep for the lane'));
+  assert.ok(labels({ view: 'composer', pane: 'pkt', cardRepo: true, bindings: {} }).includes('Keep for the lane'));
   assert.ok(!labels({ view: 'composer', pane: 'pkt', preview: true, bindings: {} }).includes('Remove'), 'the preview has nothing to toggle');
   assert.ok(labels({ view: 'composer', pane: 'go', bindings: {} }).includes('Change'));
   assert.deepEqual(labels({ view: 'drawer', bindings: {} }), ['Back to the board', 'Previous / next card', 'Overview · Context', 'Run recipe', 'Remove card']);
@@ -69,6 +69,6 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(labels({ view: 'drawer', ship: 'merge', bindings: {} }).includes('Merge'));
   assert.ok(labels({ view: 'drawer', ship: 'rest', bindings: {} }).includes('Ship the rest'), 'a ship that stopped part-way');
   const adding = labels({ view: 'composer', pane: 'pkt', addingTo: 'SHOP-155', cardRepo: true, bindings: {} });
-  assert.ok(adding.includes('Add to SHOP-155') && !adding.includes('Model') && !adding.includes('Keep for the workspace'), 'adding to a running card');
+  assert.ok(adding.includes('Add to SHOP-155') && !adding.includes('Model') && !adding.includes('Keep for the lane'), 'adding to a running card');
   assert.deepEqual(lineLegendFor({ view: 'board', hasSession: true, hasFocus: true, bindings: { expand: ['Alt+Enter'] } }).find((i) => i.label === 'Its session')!.keys, ['Alt+Enter']);
 });

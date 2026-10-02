@@ -162,7 +162,7 @@ function simpleLegend(x: LineLegendInput): LegendItem[] {
 /** The workspace keys, shown on the board. */
 const WORKSPACE_KEYS: LegendItem[] = [
   { keys: ['+', '−'], label: 'Repos' },
-  { keys: ['W', 'E', '⇧Del'], label: 'Workspace' },
+  { keys: ['W', 'E', '⇧Del'], label: 'Lane' },
   { keys: ['⇧E', '⇧I'], label: 'Share / import' },
   { keys: ['F'], label: 'Folders' },
 ];
@@ -190,7 +190,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
         : x.pane === 'pkt'
           ? (x.preview ? [] : [
             { keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Include or leave out' }, { keys: ['x'], label: 'Remove' },
-            ...(x.cardRepo && !x.addingTo ? [{ keys: ['w'], label: 'Keep for the workspace' }] : []),
+            ...(x.cardRepo && !x.addingTo ? [{ keys: ['w'], label: 'Keep for the lane' }] : []),
             { keys: ['e'], label: 'Your note' },
           ])
           : [{ keys: ['↑', '↓'], label: 'Option' }, { keys: ['←', '→'], label: 'Change' }]),
@@ -227,7 +227,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     ...(x.hasDraft ? [{ keys: ['c'], label: 'Pick up your card', tone: 'acc' as const }, { keys: ['⇧C'], label: 'New card' }] : [{ keys: ['c'], label: 'New card', tone: 'acc' as const }]),
     { keys: ['⇧T'], label: 'Tickets' },
     { keys: ['v'], label: 'Inbox: mine / QA' },
-    { keys: ['1–9', '0'], label: 'Workspace / all' },
+    { keys: ['1–9', '0'], label: 'Lane / all' },
     { keys: ['/'], label: 'Filter' },
     ...(x.filtered ? [{ keys: ['Esc'], label: 'Clear filter' }] : []),
     ...(x.hasFocus && x.hasWorktrees ? [{ keys: ['⇧X'], label: 'Worktrees' }] : []),

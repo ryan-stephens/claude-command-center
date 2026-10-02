@@ -29,10 +29,10 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['n / Enter (a ticket in the Inbox)', 'Start work on it: the new-card screen, with the ticket as its context'],
       ['v', 'Inbox: your tickets, or every ticket Ready for QA in your projects'],
       ['Delete (a ticket in the Inbox)', 'Hide it from the Inbox (nothing changes in Jira or Trello; Shift+T shows it again)'],
-      ['Shift+T', 'Tickets: demo tickets (D), Jira and Trello (R refreshes), which workspace each project goes to, and tickets you hid'],
+      ['Shift+T', 'Tickets: demo tickets (D), Jira and Trello (R refreshes), which lane each project goes to, and tickets you hid'],
       ['Ctrl+Enter', 'The card’s session in the app, to read along (Esc comes back; typing here forks it, the terminal tab is where you answer)'],
       ['c', 'New card: build its context and start work in a terminal tab. A card you left half-built (Esc, Alt+L) is picked up again; Shift+C starts a fresh one'],
-      ['1–9  /  0', 'Show one workspace’s cards / all of them'],
+      ['1–9  /  0', 'Show one lane’s cards / all of them'],
       ['/', 'Filter the cards by words'],
       ['Tab (card open)', 'Overview or Context (on a narrow window, Transcript too)'],
       ['Esc (card open)', 'Back to the board, the card still focused; on the board, clear the filter'],
@@ -41,12 +41,12 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal'],
       ['g (a card)', 'Go to its terminal tab: brings the Windows Terminal tab forward, for what the page can’t relay (the trust-the-folder prompt, a picker)'],
       ['Shift+D (a card)', 'Changes: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
-      ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab. A repo gets a worktree on the card’s branch, and an API or UI among them joins the workspace’s stack; a note naming an API makes t suggest it'],
+      ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
-      ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a workspace stack, pick the environment and the APIs first. A workspace with no stack yet: what its repos say the stack is (okteto.yml, angular.json, the proxy file), Enter keeps it, e edits it first'],
+      ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a lane stack, pick the environment and the APIs first. A lane with no stack yet: what its repos say the stack is (okteto.yml, angular.json, the proxy file), Enter keeps it, e edits it first'],
       ['t picker: ← →  /  ↑ ↓ Space  /  a n  /  Enter', 'Environment (dev, uat …)  /  which APIs run (changed ones are ticked)  /  all or none  /  start them, then the UI'],
       ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
-      ['e (a card)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo, the whole workspace, the workspace’s stack of APIs and UI as a table (↑ ↓ a row, e changes it, Delete drops an API, Enter saves), or that stack as JSON)'],
+      ['e (a card)', 'Write or edit the run recipe (Alt+W in the editor: for the card’s repo, the whole lane, the lane’s stack of APIs and UI as a table (↑ ↓ a row, e changes it, Delete drops an API, Enter saves), or that stack as JSON)'],
       ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket, in each repo the card changed (one block per repo in the sheet; the PRs link each other); if it stops part-way, s again ships only the repos left; on a card in Ship with every PR open, merge them. On a QA or review card: its report (Enter copies, j posts it on the Jira ticket and m moves the ticket, each after you confirm; o opens the PR, d moves the card to Done)'],
       ['d (a card in Ship)', 'Done: the PR was merged or closed by hand, or the host isn’t one Ship can follow'],
       ['Shift+X (a card)', 'Worktrees: the folders the card made, with what each still holds; on a Done card, remove them and their branch (Enter the clean ones, f all of them)'],
@@ -54,14 +54,14 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
     ],
   },
   {
-    title: 'Workspaces (Ticket Line)',
+    title: 'Lanes (Ticket Line)',
     keys: [
-      ['W', 'New workspace'],
-      ['E (or e with no card focused)', 'Edit the workspace shown (with All showing, pick which)'],
-      ['+ / −', 'Add a repo from the library to the workspace shown / remove one (every card and session in it can use them all)'],
+      ['W', 'New lane'],
+      ['E (or e with no card focused)', 'Edit the lane shown (with All showing, pick which)'],
+      ['+ / −', 'Add a repo from the library to the lane shown / remove one (every card and session in it can use them all)'],
       ['F', 'Choose the folders the repo library lists'],
-      ['Shift+E / Shift+I', 'Share the workspace as a file / import one'],
-      ['Shift+Delete', 'Delete the workspace shown (its repos and sessions stay)'],
+      ['Shift+E / Shift+I', 'Share the lane as a file / import one'],
+      ['Shift+Delete', 'Delete the lane shown (its repos and sessions stay)'],
     ],
   },
   {
@@ -95,9 +95,9 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['/', 'Search the tickets (by key or words; Jira is searched too, for anyone’s ticket) or the repo library'],
       ['k', 'Kind of work: Develop, QA (test someone’s change) or Code review'],
       ['x', 'Remove something you added to this card (on the card’s ticket: take it off)'],
-      ['w (what Claude will know)', 'Keep a repo you added to this card for the whole workspace'],
+      ['w (what Claude will know)', 'Keep a repo you added to this card for the whole lane'],
       ['e', 'Write your own note for Claude'],
-      ['← → (how it starts)', 'Change the option: workspace, the repo it starts in, branch, mode, model'],
+      ['← → (how it starts)', 'Change the option: lane, the repo it starts in, branch, mode, model'],
       ['m', 'Change the model: your default, Opus, Sonnet or Haiku'],
       ['p', 'Preview exactly what Claude gets'],
       ['Ctrl+Enter', 'Start work (also while typing); adding to a running card, add it'],
@@ -172,7 +172,7 @@ export function workspaceKey(then: WorkspaceAction): void {
   if (ws) { runWorkspaceAction(then, ws.id); return; }
   if (!s.workspaces.length) {
     if (then === 'addRepo') set({ modal: { kind: 'workspace', id: null } });
-    else flash('No workspaces yet. W makes one.');
+    else flash('No lanes yet. W makes one.');
     return;
   }
   if (s.workspaces.length === 1) { runWorkspaceAction(then, s.workspaces[0].id); return; }
@@ -525,7 +525,7 @@ export function keepRepo(index: number): void {
   send({ type: 'workspace.addRepo', id: c.workspaceId!, path: r.repo });
   set({ composer: { ...r.composer, error: null } });
   const ws = get().workspaces.find((w) => w.id === c.workspaceId);
-  flash(`Kept for ${ws?.name ?? 'the workspace'}: every card there gets it`);
+  flash(`Kept for ${ws?.name ?? 'the lane'}: every card there gets it`);
 }
 
 /** What the tracker's search found for this text (nothing while it answers an older search). */
@@ -590,11 +590,11 @@ function boardKeys(e: KeyboardEvent): boolean {
   if (digit && !e.shiftKey) {
     const n = Number(digit[1]);
     const ws = s.workspaces[n - 1];
-    if (n && !ws) { flash(s.workspaces.length ? `There is no workspace ${n}` : 'No workspaces yet. W makes one.'); return true; }
+    if (n && !ws) { flash(s.workspaces.length ? `There is no lane ${n}` : 'No lanes yet. W makes one.'); return true; }
     const filter = n === 0 ? 'all' : ws.id;
     setFilter(filter);
     set({ line: { ...get().line, focus: moveFocus(boardOf(get()), null, 1, 0) } });
-    flash(n === 0 ? 'Every workspace' : ws.name);
+    flash(n === 0 ? 'Every lane' : ws.name);
     return true;
   }
   if (e.key !== 'e' && workspaceKeys(e)) return true;

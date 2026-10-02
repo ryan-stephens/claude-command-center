@@ -68,8 +68,8 @@ function LineBar() {
           <Key k={String(i + 1)} size="sm" /><WsBadge ws={w} size={20} />{w.name}
         </button>
       ))}
-      <button className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-dashed border-line px-2 py-1 text-[13.5px] text-faint hover:text-ink" onClick={() => set({ modal: { kind: 'workspace', id: null } })} title="New workspace">
-        <Icon name="plus" size={14} />Workspace<Key k="W" size="sm" />
+      <button className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-dashed border-line px-2 py-1 text-[13.5px] text-faint hover:text-ink" onClick={() => set({ modal: { kind: 'workspace', id: null } })} title="New lane">
+        <Icon name="plus" size={14} />Lane<Key k="W" size="sm" />
       </button>
       {!SLIM.filter && <SearchBox />}
       <span className="grow" />
@@ -122,7 +122,7 @@ function WorkspaceBar() {
     <div className="flex items-center gap-2 overflow-x-auto border-b border-line bg-col px-4 py-1.5 text-[13px]">
       {ws ? (
         <>
-          <span className="whitespace-nowrap text-faint" title="Every card in this workspace can read and change all of these repos">{ws.name} repos</span>
+          <span className="whitespace-nowrap text-faint" title="Every card in this lane can read and change all of these repos">{ws.name} repos</span>
           {ws.repos.length
             ? ws.repos.map((r) => (
               <span key={r} title={r} className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-line bg-raise px-1.5 font-mono text-[12px] text-sub">
@@ -131,16 +131,16 @@ function WorkspaceBar() {
             ))
             : <span className="whitespace-nowrap text-faint">none yet: + adds one from the library</span>}
           <span className="mx-1 h-4 w-px bg-line" />
-          {act('Add', '+', () => workspaceKey('addRepo'), 'Add a repo from the library to this workspace')}
+          {act('Add', '+', () => workspaceKey('addRepo'), 'Add a repo from the library to this lane')}
           {ws.repos.length > 0 && act('Remove', '−', () => workspaceKey('removeRepo'))}
           {act('Edit', 'E', () => workspaceKey('edit'))}
-          {act('Share', '⇧E', () => workspaceKey('share'), 'Save this workspace as a file to share')}
+          {act('Share', '⇧E', () => workspaceKey('share'), 'Save this lane as a file to share')}
         </>
       ) : count ? null : (
-        <span className="whitespace-nowrap text-faint">No workspaces yet. A workspace groups the repos you work on together: W makes one.</span>
+        <span className="whitespace-nowrap text-faint">No lanes yet. A lane groups the repos you work on together: W makes one.</span>
       )}
       <span className="grow" />
-      {act('Import', '⇧I', importWorkspace, 'Import a workspace someone shared')}
+      {act('Import', '⇧I', importWorkspace, 'Import a lane someone shared')}
       {act(sources ? 'Library folders' : 'Pick repo folders', 'F', () => set({ modal: { kind: 'sources' } }), 'Choose the folders the repo library lists')}
     </div>
   );
@@ -207,7 +207,7 @@ function TicketTile({ t, focused, color }: { t: Ticket; focused: boolean; color:
       </span>
       <span className="text-[14px] font-semibold leading-snug">{t.title}</span>
       <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-faint">
-        <span>{ws?.name ?? `${t.projectName} · no workspace`}</span><span>·</span><span>{t.status}</span>{t.assignee && !inView(t, 'mine') && <><span>·</span><span title="Assigned to">{t.assignee}</span></>}
+        <span>{ws?.name ?? `${t.projectName} · no lane`}</span><span>·</span><span>{t.status}</span>{t.assignee && !inView(t, 'mine') && <><span>·</span><span title="Assigned to">{t.assignee}</span></>}
         {inView(t, 'qa') && qaLine(t) && <><span>·</span><span className={t.qaReviewer ? 'font-semibold text-sub' : 'italic'} title="QA reviewer">{qaLine(t)}</span></>}<span>·</span><span>{age(t.updatedAt)}</span>
       </span>
     </button>
@@ -350,7 +350,7 @@ function CardView({ id }: { id: string }) {
             <Pill tone={needsYou(card) ? 'amber' : 'grey'}>{stage}</Pill>
             {card.kind && card.kind !== 'build' && <KindPill card={card} />}
             <Pill tone="grey">terminal · tab {card.key}</Pill>
-            <span className="text-faint">{ws?.name ?? 'No workspace'}</span>
+            <span className="text-faint">{ws?.name ?? 'No lane'}</span>
           </div>
           <h2 className="truncate text-[19px] font-bold leading-snug tracking-tight">{card.title}</h2>
         </div>
@@ -610,7 +610,7 @@ function TryIt({ card }: { card: Card }) {
   // stack's steps depend on what was picked, so its last run is shown.
   const live = last?.state === 'running' || last?.state === 'up';
   const run = last && (live || stack || (recipe && last.steps.map((s) => s.cmd).join('\n') === specs.map((s) => s.cmd).join('\n'))) ? last : undefined;
-  const name = stack ? `${wsName ?? 'the workspace'} stack${run?.choice ? ` · ${run.choice}` : ''}` : recipe?.workspaceId ? `${wsName ?? 'the workspace'} workspace` : home ? repoName(home) : card.key;
+  const name = stack ? `${wsName ?? 'the lane'} stack${run?.choice ? ` · ${run.choice}` : ''}` : recipe?.workspaceId ? `${wsName ?? 'the lane'} lane` : home ? repoName(home) : card.key;
   const all: RunStep[] = run?.steps ?? specs.map((s) => ({
     cmd: s.cmd, state: s.note ? 'note' as const : 'wait' as const, tail: [],
     ...(s.repo ? { repo: s.repo } : {}), ...(Object.keys(s.env).length ? { env: Object.keys(s.env) } : {}), ...(s.stop ? { stop: true } : {}),
@@ -646,7 +646,7 @@ function TryIt({ card }: { card: Card }) {
       {run && run.state !== 'up' && run.state !== 'running' && (
         <div className={`rounded-lg px-3 py-2 text-sm font-semibold ${run.state === 'failed' ? 'bg-bad-bg text-bad' : 'bg-raise text-sub'}`}>{run.text}. <Key k="t" size="sm" inline /> runs it again.</div>
       )}
-      {recipe?.source.startsWith('from the workspace file') && !run && <div className="rounded-lg bg-attn-bg px-3 py-2 text-sm text-attn">This recipe came with a workspace file someone shared. Read the commands before pressing <Key k="t" size="sm" inline />: they run on this machine.</div>}
+      {recipe?.source.startsWith('from the workspace file') && !run && <div className="rounded-lg bg-attn-bg px-3 py-2 text-sm text-attn">This recipe came with a lane file someone shared. Read the commands before pressing <Key k="t" size="sm" inline />: they run on this machine.</div>}
       {shown && shown.tail.length > 0 && (
         <pre className="m-0 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-snug text-sub">{shown.tail.join('\n')}</pre>
       )}
@@ -720,7 +720,7 @@ function ContextTab({ card, wsName }: { card: Card; wsName?: string }) {
         </ol>
       </Sec>
       <Sec title="What Claude was given" right={<span className="text-sm text-faint">{fmtK(size)} · {memoryPct(size)}% of its memory</span>}>
-        <div className="grid gap-1.5"><div className="flex gap-2 text-[13px]"><b>Workspace</b><span className="text-faint">{wsName ? `shared by every ${wsName} card` : 'no workspace'}</span></div><Chips items={card.packet.workspace} /></div>
+        <div className="grid gap-1.5"><div className="flex gap-2 text-[13px]"><b>Lane</b><span className="text-faint">{wsName ? `shared by every ${wsName} card` : 'no lane'}</span></div><Chips items={card.packet.workspace} /></div>
         <div className="grid gap-1.5">
           <div className="flex gap-2 text-[13px]"><b>Ticket</b><span className="text-faint">{card.ticket ? `from ${SOURCE_NAME[card.ticket.source]} ${card.ticket.key}${card.ticket.demo ? ' (a demo ticket)' : ''}` : 'no ticket'}</span></div>
           {card.ticket && <Chips items={card.packet.ticket} />}
