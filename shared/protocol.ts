@@ -1,6 +1,7 @@
 // WebSocket protocol shared by server and web. Plain types only (erasable TS, runs under Node type stripping).
 
 import type { Card, CardDraft, CardWorktree, PacketItem, PrTarget } from './cards.ts';
+import type { SavedPrompt } from './prompts.ts';
 import type { CardRun, RunRecipe } from './recipes.ts';
 import type { ShipPlan, ShipRequest } from './ship.ts';
 import type { Stack, StackApiRow, StackChoice } from './stack.ts';
@@ -15,7 +16,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
 
-export const PROTOCOL = 21;
+export const PROTOCOL = 22;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -337,6 +338,9 @@ export type ClientMsg =
   | { type: 'pack.import'; pack: CommandPack }
   | { type: 'pack.export'; reqId: string }
   | { type: 'settings.set'; settings: Settings }
+  /** Save an opening prompt (§62); a new one has a fresh id. */
+  | { type: 'prompt.save'; prompt: SavedPrompt }
+  | { type: 'prompt.delete'; id: string }
   /** Create (no matching id) or replace a workspace. */
   | { type: 'workspace.save'; workspace: Workspace; /** New workspaces: a WORKFLOW_TEMPLATES id to seed its workflows. */ template?: string }
   | { type: 'workspace.delete'; id: string }
@@ -432,6 +436,8 @@ export type ServerMsg =
   | { type: 'commands.changed' }
   | { type: 'pack'; reqId: string; pack: CommandPack }
   | { type: 'settings'; settings: Settings }
+  /** Every saved opening prompt, on connect and whenever one changes. */
+  | { type: 'prompts'; prompts: SavedPrompt[] }
   | { type: 'workspaces'; workspaces: Workspace[] }
   /** `suggested`: likely source folders, from where past sessions ran, for the first-run setup. */
   | { type: 'library'; sources: string[]; repos: RepoInfo[]; suggested: string[] }

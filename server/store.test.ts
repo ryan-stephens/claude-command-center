@@ -1,0 +1,39 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
+import { DEFAULT_PROMPTS } from '../shared/prompts.ts';
+import { Store } from './store.ts';
+
+const dir = mkdtempSync(join(tmpdir(), 'cc-store-'));
+after(() => rmSync(dir, { recursive: true, force: true }));
+
+test('a new store starts with the three default prompts, written once', () => {
+  const path = join(dir, 'prompts.db');
+  const store = new Store(path);
+  const first = store.loadPrompts();
+  assert.deepEqual(first.map((p) => p.name), DEFAULT_PROMPTS.map((p) => p.name));
+  assert.deepEqual(first.map((p) => p.kind), ['build', 'build', 'qa']);
+  assert.ok(first.every((p) => /^[0-9a-f-]{36}$/.test(p.id) && p.updatedAt > 0 && p.body.includes('{{')));
+  // Edit one and delete another: reopening the same file keeps that, and seeds nothing again.
+  store.savePrompt({ ...first[0], body: 'Changed.', updatedAt: 5 });
+  store.deletePrompt(first[2].id);
+  store.close();
+  const again = new Store(path);
+  const second = again.loadPrompts();
+  assert.deepEqual(second.map((p) => p.name), [first[0].name, first[1].name]);
+  assert.equal(second[0].body, 'Changed.');
+  assert.equal(second[0].updatedAt, 5);
+  again.close();
+});
+
+test('a saved prompt keeps its place; a new one goes to the end', () => {
+  const store = new Store(join(dir, 'order.db'));
+  const [a, b, c] = store.loadPrompts();
+  store.savePrompt({ ...b, name: 'B2', updatedAt: 1 });
+  store.savePrompt({ id: 'new-1', name: 'Mine', body: 'Hi {{ticket}}', updatedAt: 2 });
+  assert.deepEqual(store.loadPrompts().map((p) => p.name), [a.name, 'B2', c.name, 'Mine']);
+  assert.equal(store.loadPrompts()[3].kind, undefined, 'no kind: offered for every card');
+  store.close();
+});

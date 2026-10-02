@@ -343,6 +343,9 @@ function receive(msg: ServerMsg): void {
     case 'settings':
       set({ settings: msg.settings });
       return;
+    case 'prompts':
+      set({ prompts: msg.prompts });
+      return;
     case 'workspaces': {
       const { filter } = get().line;
       set({ workspaces: msg.workspaces, workspacesLoaded: true });

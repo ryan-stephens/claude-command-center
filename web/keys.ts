@@ -530,7 +530,7 @@ function globalAction(e: KeyboardEvent, typing: boolean): boolean {
 }
 
 /** Dialogs that read keys from a focused field, not the window (those handle Esc themselves). */
-const INPUT_DIALOGS = new Set(['sources', 'repoPicker', 'workspace', 'new', 'rename', 'palette', 'recipe']);
+const INPUT_DIALOGS = new Set(['sources', 'repoPicker', 'workspace', 'new', 'rename', 'palette', 'recipe', 'prompts']);
 
 export function onKeyDown(e: KeyboardEvent): void {
   if (e.isComposing) return;

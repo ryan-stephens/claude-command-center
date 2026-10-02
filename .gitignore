@@ -7,3 +7,4 @@ dist/
 .playwright-mcp/
 .idea/
 CLAUDE.local.md
+docs/walkthroughs/**/shots-*/

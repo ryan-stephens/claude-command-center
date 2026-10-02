@@ -129,7 +129,7 @@ export function cleanDraft(raw: unknown, workspaces: Workspace[]): CardDraft {
   const ticketKey = str(d.ticketKey, 60).trim();
   return {
     title, workspaceId, packet, ...(ticketKey ? { ticketKey } : {}), ...(kind !== 'build' ? { kind } : {}), ...(pr ? { pr } : {}),
-    launch: { home, mode, branch, ...(model ? { model } : {}), message: str(l.message, 1000).replace(/[\r\n]+/g, ' ').trim() },
+    launch: { home, mode, branch, ...(model ? { model } : {}), message: str(l.message, 6000).replace(/[\r\n]+/g, ' ').trim() },
   };
 }
 

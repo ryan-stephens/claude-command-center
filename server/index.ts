@@ -9,7 +9,8 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { KEY_HINTS, NEW_CARD_LOOKS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
-import { cardRepos, folderFor, type Card } from '../shared/cards.ts';
+import { CARD_KINDS, cardRepos, folderFor, type Card } from '../shared/cards.ts';
+import type { SavedPrompt } from '../shared/prompts.ts';
 import { doneStatuses, finishesCard } from '../shared/tickets.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
@@ -184,6 +185,18 @@ function cleanSettings(raw: unknown): Settings {
   const look = (raw as Settings)?.newCardLook;
   if (look && NEW_CARD_LOOKS.includes(look)) out.newCardLook = look;
   return out;
+}
+
+/** An untrusted prompt from a client: a name, a body with room for a real prompt, a known kind or none; the id is kept when it is one. */
+function cleanPrompt(raw: unknown): SavedPrompt {
+  const p = (raw ?? {}) as Partial<SavedPrompt>;
+  const name = typeof p.name === 'string' ? p.name.trim().slice(0, 80) : '';
+  if (!name) throw new Error('A prompt needs a name.');
+  const body = typeof p.body === 'string' ? p.body.replace(/\r\n/g, '\n').trim().slice(0, 8000) : '';
+  if (!body) throw new Error('A prompt needs a body.');
+  const id = typeof p.id === 'string' && /^[\w-]{1,64}$/.test(p.id) ? p.id : crypto.randomUUID();
+  const kind = CARD_KINDS.find((k) => k.id === p.kind)?.id;
+  return { id, name, body, ...(kind ? { kind } : {}), updatedAt: Date.now() };
 }
 
 /** Untrusted workspace from a client: a name, a known colour, absolute repo paths (deduplicated). */
@@ -363,6 +376,14 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'settings.set':
       store.saveSettings(cleanSettings(msg.settings));
       broadcast({ type: 'settings', settings: store.loadSettings() });
+      return;
+    case 'prompt.save':
+      store.savePrompt(cleanPrompt(msg.prompt));
+      broadcast({ type: 'prompts', prompts: store.loadPrompts() });
+      return;
+    case 'prompt.delete':
+      if (typeof msg.id === 'string') store.deletePrompt(msg.id);
+      broadcast({ type: 'prompts', prompts: store.loadPrompts() });
       return;
     case 'workspace.save': {
       const w = cleanWorkspace(msg.workspace);
@@ -743,6 +764,7 @@ wss.on('connection', (ws) => {
   send(ws, { type: 'hello', protocol: PROTOCOL });
   send(ws, snapshot());
   send(ws, { type: 'settings', settings: store.loadSettings() });
+  send(ws, { type: 'prompts', prompts: store.loadPrompts() });
   send(ws, { type: 'workspaces', workspaces: store.loadWorkspaces() });
   send(ws, library());
   send(ws, cardsMsg());

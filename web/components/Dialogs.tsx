@@ -20,6 +20,7 @@ import { ChangesSheet } from './ChangesSheet.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
 import { FolderPicker } from './FolderPicker.tsx';
 import { Palette } from './Palette.tsx';
+import { PromptsDialog } from './PromptsDialog.tsx';
 import { ReportSheet } from './ReportSheet.tsx';
 import { ShipSheet } from './ShipSheet.tsx';
 import { TryPick } from './TryPick.tsx';
@@ -57,6 +58,7 @@ export function Dialogs() {
     case 'addFolder': return <AddFolderDialog />;
     case 'pickWorkspace': return <PickWorkspaceDialog then={modal.then} />;
     case 'tickets': return <TicketsDialog />;
+    case 'prompts': return <PromptsDialog draft={modal.draft} />;
   }
 }
 

@@ -126,7 +126,7 @@ export interface LineLegendInput {
   /** New-card screen, panel 2: the highlighted row is a repo this card added (w keeps it for the workspace). */
   cardRepo?: boolean;
   /** New-card screen in its simple look (§59): which block, a picker open, the options open, a ticket picked. */
-  simple?: { block: 'ticket' | 'context' | 'note' | 'how' | 'start'; adding: boolean; /** The context picker (Repos / Folders / Tickets tabs), not the ticket search. */ context?: boolean; /** Its Folders tab is showing. */ folders?: boolean; more: boolean; hasTicket: boolean; ownChip: boolean };
+  simple?: { block: 'ticket' | 'context' | 'msg' | 'how' | 'start'; adding: boolean; /** The context picker (Repos / Folders / Tickets tabs), not the ticket search. */ context?: boolean; /** Its Folders tab is showing. */ folders?: boolean; /** The list of saved prompts is open under the opening message. */ prompt?: boolean; more: boolean; hasTicket: boolean; ownChip: boolean };
   bindings: Bindings;
 }
 
@@ -134,6 +134,7 @@ export interface LineLegendInput {
 function simpleLegend(x: LineLegendInput): LegendItem[] {
   const sp = x.simple!;
   if (x.preview) return [{ keys: ['p', 'Esc'], label: 'Back' }, { keys: ['Ctrl Enter'], label: 'Start work', tone: 'acc' }];
+  if (sp.prompt) return [{ keys: ['↑', '↓'], label: 'Move' }, { keys: ['Enter'], label: 'Use this prompt', tone: 'acc' }, { keys: ['⇧E'], label: 'Edit prompts' }, { keys: ['Esc'], label: 'Close' }];
   if (sp.adding) {
     return [
       ...(sp.context ? [{ keys: ['←', '→'], label: 'Repos · Folders · Tickets' }] : []),
@@ -145,7 +146,7 @@ function simpleLegend(x: LineLegendInput): LegendItem[] {
   }
   const here: LegendItem[] = sp.block === 'ticket' ? [{ keys: ['Enter'], label: sp.hasTicket ? 'Change ticket' : 'Find a ticket' }, ...(sp.hasTicket ? [{ keys: ['x'], label: 'No ticket' }] : [])]
     : sp.block === 'context' ? [{ keys: ['←', '→'], label: 'Along the chips' }, { keys: ['Enter'], label: 'Include / leave out' }, { keys: ['+'], label: 'Add context' }, ...(sp.ownChip ? [{ keys: ['x'], label: 'Take out' }, { keys: ['w'], label: 'Keep for the lane' }] : [])]
-    : sp.block === 'note' ? [{ keys: ['Enter'], label: 'Write the note' }]
+    : sp.block === 'msg' ? [{ keys: ['Enter'], label: 'Write the message' }, { keys: ['Space'], label: 'Pick a prompt' }, { keys: ['s'], label: 'Save as a prompt' }, { keys: ['⇧E'], label: 'Edit prompts' }]
     : sp.block === 'how' ? (sp.more ? [{ keys: ['←', '→'], label: 'Change' }, { keys: ['Enter'], label: 'Close the options' }] : [{ keys: ['Enter'], label: 'Options' }])
     : [{ keys: ['Enter'], label: 'Start work', tone: 'acc' }];
   return [

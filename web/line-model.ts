@@ -166,8 +166,10 @@ export interface Composer {
   preview: boolean;
   /** Search in panel 1. */
   q: string;
-  /** The opening message was typed by hand, so changing the mode leaves it alone. */
+  /** The opening message was typed by hand, so changing the mode (or the context, with a prompt picked) leaves it alone. */
   msgTouched: boolean;
+  /** The saved prompt the opening message was rendered from (§62); with `msgTouched` off it follows the card's context. */
+  promptId?: string | null;
   starting: boolean;
   error: string | null;
   /** Set when adding context to a card that has started, instead of making a new one. */

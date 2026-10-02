@@ -3,6 +3,7 @@ import type { Card } from '../shared/cards.ts';
 import type { CardRun, RunRecipe } from '../shared/recipes.ts';
 import type { InboxView, Ticket, TicketProject, TicketSources } from '../shared/tickets.ts';
 import type { Command, CommandGroup, ModelChoice, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, Todo, TranscriptItem, Workspace } from '../shared/protocol.ts';
+import type { SavedPrompt } from '../shared/prompts.ts';
 import { loadFolds, saveFolds, toggled, type FoldKey, type Folds } from './folds.ts';
 import type { QaState } from './questions.ts';
 import type { Flags } from './home-model.ts';
@@ -52,6 +53,8 @@ export type Modal =
   | { kind: 'tickets' }
   /** "All" is showing: which workspace a workspace key (+ − E ⇧E ⇧Delete) is for. */
   | { kind: 'pickWorkspace'; then: WorkspaceAction }
+  /** Saved opening prompts (§62): the list, edit one, or start a new one from `draft` ("Save as a prompt" on the new-card screen). */
+  | { kind: 'prompts'; draft?: { body: string } }
   | null;
 
 /** What the workspace keys on the line do, once it is clear which workspace. */
@@ -70,6 +73,8 @@ interface State {
   workspaces: Workspace[];
   /** False until the server has sent them once (so first-run setup doesn't flash). */
   workspacesLoaded: boolean;
+  /** Saved opening prompts for the new-card screen (§62), as the server sends them. */
+  prompts: SavedPrompt[];
   library: Library;
   transcripts: Record<string, TranscriptItem[]>;
   partials: Record<string, string>;
@@ -155,6 +160,7 @@ export const useStore = create<State>(() => ({
   repos: [],
   workspaces: [],
   workspacesLoaded: false,
+  prompts: [],
   library: { sources: [], repos: [], suggested: [] },
   transcripts: {},
   partials: {},

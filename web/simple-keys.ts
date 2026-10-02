@@ -2,10 +2,11 @@
 // the setting says simple (and the screen is making a card, not adding to one). Every key has a row
 // in LINE_SECTIONS and in lineLegendFor.
 
-import { flash, get } from './store.ts';
+import { unrenderPrompt } from '../shared/prompts.ts';
+import { flash, get, set } from './store.ts';
 import { addFolder, cardFolders, composerKey, cycleKind, cycleModel, dropTicket, nextTab, packetRows, pickTicket, repoOrigin, sources, stepOption, ticketSources, togglePacketRow, toggleSource, type Composer, type SourceTab } from './line-model.ts';
 import { foundFor, keepRepo, leaveComposer, startWork, updateComposer } from './line-keys.ts';
-import { chips, howRows, simpleOf, stepBlock, withSimple } from './simple-model.ts';
+import { chips, howRows, ownMessage, promptContext, promptRows, simpleOf, stepBlock, usePrompt, withSimple } from './simple-model.ts';
 import { listFolder, pickFolderOnDisk, send } from './ws.ts';
 
 /** The simple look has no branch choice for Develop: a worktree of each repo, always, so cards never share a checkout. */
@@ -67,7 +68,7 @@ export function pickerList(c: Composer): PickerRow[] {
     return sources(c, s.library.repos).map((r) => {
       const where = repoOrigin(c, r.path);
       const on = where === 'workspace' ? c.packet.workspace.find((x) => x.id === r.path)?.on !== false : where === 'card';
-      return { id: r.path, label: r.name, sub: where === 'workspace' ? (on ? 'workspace' : 'lane · left out') : where === 'card' ? 'added' : r.branch ?? '', in: Boolean(on) };
+      return { id: r.path, label: r.name, sub: where === 'workspace' ? (on ? 'lane' : 'lane · left out') : where === 'card' ? 'added' : r.branch ?? '', in: Boolean(on) };
     });
   }
   if (tab === 'folders') {
@@ -156,6 +157,43 @@ export function pickAt(c: Composer, at: number, remove = false): void {
   });
 }
 
+// ---- The opening message (§62) ------------------------------------------------------------
+
+/** Space on the message: the list of saved prompts opens under it, on the one in use. */
+export function openPromptList(): void {
+  updateComposer((x) => {
+    const at = Math.max(0, promptRows(get().prompts, x).findIndex((r) => r.id === (x.promptId ?? null)));
+    return withSimple(x, { block: 'msg', adding: 'prompt', ai: x.promptId ? at : 0 });
+  });
+}
+
+/** Enter on a row of that list: Write your own, or a prompt filled from the card. */
+export function choosePromptAt(c: Composer, at: number): void {
+  const s = get();
+  const row = promptRows(s.prompts, c)[at];
+  if (!row) return;
+  updateComposer((x) => {
+    const next = row.prompt ? usePrompt(x, row.prompt, promptContext(x, s.workspaces, composerKey(x, s.nextKey), s.library.repos)) : ownMessage(x);
+    return withSimple(next, { adding: null, ai: 0, block: 'msg' });
+  });
+  if (!row.prompt) focusField('cp-msg');
+}
+
+/** s on the message: it becomes a new prompt, with what the card filled in back as placeholders. */
+export function saveAsPrompt(): void {
+  const s = get();
+  const c = s.composer;
+  if (!c) return;
+  if (!c.launch.message.trim()) { flash('Write the message first; then s saves it as a prompt.'); return; }
+  const body = unrenderPrompt(c.launch.message, promptContext(c, s.workspaces, composerKey(c, s.nextKey), s.library.repos));
+  set({ modal: { kind: 'prompts', draft: { body } } });
+}
+
+/** Shift+E: the saved prompts, to edit. */
+export function openPromptsDialog(): void {
+  set({ modal: { kind: 'prompts' } });
+}
+
 /** Enter or Space on a chip: the add chip opens the context picker; a workspace item is included or left out; the card's own is toggled too (x removes it). */
 function actChip(c: Composer, remove = false): void {
   const s = get();
@@ -205,6 +243,7 @@ export function simpleKeys(e: KeyboardEvent, typing: boolean): boolean {
   if (typing) return simpleTyping(e, c);
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { startWork(); return true; }
   if (e.key === 'L' && e.shiftKey && !e.ctrlKey && !e.altKey) { switchLook(); return true; }
+  if (e.key === 'E' && e.shiftKey && !e.ctrlKey && !e.altKey && !c.preview) { openPromptsDialog(); return true; }
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
   if (e.key === 'Escape') {
     if (sp.adding) closePicker();
@@ -220,6 +259,12 @@ export function simpleKeys(e: KeyboardEvent, typing: boolean): boolean {
   const down = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey);
   const step = up ? -1 : down ? 1 : 0;
   // A picker is open: it takes the keys.
+  if (sp.adding === 'prompt') {
+    const n = promptRows(s.prompts, c).length;
+    if (step) { updateComposer((x) => withSimple(x, { ai: Math.max(0, Math.min(n - 1, simpleOf(x).ai + step)) })); return true; }
+    if (e.key === 'Enter' || e.key === ' ') { choosePromptAt(c, sp.ai); return true; }
+    return false;
+  }
   if (sp.adding) {
     const n = pickerList(c).length;
     if (step) { updateComposer((x) => withSimple(x, { ai: Math.max(0, Math.min(n - 1, simpleOf(x).ai + step)) })); return true; }
@@ -238,14 +283,13 @@ export function simpleKeys(e: KeyboardEvent, typing: boolean): boolean {
     const gi = Math.min(c.gi, rows.length - 1);
     if (step) {
       const next = gi + step;
-      if (next < 0) updateComposer((x) => withSimple(x, { block: 'note' }));
+      if (next < 0) updateComposer((x) => withSimple(x, { block: 'msg' }));
       else if (next >= rows.length) updateComposer((x) => withSimple(x, { block: 'start' }));
       else updateComposer((x) => ({ ...x, gi: next }));
       return true;
     }
     const row = rows[gi];
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { updateComposer((x) => stepOption(x, row, e.key === 'ArrowRight' ? 1 : -1, s.workspaces, key, s.recipes)); return true; }
-    if (e.key === 'Enter' && row?.id === 'msg') { focusField('cp-msg'); return true; }
     if (e.key === 'Enter') { updateComposer((x) => withSimple(x, { more: false })); return true; }
     return false;
   }
@@ -269,8 +313,10 @@ export function simpleKeys(e: KeyboardEvent, typing: boolean): boolean {
       if (e.key === 'w') { const chip = chips(c, s.library.repos)[sp.ci]; if (chip?.own && chip.kind === 'repo') keepRepo(chip.row); else flash('Only a repo you added to this card can be kept for the lane.'); return true; }
       return false;
     }
-    case 'note':
-      if (e.key === 'Enter' || e.key === ' ' || e.key === 'e') { focusField('cp-note'); return true; }
+    case 'msg':
+      if (e.key === 'Enter' || e.key === 'e') { focusField('cp-msg'); return true; }
+      if (e.key === ' ') { openPromptList(); return true; }
+      if (e.key === 's') { saveAsPrompt(); return true; }
       return false;
     case 'how':
       if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight') { updateComposer((x) => withSimple({ ...x, gi: 0 }, { more: true })); return true; }

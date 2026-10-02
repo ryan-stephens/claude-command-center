@@ -1,15 +1,19 @@
-// The simple look of the new-card screen (PLAN §59): one column. The ticket; what Claude can see as
-// chips; your note; one sentence on how it starts, with the options behind it; Start. It edits the
-// same Composer as NewCard.tsx (the full look), so Shift+L switches between them with nothing lost.
-// Keys: web/simple-keys.ts. Only Esc, Ctrl+Enter and ? show as keycaps here; the legend has the rest.
+// The simple look of the new-card screen (PLAN §59, §62): the ticket; what Claude can see as chips;
+// the opening message, from a saved prompt filled in from the card or your own; the session
+// settings with the options behind Change; Start. Two columns at a wide window (ticket and context
+// on the left, message and settings on the right), one under about 1100px; ↑ ↓ follow the reading
+// order either way. It edits the same Composer as NewCard.tsx (the full look), so Shift+L switches
+// between them with nothing lost. Keys: web/simple-keys.ts. Only Esc, Ctrl+Enter and ? show as
+// keycaps here; the legend has the rest.
 
 import { Fragment, useEffect } from 'react';
 import { fmtK, modelFor, packetText, tokens } from '../../shared/cards.ts';
+import { renderPrompt } from '../../shared/prompts.ts';
 import { SOURCE_NAME } from '../../shared/tickets.ts';
 import { composerKey, pickOption, togglePacketRow, type Composer, type GoRow, type SourceTab } from '../line-model.ts';
 import { leaveComposer, startWork, updateComposer } from '../line-keys.ts';
-import { addTypedFolder, browseFolder, closePicker, develop, openPicker, pickAt, pickerList, singlePick, switchLook } from '../simple-keys.ts';
-import { chips, howFacts, howRows, KIND_OPTIONS, simpleOf, withSimple, type Chip, type SimpleBlock } from '../simple-model.ts';
+import { addTypedFolder, browseFolder, choosePromptAt, closePicker, develop, openPicker, openPromptList, openPromptsDialog, pickAt, pickerList, saveAsPrompt, singlePick, switchLook } from '../simple-keys.ts';
+import { chips, followPrompt, howFacts, howRows, KIND_OPTIONS, promptContext, promptLabel, promptRows, simpleOf, withSimple, type Chip, type SimpleBlock } from '../simple-model.ts';
 import { get, useStore } from '../store.ts';
 import { usePrLookup, useTicketSearch } from './NewCard.tsx';
 import { Icon, Key, TicketKey } from './ui.tsx';
@@ -20,20 +24,26 @@ export function NewCardSimple() {
   const pinned = useStore((s) => s.cardModel);
   const user = useStore((s) => s.userModel);
   const workspaces = useStore((s) => s.workspaces);
+  const prompts = useStore((s) => s.prompts);
+  const library = useStore((s) => s.library.repos);
   const sp = simpleOf(c);
   const text = packetText(c, key);
   useTicketSearch(c);
   usePrLookup(c);
   // A Develop card here always works in worktrees (a draft from the full look may say otherwise).
   useEffect(() => { updateComposer(develop); }, [c.kind]);
+  // An unedited prompt follows the card: whenever the context it names changes, the message is rendered again.
+  // (Or the prompt was deleted: the text stays as the card's own.)
+  const stale = followPrompt(c, prompts, promptContext(c, workspaces, key, library)) !== c;
+  useEffect(() => { if (stale) updateComposer((x) => followPrompt(x, get().prompts, promptContext(x, get().workspaces, composerKey(x, get().nextKey), get().library.repos))); }, [stale, c]);
   const ws = workspaces.find((w) => w.id === c.workspaceId) ?? null;
   const focus = (block: SimpleBlock) => sp.block === block && !sp.adding;
   const go = (block: SimpleBlock) => updateComposer((x) => withSimple(x, { block }));
   const model = modelFor(c.launch, pinned ?? undefined, user ?? undefined);
   return (
-    // A popup over the board, nearly full screen: the board stays behind it, a click outside keeps the card for c and closes.
-    <div className="absolute inset-0 z-20 flex items-center justify-center bg-ink/30 p-4 md:p-6" onMouseDown={(e) => { if (e.target === e.currentTarget) leaveComposer(); }}>
-    <div className="relative flex h-full w-full max-w-[1280px] flex-col overflow-hidden rounded-2xl border border-line bg-bg shadow-[0_30px_80px_rgba(0,0,0,.35)]" role="region" aria-label="New card">
+    // A popup over the board, nearly the whole page: the board stays behind it, a click outside keeps the card for c and closes.
+    <div className="absolute inset-0 z-20 flex items-stretch justify-center bg-ink/30 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) leaveComposer(); }}>
+    <div className="relative flex h-full w-full flex-col overflow-hidden rounded-2xl border border-line bg-bg shadow-[0_30px_80px_rgba(0,0,0,.35)]" role="region" aria-label="New card">
       <div className="flex items-center justify-between gap-4 border-b border-line bg-surface px-8 py-3.5">
         <div className="flex items-center gap-5">
           <div className="text-[15px] font-bold">New session</div>
@@ -44,7 +54,7 @@ export function NewCardSimple() {
                 className={`px-3.5 py-1.5 ${i ? 'border-l border-line' : ''} ${c.kind === k.id ? 'bg-ink font-semibold text-bg' : 'text-sub hover:bg-raise'}`}>{k.name}</button>
             ))}
           </div>
-          {ws && <span className="text-[13px] text-faint">{ws.name} workspace</span>}
+          {ws && <span className="text-[13px] text-faint">{ws.name} lane</span>}
         </div>
         <div className="flex items-center gap-4 text-[13px] text-faint">
           <button className="hover:text-ink" onClick={switchLook} title="Shift+L">Full look</button>
@@ -53,33 +63,34 @@ export function NewCardSimple() {
       </div>
 
       <div className="flex min-h-0 flex-1 justify-center overflow-y-auto">
-        <div className="flex w-full max-w-[760px] flex-col gap-7 px-6 py-7">
+        <div className="w-full max-w-[1480px] px-8 py-7">
           {c.preview
             ? <section className="flex flex-col gap-2">
-                <div className="flex items-baseline justify-between"><div className="eyebrow">Exactly what Claude receives</div><span className="text-xs text-faint">{fmtK(tokens(text))} tokens · returned by the SessionStart hook</span></div>
+                <div className="eyebrow">The opening message · what Claude is told first</div>
+                <pre className="m-0 whitespace-pre-wrap break-words rounded-xl border border-line bg-surface px-4 py-3 text-[13.5px] leading-relaxed">{c.launch.message.trim() || <span className="text-faint">(none)</span>}</pre>
+                <div className="mt-3 flex items-baseline justify-between"><div className="eyebrow">Exactly what Claude receives with it</div><span className="text-xs text-faint">{fmtK(tokens(text))} tokens · returned by the SessionStart hook</span></div>
                 <pre className="m-0 whitespace-pre-wrap break-words rounded-xl border border-line bg-surface px-4 py-3 font-mono text-[12.5px] leading-relaxed">{text}</pre>
               </section>
-            : <>
-              <TicketBlock c={c} focused={focus('ticket')} onFocus={() => go('ticket')} />
-              <ContextBlock c={c} focused={focus('context')} onFocus={() => go('context')} />
-              <section onMouseDown={() => go('note')} className="flex flex-col gap-2">
-                <label htmlFor="cp-note" className="eyebrow">Your note</label>
-                <textarea id="cp-note" rows={2} value={c.packet.note} placeholder="Anything Claude should know before it starts. Optional."
-                  onChange={(e) => updateComposer((x) => ({ ...x, packet: { ...x.packet, note: e.target.value } }))}
-                  className={`field resize-none text-[14px] ${focus('note') ? 'blk-focus' : ''}`} />
-              </section>
-              <HowBlock c={c} keyName={key} focused={focus('how')} onFocus={() => go('how')} pinned={pinned} user={user} />
-            </>}
+            : <div className="grid grid-cols-1 gap-x-10 gap-y-7 min-[1100px]:grid-cols-2">
+              <div className="flex min-w-0 flex-col gap-7">
+                <TicketBlock c={c} focused={focus('ticket')} onFocus={() => go('ticket')} />
+                <ContextBlock c={c} focused={focus('context')} onFocus={() => go('context')} />
+              </div>
+              <div className="flex min-w-0 flex-col gap-7">
+                <MessageBlock c={c} focused={focus('msg')} onFocus={() => go('msg')} />
+                <HowBlock c={c} keyName={key} focused={focus('how')} onFocus={() => go('how')} pinned={pinned} user={user} />
+              </div>
+            </div>}
         </div>
       </div>
-      {sp.adding && sp.adding !== 'ticket' && (
+      {sp.adding && sp.adding !== 'ticket' && sp.adding !== 'prompt' && (
         <div className="absolute inset-0 z-10 flex items-start justify-center bg-ink/20 px-6 pt-20" onMouseDown={(e) => { if (e.target === e.currentTarget) closePicker(); }}>
           <Picker c={c} />
         </div>
       )}
 
-      <div className="flex justify-center border-t border-line bg-surface px-6 py-4">
-        <div className="flex w-full max-w-[760px] items-center justify-between gap-4">
+      <div className="flex justify-center border-t border-line bg-surface px-8 py-4">
+        <div className="flex w-full max-w-[1480px] items-center justify-between gap-4">
           <button className="btn" onClick={() => updateComposer((x) => ({ ...x, preview: !x.preview }))}>{c.preview ? 'Back to the card' : 'Preview what Claude gets'}</button>
           <div className="flex items-center gap-4">
             {c.error && <span className="rounded-lg bg-bad-bg px-3 py-1.5 text-[13px] text-bad" role="alert">{c.error}</span>}
@@ -170,6 +181,65 @@ function ContextBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
   );
 }
 
+/**
+ * The opening message (§62): the first thing Claude is told, after the context the hook hands
+ * it. A dropdown of saved prompts above the box: a prompt picked is filled in from the card and
+ * follows it until the text is edited (the button then says "Edited from"); Write your own leaves
+ * the box alone. Save as a prompt turns the text into a new one; Edit prompts opens the list.
+ */
+function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; onFocus: () => void }) {
+  const sp = simpleOf(c);
+  const prompts = useStore((s) => s.prompts);
+  const workspaces = useStore((s) => s.workspaces);
+  const nextKey = useStore((s) => s.nextKey);
+  const library = useStore((s) => s.library.repos);
+  const open = sp.adding === 'prompt';
+  const rows = promptRows(prompts, c);
+  const ai = Math.min(sp.ai, rows.length - 1);
+  const label = promptLabel(c, prompts);
+  const used = c.promptId ? prompts.find((p) => p.id === c.promptId) : undefined;
+  const rendered = used && !c.msgTouched ? renderPrompt(used.body, promptContext(c, workspaces, composerKey(c, nextKey), library)) : null;
+  useEffect(() => { if (open) document.getElementById(`prompt-${ai}`)?.scrollIntoView({ block: 'nearest' }); }, [open, ai]);
+  const note = c.msgTouched && used ? 'Edited, so it no longer follows the card. Pick the prompt again to fill it in afresh.'
+    : rendered ? `Filled in from the card${rendered.missing.length ? `; nothing yet for ${rendered.missing.map((n) => `{{${n}}}`).join(', ')}` : ''}. It follows the card as you add context.`
+    : 'The first thing Claude is told. The context itself arrives through the SessionStart hook, so keep this to a prompt.';
+  return (
+    <section onMouseDown={onFocus} className="flex flex-col gap-2">
+      <div className="flex items-baseline justify-between gap-4">
+        <label htmlFor="cp-msg" className="eyebrow">Opening message</label>
+        <div className="flex items-center gap-4 text-[13px] text-faint">
+          <button className="hover:text-ink" onClick={saveAsPrompt} title="s">Save as a prompt</button>
+          <button className="hover:text-ink" onClick={openPromptsDialog} title="Shift+E">Edit prompts</button>
+        </div>
+      </div>
+      <div className={`relative flex flex-col overflow-visible rounded-xl border border-line bg-surface ${focused ? 'blk-focus' : ''}`}>
+        <button type="button" aria-haspopup="listbox" aria-expanded={open} title="Space"
+          onClick={() => { if (open) closePicker(); else openPromptList(); }}
+          className="flex items-center justify-between gap-3 rounded-t-xl border-b border-line px-4 py-2.5 text-left text-[13.5px] hover:bg-raise">
+          <span className="min-w-0 truncate"><span className="text-faint">Prompt · </span><b>{label}</b></span>
+          <span className="text-faint" aria-hidden="true">▾</span>
+        </button>
+        {open && (
+          <div role="listbox" aria-label="Saved prompts" className="absolute left-0 right-0 top-[44px] z-10 flex max-h-[300px] flex-col gap-0.5 overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-[0_24px_60px_rgba(0,0,0,.25)]">
+            {rows.map((r, i) => (
+              <button key={r.id ?? 'own'} id={`prompt-${i}`} role="option" aria-selected={i === ai} onClick={() => choosePromptAt(c, i)}
+                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${i === ai ? 'bg-raise ring-1 ring-ring' : 'hover:bg-raise'}`}>
+                <span className="min-w-0 grow truncate">{r.name}</span>
+                <span className="shrink-0 text-xs text-faint">{r.sub}</span>
+                {r.id !== null && r.id === c.promptId && <Icon name="check" size={13} className="shrink-0 text-ok" />}
+              </button>
+            ))}
+          </div>
+        )}
+        <textarea id="cp-msg" rows={9} value={c.launch.message} placeholder="What should Claude do first? Space picks a saved prompt."
+          onChange={(e) => updateComposer((x) => ({ ...x, msgTouched: true, launch: { ...x.launch, message: e.target.value } }))}
+          className="field resize-none rounded-none border-0 bg-transparent text-[14px] leading-relaxed focus:ring-0" spellCheck={false} />
+        <div className="border-t border-line/60 px-4 py-2 text-[12.5px] text-faint">{note}</div>
+      </div>
+    </section>
+  );
+}
+
 function HowBlock({ c, keyName, focused, onFocus, pinned, user }: { c: Composer; keyName: string; focused: boolean; onFocus: () => void; pinned: string | null; user: string | null }) {
   const sp = simpleOf(c);
   const workspaces = useStore((s) => s.workspaces);
@@ -203,7 +273,7 @@ function HowBlock({ c, keyName, focused, onFocus, pinned, user }: { c: Composer;
 }
 
 function OptionRow({ c, r, i, focused, keyName, trust }: { c: Composer; r: GoRow; i: number; focused: boolean; keyName: string; trust: boolean }) {
-  const label = r.id === 'ws' ? 'Workspace' : r.id === 'home' ? 'Starts in' : r.id === 'branch' ? 'Branch' : r.id === 'mode' ? 'First step' : r.id === 'model' ? 'Model' : r.id === 'msg' ? 'Opening message' : r.label;
+  const label = r.id === 'ws' ? 'Lane' : r.id === 'home' ? 'Starts in' : r.id === 'branch' ? 'Branch' : r.id === 'mode' ? 'First step' : r.id === 'model' ? 'Model' : r.label;
   const why = r.id === 'branch' && c.kind === 'build'
     ? (c.launch.branch === 'worktree' ? `Each repo gets a folder of its own next to it on the card’s branch, so other cards in the same repos are never touched.${trust ? '' : ' Claude Code asks once in the tab whether to trust the new folder.'}`
       : c.launch.branch === 'new' ? 'Switches the repo’s usual folder to the new branch; another card in the same repo would then change the files under this one.'
@@ -215,11 +285,7 @@ function OptionRow({ c, r, i, focused, keyName, trust }: { c: Composer; r: GoRow
     <div id={`how-${r.id}`} onMouseDown={(e) => { e.stopPropagation(); updateComposer((x) => withSimple({ ...x, gi: i }, { block: 'how' })); }}
       className={`grid grid-cols-[140px_minmax(0,1fr)] items-start gap-4 border-t border-line/60 py-3 first:border-t-0 ${focused ? 'rounded-lg bg-raise' : ''}`}>
       <div className="pt-1.5 text-[14px] font-medium">{label}</div>
-      {r.id === 'msg'
-        ? <input id="cp-msg" type="text" autoComplete="off" value={c.launch.message}
-            onChange={(e) => updateComposer((x) => ({ ...x, msgTouched: true, launch: { ...x.launch, message: e.target.value } }))}
-            className="field text-[14px]" />
-        : <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5">
             <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={label}>
               {r.opts.map((o, j) => {
                 const off = Boolean(r.off?.includes(j));
@@ -234,7 +300,7 @@ function OptionRow({ c, r, i, focused, keyName, trust }: { c: Composer; r: GoRow
               })}
             </div>
             {why && <div className="text-[12.5px] leading-snug text-faint">{why}</div>}
-          </div>}
+          </div>
     </div>
   );
 }

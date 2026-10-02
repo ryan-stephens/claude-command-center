@@ -80,10 +80,11 @@ function Legend() {
   const spAdding = useStore((s) => Boolean(s.composer && simpleOf(s.composer).adding));
   const spContext = useStore((s) => Boolean(s.composer && simpleOf(s.composer).adding === 'context'));
   const spFolders = useStore((s) => Boolean(s.composer && simpleOf(s.composer).adding === 'context' && s.composer.tab === 'folders'));
+  const spPrompt = useStore((s) => Boolean(s.composer && simpleOf(s.composer).adding === 'prompt'));
   const spMore = useStore((s) => Boolean(s.composer && simpleOf(s.composer).more));
   const spTicket = useStore((s) => Boolean(s.composer?.ticket));
   const spOwn = useStore((s) => Boolean(s.composer && chips(s.composer, s.library.repos)[simpleOf(s.composer).ci]?.own));
-  const simple = isSimple ? { block: spBlock, adding: spAdding, context: spContext, folders: spFolders, more: spMore, hasTicket: spTicket, ownChip: spOwn } : undefined;
+  const simple = isSimple ? { block: spBlock, adding: spAdding, context: spContext, folders: spFolders, prompt: spPrompt, more: spMore, hasTicket: spTicket, ownChip: spOwn } : undefined;
   if (modal) return null;
   const items = trimLegend(screen === 'line'
     ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, hasTab, needsTab, hasChanges, hasDraft, tab, simple, bindings })

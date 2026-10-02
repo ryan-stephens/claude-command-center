@@ -115,14 +115,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.keyboard.press('Enter');
   await sleep(200);
 
-  // ↓ note: type one.
+  // ↓ the opening message: write your own.
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await sleep(150);
+  await page.keyboard.press('Control+A');
   await page.keyboard.type('The totals must round down.');
   await page.keyboard.press('Escape');
   await sleep(150);
-  check('note typed', (await page.locator('#cp-note').inputValue()) === 'The totals must round down.');
+  check('message typed', (await page.locator('#cp-msg').inputValue()) === 'The totals must round down.');
+  check('typing detaches: the prompt button says your own', /Your own/.test(await region.getByRole('button', { name: /Prompt ·/ }).innerText()));
 
   // ↓ how it starts: Enter opens the options; → on the First step row changes the mode; the sentence follows.
   await page.keyboard.press('ArrowDown');
@@ -142,11 +144,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(200);
   check('Esc closes the options', (await region.getByRole('radiogroup', { name: 'First step' }).count()) === 0);
 
-  // p: the preview holds the note and the ticket.
+  // p: the preview shows the opening message, then the ticket in the hook's text.
   await page.keyboard.press('p');
   await sleep(300);
-  const pre = await region.locator('pre').textContent();
-  check('preview holds the ticket and the note', /SHOP-155/.test(pre) && /round down/.test(pre));
+  const pre = (await region.locator('pre').allTextContents()).join('\n');
+  check('preview holds the message and the ticket', /SHOP-155/.test(pre) && /round down/.test(pre));
   await shot(page, 'simple-preview');
   const plegend = ((await page.locator('footer').count()) ? await page.locator('footer').innerText() : 'NO-LEGEND');
   check('preview legend is only Back and Start', /NO-LEGEND/.test(plegend) || /Back/.test(plegend) && !/options/.test(plegend), plegend.replace(/\n/g, ' '));
@@ -169,7 +171,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const full = page.getByRole('region', { name: 'New card' });
   const fullText = await full.innerText();
   check('Shift+L shows the full three-panel screen with the same card', /How it starts/.test(fullText) && /What Claude will know/.test(fullText) && /SHOP-155/.test(fullText));
-  check('full look kept the note', (await page.locator('#cp-note').inputValue()) === 'The totals must round down.');
+  check('full look kept the message', (await page.locator('#cp-msg').inputValue()) === 'The totals must round down.');
   await shot(page, 'full-look');
   await page.keyboard.press('Shift+L');
   await sleep(500);

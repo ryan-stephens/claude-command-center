@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite';
 import type { Card } from '../shared/cards.ts';
+import { DEFAULT_PROMPTS, type SavedPrompt } from '../shared/prompts.ts';
 import type { CommandPack, Settings, Workspace } from '../shared/protocol.ts';
 import { emptyPack, STARTER_PACK, validatePack } from './packs.ts';
 
@@ -40,12 +41,39 @@ export class Store {
       CREATE TABLE IF NOT EXISTS workspace_commands (workspace_id TEXT PRIMARY KEY, pack TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS session_dirs (session_id TEXT PRIMARY KEY, dirs TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, created INTEGER NOT NULL, token TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS prompts (id TEXT PRIMARY KEY, position INTEGER NOT NULL, data TEXT NOT NULL);
     `);
     this.db.exec('PRAGMA foreign_keys = ON');
     if (!this.db.prepare("SELECT 1 FROM meta WHERE key = 'seeded'").get()) {
       this.saveGlobalPack(STARTER_PACK);
       this.db.prepare("INSERT INTO meta (key, value) VALUES ('seeded', ?)").run(new Date().toISOString());
     }
+    // The three starting prompts, written once so they are editable (and deletable) like any other.
+    if (!this.getMeta('prompts.seeded')) {
+      const now = Date.now();
+      for (const p of DEFAULT_PROMPTS) this.savePrompt({ ...p, id: crypto.randomUUID(), updatedAt: now });
+      this.setMeta('prompts.seeded', new Date(now).toISOString());
+    }
+  }
+
+  loadPrompts(): SavedPrompt[] {
+    const rows = this.db.prepare('SELECT id, data FROM prompts ORDER BY position').all() as { id: string; data: string }[];
+    return rows.flatMap((r) => {
+      try { return [{ ...(JSON.parse(r.data) as Omit<SavedPrompt, 'id'>), id: r.id }]; } catch { return []; }
+    });
+  }
+
+  /** Insert or replace; a new prompt goes to the end. */
+  savePrompt(p: SavedPrompt): void {
+    const { id, ...data } = p;
+    const pos = (this.db.prepare('SELECT position FROM prompts WHERE id = ?').get(id) as { position: number } | undefined)?.position
+      ?? ((this.db.prepare('SELECT MAX(position) AS m FROM prompts').get() as { m: number | null }).m ?? -1) + 1;
+    this.db.prepare('INSERT INTO prompts (id, position, data) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
+      .run(id, pos, JSON.stringify(data));
+  }
+
+  deletePrompt(id: string): void {
+    this.db.prepare('DELETE FROM prompts WHERE id = ?').run(id);
   }
 
   close(): void {
