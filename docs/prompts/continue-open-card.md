@@ -1,4 +1,4 @@
-# Continue improving cc-control: strip the open card back, the way the new-session popup was
+# Continue improving cc-control: refine the open-card directions with the owner, then strip the open card back
 
 Paste this into a new Claude Code session opened in `D:\repos\cc-control` (the personal laptop; check the hostname and `git pull` first).
 
@@ -26,9 +26,14 @@ A Design canvas with three directions and a comparison board: **https://claude.a
 - **C · The journal.** One stream in time order merging how it started, context added, Claude's messages, asks, what ran, what shipped; a sticky "now" strip with the one thing to do; counts in a rail. Large: a feed model merging five sources, with tests.
 - **The comparison board** says what they share, where each is weak, the narrow-window shape, the keys, the build size, and recommends **starting with A** (B's rail and C's sticky "now" strip can be added to A later without undoing it). It also names the one place the conventions may bend: the open card is a place people return to while something runs, so a live, pinned "now" is allowed to stay in view while the rest scrolls, and the transcript keeps its own scroll pinned to the newest line.
 
-**Talk the directions through with the owner before building.** Then build in pieces, one commit each with a PLAN section, as §59–§64 did.
+### This session's first job: take the owner's feedback and adjust the directions
+The directions were drafted at the end of the last session without the owner's input, so they are a starting point, not a decision. Before any code:
+1. Open the canvas with the owner and go through the boards one at a time. Ask what lands and what doesn't, in their words: what they look at first when they open a card today, what they never look at, what they have to hunt for, which actions they use and from where (the app or the terminal tab), and whether a card is mostly glanced at or read closely.
+2. Adjust toward the app's goals (`docs/prompts/continue.md`: non-developers can get real work done and follow what happened; experienced developers can be fast; nobody drowns in options) and the conventions above. That may mean reshaping a board, merging two, adding a fourth, or dropping one; it may also mean bending a convention where the open card has a reason to (say so on the comparison board).
+3. **Revise the canvas in place**, never a new one: with the Artifact tool, `read` `project/canvas.json` (and each artboard you change) from https://claude.ai/artifact/U3vcZqgX5v6yegUAoLyeDb, edit the copies under `docs/futures/open-card/project/` with Write or Edit (not a shell), then publish with `url` that link, `root` `D:\repos\cc-control\docs\futures\open-card`, `file_path` one changed file's absolute path and the others in `files` by their `project/…` paths; send the index only when a board is added, removed, moved or resized. Commit the repo copies with the same change. The artboards are plain static markup with the app's own colours and type (see any of them for the palette); keep them that way, and keep the `<script src="./support.js"></script>` head line and the `data-dc-script` block exactly.
+4. Once the owner picks a direction (or a blend), write the chosen shape into a PLAN section first (what the screen shows top to bottom, the keys, what moves and what goes), get a yes on that, and only then build: in pieces, one commit each with a PLAN section, as §59–§64 did.
 
-### The first thing to build, whichever direction: a way to seed a card for tests
+### The first thing to build, whichever direction is picked: a way to seed a card for tests
 `walk-back.cjs` (§63) needs a started card and there is no way to make one on the isolated server without `card.start`, which opens a real Windows Terminal tab and a real Claude session. Add a test seam before touching the view: e.g. a `cards.seed` message (or a `CC_CONTROL_SEED_CARD` env) that the server accepts only when `CC_CONTROL_PORT` is not the default, writing a card with a fake session id, boot steps, todos, files, a live ask (plan ready), a transcript of a few items and a `later` item, so every state the view draws can be walked through and screenshotted. Document it in `docs/prompts/continue.md`. Nothing in it may run in the owner's server.
 
 ### Keys
@@ -51,4 +56,4 @@ Everything through §77 is committed and pushed to `main` (last commit on the ne
 - Keyboard first with the keys visible in `?`; local only; never commit VU code, URLs, proxy entries, ticket contents, tokens or internal tool names.
 - Windows 11, Node 24, pnpm; files are CRLF; the Bash tool's heredocs eat backslashes, so write scripts with the Write tool and fix regexes with Edit.
 
-Start by reading, then open the directions with the owner: say in a few lines which you'd start with and why, what the first commit would be (the seed seam), and wait for their go.
+Start by reading, then open the canvas with the owner and ask for their reaction to each board (the questions in step 1 above). Don't recommend first; listen, then say in a few lines what you'd change on the boards and why, make those changes, and ask again. Build nothing until a direction is picked and its PLAN section has a yes; the seed seam is then the first commit.
