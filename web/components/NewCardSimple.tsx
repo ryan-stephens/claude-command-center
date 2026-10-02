@@ -180,7 +180,7 @@ function ModelPick({ c, pinned, user }: { c: Composer; pinned: string | null; us
   }, [open]);
   return (
     <div className="relative" data-model-pick>
-      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`Model · ${name(at)}`} title={at === 0 && def ? `${def} · m cycles the model` : 'm cycles the model'}
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`Model · ${name(at)}`} title={at === 0 && def ? `${def} · m` : 'm'}
         onClick={() => setOpen((o) => !o)}
         className={`flex items-center gap-2 rounded-lg border bg-surface py-1.5 pl-3 pr-2 text-[13px] hover:border-ring ${open ? 'border-ring ring-2 ring-ring/25' : 'border-line'}`}>
         <span className="text-faint">Model</span><span className="font-medium">{name(at)}</span>
@@ -324,7 +324,7 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
         {open && <div aria-hidden="true" className="absolute inset-x-0 bottom-0 top-[44px] z-[5] rounded-b-xl bg-ink/15 backdrop-blur-[1.5px]" />}
         {open && (
           <div role="listbox" aria-label="Saved prompts" className="absolute left-3 right-3 top-[46px] z-10 flex max-h-[340px] flex-col overflow-y-auto rounded-xl border border-ink/20 bg-surface p-1.5 pt-1 shadow-[0_6px_14px_rgba(0,0,0,.12),0_28px_70px_rgba(0,0,0,.35)] ring-1 ring-black/5">
-            <div className="flex items-baseline justify-between px-2.5 pb-1.5 pt-1.5"><span className="eyebrow">Saved prompts</span><span className="text-[11.5px] text-faint">Enter picks · Esc closes</span></div>
+            <div className="px-2.5 pb-1.5 pt-1.5"><span className="eyebrow">Saved prompts</span></div>
             {rows.map((r, i) => {
               // The tick: the prompt in use, or Write your own once the text is yours (the default message is neither).
               const using = r.id === null ? !c.promptId && c.msgTouched : r.id === c.promptId;
