@@ -241,3 +241,18 @@ test('a relayed permission prompt survives the hooks around it, and goes when an
   store.saveCard({ ...get(), channel: false });
   assert.equal(askOf(get())?.requestId, undefined);
 });
+
+test('a hook’s ask is typed through the launcher when no prompt was relayed, channel flag or not (§89)', () => {
+  const card = seed();
+  const base = { ...card, sessionId: 'sess-00000002', live: { phase: 'needs' as const, text: 'Wants to run pnpm test', at: 1, ask: { kind: 'tool' as const, tool: 'Bash', detail: 'pnpm test' } } };
+  // The org has channels off: the channel's MCP server still said hello (channel true) but relays nothing; the launcher is there.
+  assert.equal(askOf({ ...base, channel: true, keys: true })!.typed, true, 'the launcher types 1 / Escape');
+  assert.equal(askOf({ ...base, channel: false, keys: true })!.typed, true);
+  assert.equal(askOf({ ...base, channel: true, keys: false })!.typed, undefined, 'no launcher: answer in its tab');
+  // A relayed prompt proves the channel delivers: y / n go through it, with its id.
+  const a = askOf({ ...base, channel: true, keys: true, relayed: { requestId: 'req-9', tool: 'Bash', at: 1 } });
+  assert.equal(a!.requestId, 'req-9');
+  assert.equal(a!.typed, undefined);
+  // A question is answered by typing an answer, never by 1 / Escape.
+  assert.equal(askOf({ ...base, keys: true, live: { ...base.live, ask: { kind: 'question', tool: 'AskUserQuestion', detail: 'Which?' } } })!.typed, undefined);
+});

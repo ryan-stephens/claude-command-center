@@ -297,11 +297,11 @@ export function waiting(c: Pick<Card, 'later'>): LaterItem[] {
  * the plan text, the question), else the relayed prompt alone. `answerable` means y / n go through
  * the channel; a question is answered by typing instead.
  */
-export function askOf(c: Pick<Card, 'live' | 'relayed' | 'channel' | 'keys'>): { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string; requestId?: string; /** y / n are typed into the tab (§87): no channel, but its launcher is there. */ typed?: true } | undefined {
+export function askOf(c: Pick<Card, 'live' | 'relayed' | 'channel' | 'keys'>): { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string; requestId?: string; /** y / n are typed into the tab (§87): its launcher is there and no prompt was relayed (the channel is absent, or the org has channels off and it delivers nothing, §89). */ typed?: true } | undefined {
   const ask = c.live?.ask;
   const r = c.relayed;
   const matches = r && (!ask || ask.tool === r.tool);
-  const typed = !c.channel && c.keys ? { typed: true as const } : {};
+  const typed = c.keys ? { typed: true as const } : {};
   if (ask) return matches && c.channel ? { ...ask, requestId: r.requestId } : { ...ask, ...(ask.kind === 'question' ? {} : typed) };
   if (r && c.channel) return { kind: r.tool === 'ExitPlanMode' ? 'plan' : 'tool', tool: r.tool, ...(r.description ? { detail: r.description } : {}), requestId: r.requestId };
   return undefined;

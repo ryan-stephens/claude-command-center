@@ -30,6 +30,8 @@ export interface SeedOptions {
   files?: string[];
   /** A token for the card (test servers only): a launcher or hook started by hand can prove itself to it (§87). */
   token?: string;
+  /** A real session's id (test servers only): the card then resumes that session when it is sent to (§85), so the way in can be tried for real. */
+  sessionId?: string;
 }
 
 const PLAN = ['1. Persist the guest cart to localStorage with a 30-day stamp.', '2. On sign-in, merge it into the account cart without duplicating lines (key on sku + options).', '3. Keep gift cards attached through the merge; a test for each path.'].join('\n');
@@ -91,7 +93,7 @@ export function seedCard(o: SeedOptions, id: string, now: number): Card {
     launch: { home, branch: dirs === repos ? 'current' : 'worktree', mode: 'plan', model: 'sonnet', message: `Plan ${key}.` },
     kind: 'build',
     stage: state === 'plan' || state === 'tool' ? 'needs' : state === 'working' ? 'build' : state === 'idle' ? 'try' : 'done',
-    createdAt: started, branchName: branch, model: 'sonnet', cwd: dirs[0], sessionId: `seed-${id}`, channel: o.channel ?? true,
+    createdAt: started, branchName: branch, model: 'sonnet', cwd: dirs[0], sessionId: o.sessionId ?? `seed-${id}`, channel: o.channel ?? true,
     folders: repos.map((repo, i) => ({ repo, dir: dirs[i] })),
     boot: [
       { at: started, text: 'Saved the context packet (4.1k)', state: 'ok' },
@@ -128,5 +130,6 @@ export function cleanSeed(raw: unknown): SeedOptions {
     ...(typeof r.channel === 'boolean' ? { channel: r.channel } : {}),
     ...(Array.isArray(r.files) ? { files: strs(r.files, 50) } : {}),
     ...(typeof r.token === 'string' && /^[\w-]{8,80}$/.test(r.token) ? { token: r.token } : {}),
+    ...(typeof r.sessionId === 'string' && /^[0-9a-f-]{36}$/.test(r.sessionId) ? { sessionId: r.sessionId } : {}),
   };
 }

@@ -86,11 +86,20 @@ tickets.followCards({
 const typist = new Typist((id, on) => cards.keysState(id, on));
 typist.start();
 
-/** Type into the card's terminal: through its channel, else its tab's launcher. Throws when neither is there. */
-async function typeInto(id: string, text: string): Promise<void> {
-  if (channels.has(id)) { channels.send(id, text); return; }
-  if (typist.alive(id)) { await typist.send(id, { kind: 'text', text }); return; }
+/**
+ * Type into the card's terminal: through its tab's launcher when it is there, else the channel.
+ * The launcher comes first (§89): where an org has channels turned off, Claude Code still starts
+ * the channel's MCP server, which says hello here, but drops what the channel sends in; the
+ * launcher's keys always land. Throws when neither is there.
+ */
+async function typeInto(id: string, text: string): Promise<'launcher' | 'channel'> {
+  if (typist.alive(id)) { await typist.send(id, { kind: 'text', text }); return 'launcher'; }
+  if (channels.has(id)) { channels.send(id, text); return 'channel'; }
   throw new Error('This card’s terminal can’t be reached from here (its tab is gone, or it started before this): type in its tab.');
+}
+/** One line in server.log per message sent to a card, so a tab that never got it can be traced. */
+function logSend(id: string, line: string): void {
+  console.log(`${new Date().toISOString()} send ${cards.get(id)?.key ?? id}: ${line}`);
 }
 
 // Cards' terminals, reachable through their channel (hooks/cc-control-channel.mjs).
@@ -617,10 +626,24 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       // No way in (the tab closed, the session ended, or the card started before this): the session
       // is resumed in a new tab and the message goes in once its channel connects or its launcher polls (§85, §87).
       if ((!channels.has(id) && !typist.alive(id)) || cards.get(id)?.live?.phase === 'ended') {
-        await cards.reopen(id);
-        await Promise.any([channels.waitFor(id, RESUME_WAIT_MS), typist.waitFor(id, RESUME_WAIT_MS)]).catch((e: AggregateError) => { throw e.errors[0]; });
+        logSend(id, `no way in (channel ${channels.has(id)}, launcher ${typist.alive(id)}, session ${cards.get(id)?.live?.phase ?? '-'}): reopening its tab`);
+        const t0 = Date.now();
+        try {
+          await cards.reopen(id);
+          await Promise.any([channels.waitFor(id, RESUME_WAIT_MS), typist.waitFor(id, RESUME_WAIT_MS)]).catch((e: AggregateError) => { throw e.errors[0]; });
+        } catch (e) {
+          logSend(id, `reopen failed after ${Date.now() - t0} ms: ${(e as Error).message}`);
+          throw e;
+        }
+        logSend(id, `the tab answered after ${Date.now() - t0} ms (channel ${channels.has(id)}, launcher ${typist.alive(id)})`);
       }
-      await typeInto(id, text);
+      try {
+        const way = await typeInto(id, text);
+        logSend(id, `${text.length} chars through the ${way}`);
+      } catch (e) {
+        logSend(id, `not sent: ${(e as Error).message}`);
+        throw e;
+      }
       send(ws, { type: 'ok', reqId: msg.reqId });
       return;
     }
@@ -797,7 +820,8 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       for (const d of [...o.repos, ...(o.worktrees ?? [])]) if (!existsSync(d) || !statSync(d).isDirectory()) throw new Error(`${d} is not a folder.`);
       const id = crypto.randomUUID();
       const card = seedCard(o, id, Date.now());
-      seededTranscripts.set(card.sessionId!, seedTranscript(card.key, o.state ?? 'plan'));
+      // On a real session (walk-resume) the chat shows the session's own transcript, not a made-up one.
+      if (!o.sessionId) seededTranscripts.set(card.sessionId!, seedTranscript(card.key, o.state ?? 'plan'));
       // A token (test servers only): a launcher or hook started by hand can prove itself to the card (§87's walkthrough).
       if (o.token) cards.putWithToken(card, o.token); else cards.put(card);
       send(ws, { type: 'card.started', reqId: msg.reqId, id });
