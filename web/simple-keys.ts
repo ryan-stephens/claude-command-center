@@ -32,22 +32,49 @@ function focusField(id: string): void {
   setTimeout(() => document.getElementById(id)?.focus(), 0);
 }
 
+/**
+ * What a picker action came to goes inside the popup, under its box, next to what was tried
+ * (§68), not to the header's flash where it is missed. With no picker open it flashes as before.
+ */
+function say(text: string, bad = false): void {
+  const c = get().composer;
+  if (c && simpleOf(c).adding) updateComposer((x) => withSimple(x, { note: { text, ...(bad ? { bad } : {}) } }));
+  else flash(text);
+}
+
+/** updateComposer for the picker: a refusal (a string back) becomes a note in the popup rather than a flash. */
+function updatePicker(change: (c: Composer) => Composer | string): void {
+  const c = get().composer;
+  if (!c) return;
+  const next = change(c);
+  if (typeof next === 'string') say(next, true);
+  else updateComposer(() => next);
+}
+
+/** Typing, a tab switch or closing clears the note. */
+const clearNote = (x: Composer): Composer => (simpleOf(x).note ? withSimple(x, { note: undefined }) : x);
+
 const started = () => new Set(get().cards.map((c) => c.key));
 
 /** Open a picker: context (on the repos tab), or a ticket in place of this one. The search box takes focus. */
 export function openPicker(kind: 'context' | 'replace', tab: SourceTab = 'repos'): void {
-  updateComposer((x) => withSimple({ ...x, tab: kind === 'replace' ? 'tickets' : tab, q: '' }, { adding: kind, ai: 0 }));
+  updateComposer((x) => withSimple({ ...x, tab: kind === 'replace' ? 'tickets' : tab, q: '' }, { adding: kind, ai: 0, note: undefined }));
   focusField('cp-q');
 }
 
 export function closePicker(): void {
-  updateComposer((x) => withSimple({ ...x, q: '' }, { adding: null, ai: 0 }));
+  updateComposer((x) => withSimple({ ...x, q: '' }, { adding: null, ai: 0, note: undefined }));
 }
 
 /** ← → (or Tab in the search box) in the context picker: Repos, Folders, Tickets. */
 export function pickerTab(delta: number): void {
-  updateComposer((x) => withSimple({ ...x, tab: nextTab(x.tab, delta), q: '' }, { ai: 0 }));
+  updateComposer((x) => withSimple({ ...x, tab: nextTab(x.tab, delta), q: '' }, { ai: 0, note: undefined }));
   focusField('cp-q');
+}
+
+/** The picker's search box: what is typed, the highlight back on top, the last note gone. */
+export function typeInPicker(q: string): void {
+  updateComposer((x) => clearNote(withSimple({ ...x, q }, { ai: 0 })));
 }
 
 export interface PickerRow {
@@ -108,13 +135,13 @@ export function addTypedFolder(): void {
   const c = get().composer;
   if (!c) return;
   const path = c.q.trim().replace(/^"(.*)"$/, '$1').replace(/[\\/]+$/, '');
-  if (!path) { flash('Type or paste a folder path first, or browse for one.'); return; }
+  if (!path) { say('Type or paste a folder path first, or browse for one.', true); return; }
   listFolder(path).then(
     (l) => {
-      if (!l.path) { flash(`Not a folder on this machine: ${path}`); return; }
-      updateComposer((x) => { const r = addFolder(x, l.path!); return typeof r === 'string' ? r : withSimple({ ...r, q: '' }, { ai: pickerList(r).length - 1 }); });
+      if (!l.path) { say(`Not a folder on this machine: ${path}`, true); return; }
+      updatePicker((x) => { const r = addFolder(x, l.path!); return typeof r === 'string' ? r : withSimple({ ...r, q: '' }, { ai: pickerList(r).length - 1, note: { text: `${l.path} is on the card: Claude can read and edit what is inside.` } }); });
     },
-    (e: Error) => flash(e.message),
+    (e: Error) => say(e.message, true),
   );
 }
 
@@ -129,13 +156,12 @@ function addRepoSource(path: string): void {
       const c = get().composer;
       if (!c) return;
       const r = addSource(c, source, get().library.sources);
-      if (typeof r === 'string') { flash(r); return; }
+      if (typeof r === 'string') { say(r, true); return; }
       const next = withSimple({ ...r, q: '' }, {});
       const at = pickerList(next).findIndex((row) => row.id === `source:${source.path}`) + 1;
-      updateComposer(() => withSimple(next, { ai: at }));
-      flash(`${source.repos.length} ${source.repos.length === 1 ? 'repo' : 'repos'} in ${source.path}, for this card only`);
+      updateComposer(() => withSimple(next, { ai: at, note: { text: `${source.repos.length} ${source.repos.length === 1 ? 'repo' : 'repos'} in ${source.path}, listed below for this card only. Enter picks one.` } }));
     },
-    (e: Error) => flash(e.message),
+    (e: Error) => say(e.message, true),
   );
 }
 
@@ -144,7 +170,7 @@ export function addTypedSource(): void {
   const c = get().composer;
   if (!c) return;
   const path = c.q.trim().replace(/^"(.*)"$/, '$1').replace(/[\\/]+$/, '');
-  if (!path || !looksLikePath(path)) { flash('Paste a folder path in the box first (like D:\\side-projects), or b browses for one.'); return; }
+  if (!path || !looksLikePath(path)) { say('Paste a folder path in the box first (like D:\\side-projects), or b browses for one.', true); return; }
   addRepoSource(path);
 }
 
@@ -152,29 +178,27 @@ let browsing = false;
 
 /** b on the Repos tab: the machine's own dialog picks a folder of repos for this card. */
 export function browseRepoSource(): void {
-  if (browsing) { flash('The folder dialog is already open: it may be behind this window.'); return; }
+  if (browsing) { say('The folder dialog is already open: it may be behind this window.', true); return; }
   browsing = true;
-  flash('Pick a folder of repos in the Windows dialog (it may open behind this window)');
+  say('Pick a folder of repos in the Windows dialog (it may have opened behind this window).');
   pickFolderOnDisk().then(
-    (path) => { browsing = false; if (path) addRepoSource(path); },
-    (e: Error) => { browsing = false; flash(e.message); },
+    (path) => { browsing = false; if (path) addRepoSource(path); else say('Nothing picked in the dialog.'); },
+    (e: Error) => { browsing = false; say(e.message, true); },
   );
 }
 
 /** Browse for a folder: the machine's own dialog opens (the server runs here); the folder chosen joins the card. */
 export function browseFolder(): void {
-  if (browsing) { flash('The folder dialog is already open: it may be behind this window.'); return; }
+  if (browsing) { say('The folder dialog is already open: it may be behind this window.', true); return; }
   browsing = true;
-  flash('Pick the folder in the Windows dialog (it may open behind this window)');
+  say('Pick the folder in the Windows dialog (it may have opened behind this window).');
   pickFolderOnDisk().then(
     (path) => {
       browsing = false;
-      if (!path) return;
-      updateComposer((x) => { const r = addFolder(x, path); return typeof r === 'string' ? r : r; });
-      const c = get().composer;
-      if (c && simpleOf(c).adding === 'context') updateComposer((x) => withSimple(x, { ai: pickerList(x).length - 1 }));
+      if (!path) { say('Nothing picked in the dialog.'); return; }
+      updatePicker((x) => { const r = addFolder(x, path); return typeof r === 'string' ? r : withSimple(r, { ai: pickerList(r).length - 1, note: { text: `${path} is on the card: Claude can read and edit what is inside.` } }); });
     },
-    (e: Error) => { browsing = false; flash(e.message); },
+    (e: Error) => { browsing = false; say(e.message, true); },
   );
 }
 
@@ -193,23 +217,23 @@ export function pickAt(c: Composer, at: number, remove = false): void {
     if (row.kind === 'more') { if (remove) return; if (looksLikePath(c.q)) addTypedSource(); else browseRepoSource(); return; }
     if (row.kind === 'source') {
       // The heading of a folder added for this card: x takes it off; Enter says so.
-      if (remove) { updateComposer((x) => withSimple(removeSource(x, row.path), { ai: Math.max(0, at - 1) })); flash(`${row.path} is off the list; the repos you picked from it stay on the card.`); }
-      else flash('x takes this folder and its unpicked repos off the list.');
+      if (remove) updateComposer((x) => withSimple(removeSource(x, row.path), { ai: Math.max(0, at - 1), note: { text: `${row.path} is off the list; the repos you picked from it stay on the card.` } }));
+      else say('x takes this folder and its unpicked repos off the list.');
       return;
     }
-    if (remove && repoOrigin(c, row.repo.path) !== 'card') { flash('Only a repo this card added can be taken out. Enter leaves a lane repo out.'); return; }
-    updateComposer((x) => toggleSource(x, row.repo.path));
+    if (remove && repoOrigin(c, row.repo.path) !== 'card') { say('Only a repo this card added can be taken out. Enter leaves a lane repo out.', true); return; }
+    updatePicker((x) => clearNote(toggleSource(x, row.repo.path)));
     return;
   }
   if (tab === 'folders') {
     const f = cardFolders(c, s.library.repos)[at];
-    if (f) updateComposer((x) => togglePacketRow(x, packetRows(x).findIndex((r) => r.layer === 'card' && r.item.id === f.id), remove));
+    if (f) updatePicker((x) => { const r = togglePacketRow(x, packetRows(x).findIndex((r) => r.layer === 'card' && r.item.id === f.id), remove); return typeof r === 'string' ? r : clearNote(r); });
     else if (c.q.trim()) addTypedFolder();
     return;
   }
   const t = ticketSources(c, s.tickets, started(), foundFor(s, c.q))[at];
-  if (!t) { if (!s.tickets.length) flash('No tickets yet. Shift+T on the board connects them, or shows demo tickets.'); return; }
-  updateComposer((x) => {
+  if (!t) { if (!s.tickets.length) say('No tickets yet. Shift+T on the board connects them, or shows demo tickets.', true); return; }
+  updatePicker((x) => {
     if (sp.adding === 'context' && x.packet.card.some((i) => i.id === `ticket:${t.key}`)) {
       // Already related: Enter takes it out again.
       const row = x.packet.card.findIndex((i) => i.id === `ticket:${t.key}`);

@@ -40,11 +40,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.keyboard.press('Enter');
   await sleep(400);
   const chipRow = region.getByText('What Claude can see').locator('..');
-  const flash = async () => (await page.locator('header').innerText().catch(() => '')).replace(/\n/g, ' ');
+  const popup = page.getByRole('group', { name: 'Add context' });
+  const flash = async () => (await popup.locator('[role=status]').innerText().catch(() => '')).replace(/\n/g, ' '); // the note inside the popup (§68)
 
   await page.keyboard.press('+');
   await sleep(300);
-  const popup = page.getByRole('group', { name: 'Add context' });
   const rows = async () => popup.locator('[id^="pick-"]').allInnerTexts();
   const r0 = await rows();
   check('Repos lists the library then the row that adds a folder', r0.length > 1 && !/for this card/.test(r0[0]) && /Another folder of repos/.test(r0[r0.length - 1]), r0.join(' | '));
@@ -59,7 +59,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('a path in the box leaves the list as it is and names the scan on the last row', r1.length === r0.length && /Scan .*notes-only for repos/.test(r1[r1.length - 1]), r1[r1.length - 1]);
   await page.keyboard.press('Enter');
   await sleep(800);
-  check('a folder with no repos is refused and points at Folders', /No git repos in/.test(await flash()) && /Folders tab/.test(await flash()), await flash());
+  check('a folder with no repos is refused inside the popup, pointing at Folders', /No git repos in/.test(await flash()) && /Folders tab/.test(await flash()) && !/No git repos/.test(await page.locator('header').innerText()), await flash());
   check('nothing was added for it', !(await rows()).some((r) => /notes-only/.test(r) && /x takes it off/.test(r)));
   await page.keyboard.press('Control+A');
   await page.keyboard.press('Backspace');
@@ -73,7 +73,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('the folder heads its repos after the library', h > 0 && h === r0.length - 1 && /side-(api|web)/.test(r2[h + 1]) && /side-(api|web)/.test(r2[h + 2]), r2.join(' | '));
   check('the box is cleared', (await page.locator('#cp-q').inputValue()) === '');
   check('the highlight is on its first repo', await popup.locator(`#pick-${h + 1}`).evaluate((el) => el.classList.contains('is-focus')));
-  check('the flash says how many, for this card only', /2 repos in .*cc-extra, for this card only/.test(await flash()), await flash());
+  check('the popup says how many, under its box, for this card only', /2 repos in .*cc-extra, listed below for this card only/.test(await flash()), await flash());
   await shot(page, 'folder-added');
 
   // The same folder again is refused; the library's own folder too.

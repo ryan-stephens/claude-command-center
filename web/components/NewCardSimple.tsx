@@ -12,7 +12,7 @@ import { renderPrompt } from '../../shared/prompts.ts';
 import { SOURCE_NAME } from '../../shared/tickets.ts';
 import { composerKey, pickOption, togglePacketRow, type Composer, type GoRow, type SourceTab } from '../line-model.ts';
 import { leaveComposer, startWork, updateComposer } from '../line-keys.ts';
-import { addTypedFolder, browseFolder, choosePromptAt, closePicker, develop, openPicker, openPromptList, openPromptsDialog, pickAt, pickerList, saveAsPrompt, singlePick, switchLook, writeWithClaude } from '../simple-keys.ts';
+import { addTypedFolder, browseFolder, choosePromptAt, closePicker, develop, openPicker, openPromptList, openPromptsDialog, pickAt, pickerList, saveAsPrompt, singlePick, switchLook, typeInPicker, writeWithClaude } from '../simple-keys.ts';
 import { chips, followPrompt, howFacts, howRows, KIND_OPTIONS, promptContext, promptLabel, promptRows, simpleOf, withSimple, type Chip, type SimpleBlock } from '../simple-model.ts';
 import { get, useStore } from '../store.ts';
 import { usePrLookup, useTicketSearch } from './NewCard.tsx';
@@ -349,15 +349,17 @@ function Picker({ c, embedded = false }: { c: Composer; embedded?: boolean }) {
         {tab === 'folders'
           ? <div className="flex items-center gap-2">
               <input id="cp-q" type="text" autoComplete="off" value={c.q} placeholder="Type or paste a folder path, like D:\specs\loans" spellCheck={false}
-                onChange={(e) => updateComposer((x) => ({ ...x, q: e.target.value }))}
+                onChange={(e) => typeInPicker(e.target.value)}
                 className="field font-mono text-[13.5px]" />
               <button className="btn h-[38px] px-2.5" onClick={addTypedFolder} title="Add the folder typed (Enter)" aria-label="Add the folder typed"><Icon name="check" size={17} /></button>
               <button className="btn h-[38px] px-2.5" onClick={browseFolder} title="Browse for a folder in the Windows dialog (b)" aria-label="Browse for a folder"><Icon name="folder" size={17} /></button>
             </div>
           : <input id="cp-q" type="text" autoComplete="off" value={c.q} placeholder={tab === 'repos' ? 'Search the repos, or paste a folder of repos to list for this card' : 'A key like SHOP-160, or words from the title (Jira is searched too)'}
-              onChange={(e) => updateComposer((x) => withSimple({ ...x, q: e.target.value }, { ai: 0 }))}
+              onChange={(e) => typeInPicker(e.target.value)}
               className="field text-[14px]" />}
       </>}
+      {/* What the last action came to, next to where it was tried (§68): a refusal in the warning colour, otherwise a plain word. */}
+      {sp.note && <div role="status" className={`rounded-lg px-2.5 py-1.5 text-[12.5px] ${sp.note.bad ? 'bg-bad-bg text-bad' : 'bg-raise text-sub'}`}>{sp.note.text}</div>}
       {tab === 'tickets' && c.q.trim().length >= 2 && (found.looking || found.problem) && <div className={`text-[12.5px] ${found.problem ? 'text-attn' : 'text-faint'}`}>{found.problem ?? 'Searching Jira for anyone’s tickets…'}</div>}
       <div className="flex max-h-[320px] flex-col gap-0.5 overflow-y-auto">
         {list.length ? list.map((row, i) => (

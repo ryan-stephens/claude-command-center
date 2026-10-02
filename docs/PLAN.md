@@ -1910,3 +1910,11 @@ They are two different things, and the preview now says so by putting them in th
 ## 67. Ticket (change)
 
 2026-10-01, the owner: "where the title says 'TICKET' can you move the change ticket link on the right side to just be (change) next to the 'TICKET' header so its TICKET (change) with the change being easily visible that it's clickable link". Done as said: the heading reads *Ticket (change)*, the link in the accent colour and underlined, the same `Enter` on the block. `walk-replace.cjs` clicks it by its new name.
+
+## 68. The popup says what happened, where it happened
+
+2026-10-01, the owner: "instead of having messages or errors pop up at the top of the app next to 'Sessions' we should show any errors or info like this next to the action that was just attempted. For example I tried to add a new folder of repos that didn't contain any git repos, and it told me a message and just closed the windows explorer and made it seem like nothing happened unless you notice the message at the top."
+
+**What it does.** The Add context popup has a line under its search box (`simple.note`, `role="status"`) that says what the last action came to: a refusal in the warning colour (*No git repos in D:\notes. A folder Claude should read goes on the Folders tab.*, *Not a folder on this machine*, *listed already*, *Only a repo this card added can be taken out*), or a plain word of what happened (*2 repos in D:\side, listed below for this card only. Enter picks one.*, *D:\specs is on the card: Claude can read and edit what is inside.*, *Pick the folder in the Windows dialog (it may have opened behind this window).*, *Nothing picked in the dialog.*, the folder taken off the list). Typing in the box, switching tabs or closing clears it. The header's flash is no longer used for anything the popup does; it still serves the rest of the screen. `say()` and `updatePicker()` in `web/simple-keys.ts` route every picker outcome there (a refusal string from the model becomes a note rather than a flash).
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (302); `walk-sources.cjs` reads its messages from the popup now and checks the header does not carry the refusal; `walk-simple`, `walk-folders`, `walk-context` and `walk-replace` still pass. Screenshots looked at: the note under the box on the Repos and Folders tabs.

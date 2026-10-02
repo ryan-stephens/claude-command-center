@@ -32,6 +32,8 @@ export interface SimpleState {
   ai: number;
   /** Claude is writing the opening message from the rough text (§62). */
   writing?: boolean;
+  /** What the picker's last action came to, shown inside the popup under its box (§68): a refusal (`bad`) or a word of what happened. Cleared on typing, a tab switch or closing. */
+  note?: { text: string; bad?: boolean };
 }
 
 export const SIMPLE_DEFAULT: SimpleState = { block: 'ticket', ci: 0, more: false, adding: null, ai: 0 };
