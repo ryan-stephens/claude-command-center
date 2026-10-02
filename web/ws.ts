@@ -1,5 +1,5 @@
 import type { CardDraft, PacketItem } from '../shared/cards.ts';
-import { runKey, wsRecipeKey } from '../shared/recipes.ts';
+import { LOG_KEEP, runKey, wsRecipeKey } from '../shared/recipes.ts';
 import type { StackChoice } from '../shared/stack.ts';
 import type { Changes } from '../shared/changes.ts';
 import type { TicketTransition } from '../shared/tickets.ts';
@@ -36,6 +36,8 @@ export function connect(): void {
       send({ type: 'session.open', id: openId });
       send({ type: 'board.get', sessionId: openId });
     }
+    // The Output views open on the page follow their runs again on the new connection.
+    if (following.size) send({ type: 'run.follow', keys: [...following.keys()] });
   };
   socket.onclose = () => {
     set({ connected: false });
@@ -177,6 +179,22 @@ export async function tryCard(id: string, choice?: StackChoice, service?: string
 /** Stop the card's run (every service and the session), or one service alone. */
 export function stopRun(id: string, service?: string): void {
   send({ type: 'card.stopRun', id, ...(service ? { service } : {}) });
+}
+
+/** How many Output views follow each run key right now (§84); the server is told the set whenever it changes. */
+const following = new Map<string, number>();
+
+/** Follow a run's output (its log arrives, then each line as it prints). Returns the way to stop. */
+export function followRun(key: string): () => void {
+  const n = following.get(key) ?? 0;
+  following.set(key, n + 1);
+  if (n === 0) send({ type: 'run.follow', keys: [...following.keys()] });
+  return () => {
+    const m = (following.get(key) ?? 1) - 1;
+    if (m > 0) { following.set(key, m); return; }
+    following.delete(key);
+    send({ type: 'run.follow', keys: [...following.keys()] });
+  };
 }
 
 /** Type into the card's terminal session (its channel). Rejects when it can't be reached. */
@@ -391,6 +409,18 @@ function receive(msg: ServerMsg): void {
     case 'runs':
       set({ runs: Object.fromEntries(msg.runs.map((r) => [runKey(r.cardId, r.service), r])) });
       return;
+    case 'run.log':
+      set({ logs: { ...get().logs, [msg.key]: msg.lines } });
+      return;
+    case 'run.lines': {
+      // Only lines newer than the last one held: the log and a flush can cross on the wire.
+      const have = get().logs[msg.key] ?? [];
+      const last = have.length ? have[have.length - 1].n : 0;
+      const add = msg.lines.filter((l) => l.n > last);
+      if (!add.length) return;
+      set({ logs: { ...get().logs, [msg.key]: [...have, ...add].slice(-LOG_KEEP) } });
+      return;
+    }
     case 'card.started':
     case 'ship.plan':
     case 'card.changes':

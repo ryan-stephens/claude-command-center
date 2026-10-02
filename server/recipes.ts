@@ -10,7 +10,7 @@ import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 
 import { get as httpGet } from 'node:http';
 import { isAbsolute, join } from 'node:path';
 import { FORWARD_MANIFEST, rewriteForward } from '../shared/okteto.ts';
-import { findUrl, MAX_STEPS, portOf, specsOf, stepLabel, waitLabel, type CardRun, type RunRecipe, type StepSpec } from '../shared/recipes.ts';
+import { findUrl, LOG_KEEP, MAX_STEPS, portOf, specsOf, stepLabel, waitLabel, type CardRun, type LogLine, type RunRecipe, type StepSpec } from '../shared/recipes.ts';
 import { repoName } from '../shared/workspaces.ts';
 import { withoutSecrets } from './config.ts';
 import { listening } from './ports.ts';
@@ -244,6 +244,12 @@ interface Live {
   procs: ChildProcess[];
   /** Full output per step; the run carries only the tail. */
   lines: string[][];
+  /** Every line in order, numbered, with a mark where each step starts: what the page's Output view follows (§84). */
+  log: LogLine[];
+  /** Lines since the last flush to the page's followers. */
+  fresh: LogLine[];
+  /** The number the next line gets. */
+  seq: number;
   /** Files written for steps (forward: manifest copies), removed when the run stops. */
   made: string[];
   stopped: boolean;
@@ -266,13 +272,20 @@ export interface RunOptions {
 export class RunService {
   private live = new Map<string, Live>();
   private timer: NodeJS.Timeout | null = null;
+  private logTimer: NodeJS.Timeout | null = null;
   private changed: () => void;
+  private lines?: (key: string, lines: LogLine[], reset: boolean) => void;
   private env: NodeJS.ProcessEnv;
   private httpWaitMs: number;
 
-  /** `httpWaitMs`: how long a wait:http: step may wait (tests shorten it). */
-  constructor(changed: () => void, env: NodeJS.ProcessEnv, opts: { httpWaitMs?: number } = {}) {
+  /**
+   * `httpWaitMs`: how long a wait:http: step may wait (tests shorten it). `lines`: the run's output as
+   * it comes, for whoever follows it on the page (§84): `reset` says the run started afresh, so the
+   * lines are the whole log; otherwise they are the ones since the last call.
+   */
+  constructor(changed: () => void, env: NodeJS.ProcessEnv, opts: { httpWaitMs?: number; lines?: (key: string, lines: LogLine[], reset: boolean) => void } = {}) {
     this.changed = changed;
+    this.lines = opts.lines;
     this.httpWaitMs = opts.httpWaitMs ?? HTTP_WAIT_MS;
     // Plain output, no dev server opening a browser of its own (o opens it), and no tokens from the settings file.
     this.env = { ...withoutSecrets(env), FORCE_COLOR: '0', NO_COLOR: '1', BROWSER: 'none', PYTHONUNBUFFERED: '1' };
@@ -302,6 +315,25 @@ export class RunService {
     this.timer = setTimeout(() => { this.timer = null; this.changed(); }, 250);
   }
 
+  /** A run's output so far, oldest first (empty for a key with no run). */
+  log(key: string): LogLine[] {
+    return this.live.get(key)?.log ?? [];
+  }
+
+  /** Keep a line of a run's output and hand it to the followers soon (at most every 100 ms). */
+  private logLine(live: Live, step: number, text: string, mark?: true): void {
+    const line: LogLine = { n: live.seq++, t: Date.now(), step, text, ...(mark ? { mark } : {}) };
+    live.log.push(line);
+    if (live.log.length > LOG_KEEP) live.log.splice(0, live.log.length - LOG_KEEP);
+    if (!this.lines) return;
+    live.fresh.push(line);
+    if (this.logTimer) return;
+    this.logTimer = setTimeout(() => {
+      this.logTimer = null;
+      for (const [k, l] of this.live) if (l.fresh.length) this.lines?.(k, l.fresh.splice(0), false);
+    }, 100);
+  }
+
   /** Where a step runs, or why it can't. */
   private where(places: RunPlaces, spec: StepSpec): string | { error: string } {
     if (!spec.repo) return places.cwd;
@@ -324,8 +356,10 @@ export class RunService {
       text: `Starting ${opts.service ?? (recipe.workspaceId ? 'the workspace' : repoName(recipe.repo))}`,
       ...(opts.choice ? { choice: opts.choice } : {}),
     };
-    const live: Live = { run, specs, places: at, procs: [], lines: specs.map(() => []), made: [], stopped: false, ...(opts.cleanup ? { cleanup: opts.cleanup } : {}) };
+    const live: Live = { run, specs, places: at, procs: [], lines: specs.map(() => []), log: [], fresh: [], seq: 1, made: [], stopped: false, ...(opts.cleanup ? { cleanup: opts.cleanup } : {}) };
     this.live.set(key, live);
+    // A fresh log: whoever follows this key starts over (the service was started again).
+    this.lines?.(key, [], true);
     this.step(live, 0);
     this.changed();
     return run;
@@ -363,6 +397,7 @@ export class RunService {
     step.state = 'go';
     run.text = stepLabel(spec);
     const last = i === runnable[runnable.length - 1];
+    this.logLine(live, i, `$ ${spec.cmd}`, true);
     let child: ChildProcess;
     try {
       child = launch(spec, cwd, this.env, undefined, live.made);
@@ -370,6 +405,7 @@ export class RunService {
       // What a forward: step needed wasn't there: the run stops here, with the reason on the step.
       step.state = 'bad';
       step.tail = [(e as Error).message];
+      this.logLine(live, i, (e as Error).message);
       run.state = 'failed';
       run.text = `${stepLabel(spec)} can’t run`;
       this.changed();
@@ -394,7 +430,7 @@ export class RunService {
     let poll: NodeJS.Timeout | null = null;
     if (port) {
       void listening(port).then((busy) => {
-        if (busy) { step.tail = [...step.tail, `(port ${port} was already in use before this started)`].slice(-SHOW); if (!wait) return; }
+        if (busy) { const why = `(port ${port} was already in use before this started)`; step.tail = [...step.tail, why].slice(-SHOW); this.logLine(live, i, why); if (!wait) return; }
         if (step.state === 'go') poll = setInterval(() => { void listening(port).then((ok) => { if (ok) up(); }); }, 1000);
       });
     }
@@ -419,7 +455,9 @@ export class RunService {
           const mins = Math.round(this.httpWaitMs / 60_000);
           step.state = 'bad';
           step.waitNote = mins ? `no answer in ${mins} min` : 'no answer in time';
-          step.tail = [...step.tail, `(${addr} ${status === undefined ? 'never answered' : `still answered ${status}`})`].slice(-SHOW);
+          const why = `(${addr} ${status === undefined ? 'never answered' : `still answered ${status}`})`;
+          step.tail = [...step.tail, why].slice(-SHOW);
+          this.logLine(live, i, why);
           run.state = 'failed';
           run.text = `${stepLabel(spec)}: ${addr} never answered`;
           this.changed();
@@ -437,6 +475,7 @@ export class RunService {
       settle();
       step.code = code;
       if (live.stopped) { step.state = 'off'; this.soon(); return; }
+      this.logLine(live, i, `(exited, code ${code})`, true);
       // It already failed by never answering; going away later changes nothing.
       if (timedOut) { this.soon(); return; }
       delete step.waitNote;
@@ -458,26 +497,42 @@ export class RunService {
     });
   }
 
-  /** Keep a step's output (colour codes dropped) and watch it for a localhost URL. */
+  /**
+   * Keep a step's output (colour codes dropped) and watch it for a localhost URL. Each stream keeps
+   * the piece of a line a chunk ended in the middle of, so a line split across two chunks is one line.
+   */
   private capture(live: Live, i: number, child: ChildProcess, onUrl: (url: string) => void, onLine?: (line: string) => void): void {
     const step = live.run.steps[i];
-    const onData = (buf: Buffer) => {
-      for (const raw of buf.toString('utf8').split(/\r?\n/)) {
-        const line = raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trimEnd();
-        if (!line) continue;
-        const lines = live.lines[i];
-        lines.push(line);
-        if (lines.length > KEEP) lines.splice(0, lines.length - KEEP);
-        step.tail = lines.slice(-SHOW);
-        const url = findUrl(line);
-        if (url) onUrl(url);
-        onLine?.(line);
-      }
-      this.soon();
+    const keep = (line: string) => {
+      const lines = live.lines[i];
+      lines.push(line);
+      if (lines.length > KEEP) lines.splice(0, lines.length - KEEP);
+      step.tail = lines.slice(-SHOW);
+      this.logLine(live, i, line);
+      const url = findUrl(line);
+      if (url) onUrl(url);
+      onLine?.(line);
     };
-    child.stdout?.on('data', onData);
-    child.stderr?.on('data', onData);
-    child.on('error', (e) => { step.tail = [...step.tail, e.message].slice(-SHOW); });
+    const reader = () => {
+      let rest = '';
+      const take = (text: string) => {
+        const parts = (rest + text).split(/\r?\n/);
+        rest = parts.pop() ?? '';
+        for (const raw of parts) {
+          const line = raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trimEnd();
+          if (line) keep(line);
+        }
+        this.soon();
+      };
+      return { data: (buf: Buffer) => take(buf.toString('utf8')), end: () => { if (rest) take('\n'); } };
+    };
+    const out = reader();
+    const err = reader();
+    child.stdout?.on('data', out.data);
+    child.stdout?.on('end', out.end);
+    child.stderr?.on('data', err.data);
+    child.stderr?.on('end', err.end);
+    child.on('error', (e) => { step.tail = [...step.tail, e.message].slice(-SHOW); this.logLine(live, i, e.message); });
   }
 
   /** Run the stop: steps one after another (each gets two minutes), after the app is killed. */
@@ -491,8 +546,9 @@ export class RunService {
       step.state = 'go';
       live.run.text = `Stopping: ${stepLabel(spec)}`;
       this.changed();
+      this.logLine(live, i, `$ ${spec.cmd}`, true);
       let child: ChildProcess;
-      try { child = launch(spec, cwd, this.env, false, live.made); } catch (e) { step.state = 'bad'; step.tail = [(e as Error).message]; continue; }
+      try { child = launch(spec, cwd, this.env, false, live.made); } catch (e) { step.state = 'bad'; step.tail = [(e as Error).message]; this.logLine(live, i, (e as Error).message); continue; }
       this.capture(live, i, child, () => {});
       const code = await new Promise<number | null>((resolve) => {
         const t = setTimeout(() => { killTree(child); resolve(null); }, 120_000);
@@ -521,7 +577,11 @@ export class RunService {
 
   private async finish(key: string, live: Live, quiet: boolean): Promise<void> {
     for (const p of live.procs) killTree(p);
-    for (const s of live.run.steps) if (!s.stop && (s.state === 'go' || s.state === 'up' || s.state === 'wait')) s.state = 'off';
+    live.run.steps.forEach((s, i) => {
+      if (s.stop || (s.state !== 'go' && s.state !== 'up' && s.state !== 'wait')) return;
+      if (s.state !== 'wait') this.logLine(live, i, '(stopped)', true);
+      s.state = 'off';
+    });
     const was = live.run.state;
     if (was === 'running' || was === 'up') { live.run.state = 'stopped'; live.run.text = 'Stopping'; }
     this.changed();

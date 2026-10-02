@@ -111,6 +111,35 @@ test('runs the steps in order; the app stays up at the URL it printed until stop
   }
 });
 
+test('a run keeps its whole output, numbered, with each step marked, and hands new lines to whoever follows (§84)', async () => {
+  const cwd = repo('log', {
+    'one.js': "process.stdout.write('first half'); setTimeout(() => { process.stdout.write(' second half\\nwhole line\\n'); console.error('on stderr'); }, 30)",
+    'app.js': "const s=require('http').createServer((q,r)=>{console.log('GET '+q.url);r.end('ok')}).listen(0,()=>console.log('Local: http://localhost:'+s.address().port+'/'))",
+  });
+  const got: [string, number[], boolean][] = [];
+  const runs = new RunService(() => {}, process.env, { lines: (key, lines, reset) => got.push([key, lines.map((l) => l.n), reset]) });
+  try {
+    runs.start('log-1', { repo: cwd, steps: ['node one.js', 'node app.js'], source: '' }, cwd);
+    await until(() => runs.get('log-1')?.state === 'up');
+    await fetch(runs.get('log-1')!.url!);
+    await until(() => runs.log('log-1').some((l) => l.text.startsWith('GET /')));
+    const log = runs.log('log-1');
+    assert.deepEqual(log.map((l) => l.n), log.map((_l, i) => i + 1), 'numbered from 1 in order');
+    assert.deepEqual(log.filter((l) => l.mark).map((l) => [l.step, l.text]), [[0, '$ node one.js'], [0, '(exited, code 0)'], [1, '$ node app.js']], 'each step starts with its command; an exit is marked');
+    assert.deepEqual(log.filter((l) => l.step === 0 && !l.mark).map((l) => l.text), ['first half second half', 'whole line', 'on stderr'], 'a line split across two writes is one line; stderr is kept too');
+    assert.ok(log.some((l) => l.step === 1 && l.text === 'GET /'), 'what the app prints while it serves');
+    assert.deepEqual(got[0], ['log-1', [], true], 'a start says the log is fresh');
+    await until(() => got.slice(1).flatMap((g) => g[1]).length >= log.length, 2000);
+    const flushed = got.slice(1).flatMap((g) => g[1]);
+    assert.deepEqual(flushed, log.map((l) => l.n), 'every line reached the follower, once, in order');
+    assert.equal(runs.log('nothing').length, 0);
+    await runs.stop('log-1');
+    assert.deepEqual(runs.log('log-1').slice(-1).map((l) => [l.step, l.text, l.mark]), [[1, '(stopped)', true]], 'a stop is marked on the step that was up');
+  } finally {
+    runs.stopAll();
+  }
+});
+
 test('a failing step stops the run there and keeps what it printed', async () => {
   // A file, not an inline script: the quoting differs between cmd and sh.
   const cwd = repo('fail', { 'fail.js': "console.error('Cannot find package express'); process.exit(3)" });

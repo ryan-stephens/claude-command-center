@@ -220,6 +220,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       // The dock: the panel open is named, the rest are one key each.
       ...(x.panel === 'changes' ? [{ keys: ['j', 'k'], label: 'File' }, { keys: ['f'], label: 'Pop out' }] : []),
       ...(x.panel === 'try' && x.hasStack ? [{ keys: ['j', 'k'], label: 'Service' }, { keys: ['Space'], label: 'Tick / environment' }, { keys: ['r'], label: 'Start this one' }, { keys: ['q'], label: 'Stop this one' }] : []),
+      ...(x.panel === 'try' && (x.appRunning || x.canTry) ? [{ keys: ['f'], label: 'Output' }] : []),
       ...CARD_PANELS.map((p) => ({ keys: [p.key], label: x.panel === p.id ? `Close ${p.name}` : p.name })),
       ...(x.panel ? [{ keys: ['[', ']'], label: 'Panel width' }] : []),
       ...tryKeys(x).filter((i) => i.keys[0] !== '⇧D'),

@@ -2,7 +2,7 @@
 
 import type { Card, CardDraft, CardWorktree, PacketItem, PrTarget } from './cards.ts';
 import type { PromptContext, SavedPrompt } from './prompts.ts';
-import type { CardRun, RunRecipe } from './recipes.ts';
+import type { CardRun, LogLine, RunRecipe } from './recipes.ts';
 import type { ShipPlan, ShipRequest } from './ship.ts';
 import type { Stack, StackApiRow, StackChoice } from './stack.ts';
 import type { Finding } from './stack-detect.ts';
@@ -16,7 +16,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
 
-export const PROTOCOL = 24;
+export const PROTOCOL = 25;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -392,6 +392,8 @@ export type ClientMsg =
   /** Stop the card's run and the app it started. */
   /** Stop the card's run; with a stack, every service and the session (its ports and proxy copy), or one `service` alone. */
   | { type: 'card.stopRun'; id: string; service?: string }
+  /** Follow these runs' output (§84): the keys (runKey) this connection wants, replacing the last set; each new one is answered with run.log, then run.lines as it prints. */
+  | { type: 'run.follow'; keys: string[] }
   /** Save the run recipe you wrote for a repo; no steps goes back to the detected one. Answered with ok or an error. */
   | { type: 'recipe.save'; reqId: string; repo?: string; workspaceId?: string; steps: string[]; url?: string }
   /** Ship: what shipping the card will do, one block per repo it changed (answered with ship.plan), do it (ok or an error), look at its PRs again, merge them. */
@@ -476,6 +478,9 @@ export type ServerMsg =
   | { type: 'recipes'; recipes: Record<string, RunRecipe>; /** Workspaces' own recipes, by workspace id. */ workspaceRecipes?: Record<string, RunRecipe> }
   /** Cards' runs of their recipes (Try it). */
   | { type: 'runs'; runs: CardRun[] }
+  /** A followed run's output so far (the whole log: on follow, and again when the run starts afresh), then the lines since. */
+  | { type: 'run.log'; key: string; lines: LogLine[] }
+  | { type: 'run.lines'; key: string; lines: LogLine[] }
   | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string; /** The model in the user's Claude Code settings (a card's default otherwise). */ userModel?: string }
   | { type: 'card.started'; reqId: string; id: string }
   | { type: 'tickets'; tickets: Ticket[]; projects: TicketProject[]; sources: TicketSources }

@@ -37,6 +37,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, the run recipe), Verify (the team’s apps, later), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
       ['j / k  ·  f (Changes panel)', 'The next / previous file, its diff under it  ·  pop the diff out full width, on the same file'],
       ['j / k  ·  Space  ·  r  ·  q (Try it panel, a lane with a stack)', 'The environment row and each service  ·  change the environment, or tick a service to run  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
+      ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
       ['Esc (card open)', 'Back to the board, the card still focused; on the board, clear the filter'],
       ['← → (card open)', 'The previous / next card on the board, in column order'],
@@ -651,7 +652,10 @@ function drawerKeys(e: KeyboardEvent): boolean {
     case ' ': if (s.line.panel === 'try' && s.line.drawer && tryRows.services.length) { toggleTryRow(s.line.drawer); return true; } return false;
     case 'r': { const sv = s.line.panel === 'try' ? tryRowService() : undefined; if (sv && s.line.drawer) { tryService(s.line.drawer, sv); return true; } return false; }
     case 'q': { const sv = s.line.panel === 'try' ? tryRowService() : undefined; if (sv && s.line.drawer) { stopService(s.line.drawer, sv); return true; } return false; }
-    case 'f': if (s.line.panel === 'changes' && s.line.drawer) { openChanges(s.line.drawer, s.line.at); return true; } return false;
+    case 'f':
+      if (s.line.panel === 'changes' && s.line.drawer) { openChanges(s.line.drawer, s.line.at); return true; }
+      if (s.line.panel === 'try' && s.line.drawer) { openOutput(s.line.drawer, tryRowService()); return true; }
+      return false;
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;
     case 'X': if (s.line.drawer) openWorktrees(s.line.drawer); return true;
     case 'Enter': if (s.line.drawer) focusSay(s.line.drawer); return true;
@@ -764,6 +768,13 @@ export function openChanges(id: string, at?: number): void {
   if (!card) return;
   if (!card.cwd) { flash(`${card.key} hasn’t started yet: nothing changed`); return; }
   set({ modal: { kind: 'changes', id, ...(at !== undefined ? { at } : {}) } });
+}
+
+/** f in the Try it panel (§84): a service's output full width, as it prints; `service` is the row highlighted (none: the card's own run). */
+export function openOutput(id: string, service?: string): void {
+  const s = get();
+  if (!runsOf(s.runs, id).length) { flash('Nothing has run for this card yet: t starts it'); return; }
+  set({ modal: { kind: 'output', id, ...(service ? { service } : {}) } });
 }
 
 /** g: the card's Windows Terminal tab, brought to the front (the trust prompt, or anything the channel can't relay). */

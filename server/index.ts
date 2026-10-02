@@ -91,7 +91,13 @@ function ticketsMsg(): ServerMsg {
   return { type: 'tickets', tickets: tickets.list(ids), projects: tickets.projects(ids), sources: tickets.sources() };
 }
 
-const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env);
+/** Which runs' output each connection follows (§84): the Output view on the page asks for the keys it shows. */
+const follows = new Map<WebSocket, Set<string>>();
+const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env, {
+  lines: (key, lines, reset) => {
+    for (const [ws, keys] of follows) if (keys.has(key) && ws.readyState === ws.OPEN) send(ws, reset ? { type: 'run.log', key, lines: runs.log(key) } : { type: 'run.lines', key, lines });
+  },
+});
 /** Each card's stack session (§82): its ports and proxy copy, kept while its services run or are started again. */
 const sessions = new Map<string, StackSession>();
 
@@ -571,6 +577,13 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       await runs.start(card.id, recipe, places);
       return;
     }
+    case 'run.follow': {
+      const want = new Set((Array.isArray(msg.keys) ? msg.keys : []).map(String).slice(0, 50));
+      const had = follows.get(ws) ?? new Set<string>();
+      follows.set(ws, want);
+      for (const key of want) if (!had.has(key)) send(ws, { type: 'run.log', key, lines: runs.log(key) });
+      return;
+    }
     case 'card.stopRun': {
       const id = String(msg.id);
       const service = typeof msg.service === 'string' ? msg.service : undefined;
@@ -826,7 +839,7 @@ const localApp = buildApp(async (c, next) => {
 const wss = new WebSocketServer({ noServer: true });
 wss.on('connection', (ws) => {
   clients.add(ws);
-  ws.on('close', () => { clients.delete(ws); mirror.forget(ws); });
+  ws.on('close', () => { clients.delete(ws); follows.delete(ws); mirror.forget(ws); });
   ws.on('message', (raw) => {
     let msg: ClientMsg;
     try { msg = JSON.parse(String(raw)); } catch { return; }

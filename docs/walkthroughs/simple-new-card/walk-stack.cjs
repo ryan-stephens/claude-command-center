@@ -1,12 +1,15 @@
 // Try it as services (PLAN §82) on the isolated server at :7802: a Demo lane with a stand-in stack
 // (node scripts in standins/ play the API and the UI), a seeded card, then the Try it panel: tick
 // the API, t starts everything, q stops the API alone while the UI stays up, r starts it again,
-// t stops all. Needs a wide window (the panel sits beside the chat).
+// t stops all; the output under the service and its pop-out (§84). Needs a wide window (the panel
+// sits beside the chat). DARK=1 for dark mode.
 const { chromium } = require('C:/Users/ryans/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright');
 const path = require('node:path');
 const fs = require('node:fs');
+const http = require('node:http');
 const PORT = process.env.PORT || '7802';
-const OUT = path.join(__dirname, 'shots-stack');
+const dark = process.env.DARK === '1';
+const OUT = path.join(__dirname, dark ? 'shots-stack-dark' : 'shots-stack');
 fs.mkdirSync(OUT, { recursive: true });
 const DEMO = (process.env.TEMP || process.env.TMP).replace(/\\/g, '/') + '/cc-demo';
 const STANDINS = path.join(__dirname, 'standins').replace(/\\/g, '/');
@@ -28,12 +31,12 @@ async function ask(page, msg) {
 
 (async () => {
   const browser = await chromium.launch({ executablePath: 'C:/Users/ryans/AppData/Local/ms-playwright/chromium-1223/chrome-win64/chrome.exe' });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 950 }, colorScheme: dark ? 'dark' : 'light' });
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`http://127.0.0.1:${PORT}/`);
-  await page.evaluate(() => { localStorage.setItem('cc-control.welcomed.v2', '1'); localStorage.removeItem('cc-control.stackPick'); });
+  await page.evaluate((dark) => { localStorage.setItem('cc-control.welcomed.v2', '1'); localStorage.removeItem('cc-control.stackPick'); if (dark) localStorage.setItem('cc-control.theme', 'dark'); }, dark);
   await page.evaluate(({ DEMO }) => new Promise((resolve) => {
     const ws = new WebSocket(`ws://${location.host}/ws`);
     ws.onopen = () => {
@@ -86,16 +89,54 @@ async function ask(page, msg) {
   check('the dock’s Try it says on', /on/.test(await view.locator('button[title^="Its app"]').innerText()));
   check('Open shows on the UI row', await panel.getByRole('button', { name: /Open/ }).isVisible());
   await shot(page, 'both-up');
+  // The output (§84): the highlighted API's log sits under its steps and follows what it prints.
+  const log = panel.getByRole('log', { name: 'Output' });
+  check('the API’s output shows under its steps, with the step marked', /\$ wait:port|\$ node/.test(await log.innerText()) && /listening on \d+/.test(await log.innerText()), (await log.innerText()).slice(0, 120));
+  const label0 = await panel.locator('h4').first().innerText();
+  const apiPort = Number((label0.match(/payments-api :(\d+)/) || [])[1]);
+  check('the session label names the API’s port', apiPort > 0, label0);
+  await new Promise((resolve) => http.get(`http://127.0.0.1:${apiPort}/orders/1`, (res) => { res.resume(); res.on('end', resolve); }).on('error', resolve));
+  const lineLanded = await until(async () => /GET \/orders\/1/.test(await log.innerText()), 5000);
+  check('a request to the API lands in the output while it runs', lineLanded);
+  check('Pop out sits under the output', await panel.getByRole('button', { name: /Pop out/ }).isVisible());
+  await shot(page, 'output-panel');
+  // f: the same output full width, on the API's tab; j moves to the UI's; / filters; Esc closes only the sheet.
+  await page.keyboard.press('f');
+  await sleep(500);
+  const out = page.getByRole('dialog', { name: 'Output' });
+  check('f opens the Output sheet', await out.isVisible());
+  check('the sheet opens on the API’s tab', (await out.getByRole('tab', { name: /payments-api/ }).getAttribute('aria-selected')) === 'true');
+  check('the sheet shows the request line', /GET \/orders\/1/.test(await out.getByRole('log').innerText()));
+  await new Promise((resolve) => http.get(`http://127.0.0.1:${apiPort}/orders/2`, (res) => { res.resume(); res.on('end', resolve); }).on('error', resolve));
+  check('a new request lands in the sheet live', await until(async () => /GET \/orders\/2/.test(await out.getByRole('log').innerText()), 5000));
+  await shot(page, 'output-sheet');
+  await page.keyboard.press('j');
+  await sleep(300);
+  check('j moves to the UI’s tab, with its own output', (await out.getByRole('tab', { name: /web-app/ }).getAttribute('aria-selected')) === 'true' && /Local: http:\/\/localhost/.test(await out.getByRole('log').innerText()));
+  await page.keyboard.press('k');
+  await page.keyboard.press('/');
+  await page.keyboard.type('orders/2');
+  await sleep(300);
+  const filtered = await out.getByRole('log').innerText();
+  check('/ filters the lines', /orders\/2/.test(filtered) && !/orders\/1/.test(filtered));
+  await page.keyboard.press('Escape');
+  await sleep(200);
+  check('Esc leaves the filter box, the sheet stays', await out.isVisible());
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  check('Esc closes the sheet, the card stays open', !(await out.isVisible().catch(() => false)) && await view.isVisible());
   // q on the API's row: it stops, the UI stays up.
   await page.keyboard.press('q');
   const apiDown = await until(async () => /stopped/.test(await panel.getByRole('option', { name: /payments-api/ }).innerText()), 15000);
   check('q stops the API alone', apiDown);
   check('the UI is still up', /\bup\b/.test(await panel.getByRole('option', { name: /web-app/ }).innerText()));
+  check('the output marks the stop, then the stop: step and what it printed', await until(async () => /\(stopped\)[\s\S]*\$ node .*down\.cjs[\s\S]*down payments-api/.test(await log.innerText()), 5000), (await log.innerText()).slice(-160));
   await shot(page, 'api-stopped');
-  // r: the API starts again on the same port (the session kept it).
+  // r: the API starts again on the same port (the session kept it); its output starts afresh.
   await page.keyboard.press('r');
   const apiUp = await until(async () => /\bup\b/.test(await panel.getByRole('option', { name: /payments-api/ }).innerText()), 20000);
   check('r starts the API again', apiUp);
+  check('the output starts afresh for the new run', await until(async () => { const t = await log.innerText(); return /listening on/.test(t) && !/orders\/1/.test(t); }, 5000));
   const label = await panel.locator('h4').first().innerText();
   check('the session label names the ports', /payments-api :\d+/.test(label), label);
   await shot(page, 'api-again');

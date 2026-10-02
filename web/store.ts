@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Card } from '../shared/cards.ts';
-import type { CardRun, RunRecipe } from '../shared/recipes.ts';
+import type { CardRun, LogLine, RunRecipe } from '../shared/recipes.ts';
 import type { InboxView, Ticket, TicketProject, TicketSources } from '../shared/tickets.ts';
 import type { Command, CommandGroup, ModelChoice, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, Todo, TranscriptItem, Workspace } from '../shared/protocol.ts';
 import type { SavedPrompt } from '../shared/prompts.ts';
@@ -56,6 +56,8 @@ export type Modal =
   | { kind: 'report'; id: string }
   /** D on a card: what it changed, file by file, with the diffs. */
   | { kind: 'changes'; id: string; /** The file to open on (the panel's choice when popped out). */ at?: number }
+  /** f in the Try it panel (§84): a service's output full width, as it prints; `service` is the one to open on (none: the card's own run). */
+  | { kind: 'output'; id: string; service?: string }
   /** The new-card screen's Folders tab: pick any folder on disk to add as context. */
   | { kind: 'addFolder' }
   /** Where tickets come from, and which workspace each project goes to. */
@@ -112,6 +114,8 @@ interface State {
   /** Run recipes by repo path, and cards' runs of them (Try it). */
   recipes: Record<string, RunRecipe>;
   runs: Record<string, CardRun>;
+  /** The output of the runs the page follows (§84), by run key, oldest line first. */
+  logs: Record<string, LogLine[]>;
   ticketProjects: TicketProject[];
   ticketSources: TicketSources | null;
   /**
@@ -190,6 +194,7 @@ export const useStore = create<State>(() => ({
   tickets: [],
   recipes: {},
   runs: {},
+  logs: {},
   ticketProjects: [],
   ticketSources: null,
   line: { focus: null, drawer: null, panel: null, at: 0, panelW: loadPanelW(), filter: loadFilter(), q: '', searching: false, view: loadView() },

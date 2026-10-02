@@ -19,6 +19,7 @@ import { BindingsDialog } from './BindingsDialog.tsx';
 import { ChangesSheet } from './ChangesSheet.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
 import { FolderPicker } from './FolderPicker.tsx';
+import { OutputSheet } from './OutputSheet.tsx';
 import { Palette } from './Palette.tsx';
 import { PromptsDialog } from './PromptsDialog.tsx';
 import { ReportSheet } from './ReportSheet.tsx';
@@ -57,6 +58,7 @@ export function Dialogs() {
     case 'ship': return <ShipSheet id={modal.id} />;
     case 'report': return <ReportSheet id={modal.id} />;
     case 'changes': return <ChangesSheet id={modal.id} at={modal.at} />;
+    case 'output': return <OutputSheet id={modal.id} service={modal.service} />;
     case 'addFolder': return <AddFolderDialog />;
     case 'pickWorkspace': return <PickWorkspaceDialog then={modal.then} />;
     case 'tickets': return <TicketsDialog />;

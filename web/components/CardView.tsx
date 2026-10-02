@@ -16,11 +16,12 @@ import { SOURCE_NAME } from '../../shared/tickets.ts';
 import { repoName } from '../../shared/workspaces.ts';
 import { CARD_PANELS, type CardPanel } from '../line-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard } from '../line-model.ts';
-import { answerAsk, boardOf, editRecipe, goToTab, lastPick, openAddComposer, openApp, openChanges, openNeighbour, openWorktrees, rememberPick, saySubmit, setChangeCount, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
+import { answerAsk, boardOf, editRecipe, goToTab, lastPick, openAddComposer, openApp, openChanges, openNeighbour, openOutput, openWorktrees, rememberPick, saySubmit, setChangeCount, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
 import { openSession } from '../keys.ts';
 import { get, set, setPanelW, useStore } from '../store.ts';
 import { cardChanges, send, stackPlan } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
+import { RunLog } from './RunLog.tsx';
 import { KindPill, useExpandKey } from './TicketLine.tsx';
 import { Transcript } from './Transcript.tsx';
 import { Icon, Key, Pill, TicketKey, type IconName } from './ui.tsx';
@@ -452,7 +453,6 @@ function StackTry({ card, stack, source }: { card: Card; stack: Stack; source: s
   useEffect(() => { document.getElementById(`try-${at}`)?.scrollIntoView({ block: 'nearest' }); }, [at]);
   const highlighted = services[at - choose.length];
   const run = highlighted ? runs[runKey(card.id, highlighted.id)] : undefined;
-  const shown = run?.steps.find((s) => s.state === 'bad') ?? run?.steps.find((s) => s.state === 'go') ?? run?.steps.find((s) => s.state === 'up');
   const label = mine[0]?.choice;
   const ticked = (id: string) => id === 'ui' || pick.apis.includes(id);
   return (
@@ -515,10 +515,24 @@ function StackTry({ card, stack, source }: { card: Card; stack: Stack; source: s
               {run.steps.filter((s) => s.stop).map((s, i) => <StepRow key={`stop${i}`} s={s} />)}
             </ol>
             : <p className="text-[13px] text-faint">Not started yet. Its steps show here as they run.</p>}
-          {shown && shown.tail.length > 0 && (
-            <pre className="m-0 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-snug text-sub">{shown.tail.join('\n')}</pre>
-          )}
+          <Output card={card} service={highlighted.id} run={run} />
         </Sec>
+      )}
+    </>
+  );
+}
+
+/** A run's output under its steps (§84), following the newest line, with Pop out (f) to the full-width sheet. */
+function Output({ card, service, run }: { card: Card; service?: string; run: CardRun | undefined }) {
+  return (
+    <>
+      <RunLog runKey={runKey(card.id, service)} run={run} className="max-h-[40vh]" />
+      {run && (
+        <div className="flex justify-end">
+          <button className="flex items-center gap-1.5 text-[12px] text-acc underline decoration-dotted underline-offset-2 hover:decoration-solid" onClick={() => openOutput(card.id, service)} title="Its output full width, in its own window">
+            <Icon name="popout" size={13} />Pop out<Key k="f" size="sm" />
+          </button>
+        </div>
       )}
     </>
   );
@@ -540,7 +554,6 @@ function RecipeTry({ card }: { card: Card }) {
   }));
   const steps = all.filter((s) => !s.stop);
   const stops = all.filter((s) => s.stop);
-  const shown = run?.steps.find((s) => s.state === 'bad') ?? run?.steps.find((s) => s.state === 'go') ?? (run?.state === 'up' ? run.steps.find((s) => s.state === 'up') : undefined);
   const can = Boolean(recipe || card.workspaceId);
   return (
     <>
@@ -567,9 +580,7 @@ function RecipeTry({ card }: { card: Card }) {
           </ol>
         ) : <p className="text-[13px] text-faint">No run recipe for {name}: nothing to go on in its package.json or compose file.</p>}
         {recipe?.source.startsWith('from the workspace file') && !run && <div className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">This recipe came with a lane file someone shared. Read the commands before starting: they run on this machine.</div>}
-        {shown && shown.tail.length > 0 && (
-          <pre className="m-0 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-snug text-sub">{shown.tail.join('\n')}</pre>
-        )}
+        <Output card={card} run={run} />
       </Sec>
     </>
   );

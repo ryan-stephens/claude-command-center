@@ -76,6 +76,23 @@ export interface CardRun {
   service?: string;
 }
 
+/**
+ * One line of a run's output (§84): numbered in order across every step, so a page that follows the
+ * run can take what it hasn't seen. `mark`: the line is a step starting (`$ cmd`), not what it printed.
+ */
+export interface LogLine {
+  n: number;
+  /** When it was printed (ms). */
+  t: number;
+  /** The step it came from. */
+  step: number;
+  text: string;
+  mark?: true;
+}
+
+/** Output lines a run keeps for the page (the oldest go first). */
+export const LOG_KEEP = 3000;
+
 /** The key a run is kept under: the card's id, or `<card>#<service>` for one service of its stack. */
 export function runKey(cardId: string, service?: string): string {
   return service ? `${cardId}#${service}` : cardId;
