@@ -4,7 +4,7 @@ import { cardRecipe } from '../shared/recipes.ts';
 import { openPrs, prsOf, shipMode } from '../shared/ship.ts';
 import { Dialogs } from './components/Dialogs.tsx';
 import { SessionView } from './components/SessionView.tsx';
-import { Icon, Key, KeyHint, WsBadge } from './components/ui.tsx';
+import { Icon, Key, KeyHint } from './components/ui.tsx';
 import { armOnFirstGesture, setNotificationHandler } from './attention.ts';
 import { bindingsFor, displayCombo, type ActionId } from './bindings.ts';
 import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession } from './keys.ts';
@@ -13,10 +13,11 @@ import { legendFor, lineLegendFor } from './legend.ts';
 import { packetRows } from './line-model.ts';
 import { goHome } from './line-keys.ts';
 import { chips, simpleOf } from './simple-model.ts';
+import { SLIM } from './slim.ts';
 import { TicketLine } from './components/TicketLine.tsx';
 import { stopVoice } from './voice.ts';
 import { maybeShowWelcome } from './components/Welcome.tsx';
-import { activeSession, attention, currentWorkspace, NO_BINDINGS, set, toggleSound, useStore } from './store.ts';
+import { activeSession, attention, NO_BINDINGS, set, toggleSound, useStore } from './store.ts';
 
 /** The keys that matter right now, as big keycaps. Changes with the view, the panel or the zone. */
 function Legend() {
@@ -109,20 +110,20 @@ function Header() {
   const theme = useStore((s) => s.theme);
   const needYou = useStore((s) => attention(s).length);
   const waiting = useStore((s) => Object.keys(s.permissions).length);
-  const ws = useStore((s) => currentWorkspace(s));
   const bindings = useStore((s) => s.settings.bindings ?? NO_BINDINGS);
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
   return (
     <header className="flex items-center gap-3 border-b border-line bg-col px-3 py-2 md:px-4">
-      <button onClick={goHome} className="-ml-1.5 flex items-center gap-2 whitespace-nowrap rounded-lg px-1.5 py-1 font-semibold tracking-tight hover:bg-raise" title={`Home: the Ticket Line (${k('ticketLine')})`} aria-label="Home: the Ticket Line">
+      <button onClick={goHome} className="-ml-1.5 flex items-center gap-2 whitespace-nowrap rounded-lg px-1.5 py-1 font-semibold tracking-tight hover:bg-raise" title={`Home: your sessions (${k('ticketLine')})`} aria-label="Home: your sessions">
         <Icon name="grid" size={17} className="text-acc" />Command Center
         <Key k={k('ticketLine')} size="sm" className="hidden md:inline-flex" />
       </button>
+      {/* The board is where sessions are managed; the workspace chips under the header say which one is showing. */}
       <span className="hidden min-w-0 items-center gap-2 text-sub md:flex">
         <span className="text-faint">/</span>
         {screen === 'session'
-          ? <button className="flex items-center gap-1.5 hover:text-ink" onClick={goHome} title="Back to the Ticket Line">Ticket Line</button>
-          : <><span className="font-semibold text-ink">Ticket Line</span>{ws && <><span className="text-faint">·</span><WsBadge ws={ws} size={20} /><span className="truncate">{ws.name}</span></>}</>}
+          ? <button className="flex items-center gap-1.5 hover:text-ink" onClick={goHome} title="Back to your sessions">Sessions</button>
+          : <span className="font-semibold text-ink">Sessions</span>}
       </span>
       {flash && <span className="truncate text-sm text-busy" role="status">{flash}</span>}
       {lastError && (
@@ -137,9 +138,9 @@ function Header() {
           <Key k={k('nextAttention')} size="sm" tone="attn" className="hidden md:inline-flex" />
         </button>
       )}
-      <button onClick={() => set({ modal: { kind: 'palette' } })} className="btn-ghost btn hidden md:inline-flex" title="Search sessions, workflows and actions">
+      {!SLIM.search && <button onClick={() => set({ modal: { kind: 'palette' } })} className="btn-ghost btn hidden md:inline-flex" title="Search sessions, workflows and actions">
         <Icon name="search" size={16} />Search<Key k={k('palette')} size="sm" />
-      </button>
+      </button>}
       <button onClick={() => set({ modal: { kind: 'help' } })} className="btn-ghost btn hidden md:inline-flex" title="Every key">
         <Icon name="keyboard" size={16} /><Key k={k('help')} size="sm" />
       </button>
@@ -198,7 +199,7 @@ export function App() {
       <Header />
       <OutdatedBanner />
       <main className="flex min-h-0 flex-1 flex-col">{screen === 'session' ? <SessionView /> : <TicketLine />}</main>
-      <Legend />
+      {!SLIM.legend && <Legend />}
       <Dialogs />
     </div>
   );

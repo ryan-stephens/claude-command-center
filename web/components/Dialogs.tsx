@@ -9,8 +9,7 @@ import type { Finding } from '../../shared/stack-detect.ts';
 import { StackTable } from './StackTable.tsx';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
-import { HINTS_LABEL } from '../hints.ts';
-import { cycleHints, keymap, openSession } from '../keys.ts';
+import { keymap, openSession, toggleHints } from '../keys.ts';
 import { deleteCard, openWorktrees, runWorkspaceAction, updateComposer } from '../line-keys.ts';
 import { addFolder } from '../line-model.ts';
 import { isClean, ownFolders, type CardWorktree } from '../../shared/cards.ts';
@@ -68,7 +67,15 @@ function HelpOverlay() {
     <Overlay label="Every key" wide="xl" keepKeys>
       <div className="mb-4 flex items-center gap-3">
         <h2 className="grow text-[19px] font-bold tracking-tight">Every key</h2>
-        <button className="flex items-center gap-1.5 text-sm text-faint hover:text-ink" onClick={cycleHints} title="Keycaps on the screens: always, only while hovering, or off (? always lists them)"><Key k="H" size="sm" />key hints: <b className="text-sub">{HINTS_LABEL[hints]}</b></button>
+        <button role="switch" aria-checked={hints !== 'never'} onClick={toggleHints} title="Show the shortcut keycaps on every screen, or hide them all (this list always has them). H switches."
+          className="flex items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-1 text-sm hover:bg-raise">
+          <span className={`relative inline-block h-4 w-7 rounded-full transition-colors ${hints !== 'never' ? 'bg-acc' : 'bg-line'}`} aria-hidden="true">
+            <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${hints !== 'never' ? 'left-3.5' : 'left-0.5'}`} />
+          </span>
+          <span className="text-sub">Shortcut hints on the page</span>
+          <b>{hints === 'never' ? 'Off' : hints === 'hover' ? 'On hover' : 'On'}</b>
+          <Key k="H" size="sm" />
+        </button>
         <span className="flex items-center gap-1.5 text-sm text-faint"><Key k="B" size="sm" />change shortcuts</span>
         <span className="flex items-center gap-1.5 text-sm text-faint"><Key k="Esc" size="sm" />close</span>
       </div>

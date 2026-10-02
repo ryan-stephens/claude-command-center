@@ -1798,3 +1798,16 @@ Direction A of the owner's redesign walk-through: one column, read top to bottom
 **Lessons:** anything inside `role="dialog"` swallows keys, so popups the app's keys drive are `role="group"`; the legend bar keys its nodes by label, so two items with one label leave a stale keycap; a walkthrough pressing `Ctrl+Enter` inside the full look's folder dialog once started a real card, so tests add folders by typing a path into the simple look's Folders tab.
 
 **Next:** the popup should use the page (a wide two-column layout), and *Your note* becomes an opening message picked from saved prompts that fill in the context (`docs/prompts/continue-opening-prompts.md`).
+
+## 60. Slim chrome behind one switch
+
+2026-10-01, the owner, the same redesign: while the screens are stripped back, the frame around them should be quiet too, but nothing should be lost. Every hidden part is still built and still driven by its keys, so any of them comes back by flipping a flag.
+
+**What it does.** `web/slim.ts` holds `SLIM`, five flags, all on: the bottom bar of keycaps (`legend`), the `/` filter box on the line's bar (`filter`), the Tickets and New card buttons there (`lineButtons`; `Shift+T` and `c` still work), the lane's repos row under the bar (`workspaceBar`; `+ − E Shift+E Shift+I F` still work) and the header's Search button (`search`; `Ctrl+K` still works). The legend is still computed and tested (`lineLegendFor`), just not drawn. `?` lists every key as before.
+
+Alongside it, three small things on the same screens:
+- The header's breadcrumb reads *Sessions*, with no lane badge beside it: the board is where sessions are managed, and the lane chips on the line's bar already say which one is showing.
+- The Inbox column's note reads like the other columns': *Your tickets* or *Ready for QA in your projects*, with the other view as a quiet link (`v` switches), instead of two chips.
+- The `?` overlay has a switch for the shortcut hints on the page (`H` there): on or off. *On hover* stays as a choice in `?` `B` (`cycleHints` is still what the dialog uses); `toggleHints` in `web/keys.ts` goes always ↔ never. The overlay itself always keeps its keycaps.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (284; the legend tests still run on the computed bar), and the `walk-chrome.cjs` walkthrough in `docs/walkthroughs/simple-new-card/`: the bar without its buttons and filter, no legend, no repos row, the Inbox note, the `?` switch.

@@ -119,7 +119,7 @@ export function keymap(overrides: Bindings): { title: string; keys: [string, str
     ACTION_HELP[id] ?? ACTIONS.find((a) => a.id === id)!.label,
   ];
   const global = ACTIONS.filter((a) => a.id !== 'pushToTalk').map((a) => row(a.id));
-  global.push(['B (in this overlay)', 'Change these shortcuts'], ['H (in this overlay)', 'Key hints on the screens: always, on hover, or off. The keys work either way']);
+  global.push(['B (in this overlay)', 'Change these shortcuts'], ['H (in this overlay)', 'Show or hide the shortcut hints on every screen (this list keeps them; on hover is in B). The keys work either way']);
   const sections = [{ title: 'Anywhere', keys: global }, ...[...LINE_SECTIONS, ...FIXED_SECTIONS].map((s) => ({ ...s, keys: [...s.keys] }))];
   const voice = sections.find((x) => x.title.startsWith('Voice'))!;
   voice.keys = [row('pushToTalk'), ...voice.keys];
@@ -299,6 +299,14 @@ export function cycleHints(): void {
   const keyHints = nextHints(get().settings.keyHints ?? 'always');
   send({ type: 'settings.set', settings: { ...get().settings, keyHints } });
   flash(`Key hints: ${HINTS_LABEL[keyHints]}`);
+}
+
+/** The switch on the ? overlay (H there): every keycap on the page shown, or none (? still lists them). "On hover" stays in ? B. */
+export function toggleHints(): void {
+  const now = get().settings.keyHints ?? 'always';
+  const keyHints = now === 'never' ? 'always' : 'never';
+  send({ type: 'settings.set', settings: { ...get().settings, keyHints } });
+  flash(keyHints === 'never' ? 'Shortcut hints hidden everywhere (? still lists every key)' : 'Shortcut hints shown on the page');
 }
 
 /** Alt+N: open the next session that needs you, cycling past the one already open. */
@@ -549,7 +557,7 @@ export function onKeyDown(e: KeyboardEvent): void {
       const combo = comboOf(e);
       if (e.key === 'Escape' || (combo && actionFor(combo, s.settings.bindings ?? {}) === 'help')) set({ modal: null });
       else if (e.code === 'KeyB' && !e.ctrlKey && !e.altKey) set({ modal: { kind: 'bindings' } });
-      else if (e.code === 'KeyH' && !e.ctrlKey && !e.altKey) cycleHints();
+      else if (e.code === 'KeyH' && !e.ctrlKey && !e.altKey) toggleHints();
       else return;
       e.preventDefault();
     }

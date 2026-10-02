@@ -22,6 +22,7 @@ import { send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { NewCard } from './NewCard.tsx';
 import { NewCardSimple } from './NewCardSimple.tsx';
+import { SLIM } from '../slim.ts';
 import { Transcript } from './Transcript.tsx';
 import { Icon, Key, Pill, SWATCH, TicketKey, WsBadge } from './ui.tsx';
 
@@ -41,7 +42,7 @@ export function TicketLine() {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <LineBar />
-      <WorkspaceBar />
+      {!SLIM.workspaceBar && <WorkspaceBar />}
       <div className="relative flex min-h-0 flex-1">
         <Board />
         {drawer && <CardView id={drawer} />}
@@ -70,13 +71,15 @@ function LineBar() {
       <button className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-dashed border-line px-2 py-1 text-[13.5px] text-faint hover:text-ink" onClick={() => set({ modal: { kind: 'workspace', id: null } })} title="New workspace">
         <Icon name="plus" size={14} />Workspace<Key k="W" size="sm" />
       </button>
-      <SearchBox />
+      {!SLIM.filter && <SearchBox />}
       <span className="grow" />
       <span className="whitespace-nowrap text-[13.5px] text-sub"><b className="text-ink tabular-nums">{inFlight}</b> in flight</span>
       <span className={`whitespace-nowrap text-[13.5px] ${needs ? 'text-attn' : 'text-sub'}`}><b className={`tabular-nums ${needs ? '' : 'text-ink'}`}>{needs}</b> need{needs === 1 ? 's' : ''} you</span>
       {starting > 0 && <span className="whitespace-nowrap text-[13.5px] text-busy"><b className="tabular-nums">{starting}</b> starting</span>}
-      <button className="btn whitespace-nowrap py-1" onClick={() => set({ modal: { kind: 'tickets' } })} title="Demo tickets, Jira and Trello, and which workspace each project goes to"><Key k="⇧T" size="sm" />Tickets</button>
-      <button className="btn whitespace-nowrap py-1" onClick={() => openComposer()}><Key k="c" size="sm" />New card</button>
+      {!SLIM.lineButtons && <>
+        <button className="btn whitespace-nowrap py-1" onClick={() => set({ modal: { kind: 'tickets' } })} title="Demo tickets, Jira and Trello, and which lane each project goes to"><Key k="⇧T" size="sm" />Tickets</button>
+        <button className="btn whitespace-nowrap py-1" onClick={() => openComposer()}><Key k="c" size="sm" />New card</button>
+      </>}
     </div>
   );
 }
@@ -165,13 +168,13 @@ function Board() {
             <h4 className={`text-[13px] font-bold ${l.stage === 'needs' && l.cards.length ? 'text-attn' : ''}`}>{l.name}</h4>
             <span className="font-mono text-xs font-bold text-faint">{l.cards.length + l.tickets.length}</span>
           </div>
+          {/* The Inbox's note reads like the other columns': which tickets it shows, and the other view as a quiet link (v). */}
           {l.stage === 'inbox'
-            ? <div className="flex min-h-[30px] flex-wrap items-center gap-1 border-b border-line px-2.5 pb-2 text-xs">
-              {INBOX_VIEWS.map((v) => (
-                <button key={v.id} onClick={() => { if (v.id !== view) switchInbox(); }}
-                  className={`rounded-md border px-1.5 py-0.5 ${v.id === view ? 'border-line bg-surface font-semibold text-ink' : 'border-transparent text-faint hover:text-ink'}`}>{v.name}</button>
-              ))}
-              <Key k="v" size="sm" />
+            ? <div className="min-h-[30px] border-b border-line px-3 pb-2 text-xs text-faint">
+              {view === 'mine' ? 'Your tickets' : 'Ready for QA in your projects'}
+              <span> · </span>
+              <button onClick={switchInbox} className="underline decoration-dotted underline-offset-2 hover:text-ink" title="v switches">{INBOX_VIEWS.find((v) => v.id !== view)?.name}</button>
+              <Key k="v" size="sm" className="ml-1" />
             </div>
             : <div className="min-h-[30px] border-b border-line px-3 pb-2 text-xs text-faint">{GATE[l.stage]}</div>}
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
