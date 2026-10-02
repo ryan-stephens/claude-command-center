@@ -1764,3 +1764,13 @@ What it costs: nothing. No VU dependency.
 **Verified:** unit tests (283 pass; `pnpm typecheck` and `tsc --noUnusedLocals` clean): the rule (category, the names, a list of your own, the default); `ticketMoved` (nothing changed: nothing saved; a status short of done kept on the card with the card where it was; *Ready for PO* taking it to Done with the tile text; a Done card and an unknown key left alone); the service against a local Jira-shaped server (the Inbox view brings one ticket, the follow-up asks `key in (WS-7, WS-9)` for the rest and skips a key that isn't one; all three handed back; followed ones not in the Inbox); a demo move handed back at once. **No screenshot walkthrough:** nothing on the page changed; the card's stage is what the board already shows.
 
 **To check at VU:** with a card whose ticket is in *Ready for PO* or *Done*, restart (the first refresh runs at start) or press `R` in `Shift+T`: the card should be in Done with *Ready for PO in Jira: done* on its tile. Move a card's ticket to *Ready for QA* in Jira: within five minutes the card's ticket row says so and the card stays where it was. If your workflow finishes elsewhere (*Accepted*, say), put it in `CC_CONTROL_DONE_STATUSES`.
+
+## 59. The simple look of the new-card screen
+
+2026-10-01, the owner, walking through a redesign of the whole app one screen at a time, starting with the screen that starts a session: strip it back to what a person needs to read top to bottom, keep the full three-panel screen for when every option should be in view. This section is built in pieces, each its own commit.
+
+### The machine's folder picker (built first: the screen uses it)
+
+The simple look adds folders from disk as context (a spec folder, a tool's output). A browser can't hand a page the path of a folder the user picks, but the server runs on the same machine, so it opens the picker itself: `server/pick-folder.ts` runs a few lines of C# through a PowerShell STA process that calls `IFileOpenDialog` with `FOS_PICKFOLDERS` (the modern *Select Folder* window Explorer and editors use), owned by the foreground window so it opens over the browser, and answers with the path; Cancel answers with nothing. Protocol: `fs.pickFolder` (page → server, with a `reqId`) and `fs.picked` (the path, or none); `pickFolderOnDisk` in `web/ws.ts` waits as long as the dialog is open (ten minutes). Elsewhere than Windows the request fails with a plain message and the path can still be typed.
+
+**Verified:** by hand once, the picker opened over the browser and the path came back into the card. Playwright can't drive a native window, so the walkthroughs type paths instead.

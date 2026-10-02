@@ -30,6 +30,7 @@ import { Mirror } from './mirror.ts';
 import { COOKIE, cookieToken, findRemoteIp, remoteHostAllowed, remoteToken, remoteUpgradeAllowed, tokenMatches } from './remote.ts';
 import { searchFiles } from './file-search.ts';
 import { listFolder, listRoots, normalizeFolder, notAFullPath } from './fs-browse.ts';
+import { pickFolder } from './pick-folder.ts';
 import { cleanSources, scanSources } from './repo-library.ts';
 import { workspaceFromFile, workspaceToFile } from './workspace-file.ts';
 import { SessionManager } from './session-manager.ts';
@@ -409,6 +410,11 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         ...lib.suggested.map((p) => ({ path: p, note: 'suggested: past sessions ran here' })),
       ];
       send(ws, { type: 'fs.list', reqId: msg.reqId, listing: await listRoots(places) });
+      return;
+    }
+    case 'fs.pickFolder': {
+      const path = await pickFolder();
+      send(ws, { type: 'fs.picked', reqId: msg.reqId, ...(path ? { path } : {}) });
       return;
     }
     case 'library.scan':

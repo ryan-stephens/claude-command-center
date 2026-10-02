@@ -346,6 +346,8 @@ export type ClientMsg =
   | { type: 'library.scan' }
   /** Subfolders of `path`, for the folder picker; no path lists the starting points. Read-only. */
   | { type: 'fs.list'; reqId: string; path?: string }
+  /** Open the machine's own folder dialog (Windows Explorer's) and answer with the folder chosen, or none. */
+  | { type: 'fs.pickFolder'; reqId: string }
   | { type: 'workspace.export'; reqId: string; id: string }
   /** An untrusted WorkspaceFile; its repos are matched by name against the library. */
   | { type: 'workspace.import'; file: unknown }
@@ -430,6 +432,8 @@ export type ServerMsg =
   | { type: 'library'; sources: string[]; repos: RepoInfo[]; suggested: string[] }
   | { type: 'workspace.file'; reqId: string; file: WorkspaceFile }
   | { type: 'fs.list'; reqId: string; listing: FolderListing }
+  /** The folder picked in the machine's dialog; none when it was cancelled. */
+  | { type: 'fs.picked'; reqId: string; path?: string }
   | { type: 'fs.files'; reqId: string; hits: FileHit[] }
   /** A request with a `reqId` and nothing else to return worked. */
   | { type: 'ok'; reqId: string }

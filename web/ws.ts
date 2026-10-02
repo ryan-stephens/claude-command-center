@@ -99,6 +99,12 @@ export async function listFolder(path?: string): Promise<FolderListing> {
   return (reply as Extract<ServerMsg, { type: 'fs.list' }>).listing;
 }
 
+/** The machine's own folder dialog (Windows Explorer's): the folder chosen, or null when cancelled. Waits as long as the dialog is open. */
+export async function pickFolderOnDisk(): Promise<string | null> {
+  const reply = await request((reqId) => ({ type: 'fs.pickFolder', reqId }), 10 * 60_000);
+  return (reply as Extract<ServerMsg, { type: 'fs.picked' }>).path ?? null;
+}
+
 /** Files in a session's repos for "@" suggestions (names only). */
 export async function searchFiles(sessionId: string, query: string): Promise<FileHit[]> {
   const reply = await request((reqId) => ({ type: 'fs.files', reqId, sessionId, query }));
@@ -381,6 +387,7 @@ function receive(msg: ServerMsg): void {
     case 'ok':
     case 'fs.list':
     case 'fs.files':
+    case 'fs.picked':
       return; // answers to requests nobody is waiting for any more
     case 'pack':
       pendingExports.get(msg.reqId)?.(msg.pack);
