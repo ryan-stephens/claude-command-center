@@ -58,6 +58,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ['W', 'New lane'],
       ['E (or e with no card focused)', 'Edit the lane shown (with All showing, pick which)'],
+      ['In the lane dialog: ← → / x / h / Enter', 'Along the repo chips / take one out / make it the home repo / + Repo: a popup with Repos (the library; ↑ ↓, Enter ticks one and keeps the list open) and Library folders (the folders the library scans); ← → or Tab switch tabs, Esc closes the popup'],
       ['+ / −', 'Add a repo from the library to the lane shown / remove one (every card and session in it can use them all)'],
       ['F', 'Choose the folders the repo library lists'],
       ['Shift+E / Shift+I', 'Share the lane as a file / import one'],

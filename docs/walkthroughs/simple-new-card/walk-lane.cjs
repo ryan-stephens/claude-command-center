@@ -1,0 +1,83 @@
+// The lane dialog's repos as chips with a + Repo popup (PLAN §64), on the isolated server at :7802
+// (seeded by walk-simple.cjs: a Demo lane and a library). Makes a lane, then deletes it.
+const { chromium } = require('C:/Users/ryans/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright');
+const path = require('node:path');
+const fs = require('node:fs');
+const PORT = process.env.PORT || '7802';
+const OUT = path.join(__dirname, 'shots-lane');
+fs.mkdirSync(OUT, { recursive: true });
+let n = 0; const results = [];
+const check = (name, ok, extra = '') => { results.push([ok ? 'PASS' : 'FAIL', name, extra]); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${extra}`); };
+const shot = async (page, name) => { n += 1; await page.screenshot({ path: path.join(OUT, `${String(n).padStart(2, '0')}-${name}.png`) }); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+(async () => {
+  const browser = await chromium.launch({ executablePath: 'C:/Users/ryans/AppData/Local/ms-playwright/chromium-1223/chrome-win64/chrome.exe' });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+  const errors = [];
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.evaluate(() => localStorage.setItem('cc-control.welcomed.v2', '1'));
+  await page.reload();
+  await sleep(1000);
+  await page.keyboard.press('W');
+  await sleep(400);
+  const dlg = page.locator('[role=dialog]');
+  check('W opens the lane dialog', /New lane/.test(await dlg.innerText()));
+  await page.keyboard.type('Walk lane');
+  const chips = dlg.getByRole('listbox', { name: 'Repos in the lane' });
+  check('no repos yet: just the + Repo chip', (await chips.getByRole('option').allInnerTexts()).join('|').includes('+ Repo'));
+  await page.keyboard.press('Tab'); // the colour radios? Tab goes to the next focusable: a colour button; use the chip directly.
+  await chips.focus();
+  await page.keyboard.press('Enter');
+  await sleep(300);
+  const popup = dlg.getByRole('group', { name: 'Add repos' });
+  check('Enter on the chips opens the Add repos popup', await popup.isVisible());
+  check('the popup has Repos and Library folders tabs', (await popup.getByRole('tab').allInnerTexts()).join('|') === 'Repos|Library folders');
+  await page.keyboard.type('web');
+  await sleep(200);
+  await page.keyboard.press('Enter');
+  await sleep(200);
+  check('Enter ticks web-app and the list stays open', await popup.isVisible() && /web-app/.test((await chips.innerText())));
+  await shot(page, 'popup');
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('pay');
+  await sleep(200);
+  await page.keyboard.press('Enter');
+  await sleep(200);
+  const rows = await popup.getByRole('option').allInnerTexts();
+  check('both ticked rows say they are in the lane, the first one home', rows.some((r) => /payments-api/.test(r) && /in the lane/.test(r)), rows.join(' | ').replace(/\n/g, ' '));
+  await page.keyboard.press('Escape');
+  await sleep(200);
+  check('Esc closes the popup, not the dialog', !(await popup.isVisible().catch(() => false)) && (await dlg.isVisible()));
+  const chipText = await chips.innerText();
+  check('two chips, web-app home', /web-app[\s\S]*home/.test(chipText) && /payments-api/.test(chipText), chipText.replace(/\n/g, ' '));
+  // ← → along the chips, h makes payments-api home, x takes web-app out.
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('h');
+  await sleep(150);
+  check('h makes the second chip home', /payments-api[\s\S]{0,30}home/.test(await chips.innerText()), (await chips.innerText()).replace(/\n/g, ' '));
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('x');
+  await sleep(150);
+  check('x takes web-app out', !/web-app/.test(await chips.innerText()));
+  await shot(page, 'chips');
+  // Save with Enter from the name box; then delete the lane again (Shift+Delete with it showing).
+  await dlg.getByPlaceholder(/Storefront/).focus();
+  await page.keyboard.press('Enter');
+  await sleep(600);
+  check('the lane is saved and shown', !(await dlg.isVisible().catch(() => false)) && /Walk lane/.test(await page.locator('header, main').first().innerText().catch(() => '')) || /Walk lane/.test(await page.innerText('body')));
+  await page.keyboard.press('Shift+Delete');
+  await sleep(300);
+  const del = await dlg.innerText().catch(() => '');
+  check('Shift+Delete asks to delete it', /Delete Walk lane/.test(del), del.slice(0, 80));
+  await page.keyboard.press('y');
+  await sleep(500);
+  check('deleted', !/Walk lane/.test(await page.innerText('body')));
+  check('no console errors', errors.length === 0, errors.join(' | ').slice(0, 300));
+  await browser.close();
+  const fails = results.filter((r) => r[0] === 'FAIL');
+  console.log(`\n${results.length - fails.length}/${results.length} passed`);
+  process.exit(fails.length ? 1 : 0);
+})().catch((e) => { console.error(e); process.exit(2); });

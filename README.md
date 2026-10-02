@@ -101,7 +101,7 @@ If you don't write code: ask a developer to do steps 1 to 6 once on your machine
 | | `Ctrl+Enter` | The card's session in the app, to read along (`Esc`: back to the line) |
 | | `1`–`9` / `0` | One workspace / all of them |
 | | `/` | Filter the cards by words |
-| | `W` / `E` / `Shift+Delete` | New workspace / edit / delete the one shown (with *All* showing, it asks which). `e` with no card focused also edits |
+| | `W` / `E` / `Shift+Delete` | New lane / edit / delete the one shown (with *All* showing, it asks which). `e` with no card focused also edits. In the dialog the repos are chips: `← →` along them, `x` takes one out, `h` makes it the home repo, `Enter` opens `+ Repo` (the library, and the folders it scans) |
 | | `+` / `−` | Add a repo from the library to the workspace / remove one |
 | | `F` | Pick the folders the repo library lists: walk the disk with `↑ ↓ → ←`, `Space` uses the folder you're in |
 | | `Alt+Shift+N` | New session in the app, without a card |

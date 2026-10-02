@@ -349,10 +349,13 @@ function WorkspaceDialog({ id }: { id: string | null }) {
   const [filter, setFilter] = useState('');
   const [index, setIndex] = useState(0);
   const [error, setError] = useState('');
-  const [editSources, setEditSources] = useState(false);
-  const sourcesToggle = useRef<HTMLButtonElement>(null);
-  /** Close the embedded picker and keep the keyboard in the dialog (Esc again then closes it). */
-  const doneWithSources = () => { setEditSources(false); setTimeout(() => sourcesToggle.current?.focus(), 0); };
+  // The repos are chips (← → x h), and + Repo opens a popup in the shape of the new-card screen's Add context (§64):
+  // Repos (the library, ticked where the lane has them) and Folders (the folders the library scans).
+  const [adding, setAdding] = useState<null | 'repos' | 'folders'>(library.sources.length === 0 && !(existing?.repos.length) ? 'folders' : null);
+  const [ci, setCi] = useState(0);
+  const chipsRow = useRef<HTMLDivElement>(null);
+  /** Close the popup and keep the keyboard in the dialog, on the chips (Esc again then closes the dialog). */
+  const donePicking = () => { setAdding(null); setFilter(''); setTimeout(() => chipsRow.current?.focus(), 0); };
 
   // Every repo you could pick: the library, plus any already in the workspace that it doesn't list.
   const all = useMemo(() => {
@@ -379,12 +382,27 @@ function WorkspaceDialog({ id }: { id: string | null }) {
     else if (e.key === 'Enter' && (e.ctrlKey || !(e.target instanceof HTMLTextAreaElement)) && !(e.target instanceof HTMLElement && e.target.dataset.list)) { e.preventDefault(); save(); }
   };
 
-  const listKey = (e: ReactKeyboardEvent) => {
+  const isHome = (p: string) => (home ? samePath(home, p) : samePath(repos[0] ?? '', p));
+  const chipAt = Math.min(ci, repos.length); // repos.length is the + Repo chip
+  /** The chips row has focus: ← → along the repos, x takes one out, h makes it home, Enter / Space / + open the popup. */
+  const chipsKey = (e: ReactKeyboardEvent) => {
+    const p = repos[chipAt];
+    if (e.key === 'ArrowRight') { e.preventDefault(); setCi(Math.min(repos.length, chipAt + 1)); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); setCi(Math.max(0, chipAt - 1)); }
+    else if (e.key === 'Enter' || e.key === ' ' || e.key === '+') { e.preventDefault(); e.stopPropagation(); setAdding('repos'); setIndex(0); }
+    else if ((e.key === 'x' || e.key === 'Delete') && p) { e.preventDefault(); toggle(p); setCi(Math.max(0, chipAt - 1)); }
+    else if (e.key.toLowerCase() === 'h' && p) { e.preventDefault(); setHome(p); }
+  };
+  /** The popup has focus (its search box, mostly): ↑ ↓ a row, Enter or Space ticks it, ← → or Tab the tabs, Esc closes the popup only. */
+  const pickKey = (e: ReactKeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); donePicking(); return; }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); setAdding(adding === 'repos' ? 'folders' : 'repos'); setIndex(0); return; }
+    if (adding !== 'repos') return;
     const p = shown[index];
     if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(Math.min(shown.length - 1, index + listStep(e))); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(Math.max(0, index - listStep(e))); }
-    else if ((e.key === ' ' || e.key === 'Enter') && p) { e.preventDefault(); e.stopPropagation(); toggle(p); }
-    else if (e.key.toLowerCase() === 'h' && p) { e.preventDefault(); if (!picked(p)) toggle(p); setHome(p); }
+    else if ((e.key === ' ' && !(e.target instanceof HTMLInputElement)) || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); if (p) toggle(p); }
+    else if (e.key.toLowerCase() === 'h' && p && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); if (!picked(p)) toggle(p); setHome(p); }
   };
 
   return (
@@ -415,52 +433,67 @@ function WorkspaceDialog({ id }: { id: string | null }) {
         </div>
 
         <div className="mt-5">
-          <div className="mb-1.5 flex items-center gap-2">
-            <span className="eyebrow grow">Repos · {repos.length} picked</span>
-            <button ref={sourcesToggle} className="text-sm text-faint underline hover:text-ink" onClick={() => setEditSources(!editSources)}>
-              {library.sources.length ? `From ${library.sources.map(repoName).join(', ')} · add a folder` : 'Pick the folder your repos are in'}
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <span className="eyebrow">Repos · every card in the lane can use them</span>
+            <span className="text-xs text-faint">{library.sources.length ? `Library: ${library.sources.map(repoName).join(', ')}` : 'No library folder yet'}</span>
+          </div>
+          <div ref={chipsRow} data-list="1" tabIndex={0} onKeyDown={chipsKey} onFocus={() => setCi(Math.min(ci, repos.length))}
+            className="flex flex-wrap gap-2 rounded-xl p-0.5 outline-none" role="listbox" aria-label="Repos in the lane">
+            {repos.map((p, i) => (
+              <span key={p} role="option" aria-selected={i === chipAt} title={p}
+                className={`inline-flex h-8 items-center gap-2 rounded-full border border-line bg-surface px-3 text-[13.5px] ${i === chipAt ? 'blk-focus' : ''}`}>
+                <span>{repoName(p)}</span>
+                {isHome(p)
+                  ? <span className="text-xs text-acc" title="Home: new sessions start here">home</span>
+                  : <button type="button" className="text-xs text-faint hover:text-ink" title="Make this the home repo (h)" onClick={() => { setCi(i); setHome(p); }}>make home</button>}
+                <button type="button" className="text-faint hover:text-ink" aria-label={`Take ${repoName(p)} out`} title="Take it out (x)" onClick={() => { toggle(p); setCi(Math.max(0, i - 1)); }}>×</button>
+              </span>
+            ))}
+            <button type="button" role="option" aria-selected={chipAt === repos.length} onClick={() => { setCi(repos.length); setAdding('repos'); setIndex(0); }}
+              className={`inline-flex h-8 items-center gap-2 rounded-full border border-dashed border-line px-3 text-[13.5px] text-sub hover:bg-raise ${chipAt === repos.length ? 'blk-focus' : ''}`}>
+              + Repo<span className="text-xs text-faint">from the library</span>
             </button>
           </div>
-          {(editSources || (library.sources.length === 0 && !repos.length)) && (
-            <div className="mb-3 rounded-xl border border-line p-3">
-              <p className="mb-2 text-sm text-sub">Walk to the folder that holds your repos (for example D:\repos) and press <Key k="Space" size="sm" inline />. Every git repo inside it appears below.</p>
-              <FolderPicker
-                autoFocus={editSources}
-                listClass="max-h-[26vh]"
-                onEscape={() => (editSources ? doneWithSources() : close())}
-                onUse={async (p) => { await setSources(addPath(library.sources, p)); doneWithSources(); }}
-              />
-            </div>
-          )}
-          {(library.sources.length > 0 || repos.length > 0) && (
-            <>
-              <input value={filter} onChange={(e) => { setFilter(e.target.value); setIndex(0); }} placeholder="Filter repos" className="field mb-2 py-1.5 text-sm" aria-label="Filter repos" />
-              <div data-list="1" tabIndex={0} onKeyDown={listKey} className="grid max-h-[34vh] grid-cols-1 gap-1.5 overflow-y-auto rounded-xl p-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-2 md:grid-cols-3" role="listbox" aria-multiselectable="true" aria-label="Repos">
-                {shown.map((p, i) => {
-                  const on = picked(p);
-                  const isHome = on && home ? samePath(home, p) : on && !home && samePath(repos[0] ?? '', p);
-                  return (
-                    <div
-                      key={p}
-                      role="option"
-                      aria-selected={on}
-                      onClick={() => { setIndex(i); toggle(p); }}
-                      title={p}
-                      className={`flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 ${on ? 'border-acc bg-acc-soft' : 'border-line'} ${i === index ? 'outline-2 outline-ring' : ''}`}
-                    >
-                      <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${on ? 'border-acc bg-acc text-acc-ink' : 'border-line'}`}>{on && <Icon name="check" size={13} />}</span>
-                      <span className="min-w-0 grow">
-                        <span className="block truncate text-sm font-semibold">{repoName(p)}</span>
-                        <span className="block truncate text-xs text-faint">{isHome ? 'home: new sessions start here' : workspaces.filter((w) => w.id !== id && w.repos.some((r) => samePath(r, p))).map((w) => w.name).join(', ') || ' '}</span>
-                      </span>
-                      {on && !isHome && <button className="shrink-0 text-faint hover:text-ink" title="Make this the home repo (H)" onClick={(e) => { e.stopPropagation(); setHome(p); }}><Icon name="home" size={15} /></button>}
-                      {isHome && <Icon name="home" size={15} className="shrink-0 text-acc" />}
-                    </div>
-                  );
-                })}
-                {shown.length === 0 && <p className="col-span-full px-1 py-2 text-sm text-sub">No repos match.</p>}
+          {adding && (
+            <section onKeyDown={pickKey} className="mt-3 flex flex-col gap-3 rounded-xl border border-line bg-bg p-4" role="group" aria-label="Add repos">
+              <div className="flex items-center justify-between gap-4">
+                <div className="text-[15px] font-bold">Add repos</div>
+                <div className="inline-flex overflow-hidden rounded-lg border border-line text-[13px]" role="tablist">
+                  {([['repos', 'Repos'], ['folders', 'Library folders']] as const).map(([t, label], i) => (
+                    <button key={t} type="button" role="tab" aria-selected={adding === t} onClick={() => { setAdding(t); setIndex(0); }}
+                      className={`px-3 py-1 ${i ? 'border-l border-line' : ''} ${adding === t ? 'bg-ink font-semibold text-bg' : 'text-sub hover:bg-raise'}`}>{label}</button>
+                  ))}
+                </div>
               </div>
-            </>
+              {adding === 'repos'
+                ? <>
+                    <input autoFocus value={filter} onChange={(e) => { setFilter(e.target.value); setIndex(0); }} placeholder="Search the repo library" className="field text-[14px]" aria-label="Search the repo library" />
+                    <div className="flex max-h-[300px] flex-col gap-0.5 overflow-y-auto" role="listbox" aria-multiselectable="true" aria-label="Repo library">
+                      {shown.map((p, i) => {
+                        const on = picked(p);
+                        const elsewhere = workspaces.filter((w) => w.id !== id && w.repos.some((r) => samePath(r, p))).map((w) => w.name).join(', ');
+                        return (
+                          <button key={p} type="button" role="option" aria-selected={on} title={p} onClick={() => { setIndex(i); toggle(p); }}
+                            className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${i === index ? 'is-focus bg-raise' : 'hover:bg-raise'}`}>
+                            <span className="grid h-4 w-4 shrink-0 place-items-center rounded border-[1.5px] border-line font-mono text-[11px] font-bold text-ok">{on ? '✓' : ''}</span>
+                            <span className="min-w-0 grow truncate">{repoName(p)}</span>
+                            <span className="shrink-0 text-xs text-faint">{on ? (isHome(p) ? 'home' : 'in the lane') : elsewhere || ''}</span>
+                          </button>
+                        );
+                      })}
+                      {shown.length === 0 && <div className="rounded-lg border border-dashed border-line px-2 py-3 text-center text-[12.5px] text-faint">{needle ? `Nothing matches “${filter}”` : 'The repo library is empty. Library folders picks the folders it scans.'}</div>}
+                    </div>
+                  </>
+                : <>
+                    <p className="text-sm text-sub">The library lists every git repo inside these folders. Walk to the folder that holds your repos (for example D:\repos) and press <Key k="Space" size="sm" inline />.</p>
+                    <FolderPicker autoFocus listClass="max-h-[26vh]" onEscape={donePicking}
+                      onUse={async (p) => { await setSources(addPath(library.sources, p)); setAdding('repos'); setIndex(0); }} />
+                  </>}
+              <div className="flex items-end justify-between gap-4 border-t border-line pt-3">
+                <div className="text-[12.5px] text-faint">{adding === 'repos' ? 'Enter adds one and keeps the list open (on one already ticked, takes it out); h makes it the home repo.' : 'Every repo in a folder you add appears under Repos.'} ← → or Tab switch tabs. Everything you add is in the lane already.</div>
+                <button type="button" className="btn btn-primary shrink-0 px-4 py-2" onClick={donePicking}>Done <Key k="Esc" size="sm" tone="ghost" /></button>
+              </div>
+            </section>
           )}
         </div>
 
@@ -493,7 +526,7 @@ function WorkspaceDialog({ id }: { id: string | null }) {
 
         {error && <p className="mt-3 text-sm text-bad">{error}</p>}
         <div className="mt-5 flex items-center gap-3">
-          <DialogKeys items={[['Tab', 'next part'], ['↑ ↓', 'choose repo'], ['Space', 'pick'], ['H', 'home repo'], ['Ctrl Enter', 'save from a note']]} />
+          <DialogKeys items={[['Tab', 'next part'], ['← →', 'along the repos'], ['Enter', '+ Repo'], ['x', 'take out'], ['h', 'home repo'], ['Ctrl Enter', 'save from a note']]} />
           {existing && <button className="btn btn-ghost ml-auto" onClick={() => exportWorkspace(existing.id)} title="Save this lane and its workflows as a file to share (Shift+E on the Ticket Line)"><Icon name="file" size={16} />Export</button>}
           <button className={`btn btn-primary ${existing ? '' : 'ml-auto'}`} onClick={save}>{existing ? 'Save' : 'Create lane'}<Key k="Enter" size="sm" tone="ghost" /></button>
         </div>

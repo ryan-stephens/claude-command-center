@@ -224,7 +224,7 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
           <div role="listbox" aria-label="Saved prompts" className="absolute left-0 right-0 top-[44px] z-10 flex max-h-[300px] flex-col gap-0.5 overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-[0_24px_60px_rgba(0,0,0,.25)]">
             {rows.map((r, i) => (
               <button key={r.id ?? 'own'} id={`prompt-${i}`} role="option" aria-selected={i === ai} onClick={() => choosePromptAt(c, i)}
-                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${i === ai ? 'bg-raise ring-1 ring-ring' : 'hover:bg-raise'}`}>
+                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${i === ai ? 'is-focus bg-raise' : 'hover:bg-raise'}`}>
                 <span className="min-w-0 grow truncate">{r.name}</span>
                 <span className="shrink-0 text-xs text-faint">{r.sub}</span>
                 {r.id !== null && r.id === c.promptId && <Icon name="check" size={13} className="shrink-0 text-ok" />}
@@ -361,7 +361,7 @@ function Picker({ c, embedded = false }: { c: Composer; embedded?: boolean }) {
       <div className="flex max-h-[320px] flex-col gap-0.5 overflow-y-auto">
         {list.length ? list.map((row, i) => (
           <button key={row.id} id={`pick-${i}`} onClick={() => pickAt(c, i)}
-            className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${i === ai ? 'bg-raise ring-1 ring-ring' : 'hover:bg-raise'}`}>
+            className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${i === ai ? 'is-focus bg-raise' : 'hover:bg-raise'}`}>
             {!one && <span className="grid h-4 w-4 shrink-0 place-items-center rounded border-[1.5px] border-line font-mono text-[11px] font-bold text-ok">{row.in ? '✓' : ''}</span>}
             {row.key && <TicketKey k={row.key} />}
             <span className="min-w-0 grow truncate">{row.label}</span>
