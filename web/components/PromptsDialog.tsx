@@ -15,7 +15,8 @@ import { Key } from './ui.tsx';
 
 interface Draft { id?: string; name: string; kind: CardKind | ''; body: string }
 
-const fieldClass = 'field mt-1 py-1.5 text-sm';
+// The controls sit inside eyebrow labels (bold, spaced, uppercase): they take their own weight and spacing back, or the whole editor reads bold.
+const fieldClass = 'field mt-1 py-1.5 text-sm font-normal normal-case tracking-normal text-ink';
 const labelClass = 'eyebrow block';
 
 export function PromptsDialog({ draft }: { draft?: { body: string } }) {
@@ -60,7 +61,7 @@ export function PromptsDialog({ draft }: { draft?: { body: string } }) {
             <li key={p.id} role="option" aria-selected={i === at} onClick={() => { setIndex(i); setConfirm(null); }} onDoubleClick={() => startEdit(p)}
               className={`flex items-center gap-3 rounded-xl px-3 py-2 ${i === at ? 'is-focus bg-raise' : 'hover:bg-raise'}`}>
               <span className="min-w-0 grow">
-                <span className="flex items-center gap-2"><span className="font-semibold">{p.name}</span><span className="text-xs text-faint">{p.kind ? kindName(p.kind) : 'any kind'}</span></span>
+                <span className="flex items-center gap-2"><span className="font-medium">{p.name}</span><span className="text-xs text-faint">{p.kind ? kindName(p.kind) : 'any kind'}</span></span>
                 <span className="block truncate text-[13px] text-sub">{p.body.split('\n')[0]}</span>
               </span>
               {confirm === p.id
@@ -122,7 +123,8 @@ function PromptEditor({ draft, onDone }: { draft: Draft; onDone: () => void }) {
             </div>
             <label className={`${labelClass} mt-3`}>
               The prompt <span className="normal-case tracking-normal">· {'{{name}}'} for each blank; a line whose blanks are all empty is left out</span>
-              <textarea value={body} rows={12} onChange={(e) => setBody(e.target.value)} className={`${fieldClass} resize-none font-mono text-[12.5px] leading-relaxed`} spellCheck={false} />
+              {/* Prose, so the text face, not mono: light mono text on a dark ground reads as bold (§74). */}
+              <textarea value={body} rows={12} onChange={(e) => setBody(e.target.value)} className={`${fieldClass} resize-none text-[14px] leading-relaxed`} spellCheck={false} />
             </label>
             {error && <p className="mt-2 text-sm text-bad" role="alert">{error}</p>}
           </div>
@@ -141,7 +143,7 @@ function PromptEditor({ draft, onDone }: { draft: Draft; onDone: () => void }) {
             </div>
             <div className="min-w-0">
               <div className="eyebrow mb-1.5">Example, from {composer ? 'this card' : 'an empty card'}</div>
-              <pre className="m-0 max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-line bg-bg px-3 py-2 text-[12.5px] leading-relaxed">{example.text || <span className="text-faint">Nothing yet.</span>}</pre>
+              <pre className="m-0 max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-line bg-raise/60 px-3 py-2 font-sans text-[13px] font-normal leading-relaxed text-sub">{example.text || <span className="text-faint">Nothing yet.</span>}</pre>
               {example.missing.length > 0 && <p className="mt-1.5 text-xs text-faint">This card has nothing for {example.missing.map((n) => `{{${n}}}`).join(', ')}: those render to nothing.</p>}
               {example.unknown.length > 0 && <p className="mt-1.5 text-xs text-attn">Not a placeholder: {example.unknown.map((n) => `{{${n}}}`).join(', ')}.</p>}
             </div>

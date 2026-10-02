@@ -1960,3 +1960,13 @@ They are two different things, and the preview now says so by putting them in th
 **Why this shape:** it replaces the model text that already sat there, so it costs no space; a segmented control would be wider and would repeat the settings row's radios.
 
 **Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`; `walk-simple.cjs` (43): the control on the default, the list of four, Sonnet picked and shown on the control and in the settings row, `m` cycling to Haiku, a click outside closing the list; screenshot looked at (the default's long id goes under its name after a first cut truncated it).
+
+## 74. The prompt editor, easier on the eyes
+
+2026-10-02, the owner: "the edit prompt modal is hard on the eyes (at least on dark mode) because of the bold text".
+
+**Cause.** The name box, the kind select and the body sat inside the eyebrow labels (bold, letter-spaced, uppercase) and inherited the 700 weight and the spacing, so the whole editor rendered bold. And the body in the mono face at 12.5px, light on dark, read as bold even at a normal weight.
+
+**What it does.** The controls take their own weight, case and spacing back (`fieldClass`); the body is in the text face at 14px (it is prose with `{{placeholders}}`, not code; the placeholder buttons beside it stay mono); the example box is the text face too, in the secondary colour on a soft ground; the names in the list are medium rather than semibold. Nothing moved and no key changed.
+
+**Verified:** `pnpm typecheck`; computed weights of the textarea, the name box and the example are 400 with normal letter-spacing; dark-mode screenshots of the list and the editor looked at (`colorScheme: 'dark'` and the theme set to dark); `walk-simple` (43) and `walk-prompts` (40) still pass.
