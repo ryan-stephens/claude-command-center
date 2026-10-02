@@ -6,11 +6,11 @@
 // between them with nothing lost. Keys: web/simple-keys.ts. Only Esc, Ctrl+Enter and ? show as
 // keycaps here; the legend has the rest.
 
-import { Fragment, useEffect, useRef } from 'react';
-import { fmtK, modelFor, packetText, tokens } from '../../shared/cards.ts';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { CARD_MODELS, packetText } from '../../shared/cards.ts';
 import { renderPrompt } from '../../shared/prompts.ts';
 import { SOURCE_NAME } from '../../shared/tickets.ts';
-import { composerKey, pickOption, togglePacketRow, type Composer, type GoRow, type SourceTab } from '../line-model.ts';
+import { composerKey, modelOpts, pickOption, togglePacketRow, type Composer, type GoRow, type SourceTab } from '../line-model.ts';
 import { leaveComposer, startWork, updateComposer } from '../line-keys.ts';
 import { addTypedFolder, browseFolder, choosePromptAt, closePicker, develop, openPicker, openPromptList, openPromptsDialog, pickAt, pickerList, saveAsPrompt, singlePick, toggleTicketDetails, typeInPicker, writeWithClaude } from '../simple-keys.ts';
 import type { Ticket } from '../../shared/tickets.ts';
@@ -40,7 +40,6 @@ export function NewCardSimple() {
   const ws = workspaces.find((w) => w.id === c.workspaceId) ?? null;
   const focus = (block: SimpleBlock) => sp.block === block && !sp.adding;
   const go = (block: SimpleBlock) => updateComposer((x) => withSimple(x, { block }));
-  const model = modelFor(c.launch, pinned ?? undefined, user ?? undefined);
   return (
     // A popup over the board, nearly the whole page: the board stays behind it, a click outside keeps the card for c and closes.
     <div className="absolute inset-0 z-20 flex items-stretch justify-center bg-ink/30 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) leaveComposer(); }}>
@@ -67,9 +66,9 @@ export function NewCardSimple() {
           {c.preview
             // One sequence, in the order Claude gets it (§66): the context the SessionStart hook returns, then the opening message as the first user turn.
             ? <section className="flex flex-col gap-2">
-                <div className="flex items-baseline justify-between"><div className="eyebrow">1 · The context, first: returned by the SessionStart hook before your message</div><span className="text-xs text-faint">{fmtK(tokens(text))} tokens</span></div>
+                <div className="eyebrow">1 · The context, first: returned by the SessionStart hook before your message</div>
                 <pre className="m-0 whitespace-pre-wrap break-words rounded-xl border border-line bg-surface px-4 py-3 font-mono text-[12.5px] leading-relaxed">{text}</pre>
-                <div className="mt-3 flex items-baseline justify-between"><div className="eyebrow">2 · Then the opening message: your first message in the session</div><span className="text-xs text-faint">{fmtK(tokens(c.launch.message))} tokens · the prompt claude starts with</span></div>
+                <div className="mt-3 flex items-baseline justify-between"><div className="eyebrow">2 · Then the opening message: your first message in the session</div><span className="text-xs text-faint">the prompt claude starts with</span></div>
                 <pre className="m-0 whitespace-pre-wrap break-words rounded-xl border border-line bg-surface px-4 py-3 text-[13.5px] leading-relaxed">{c.launch.message.trim() || <span className="text-faint">(none)</span>}</pre>
               </section>
             : <div className="grid grid-cols-1 gap-x-10 gap-y-7 min-[1100px]:grid-cols-2">
@@ -95,7 +94,7 @@ export function NewCardSimple() {
           <button className="btn" onClick={() => updateComposer((x) => ({ ...x, preview: !x.preview }))}>{c.preview ? 'Back to the card' : 'Preview what Claude gets'}</button>
           <div className="flex items-center gap-4">
             {c.error && <span className="rounded-lg bg-bad-bg px-3 py-1.5 text-[13px] text-bad" role="alert">{c.error}</span>}
-            <span className="text-xs text-faint">{model ? `${model} · ` : ''}{fmtK(tokens(text))} tokens</span>
+            <ModelPick c={c} pinned={pinned} user={user} />
             <button onMouseDown={() => go('start')} onClick={startWork} disabled={c.starting}
               className={`btn btn-primary px-5 py-2.5 text-[15px] ${focus('start') ? 'blk-focus' : ''}`}>
               {c.starting ? 'Starting…' : 'Start work'} <Key k="Ctrl Enter" size="sm" tone="ghost" />
@@ -158,6 +157,49 @@ function TicketBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; o
         onChange={(e) => updateComposer((x) => ({ ...x, title: e.target.value }))}
         className="field text-[14px]" />
     </section>
+  );
+}
+
+/**
+ * The model, beside Start work (§73): a select-looking control like the prompt picker's, with the
+ * default (named when known) and Opus, Sonnet, Haiku in a list above it. It edits the same field
+ * as the Model row in the session settings, so the two always agree; m still cycles it from anywhere.
+ */
+function ModelPick({ c, pinned, user }: { c: Composer; pinned: string | null; user: string | null }) {
+  const [open, setOpen] = useState(false);
+  const opts = modelOpts({ pinned, user });
+  const at = c.launch.model ? 1 + CARD_MODELS.findIndex((x) => x.id === c.launch.model) : 0;
+  const def = pinned ?? user;
+  // The default's full id goes under its row (and in the control's title), not beside it: it is long.
+  const name = (i: number) => (i === 0 ? 'Default' : opts[i]);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!(e.target as Element).closest?.('[data-model-pick]')) setOpen(false); };
+    document.addEventListener('mousedown', away, true);
+    return () => document.removeEventListener('mousedown', away, true);
+  }, [open]);
+  return (
+    <div className="relative" data-model-pick>
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`Model · ${name(at)}`} title={at === 0 && def ? `${def} · m cycles the model` : 'm cycles the model'}
+        onClick={() => setOpen((o) => !o)}
+        className={`flex items-center gap-2 rounded-lg border bg-surface py-1.5 pl-3 pr-2 text-[13px] hover:border-ring ${open ? 'border-ring ring-2 ring-ring/25' : 'border-line'}`}>
+        <span className="text-faint">Model</span><span className="font-medium">{name(at)}</span>
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" className={`shrink-0 text-faint transition-transform ${open ? 'rotate-180' : ''}`}><path d="M3.5 6l4.5 4.5L12.5 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </button>
+      {open && (
+        <div role="listbox" aria-label="Model" className="absolute bottom-full right-0 z-20 mb-2 flex w-[320px] flex-col rounded-xl border border-ink/20 bg-surface p-1.5 shadow-[0_6px_14px_rgba(0,0,0,.12),0_28px_70px_rgba(0,0,0,.35)] ring-1 ring-black/5">
+          <div className="flex items-baseline justify-between px-2.5 pb-1.5 pt-1.5"><span className="eyebrow">Model</span><span className="text-[11.5px] text-faint">m cycles</span></div>
+          {opts.map((o, i) => (
+            <button key={o} role="option" aria-selected={i === at} onClick={() => { updateComposer((x) => pickOption(x, 'model', i, get().workspaces, '', get().recipes)); setOpen(false); }}
+              className={`flex items-center gap-2.5 rounded-lg border-l-[3px] px-2.5 py-2 text-left text-[13.5px] ${i === at ? 'border-acc bg-raise' : 'border-transparent hover:bg-raise'}`}>
+              <span className="grid h-4 w-4 shrink-0 place-items-center">{i === at && <Icon name="check" size={14} className="text-ok" />}</span>
+              <span className="flex min-w-0 grow flex-col"><span>{name(i)}</span>{i === 0 && def && <span className="truncate font-mono text-[11.5px] text-faint">{def}</span>}</span>
+              {i === 0 && <span className="shrink-0 text-xs text-faint">{pinned ? 'pinned by this server' : user ? 'your Claude Code setting' : 'whatever Claude Code picks'}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

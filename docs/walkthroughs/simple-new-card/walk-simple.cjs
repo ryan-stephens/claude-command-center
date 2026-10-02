@@ -203,6 +203,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const legend = ((await page.locator('footer').count()) ? await page.locator('footer').innerText() : 'NO-LEGEND');
   check('legend is the simple look’s', /NO-LEGEND/.test(legend) || /Preview/.test(legend) && /Full look/.test(legend) && !/Next panel/.test(legend), legend.replace(/\n/g, ' '));
 
+  // The model beside Start work (§73): a dropdown that edits the same field as the settings row; m still cycles.
+  const modelBtn = region.getByRole('button', { name: /^Model · / });
+  check('a model control sits beside Start work, on the default', /Default/.test(await modelBtn.innerText()), await modelBtn.innerText());
+  await modelBtn.click();
+  await sleep(200);
+  const modelList = region.getByRole('listbox', { name: 'Model' });
+  check('it opens a list of the default and the three models', (await modelList.getByRole('option').count()) === 4);
+  await shot(page, 'model-pick');
+  await modelList.getByRole('option', { name: /Sonnet/ }).click();
+  await sleep(200);
+  check('picking Sonnet closes the list and shows it on the control', !(await modelList.isVisible().catch(() => false)) && /Sonnet/.test(await modelBtn.innerText()));
+  check('the settings row agrees', /Model\s*\n?\s*Sonnet/.test(await region.locator('section', { hasText: 'Session settings' }).innerText()));
+  await page.keyboard.press('m');
+  await sleep(150);
+  check('m still cycles: Sonnet → Haiku', /Haiku/.test(await modelBtn.innerText()), await modelBtn.innerText());
+  await modelBtn.click();
+  await sleep(150);
+  await region.getByText('What Claude can see').click();
+  await sleep(150);
+  check('a click outside closes the model list', !(await modelList.isVisible().catch(() => false)));
+  await page.keyboard.press('m'); // back to the default
+  await sleep(100);
+
   // Esc keeps the half-built card; c picks it up.
   await page.keyboard.press('Escape');
   await sleep(400);

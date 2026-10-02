@@ -1950,3 +1950,13 @@ They are two different things, and the preview now says so by putting them in th
 ## 72. No Full look link in the header
 
 2026-10-02, the owner: "let's get rid of the 'full view' link at the top too". The simple look's header no longer has the *Full look* button; `Shift+L` and the setting in `?` `B` still switch looks, and the `?` row says so. The full look is otherwise untouched.
+
+## 73. The model beside Start work; no token counts
+
+2026-10-02, the owner: "users will likely want to more easily change their model without having to open the session config area - could we add another convenient spot next to start work?" and "let's get rid of token count in the new session popup too".
+
+**What it does.** A *Model* control sits in the footer, left of *Start work*, in the prompt picker's shape: a select-looking button (*Model Default*, or *Opus* / *Sonnet* / *Haiku*) that opens a list above it with the default first (its full id under it, and whether it is pinned by the server or your Claude Code setting), a tick on the one in use, the soft row mark, a click outside closing it. It edits the same field as the Model row in the session settings, so the two always agree; `m` still cycles the model from anywhere (the `?` row already says so). The token counts are gone from the footer and from the preview's two headings.
+
+**Why this shape:** it replaces the model text that already sat there, so it costs no space; a segmented control would be wider and would repeat the settings row's radios.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`; `walk-simple.cjs` (43): the control on the default, the list of four, Sonnet picked and shown on the control and in the settings row, `m` cycling to Haiku, a click outside closing the list; screenshot looked at (the default's long id goes under its name after a first cut truncated it).
