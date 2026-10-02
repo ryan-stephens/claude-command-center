@@ -22,7 +22,7 @@ import { cardChanges, send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { KindPill, useExpandKey } from './TicketLine.tsx';
 import { Transcript } from './Transcript.tsx';
-import { Icon, Key, Pill, TicketKey } from './ui.tsx';
+import { Icon, Key, Pill, TicketKey, type IconName } from './ui.tsx';
 
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
 
@@ -65,12 +65,13 @@ export function CardView({ id }: { id: string }) {
 }
 
 /** One item in the dock: its key on top, its name under, a badge when it has news. */
-function DockItem({ k, name, on, badge, tone, onClick, title }: { k: string; name: string; on?: boolean; badge?: ReactNode; tone?: 'ok' | 'busy'; onClick: () => void; title: string }) {
+function DockItem({ k, icon, name, on, badge, tone, onClick, title }: { k: string; icon: IconName; name: string; on?: boolean; badge?: ReactNode; tone?: 'ok' | 'busy'; onClick: () => void; title: string }) {
   return (
     <button onClick={onClick} title={title} aria-pressed={on}
-      className={`relative flex w-[76px] flex-col items-center gap-1.5 rounded-xl border py-2.5 text-[11.5px] font-semibold ${on ? 'border-line bg-surface text-ink' : 'border-transparent text-sub hover:bg-raise hover:text-ink'}`}>
-      <Key k={k} size="sm" />
+      className={`relative flex w-[76px] flex-col items-center gap-1 rounded-xl border py-2 text-[11.5px] font-semibold ${on ? 'border-line bg-surface text-ink' : 'border-transparent text-sub hover:bg-raise hover:text-ink'}`}>
+      <Icon name={icon} size={20} className={on ? 'text-acc' : ''} />
       <span>{name}</span>
+      <Key k={k} size="sm" />
       {badge !== undefined && badge !== null && badge !== 0 && <span className={`absolute right-1.5 top-1.5 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10.5px] font-bold ${tone === 'ok' ? 'bg-ok text-bg' : 'bg-busy text-bg'}`}>{badge}</span>}
     </button>
   );
@@ -92,6 +93,7 @@ function Dock({ card, panel }: { card: Card; panel: CardPanel | null }) {
     context: { badge: left ? `+${left}` : 0 },
     more: { badge: card.report ? '!' : prs.length && !allMerged(prs) ? 'PR' : 0 },
   };
+  const icons: Record<CardPanel, IconName> = { changes: 'diff', try: 'play', verify: 'shield', context: 'layers', more: 'dots' };
   const titles: Record<CardPanel, string> = {
     changes: 'What it changed, by repo, with the diffs', try: 'Its app: start it, open it, the run recipe', verify: 'Check it in the team’s apps (later)',
     context: 'How it started, what Claude was given, what was added since', more: 'Steps, where it runs, the pull request, the report, worktrees',
@@ -102,10 +104,10 @@ function Dock({ card, panel }: { card: Card; panel: CardPanel | null }) {
         <Icon name="back" size={16} /><Key k="Esc" size="sm" />
       </button>
       <span className="my-1 w-11 border-t border-line" />
-      {CARD_PANELS.filter((p) => p.id !== 'more').map((p) => <DockItem key={p.id} k={p.key} name={p.name} on={panel === p.id} onClick={() => togglePanel(p.id)} title={titles[p.id]} {...badges[p.id]} />)}
+      {CARD_PANELS.filter((p) => p.id !== 'more').map((p) => <DockItem key={p.id} k={p.key} icon={icons[p.id]} name={p.name} on={panel === p.id} onClick={() => togglePanel(p.id)} title={titles[p.id]} {...badges[p.id]} />)}
       <span className="grow" />
-      {canShip && <DockItem k="s" name={shipName} onClick={() => shipKey(card.id)} title={testing ? 'The report Claude ended with' : 'Commit, push and open a PR in each repo the card changed; merge once open'} />}
-      <DockItem k="m" name="More" on={panel === 'more'} onClick={() => togglePanel('more')} title={titles.more} {...badges.more} />
+      {canShip && <DockItem k="s" icon="ship" name={shipName} onClick={() => shipKey(card.id)} title={testing ? 'The report Claude ended with' : 'Commit, push and open a PR in each repo the card changed; merge once open'} />}
+      <DockItem k="m" icon="dots" name="More" on={panel === 'more'} onClick={() => togglePanel('more')} title={titles.more} {...badges.more} />
     </div>
   );
 }

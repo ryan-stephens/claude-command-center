@@ -54,8 +54,8 @@ export function ChangesSheet({ id }: { id: string }) {
             {totals.truncated && <span className="text-attn"> · the diff was cut: it is very large</span>}
           </p>
           {totals.files > 0 && (
-            <div className="grid max-h-[62vh] min-h-[40vh] grid-cols-[minmax(220px,300px)_minmax(0,1fr)] gap-3">
-              <ul className="overflow-y-auto rounded-xl border border-line" role="listbox" aria-label="Changed files">
+            <div className="grid h-[62vh] grid-cols-[minmax(220px,300px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-3">
+              <ul className="min-h-0 overflow-y-auto rounded-xl border border-line" role="listbox" aria-label="Changed files">
                 {rows.map((r) => r.kind === 'repo'
                   ? (
                     <li key={`repo-${r.repo.root}`} className="sticky top-0 border-b border-line/60 bg-raise px-2.5 py-1.5 text-[11.5px] [li+&]:border-t">
@@ -72,7 +72,7 @@ export function ChangesSheet({ id }: { id: string }) {
                     </li>
                   ))}
               </ul>
-              <div className="overflow-auto rounded-xl border border-line bg-bg">
+              <div className="min-h-0 overflow-auto rounded-xl border border-line bg-bg">
                 {several && chosen?.kind === 'file' && <div className="sticky top-0 border-b border-line/60 bg-raise px-3 py-1 font-mono text-[11.5px] text-sub">{chosen.repo.repo}/{chosen.file.path}</div>}
                 {file?.binary
                   ? <p className="px-3 py-2 text-sm text-faint">A binary file: nothing to show.</p>

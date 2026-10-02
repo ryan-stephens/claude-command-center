@@ -62,6 +62,10 @@ const PATHS: Record<string, ReactNode> = {
   file: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></>,
   expand: <path d="M15 3h6v6M21 3l-7 7M9 21H3v-6M3 21l7-7" />,
   collapse: <path d="M4 14h6v6M10 14l-7 7M20 10h-6V4M14 10l7-7" />,
+  diff: <><path d="M12 4v16M4 12h16" /><path d="M4 20h16" opacity=".35" /></>,
+  play: <path d="M7 5v14l11-7z" />,
+  layers: <><path d="m12 3 9 5-9 5-9-5z" /><path d="m3 13 9 5 9-5" /><path d="m3 17 9 5 9-5" opacity=".5" /></>,
+  ship: <><circle cx="6" cy="18" r="2.5" /><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="12" r="2.5" /><path d="M6 8.5v7M8.5 12H15.5" /></>,
   grip: <><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" /></>,
 };
 export type IconName = keyof typeof PATHS;
