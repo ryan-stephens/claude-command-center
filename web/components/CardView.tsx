@@ -93,7 +93,7 @@ function Dock({ card, panel }: { card: Card; panel: CardPanel | null }) {
     context: { badge: left ? `+${left}` : 0 },
     more: { badge: card.report ? '!' : prs.length && !allMerged(prs) ? 'PR' : 0 },
   };
-  const icons: Record<CardPanel, IconName> = { changes: 'diff', try: 'play', verify: 'shield', context: 'layers', more: 'dots' };
+  const icons: Record<CardPanel, IconName> = { changes: 'diff', try: 'window', verify: 'clipboard', context: 'book', more: 'dots' };
   const titles: Record<CardPanel, string> = {
     changes: 'What it changed, by repo, with the diffs', try: 'Its app: start it, open it, the run recipe', verify: 'Check it in the team’s apps (later)',
     context: 'How it started, what Claude was given, what was added since', more: 'Steps, where it runs, the pull request, the report, worktrees',
@@ -106,7 +106,7 @@ function Dock({ card, panel }: { card: Card; panel: CardPanel | null }) {
       <span className="my-1 w-11 border-t border-line" />
       {CARD_PANELS.filter((p) => p.id !== 'more').map((p) => <DockItem key={p.id} k={p.key} icon={icons[p.id]} name={p.name} on={panel === p.id} onClick={() => togglePanel(p.id)} title={titles[p.id]} {...badges[p.id]} />)}
       <span className="grow" />
-      {canShip && <DockItem k="s" icon="ship" name={shipName} onClick={() => shipKey(card.id)} title={testing ? 'The report Claude ended with' : 'Commit, push and open a PR in each repo the card changed; merge once open'} />}
+      {canShip && <DockItem k="s" icon="rocket" name={shipName} onClick={() => shipKey(card.id)} title={testing ? 'The report Claude ended with' : 'Commit, push and open a PR in each repo the card changed; merge once open'} />}
       <DockItem k="m" icon="dots" name="More" on={panel === 'more'} onClick={() => togglePanel('more')} title={titles.more} {...badges.more} />
     </div>
   );

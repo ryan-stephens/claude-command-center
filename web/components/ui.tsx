@@ -62,10 +62,16 @@ const PATHS: Record<string, ReactNode> = {
   file: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></>,
   expand: <path d="M15 3h6v6M21 3l-7 7M9 21H3v-6M3 21l7-7" />,
   collapse: <path d="M4 14h6v6M10 14l-7 7M20 10h-6V4M14 10l7-7" />,
-  diff: <><path d="M12 4v16M4 12h16" /><path d="M4 20h16" opacity=".35" /></>,
-  play: <path d="M7 5v14l11-7z" />,
-  layers: <><path d="m12 3 9 5-9 5-9-5z" /><path d="m3 13 9 5 9-5" /><path d="m3 17 9 5 9-5" opacity=".5" /></>,
-  ship: <><circle cx="6" cy="18" r="2.5" /><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="12" r="2.5" /><path d="M6 8.5v7M8.5 12H15.5" /></>,
+  /** A file with a diff in it: a plus line and a minus line. */
+  diff: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /><path d="M10 12h4M12 10v4" /><path d="M10 17h4" /></>,
+  /** An app window with play in it: the app, running. */
+  window: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18" /><path d="m10.5 12 4 2.5-4 2.5z" /></>,
+  /** A clipboard with a check: what was verified. */
+  clipboard: <><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v2H9z" /><path d="m8.5 13 2.5 2.5 4.5-4.5" /></>,
+  /** An open book: what Claude was given. */
+  book: <><path d="M12 6c-2-1.5-4.5-2-8-2v14c3.5 0 6 .5 8 2 2-1.5 4.5-2 8-2V4c-3.5 0-6 .5-8 2z" /><path d="M12 6v14" /></>,
+  /** A rocket, upright: ship it. */
+  rocket: <><path d="M12 3c3 1.5 5 5 5 9v3H7v-3c0-4 2-7.5 5-9z" /><path d="M7 12l-3 3 3 1M17 12l3 3-3 1M10 18l2 3 2-3" /><circle cx="12" cy="10" r="1.5" /></>,
   grip: <><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" /></>,
 };
 export type IconName = keyof typeof PATHS;
