@@ -26,6 +26,8 @@ import { trustFolders } from './trust.ts';
 const HOOK_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-hook.mjs', import.meta.url));
 /** How long a new tab has to report in before the card says something may be wrong. */
 const HOOK_WAIT_MS = 45_000;
+/** A session whose hooks spoke this recently is taken to be alive in its tab (§85): its session isn't resumed in a second one. */
+const ALIVE_MS = 2 * 60_000;
 const CHANNEL_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-channel.mjs', import.meta.url));
 const LAUNCH_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-launch.ps1', import.meta.url));
 const FOCUS_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-focus-tab.ps1', import.meta.url));
@@ -68,8 +70,9 @@ export function channelArgs(on = CHANNEL_ON): string[] {
  * quoted for wt's second round of parsing.
  */
 export function tabCommand(claude: string, args: string[], message: string, channel = CHANNEL_ON): string[] {
-  if (!channel) return [claude, ...args, '--', wtArg(message)];
-  const payload = Buffer.from(JSON.stringify([claude, ...args, '--', message]), 'utf8').toString('base64');
+  // No message (a session resumed, §85): nothing after the arguments.
+  if (!channel) return [claude, ...args, ...(message ? ['--', wtArg(message)] : [])];
+  const payload = Buffer.from(JSON.stringify([claude, ...args, ...(message ? ['--', message] : [])]), 'utf8').toString('base64');
   return ['powershell.exe', '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', LAUNCH_SCRIPT, payload];
 }
 
@@ -388,24 +391,83 @@ export class CardService {
 
     card.model = modelFor(card.launch, this.opts.model, this.opts.userModel?.());
     const token = crypto.randomUUID();
-    const others = includedRepos(card.packet).filter((r) => !samePath(r, start)).map((r) => folderFor(card, r));
-    const claudeArgs = ['--settings', writeHookSettings(), ...channelArgs(),
-      '--permission-mode', card.launch.mode, ...((card.launch.model ?? this.opts.model) ? ['--model', card.launch.model ?? this.opts.model!] : []),
-      ...others.flatMap((r) => ['--add-dir', r])];
-    // The title stays the card's key (Claude Code would otherwise retitle the tab), so g can find the tab again.
-    const args = ['-w', '0', 'nt', '--title', key, '--suppressApplicationTitle', '-d', card.cwd, ...tabCommand(findClaude(), claudeArgs, card.launch.message)];
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn('wt.exe', args, { env: tabEnv(process.env, card.id, token, this.opts.port), stdio: 'ignore', windowsHide: true, detached: true });
-      child.on('error', (e) => reject(new Error(`Couldn't open Windows Terminal (wt.exe): ${e.message}`)));
-      child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`Windows Terminal exited with code ${code}.`))));
-      child.unref();
-    });
+    const others = this.otherFolders(card, start);
+    const claudeArgs = [...this.claudeArgs(card), ...others.flatMap((r) => ['--add-dir', r])];
+    await this.openTab(card, token, claudeArgs, card.launch.message);
     this.step(card, `Opened a Windows Terminal tab in ${card.cwd}${others.length ? ` with ${others.length} more repo${others.length === 1 ? '' : 's'}` : ''}`);
     this.step(card, 'Waiting for the session to start', 'go');
     this.store.saveCard(card, token);
     this.opts.changed();
     this.waits.set(card.id, setTimeout(() => this.noWord(card.id), HOOK_WAIT_MS));
     return card;
+  }
+
+  /** The arguments every tab of the card gives `claude`: the hooks, the channel, its mode and model. */
+  private claudeArgs(card: Card): string[] {
+    return ['--settings', writeHookSettings(), ...channelArgs(),
+      '--permission-mode', card.launch.mode, ...((card.launch.model ?? this.opts.model) ? ['--model', card.launch.model ?? this.opts.model!] : [])];
+  }
+
+  /** The card's other repos, each by the folder it works in (its worktree, if it has one). */
+  private otherFolders(card: Card, start: string): string[] {
+    return includedRepos(card.packet).filter((r) => !samePath(r, start)).map((r) => folderFor(card, r));
+  }
+
+  /** Open a Windows Terminal tab titled with the card's key, running `claude` with the card's variables. */
+  private async openTab(card: Card, token: string, claudeArgs: string[], message: string): Promise<void> {
+    // The title stays the card's key (Claude Code would otherwise retitle the tab), so g can find the tab again.
+    const args = ['-w', '0', 'nt', '--title', card.key, '--suppressApplicationTitle', '-d', card.cwd!, ...tabCommand(findClaude(), claudeArgs, message)];
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn('wt.exe', args, { env: tabEnv(process.env, card.id, token, this.opts.port), stdio: 'ignore', windowsHide: true, detached: true });
+      child.on('error', (e) => reject(new Error(`Couldn't open Windows Terminal (wt.exe): ${e.message}`)));
+      child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`Windows Terminal exited with code ${code}.`))));
+      child.unref();
+    });
+  }
+
+  /**
+   * The way a card is always reachable (§85): its session is opened again in a new tab with
+   * `claude --resume`, with the same hooks, channel and token, so the card follows it as before
+   * and the message box works again. Refused while its tab looks alive (the hooks spoke within the
+   * last two minutes and the session hasn't ended): two tabs on one session would both write its
+   * transcript; g brings that tab forward instead.
+   */
+  async reopen(id: string): Promise<Card> {
+    const card = this.get(id);
+    if (!card) throw new Error('That card is gone.');
+    if (!card.sessionId) throw new Error(`${card.key} hasn’t started a session yet.`);
+    if (!card.cwd || !isDir(card.cwd)) throw new Error(`${card.cwd ?? 'Its folder'} isn’t there any more, so its session can’t be resumed.`);
+    const token = this.store.cardToken(id);
+    if (!token) throw new Error(`${card.key} has no token, so a new tab couldn’t prove itself. Start a new card.`);
+    const spokeAt = card.live?.phase !== 'ended' ? card.live?.at ?? 0 : 0;
+    if (Date.now() - spokeAt < ALIVE_MS) throw new Error(`${card.key}’s tab looks open (its session spoke ${Math.round((Date.now() - spokeAt) / 1000)} s ago) but has no channel: g brings the tab forward.`);
+    const home = card.cwd;
+    const others = this.otherFolders(card, cardRepos(card)[0] ?? home).filter((r) => !samePath(r, home));
+    const claudeArgs = ['--resume', card.sessionId, ...this.claudeArgs(card), ...others.flatMap((r) => ['--add-dir', r])];
+    await this.openTab(card, token, claudeArgs, '');
+    card.boot = card.boot.filter((b) => b.state !== 'go');
+    this.step(card, `Opened a new tab in ${card.cwd}, resuming session ${card.sessionId.slice(0, 8)}`);
+    this.step(card, 'Waiting for the session to resume', 'go');
+    if (card.live) card.live = { ...card.live, phase: 'working', text: 'Resuming in a new tab', at: Date.now() };
+    this.save(card);
+    clearTimeout(this.waits.get(id));
+    this.waits.set(id, setTimeout(() => this.noResume(id), HOOK_WAIT_MS));
+    return card;
+  }
+
+  private noResume(id: string): void {
+    this.waits.delete(id);
+    const card = this.get(id);
+    if (!card) return;
+    const i = card.boot.findIndex((b) => b.state === 'go');
+    if (i < 0) return;
+    card.boot[i] = { at: Date.now(), text: 'No word from the resumed session yet: look at the tab (g).', state: 'bad' };
+    this.save(card);
+  }
+
+  /** The server just started: no channel is connected yet, whatever the cards say (each says so again as it reconnects). */
+  resetChannels(): void {
+    for (const card of this.list()) if (card.channel) this.store.saveCard({ ...card, channel: false });
   }
 
   /** With the setting on, new worktrees are marked trusted so the tab doesn't stop at Claude Code's prompt. A problem is a boot line, never a failed start. */

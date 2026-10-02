@@ -64,7 +64,8 @@ function Legend() {
   const ship = testing ? (shown.report || shown.live?.lastMessage ? 'report' as const : undefined)
     : shown && shown.stage !== 'done' && (shown.sessionId || pr) ? shipMode(shown.ship) : undefined;
   const canDone = shown?.stage === 'ship';
-  const canSay = Boolean(drawerCard?.channel);
+  // Any card with a session can be typed to: without a channel, the session is resumed in a new tab first (§85).
+  const canSay = Boolean(drawerCard?.sessionId);
   const asking = Boolean(drawerCard && askOf(drawerCard)?.requestId);
   const hasTab = Boolean(shown?.cwd);
   // Waiting on you in the tab, and the page can't answer it: g is the way.

@@ -41,7 +41,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
       ['Esc (card open)', 'Back to the board, the card still focused; on the board, clear the filter'],
       ['← → (card open)', 'The previous / next card on the board, in column order'],
-      ['Enter (card open)', 'Type to its terminal: the message box under the transcript sends into the session itself (Esc leaves the box)'],
+      ['Enter (card open)', 'Type to its terminal: the message box under the transcript sends into the session itself (Esc leaves the box). When its tab is gone or the session ended, sending opens a new tab that resumes the session first, and g does the same when there is no tab to bring forward'],
       ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal'],
       ['g (a card)', 'Go to its terminal tab: brings the Windows Terminal tab forward, for what the page can’t relay (the trust-the-folder prompt, a picker)'],
       ['Shift+D (a card on the board)', 'Changes full width: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
@@ -740,16 +740,17 @@ function boardKeys(e: KeyboardEvent): boolean {
 /** Enter on an open card: the message box to its terminal (when it has a channel). */
 function focusSay(id: string): void {
   const card = get().cards.find((c) => c.id === id);
-  if (!card?.channel) { flash(card?.sessionId ? `${card.key}’s terminal can’t be reached from here: type in its tab` : `${card?.key ?? 'It'} hasn’t started yet`); return; }
+  if (!card?.sessionId) { flash(`${card?.key ?? 'It'} hasn’t started yet`); return; }
   focusField('card-say');
 }
 
-/** Send what's in the message box into the card's terminal session. */
+/** Send what's in the message box into the card's terminal session; with no channel, the session is resumed in a new tab first (§85). */
 export function saySubmit(id: string): void {
   const el = document.getElementById('card-say') as HTMLTextAreaElement | null;
   const text = el?.value.trim();
   if (!el || !text) return;
   const card = get().cards.find((c) => c.id === id);
+  if (card && (!card.channel || card.live?.phase === 'ended')) flash(`Opening a new tab on ${card.key}’s session; your message goes in once it connects`);
   sayToCard(id, text).then(() => { el.value = ''; flash(`Sent to ${card?.key ?? 'the card'}’s terminal`); }, (e: Error) => flash(e.message));
 }
 
@@ -782,7 +783,7 @@ export function goToTab(id: string): void {
   const card = get().cards.find((c) => c.id === id);
   if (!card) return;
   if (!card.cwd) { flash(`${card.key} hasn’t opened a tab yet`); return; }
-  focusCardTab(id).then(() => flash(`Brought the tab ${card.key} forward`), (e: Error) => flash(e.message));
+  focusCardTab(id).then((reopened) => flash(reopened ? `${card.key}’s tab was gone: opened a new one on its session` : `Brought the tab ${card.key} forward`), (e: Error) => flash(e.message));
 }
 
 export function answerAsk(id: string, behavior: 'allow' | 'deny'): void {

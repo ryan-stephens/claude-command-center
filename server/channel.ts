@@ -37,6 +37,8 @@ const OPEN = 1;
 export class ChannelService {
   private live = new Map<string, ChannelSocket>();
   private hooks: ChannelHooks;
+  /** Who waits for a card's channel to connect (a message sent while its tab was being reopened, §85). */
+  private waiting = new Map<string, Set<() => void>>();
 
   constructor(hooks: ChannelHooks) {
     this.hooks = hooks;
@@ -58,6 +60,8 @@ export class ChannelService {
         if (old && old !== s) old.close();
         this.live.set(cardId, s);
         this.hooks.state(cardId, true, typeof msg.sessionId === 'string' ? msg.sessionId : undefined);
+        for (const wake of this.waiting.get(cardId) ?? []) wake();
+        this.waiting.delete(cardId);
         return;
       }
       if (msg.type === 'permission_request' && typeof msg.request_id === 'string' && typeof msg.tool_name === 'string') {
@@ -94,9 +98,21 @@ export class ChannelService {
     s.send(JSON.stringify({ type: 'permission', request_id: requestId, behavior }));
   }
 
-  /** The server is going away. */
+  /** Resolves once the card's channel is connected (at once if it is), or rejects after `ms`. */
+  waitFor(cardId: string, ms: number): Promise<void> {
+    if (this.has(cardId)) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.waiting.get(cardId)?.delete(wake); reject(new Error('The tab opened, but its channel hasn’t connected. Look at the tab (g): it may be asking something, or the session may not have resumed.')); }, ms);
+      const wake = () => { clearTimeout(timer); resolve(); };
+      const set = this.waiting.get(cardId) ?? new Set<() => void>();
+      set.add(wake);
+      this.waiting.set(cardId, set);
+    });
+  }
+
+  /** The server is going away: every card is told its channel is gone, so none says it is reachable after a restart. */
   closeAll(): void {
-    for (const s of this.live.values()) s.close();
+    for (const [cardId, s] of this.live) { s.close(); this.hooks.state(cardId, false); }
     this.live.clear();
   }
 }

@@ -44,6 +44,8 @@ import { DB_PATH, Store } from './store.ts';
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.CC_CONTROL_PORT) || 7777;
 const DEV_PORT = 5173; // Vite dev server, proxies /ws here
+/** How long a message waits for a reopened tab's channel (§85): claude starts, resumes, loads the channel. */
+const RESUME_WAIT_MS = 90_000;
 // CC_CONTROL_WEB_DIST: serve another build, so a test server never touches the one a running app serves.
 const WEB_DIST = process.env.CC_CONTROL_WEB_DIST || fileURLToPath(new URL('../dist/web', import.meta.url));
 
@@ -595,14 +597,29 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'card.send': {
       const text = String(msg.text ?? '').slice(0, 20_000);
       if (!text.trim()) throw new Error('Nothing to send.');
-      channels.send(String(msg.id), text);
+      const id = String(msg.id);
+      // No channel (the tab closed, the session ended, or the card started before channels): the
+      // session is resumed in a new tab and the message goes in once its channel connects (§85).
+      if (!channels.has(id) || cards.get(id)?.live?.phase === 'ended') {
+        await cards.reopen(id);
+        await channels.waitFor(id, RESUME_WAIT_MS);
+      }
+      channels.send(id, text);
       send(ws, { type: 'ok', reqId: msg.reqId });
       return;
     }
     case 'card.focusTab': {
       const card = cards.get(String(msg.id));
       if (!card) throw new Error('That card is gone.');
-      focusTab(card.key).then(() => send(ws, { type: 'ok', reqId: msg.reqId }), (e: Error) => send(ws, { type: 'error', reqId: msg.reqId, message: e.message }));
+      try {
+        await focusTab(card.key);
+        send(ws, { type: 'ok', reqId: msg.reqId });
+      } catch (e) {
+        // No tab by that name: with a session to go back to, open one on it (§85).
+        if (!card.sessionId) throw e;
+        await cards.reopen(card.id);
+        send(ws, { type: 'ok', reqId: msg.reqId, note: 'reopened' });
+      }
       return;
     }
     case 'card.answer': {
@@ -893,6 +910,8 @@ const servers = [listen(HOST, localApp, isTrusted, () => {
   console.log(`cc-control: http://localhost:${PORT}`);
   // Only once the port is ours: a second server started by mistake must not touch the first one's files.
   writeHookSettings();
+  // No card is reachable until its channel connects again (the script in each live tab retries).
+  cards.resetChannels();
   // A proxy file a run changed in place and never put back (the server stopped mid-run) goes back now.
   for (const f of restoreLeftovers(runsDir(DB_PATH))) console.log(`Put back ${f}, which Try it had changed.`);
 })];

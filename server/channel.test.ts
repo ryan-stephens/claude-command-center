@@ -57,6 +57,21 @@ test('a channel proves itself with the card’s token, then carries messages in 
   assert.deepEqual(states.at(-1), ['c1', false]);
 });
 
+test('a message sent while a tab is reopened waits for its channel; the server going away tells every card (§85)', async () => {
+  const states: [string, boolean][] = [];
+  const svc = new ChannelService({ tokenOk: () => true, state: (id, on) => states.push([id, on]), ask: () => {} });
+  await assert.rejects(svc.waitFor('c1', 30), /channel hasn’t connected/);
+  const waited = svc.waitFor('c1', 5000);
+  const s = fake();
+  svc.accept(s);
+  s.emit('message', JSON.stringify({ type: 'hello', card: 'c1', token: 'tok' }));
+  await waited;
+  await svc.waitFor('c1', 10);
+  svc.closeAll();
+  assert.ok(s.closed);
+  assert.deepEqual(states, [['c1', true], ['c1', false]], 'closing everything says each channel is gone, so no card claims one after a restart');
+});
+
 test('the card’s claude gets the channel as an MCP server, unless turned off', () => {
   const args = channelArgs(true);
   assert.equal(args[0], '--mcp-config');
@@ -70,6 +85,9 @@ test('the card’s claude gets the channel as an MCP server, unless turned off',
   assert.match(cmd[6], /cc-control-launch\.ps1$/);
   assert.deepEqual(JSON.parse(Buffer.from(cmd[7], 'base64').toString('utf8')), ['C:\\bin\\claude.exe', '--permission-mode', 'default', '--', 'Fix the "size" guide; carefully']);
   assert.deepEqual(tabCommand('claude', ['--permission-mode', 'default'], 'Fix the "size" guide; carefully', false), ['claude', '--permission-mode', 'default', '--', 'Fix the \\"size\\" guide\\; carefully']);
+  // A resumed session (§85) has no opening message: nothing follows the arguments.
+  assert.deepEqual(tabCommand('claude', ['--resume', 'abc'], '', false), ['claude', '--resume', 'abc']);
+  assert.deepEqual(JSON.parse(Buffer.from(tabCommand('claude', ['--resume', 'abc'], '', true)[7], 'base64').toString('utf8')), ['claude', '--resume', 'abc']);
 });
 
 const script = fileURLToPath(new URL('../hooks/cc-control-channel.mjs', import.meta.url));

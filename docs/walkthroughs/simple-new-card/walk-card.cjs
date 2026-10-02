@@ -60,7 +60,8 @@ async function ask(page, msg) {
   const states = ['plan', 'tool', 'working', 'idle', 'done'];
   const ids = {};
   for (const [i, state] of states.entries()) {
-    const r = await ask(page, { type: 'cards.seed', options: { repos: [`${DEMO}/web-app`, `${DEMO}/payments-api`], workspaceId: 'ws-demo-simple', key: `SHOP-${150 + i}`, state, title: `${state[0].toUpperCase()}${state.slice(1)}: save cart for signed-out users` } });
+    // The idle card has no channel (its tab closed, say): the message box stays and says what sending does (§85).
+    const r = await ask(page, { type: 'cards.seed', options: { repos: [`${DEMO}/web-app`, `${DEMO}/payments-api`], workspaceId: 'ws-demo-simple', key: `SHOP-${150 + i}`, state, title: `${state[0].toUpperCase()}${state.slice(1)}: save cart for signed-out users`, ...(state === 'idle' ? { channel: false } : {}) } });
     ids[state] = r.id;
   }
   check('five cards seeded', Object.keys(ids).length === 5);
@@ -182,12 +183,13 @@ async function ask(page, msg) {
   await page.locator(`#card-${ids.idle}`).click();
   await sleep(900);
   check('idle: the Changes badge counts its files', /3/.test(await view().getByRole('button', { name: /Changes/ }).innerText()));
+  check('idle, no channel: the message box stays, with Resume and send and a note', (await view().locator('#card-say').count()) === 1 && await view().getByRole('button', { name: /Resume and send/ }).isVisible() && /can’t be reached/.test(await view().getByRole('note').innerText()));
   await shot(page, 'idle');
   await page.keyboard.press('Escape');
   await sleep(300);
   await page.locator(`#card-${ids.done}`).click();
   await sleep(900);
-  check('done: no message box', (await view().locator('#card-say').count()) === 0);
+  check('done: the session ended, so the box says sending resumes it', /session ended/.test(await view().getByRole('note').innerText()));
   await page.keyboard.press('m');
   await sleep(300);
   check('done: More shows the merged PR', await view().getByRole('region', { name: 'More' }).getByRole('link', { name: /#418/ }).isVisible());

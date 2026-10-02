@@ -91,6 +91,27 @@ test('a resumed session is only linked; a cleared one gets the packet again', ()
   assert.ok(saved.boot.some((b) => /after \/clear/.test(b.text)));
 });
 
+test('a session is reopened only when it has one, its folder is there, and its tab doesn’t look alive (§85)', async () => {
+  const card = seed();
+  await assert.rejects(cards.reopen('nope'), /gone/);
+  await assert.rejects(cards.reopen(card.id), /hasn’t started a session/);
+  cards.sessionStart(card.id, 'secret-token', { session_id: 'live-session-1', source: 'startup' });
+  // No folder yet (the card never opened a tab in this test): said before anything else.
+  await assert.rejects(cards.reopen(card.id), /isn’t there any more/);
+  store.saveCard({ ...cards.get(card.id)!, cwd: dir }, 'secret-token');
+  // The hooks just spoke: the tab is alive without a channel, so a second tab on the session is refused.
+  await assert.rejects(cards.reopen(card.id), /looks open .* g brings the tab forward/);
+  cards.hookEvent(card.id, 'secret-token', 'SessionEnd', { session_id: 'live-session-1' });
+  // Ended: a resume is allowed (not run here: it would open a real terminal); the folder check comes first again.
+  store.saveCard({ ...cards.get(card.id)!, cwd: join(dir, 'gone') }, 'secret-token');
+  await assert.rejects(cards.reopen(card.id), /isn’t there any more/);
+  // A restart: every card forgets its channel until the script in its tab says hello again.
+  cards.channelState(card.id, true);
+  assert.equal(cards.get(card.id)!.channel, true);
+  cards.resetChannels();
+  assert.equal(cards.get(card.id)!.channel, false);
+});
+
 test('card keys are never reused, and the token never reaches the card itself', () => {
   const a = store.nextCardKey();
   const b = store.nextCardKey();

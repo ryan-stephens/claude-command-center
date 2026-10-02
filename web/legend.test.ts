@@ -56,7 +56,7 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.deepEqual(labels({ view: 'drawer', bindings: {} }), ['Back to the board', 'Previous / next card', 'Changes', 'Try it', 'Verify', 'Context', 'More', 'Run recipe', 'Remove card']);
   assert.ok(labels({ view: 'drawer', hasSession: true, bindings: {} }).includes('Its session'));
   assert.deepEqual(labels({ view: 'drawer', canSay: true, asking: true, bindings: {} }).slice(0, 3), ['Back to the board', 'Allow / deny', 'Type to it'], 'a channel: y / n first while it asks, then Enter');
-  assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Type to it'), 'no channel: no message box');
+  assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Type to it'), 'no session yet: no message box (a card with one can always be typed to, §85)');
   assert.deepEqual(labels({ view: 'drawer', ship: 'merge', canDone: true, hasPr: true, bindings: {} }).slice(7, 10), ['Open the PR', 'Merge', 'Done'], 'a card in Ship: o opens the PR, d is done by hand (after the five dock keys)');
   assert.deepEqual(labels({ view: 'drawer', panel: 'changes', bindings: {} }).slice(2, 5), ['File', 'Pop out', 'Close Changes'], 'the Changes panel open: j k walk files, f is the full sheet, its key closes it');
   assert.deepEqual(labels({ view: 'drawer', panel: 'try', hasStack: true, canTry: true, bindings: {} }).slice(2, 8), ['Service', 'Tick / environment', 'Start this one', 'Stop this one', 'Output', 'Changes'], 'the Try it panel with a stack: the service keys, then f for the output');

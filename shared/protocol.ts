@@ -461,7 +461,7 @@ export type ServerMsg =
   | { type: 'prompt.written'; reqId: string; text: string }
   | { type: 'fs.files'; reqId: string; hits: FileHit[] }
   /** A request with a `reqId` and nothing else to return worked. */
-  | { type: 'ok'; reqId: string }
+  | { type: 'ok'; reqId: string; /** card.focusTab: the tab was gone, so a new one was opened on the session (§85). */ note?: 'reopened' }
   /** Something worth a line in the status area, e.g. what an import could not match. */
   | { type: 'info'; message: string }
   | { type: 'error'; message: string; reqId?: string }

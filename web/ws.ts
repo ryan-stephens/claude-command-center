@@ -199,7 +199,8 @@ export function followRun(key: string): () => void {
 
 /** Type into the card's terminal session (its channel). Rejects when it can't be reached. */
 export async function sayToCard(id: string, text: string): Promise<void> {
-  await request((reqId) => ({ type: 'card.send', reqId, id, text }));
+  // Long enough for a tab to be reopened and its session resumed first (§85).
+  await request((reqId) => ({ type: 'card.send', reqId, id, text }), 120_000);
 }
 
 /** Answer the permission prompt the card's terminal relayed. */
@@ -207,9 +208,10 @@ export async function answerCard(id: string, requestId: string, behavior: 'allow
   await request((reqId) => ({ type: 'card.answer', reqId, id, requestId, behavior }));
 }
 
-/** Bring the card's terminal tab to the front (the UI Automation walk can take a moment). */
-export async function focusCardTab(id: string): Promise<void> {
-  await request((reqId) => ({ type: 'card.focusTab', reqId, id }), 20_000);
+/** Bring the card's terminal tab to the front (the UI Automation walk can take a moment). True when there was no tab and a new one was opened on the session (§85). */
+export async function focusCardTab(id: string): Promise<boolean> {
+  const reply = await request((reqId) => ({ type: 'card.focusTab', reqId, id }), 20_000);
+  return reply.type === 'ok' && reply.note === 'reopened';
 }
 
 /** The picker's rows for a card's stack: which APIs it has, which changed, which to tick. */

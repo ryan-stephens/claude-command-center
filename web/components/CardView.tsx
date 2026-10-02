@@ -270,11 +270,13 @@ function BootLines({ card }: { card: Card }) {
 
 /**
  * The message box into the card's terminal session, through its channel, and above it what Claude
- * is asking with the keys that answer. Without a channel (the card started before channels, or the
- * tab is gone), it says so.
+ * is asking with the keys that answer. Without a channel (the tab closed, the session ended, or the
+ * card started before channels), the box stays: sending opens a new tab on the session first (§85).
  */
 function Say({ card }: { card: Card }) {
-  if (!card.sessionId || card.live?.phase === 'ended') return null;
+  if (!card.sessionId) return null;
+  const ended = card.live?.phase === 'ended';
+  const reachable = Boolean(card.channel) && !ended;
   const ask = askOf(card);
   const answerable = Boolean(ask?.requestId);
   return (
@@ -293,13 +295,16 @@ function Say({ card }: { card: Card }) {
           {ask.kind === 'question' && ask.detail && <p className="text-[13.5px]">{ask.detail}</p>}
         </div>
       )}
-      {card.channel
-        ? <div className="mx-auto flex w-full max-w-[880px] items-end gap-2">
-          <textarea id="card-say" rows={2} placeholder={`Type to ${card.key}’s terminal… Enter sends, Shift+Enter is a new line`} spellCheck={false} className="field grow resize-none text-[13.5px]" />
-          {card.stage !== 'done' && <button className="btn py-1.5" onClick={() => openAddComposer(card.id)} title="Add a repo, a ticket or a note: it goes in with your next message"><Key k="c" size="sm" />Context</button>}
-          <button className="btn btn-primary py-1.5" onClick={() => saySubmit(card.id)} title="Sends into the terminal session itself, not a copy"><Key k="Enter" size="sm" tone="ghost" />Send</button>
-        </div>
-        : <p className="mx-auto w-full max-w-[880px] text-[13px] text-faint">This card’s terminal can’t be reached from here (it started without a channel, or the tab closed): type in its tab, {card.key}.</p>}
+      <div className="mx-auto flex w-full max-w-[880px] items-end gap-2">
+        <textarea id="card-say" rows={2} placeholder={reachable ? `Type to ${card.key}’s terminal… Enter sends, Shift+Enter is a new line` : `Type to ${card.key}’s session… Enter opens a new tab on it and sends`} spellCheck={false} className="field grow resize-none text-[13.5px]" />
+        {card.stage !== 'done' && <button className="btn py-1.5" onClick={() => openAddComposer(card.id)} title="Add a repo, a ticket or a note: it goes in with your next message"><Key k="c" size="sm" />Context</button>}
+        <button className="btn btn-primary py-1.5" onClick={() => saySubmit(card.id)} title={reachable ? 'Sends into the terminal session itself, not a copy' : 'Opens a new terminal tab on the session (claude --resume) and sends once it connects'}><Key k="Enter" size="sm" tone="ghost" />{reachable ? 'Send' : 'Resume and send'}</button>
+      </div>
+      {!reachable && (
+        <p className="mx-auto w-full max-w-[880px] text-[12.5px] text-faint" role="note">
+          {ended ? 'Its session ended.' : 'Its tab can’t be reached (it closed, or the server restarted and the channel hasn’t reconnected).'} Sending opens a new tab that resumes the session, with the card following it as before.
+        </p>
+      )}
     </div>
   );
 }
