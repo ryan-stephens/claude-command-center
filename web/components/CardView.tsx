@@ -17,7 +17,7 @@ import { CARD_PANELS, type CardPanel } from '../line-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard } from '../line-model.ts';
 import { answerAsk, boardOf, editRecipe, goToTab, openAddComposer, openApp, openChanges, openNeighbour, openWorktrees, saySubmit, setChangeCount, shipKey, togglePanel, tryIt } from '../line-keys.ts';
 import { openSession } from '../keys.ts';
-import { get, set, useStore } from '../store.ts';
+import { get, set, setPanelW, useStore } from '../store.ts';
 import { cardChanges, send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { KindPill, useExpandKey } from './TicketLine.tsx';
@@ -25,6 +25,19 @@ import { Transcript } from './Transcript.tsx';
 import { Icon, Key, Pill, TicketKey, type IconName } from './ui.tsx';
 
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+
+/** Wide enough for the panel to sit beside the chat (Tailwind's lg); narrower, it lies over it. */
+function useWide(): boolean {
+  const query = '(min-width: 1024px)';
+  const [wide, setWide] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setWide(m.matches);
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, []);
+  return wide;
+}
 
 const STAGE: Record<Card['stage'], string> = { inbox: 'Inbox', plan: 'Plan', build: 'Build', needs: 'Needs you', try: 'Try it', ship: 'Ship', done: 'Done' };
 
@@ -115,8 +128,24 @@ function Dock({ card, panel }: { card: Card; panel: CardPanel | null }) {
 /** The panel open beside the dock. On a narrow window it lies over the chat. */
 function Panel({ card, panel }: { card: Card; panel: CardPanel }) {
   const meta = CARD_PANELS.find((p) => p.id === panel)!;
+  const width = useStore((s) => s.line.panelW);
+  const wide = useWide();
+  // Dragging the panel's right edge: the width follows the pointer and is remembered when it lets go.
+  const drag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const startX = e.clientX;
+    const startW = width;
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => setPanelW(startW + ev.clientX - startX);
+    const up = () => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    e.preventDefault();
+  };
   return (
-    <div className="absolute inset-y-0 left-[92px] right-0 z-10 flex min-h-0 flex-col border-r border-line bg-col lg:static lg:w-[400px] lg:shrink-0" role="region" aria-label={meta.name}>
+    <div className="absolute inset-y-0 left-[92px] right-0 z-10 flex min-h-0 flex-col border-r border-line bg-col lg:relative lg:left-auto lg:right-auto lg:shrink-0" style={wide ? { width } : undefined} role="region" aria-label={meta.name}>
+      {wide && <div onPointerDown={drag} title="Drag to resize ([ and ] too)" aria-label="Resize the panel" role="separator" aria-orientation="vertical"
+        className="absolute -right-1 top-0 z-20 h-full w-2 cursor-col-resize hover:bg-ring/40 active:bg-ring/60" />}
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-2.5">
         <h3 className="text-[14px] font-bold">{meta.name}</h3>
         <PanelNote card={card} panel={panel} />

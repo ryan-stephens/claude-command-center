@@ -11,7 +11,7 @@ import { repoName } from '../shared/workspaces.ts';
 import { inbox, INBOX_VIEWS, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
 import { openSession } from './keys.ts';
-import { closeComposer, currentWorkspace, flash, get, set, setFilter, setInboxView, takeDraft, type WorkspaceAction } from './store.ts';
+import { closeComposer, currentWorkspace, flash, get, set, setFilter, setInboxView, setPanelW, takeDraft, type WorkspaceAction } from './store.ts';
 import {
   addComposer, additionOf, cardFolders, type CardPanel, stepCard, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
@@ -36,6 +36,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['/', 'Filter the cards by words'],
       ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, the run recipe), Verify (the team’s apps, later), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
       ['j / k  ·  f (Changes panel)', 'The next / previous file, its diff under it  ·  the diffs full width'],
+      ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
       ['Esc (card open)', 'Back to the board, the card still focused; on the board, clear the filter'],
       ['← → (card open)', 'The previous / next card on the board, in column order'],
       ['Enter (card open)', 'Type to its terminal: the message box under the transcript sends into the session itself (Esc leaves the box)'],
@@ -573,6 +574,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
     case 'v': togglePanel('verify'); return true;
     case 'C': togglePanel('context'); return true;
     case 'm': togglePanel('more'); return true;
+    case '[': case ']': if (s.line.panel) { setPanelW(s.line.panelW + (e.key === ']' ? 40 : -40)); return true; } return false;
     case 'j': case 'k': if (s.line.panel === 'changes') { stepChange(e.key === 'j' ? 1 : -1, changeCount); return true; } return false;
     case 'f': if (s.line.panel === 'changes' && s.line.drawer) { openChanges(s.line.drawer); return true; } return false;
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;

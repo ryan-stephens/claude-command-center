@@ -219,6 +219,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       // The dock: the panel open is named, the rest are one key each.
       ...(x.panel === 'changes' ? [{ keys: ['j', 'k'], label: 'File' }, { keys: ['f'], label: 'Full width' }] : []),
       ...CARD_PANELS.map((p) => ({ keys: [p.key], label: x.panel === p.id ? `Close ${p.name}` : p.name })),
+      ...(x.panel ? [{ keys: ['[', ']'], label: 'Panel width' }] : []),
       ...tryKeys(x).filter((i) => i.keys[0] !== '⇧D'),
       { keys: ['e'], label: 'Run recipe' },
       ...(x.canAdd ? [{ keys: ['c'], label: 'Add context', tone: 'acc' as const }] : []),

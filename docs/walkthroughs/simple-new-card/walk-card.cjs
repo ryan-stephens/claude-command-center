@@ -99,6 +99,31 @@ async function ask(page, msg) {
   await sleep(200);
   const pressed = await changes.locator('button[aria-pressed="true"]').first().innerText().catch(() => '');
   check('j moves to the next file', pressed.length > 0, pressed.replace(/\n/g, ' '));
+  // The panel's width (a wide window only: narrower, the panel lies over the chat): ] widens by 40px, the edge drags, and the width is remembered.
+  if (Number(process.env.W || 1440) >= 1024) {
+  const w0 = (await changes.boundingBox()).width;
+  await page.keyboard.press(']');
+  await sleep(150);
+  const w1 = (await changes.boundingBox()).width;
+  check('] widens the panel by 40px', Math.round(w1 - w0) === 40, `${w0} → ${w1}`);
+  const handle = view().getByRole('separator', { name: 'Resize the panel' });
+  const hb = await handle.boundingBox();
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(hb.x + hb.width / 2 + 120, hb.y + 300, { steps: 6 });
+  await page.mouse.up();
+  await sleep(150);
+  const w2 = (await changes.boundingBox()).width;
+  check('dragging the edge widens it', Math.round(w2 - w1) === 120, `${w1} → ${w2}`);
+  await shot(page, 'plan-changes-wider');
+  await page.keyboard.press('[');
+  await page.keyboard.press('[');
+  await page.keyboard.press('[');
+  await page.keyboard.press('[');
+  await sleep(150);
+  check('[ narrows it back', Math.round((await changes.boundingBox()).width) === Math.round(w0), String((await changes.boundingBox()).width));
+  check('the width is remembered', (await page.evaluate(() => localStorage.getItem('cc-control.panelWidth'))) === String(Math.round(w0)));
+  }
   await page.keyboard.press('f');
   await sleep(600);
   check('f opens the full-width Changes sheet', await page.getByRole('dialog', { name: 'Changes' }).isVisible());

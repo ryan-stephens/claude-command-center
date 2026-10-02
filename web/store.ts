@@ -11,6 +11,12 @@ import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
 import { asDraft, hasWork, type CardPanel, type Composer, type LineFilter } from './line-model.ts';
 
 /** Where keys go inside the session view. Esc steps outward: composer → number pad → the line. */
+/** The open card's panel: how wide, between PANEL_MIN and PANEL_MAX. */
+export const PANEL_MIN = 280;
+export const PANEL_MAX = 960;
+export const PANEL_DEFAULT = 400;
+const PANEL_KEY = 'cc-control.panelWidth';
+
 export type SessionZone = 'composer' | 'board';
 
 /** Where a repo picked from the library goes. */
@@ -110,7 +116,7 @@ interface State {
    * The board: the focused card, the card open in the drawer and its tab, the workspace shown, and
    * the text filter (/).
    */
-  line: { focus: string | null; drawer: string | null; /** The open card's dock panel (§81), kept from card to card; `at`: the file chosen in Changes. */ panel: CardPanel | null; at: number; filter: LineFilter; q: string; searching: boolean; /** The Inbox's view (v): yours, or ready for QA. */ view: InboxView };
+  line: { focus: string | null; drawer: string | null; /** The open card's dock panel (§81), kept from card to card; `at`: the file chosen in Changes. */ panel: CardPanel | null; at: number; /** The panel's width in px (dragged or [ ]; remembered per browser). */ panelW: number; filter: LineFilter; q: string; searching: boolean; /** The Inbox's view (v): yours, or ready for QA. */ view: InboxView };
   /** What the tracker's search found for the new-card screen's search box (other people's tickets too). */
   found: Found;
   /** The new-card screen, while it is open. */
@@ -184,7 +190,7 @@ export const useStore = create<State>(() => ({
   runs: {},
   ticketProjects: [],
   ticketSources: null,
-  line: { focus: null, drawer: null, panel: null, at: 0, filter: loadFilter(), q: '', searching: false, view: loadView() },
+  line: { focus: null, drawer: null, panel: null, at: 0, panelW: loadPanelW(), filter: loadFilter(), q: '', searching: false, view: loadView() },
   found: NO_FOUND,
   composer: null,
   draft: loadDraft(),
@@ -288,6 +294,15 @@ export function takeDraft(): Composer | null {
   const d = get().draft;
   if (d) { set({ draft: null }); saveDraft(null); }
   return d;
+}
+
+function loadPanelW(): number {
+  try { const n = Number(localStorage.getItem(PANEL_KEY)); return n >= PANEL_MIN && n <= PANEL_MAX ? n : PANEL_DEFAULT; } catch { return PANEL_DEFAULT; }
+}
+export function setPanelW(w: number): void {
+  const n = Math.round(Math.max(PANEL_MIN, Math.min(PANEL_MAX, w)));
+  set({ line: { ...get().line, panelW: n } });
+  try { localStorage.setItem(PANEL_KEY, String(n)); } catch { /* storage off */ }
 }
 
 function loadFilter(): LineFilter {
