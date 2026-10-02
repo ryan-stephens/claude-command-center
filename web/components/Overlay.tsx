@@ -12,11 +12,24 @@ export function Overlay({ children, label, wide = false, keepKeys = false }: { c
 }
 
 /** Title row with the dismiss key on the right. */
+/** The × in a window's top-right corner, with its keycap beside it: the way out that every window has (§77). */
+export function CornerClose({ onClick, hint = 'Esc', label = 'Close' }: { onClick: () => void; hint?: string; label?: string }) {
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      <Key k={hint} size="sm" />
+      <button type="button" onClick={onClick} aria-label={label} title={label}
+        className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-raise hover:text-ink">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16"><path d="M3.5 3.5l9 9m0-9l-9 9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+      </button>
+    </span>
+  );
+}
+
 export function DialogTitle({ children, hint = 'Esc' }: { children: ReactNode; hint?: string }) {
   return (
     <div className="mb-4 flex items-start gap-3">
       <h2 className="min-w-0 grow text-[19px] font-bold leading-snug tracking-tight">{children}</h2>
-      <button onClick={close} className="mt-0.5 flex shrink-0 items-center gap-1.5 text-sm text-faint hover:text-ink">Cancel <Key k={hint} size="sm" /></button>
+      <CornerClose onClick={close} hint={hint} />
     </div>
   );
 }

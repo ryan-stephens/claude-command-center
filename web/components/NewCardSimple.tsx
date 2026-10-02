@@ -17,6 +17,7 @@ import type { Ticket } from '../../shared/tickets.ts';
 import { chips, followPrompt, howFacts, howRows, KIND_OPTIONS, promptContext, promptLabel, promptRows, simpleOf, withSimple, type Chip, type SimpleBlock } from '../simple-model.ts';
 import { get, useStore } from '../store.ts';
 import { usePrLookup, useTicketSearch } from './NewCard.tsx';
+import { CornerClose } from './Overlay.tsx';
 import { Icon, Key, TicketKey } from './ui.tsx';
 
 export function NewCardSimple() {
@@ -57,7 +58,7 @@ export function NewCardSimple() {
           {ws && <span className="text-[13px] text-faint">{ws.name} lane</span>}
         </div>
         <div className="flex items-center gap-4 text-[13px] text-faint">
-          <button className="flex items-center gap-1.5 hover:text-ink" onClick={leaveComposer}>Cancel <Key k="Esc" size="sm" /></button>
+          <CornerClose onClick={leaveComposer} />
         </div>
       </div>
 

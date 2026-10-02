@@ -13,6 +13,7 @@ import { cardFolders, cardHasRepo, cardHasTicket, composerKey, gotPr, goRows, pa
 import { foundFor, keepRepo, leaveComposer, startWork, updateComposer } from '../line-keys.ts';
 import { get, NO_FOUND, set, useStore } from '../store.ts';
 import { findPr, searchTickets } from '../ws.ts';
+import { CornerClose } from './Overlay.tsx';
 import { Key, TicketKey, WsBadge } from './ui.tsx';
 
 /** The small kind badge on a packet row. */
@@ -63,7 +64,7 @@ export function NewCard() {
           <b className="font-mono text-[15px] tabular-nums">{fmtK(size)}</b>
         </div>
         <button className="btn whitespace-nowrap py-1" onClick={() => updateComposer((x) => ({ ...x, preview: !x.preview }))}><Key k="p" size="sm" />{c.preview ? 'Back to the list' : 'Preview what Claude gets'}</button>
-        <button className="flex items-center gap-1.5 whitespace-nowrap text-sm text-faint hover:text-ink" onClick={leaveComposer}>Cancel <Key k="Esc" size="sm" /></button>
+        <CornerClose onClick={leaveComposer} />
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[360px_minmax(0,1fr)_420px] lg:overflow-hidden">
         <Sources c={c} />
@@ -133,7 +134,7 @@ function AddScreen({ c, card, ws, text }: { c: Composer; card: Card; ws: Workspa
           <span className="text-faint">on top of {fmtK(has)}</span>
         </div>
         <button className="btn whitespace-nowrap py-1" onClick={() => updateComposer((x) => ({ ...x, preview: !x.preview }))}><Key k="p" size="sm" />{c.preview ? 'Back to the list' : 'Preview what Claude gets'}</button>
-        <button className="flex items-center gap-1.5 whitespace-nowrap text-sm text-faint hover:text-ink" onClick={() => set({ composer: null })}>Cancel <Key k="Esc" size="sm" /></button>
+        <CornerClose onClick={() => set({ composer: null })} />
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[360px_minmax(0,1fr)_420px] lg:overflow-hidden">
         <Sources c={c} />

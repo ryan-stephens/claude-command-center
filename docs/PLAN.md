@@ -1988,3 +1988,9 @@ They are two different things, and the preview now says so by putting them in th
 **What it does.** Visible prose no longer names keys: the Add context popup's footer line and empty states, its rows' subs, the lane dialog's popup footer, the message box's placeholder, the flash and note messages the new-card screen gives (a refusal says *browse for one* rather than *b browses*), the folder picker's messages, the session composer's placeholder, the palette's two action labels, the stack table's message, the Hidden tickets note and the look row in `?` `B`. Where a hint named a key, the sentence now says what to do or what the control is (*the × at the end takes this folder off*). The keycap system is untouched: `<Key>` keycaps everywhere, the legend bar, the `?` overlay and its show/hide switch, the dialogs' key footers, and hover tooltips.
 
 **Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (303); all eight walkthroughs pass (two of `walk-sources.cjs`'s checks matched the old wording and were updated).
+
+## 77. An × in the corner, not Cancel
+
+2026-10-02, the owner: "cancel instead of X in the top right corner of windows is weird and throwing me off". Every dialog's title row (`DialogTitle` in `web/components/Overlay.tsx`) and the new-card screen's header, in both looks, now end in a small × button (`CornerClose`, with *Close* as its name) with the `Esc` keycap beside it, where *Cancel Esc* was. The real Cancel buttons in footers (the lane dialog, the Ship sheet) stay as buttons.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`; `walk-simple`, `walk-prompts`, `walk-lane`, `walk-chrome` pass; screenshots of a dialog and the new-card screen looked at.
