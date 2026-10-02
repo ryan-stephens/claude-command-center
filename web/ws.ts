@@ -1,5 +1,5 @@
 import type { CardDraft, PacketItem } from '../shared/cards.ts';
-import { wsRecipeKey } from '../shared/recipes.ts';
+import { runKey, wsRecipeKey } from '../shared/recipes.ts';
 import type { StackChoice } from '../shared/stack.ts';
 import type { Changes } from '../shared/changes.ts';
 import type { TicketTransition } from '../shared/tickets.ts';
@@ -169,8 +169,14 @@ export async function removeCardWorktrees(id: string, force: boolean, thenDelete
   return await request((reqId) => ({ type: 'card.removeWorktrees', reqId, id, force, thenDelete }), 120_000) as Extract<ServerMsg, { type: 'card.worktreesRemoved' }>;
 }
 
-export async function tryCard(id: string, choice?: StackChoice): Promise<void> {
-  await request((reqId) => ({ type: 'card.try', reqId, id, ...(choice ? { choice } : {}) }), 60_000);
+/** Try it: the card's recipe; with a stack, `choice` starts a session of every picked service, `service` starts (again) one service of the session that is up (§82). */
+export async function tryCard(id: string, choice?: StackChoice, service?: string): Promise<void> {
+  await request((reqId) => ({ type: 'card.try', reqId, id, ...(choice ? { choice } : {}), ...(service ? { service } : {}) }), 60_000);
+}
+
+/** Stop the card's run (every service and the session), or one service alone. */
+export function stopRun(id: string, service?: string): void {
+  send({ type: 'card.stopRun', id, ...(service ? { service } : {}) });
 }
 
 /** Type into the card's terminal session (its channel). Rejects when it can't be reached. */
@@ -383,7 +389,7 @@ function receive(msg: ServerMsg): void {
       set({ recipes: { ...msg.recipes, ...Object.fromEntries(Object.entries(msg.workspaceRecipes ?? {}).map(([id, r]) => [wsRecipeKey(id), r])) } });
       return;
     case 'runs':
-      set({ runs: Object.fromEntries(msg.runs.map((r) => [r.cardId, r])) });
+      set({ runs: Object.fromEntries(msg.runs.map((r) => [runKey(r.cardId, r.service), r])) });
       return;
     case 'card.started':
     case 'ship.plan':

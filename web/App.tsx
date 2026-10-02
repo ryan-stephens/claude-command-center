@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { askOf, cardRepos, ownFolders, waiting } from '../shared/cards.ts';
-import { cardRecipe } from '../shared/recipes.ts';
+import { anyLive, cardRecipe, mainRun } from '../shared/recipes.ts';
 import { openPrs, prsOf, shipMode } from '../shared/ship.ts';
 import { Dialogs } from './components/Dialogs.tsx';
 import { SessionView } from './components/SessionView.tsx';
@@ -55,8 +55,8 @@ function Legend() {
   const shown = useStore((s) => s.cards.find((c) => c.id === (s.line.drawer ?? s.line.focus)));
   // A workspace card with no recipe can still try: t shows what its repos say the stack is.
   const canTry = useStore((s) => Boolean(shown && (cardRecipe(s.recipes, shown.workspaceId, cardRepos(shown)[0]) || shown.workspaceId)));
-  const run = useStore((s) => (shown ? s.runs[shown.id] : undefined));
-  const appRunning = run?.state === 'running' || run?.state === 'up';
+  const run = useStore((s) => (shown ? mainRun(s.runs, shown.id) : undefined));
+  const appRunning = useStore((s) => Boolean(shown && anyLive(s.runs, shown.id)));
   const appUp = run?.state === 'up' && Boolean(run.url);
   const prs = shown ? prsOf(shown.ship) : [];
   const pr = openPrs(prs)[0] ?? prs[0];
@@ -74,6 +74,8 @@ function Legend() {
   const hasPr = Boolean(pr ?? shown?.pr);
   const tab = useStore((s) => s.composer?.tab);
   const hasWaiting = Boolean(drawerCard && waiting(drawerCard).length);
+  const panel = useStore((s) => s.line.panel);
+  const hasStack = useStore((s) => Boolean(shown && cardRecipe(s.recipes, shown.workspaceId, cardRepos(shown)[0])?.stack));
   const hasWorktrees = Boolean(shown && ownFolders(shown).length);
   const hints = useStore((s) => s.settings.keyHints ?? 'always');
   const isSimple = useStore((s) => Boolean(s.composer && !s.composer.addTo && (s.settings.newCardLook ?? 'simple') === 'simple'));
@@ -92,7 +94,7 @@ function Legend() {
   const simple = isSimple ? { block: spBlock, adding: spAdding, context: spContext, folders: spFolders, repos: spRepos, onSource: spOnSource, prompt: spPrompt, more: spMore, hasTicket: spTicket, details: spDetails, ticketLink: spTicketLink, ownChip: spOwn } : undefined;
   if (modal) return null;
   const items = trimLegend(screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, hasTab, needsTab, hasChanges, hasDraft, tab, simple, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, hasTab, needsTab, hasChanges, hasDraft, tab, simple, panel, hasStack, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings }), hints);
   if (!items) return null;
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');

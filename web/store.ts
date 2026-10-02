@@ -116,7 +116,7 @@ interface State {
    * The board: the focused card, the card open in the drawer and its tab, the workspace shown, and
    * the text filter (/).
    */
-  line: { focus: string | null; drawer: string | null; /** The open card's dock panel (§81), kept from card to card; `at`: the file chosen in Changes. */ panel: CardPanel | null; at: number; /** The panel's width in px (dragged or [ ]; remembered per browser). */ panelW: number; filter: LineFilter; q: string; searching: boolean; /** The Inbox's view (v): yours, or ready for QA. */ view: InboxView };
+  line: { focus: string | null; drawer: string | null; /** The open card's dock panel (§81), kept from card to card; `at`: the file chosen in Changes. */ panel: CardPanel | null; at: number; /** Bumped when a card's Try it pick changes (it lives in localStorage), so the panel redraws. */ pickTick?: number; /** The panel's width in px (dragged or [ ]; remembered per browser). */ panelW: number; filter: LineFilter; q: string; searching: boolean; /** The Inbox's view (v): yours, or ready for QA. */ view: InboxView };
   /** What the tracker's search found for the new-card screen's search box (other people's tickets too). */
   found: Found;
   /** The new-card screen, while it is open. */

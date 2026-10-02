@@ -6,7 +6,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, readLooseJson, runLabel, stackRules, stackSteps, uiPortFor, uiProject, uiUrlFor, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo, type StackRunContext } from '../shared/stack.ts';
+import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, pickedServices, readLooseJson, runLabel, serviceSteps, stackRules, stackSteps, uiPortFor, uiProject, uiUrlFor, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo, type StackRunContext } from '../shared/stack.ts';
 import { uiApp } from '../shared/stack-detect.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import { run } from './hosts.ts';
@@ -105,6 +105,39 @@ export { readLooseJson } from '../shared/stack.ts';
  * JSON, no port left), having taken nothing.
  */
 export async function prepareStackRun(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string, pool = new PortPool()): Promise<{ recipe: RunRecipe; opts: RunOptions }> {
+  const session = await prepareStackSession(stack, choice, places, cardId, dir, pool);
+  const steps = stackSteps(stack, session.choice, session.ctx);
+  const url = uiUrlFor(stack, session.choice, session.ctx);
+  return {
+    recipe: { repo: '', workspaceId: stack.workspaceId, steps, ...(url ? { url } : {}), source: stack.source },
+    opts: { choice: session.label, cleanup: session.end },
+  };
+}
+
+/**
+ * A card's stack session (§82): what was picked, the ports reserved for each API and the UI, the
+ * branches, and the proxy copy, kept while any service runs so one service can be started, stopped
+ * or started again without the others losing their ports or the UI its rules. `end` frees it all.
+ */
+export interface StackSession {
+  cardId: string;
+  stack: StackInfo;
+  choice: StackChoice;
+  ctx: StackRunContext;
+  places: RunPlaces;
+  /** The services in start order: each API, then the UI. */
+  services: string[];
+  label: string;
+  end: () => void;
+}
+
+/**
+ * Reserve what a run of the stack needs for a card, having taken nothing on an error: the picked
+ * APIs' and the UI's folders checked, their branches read, a port per API (and the UI when it takes
+ * one), and the proxy copy written with the picked APIs' rules. The steps come per service from
+ * serviceRecipe.
+ */
+export async function prepareStackSession(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string, pool = new PortPool()): Promise<StackSession> {
   const values = choiceValues(stack, choice.values);
   const apis = pickedApis(stack, choice.apis);
   const pick = { values, apis: apis.map((a) => a.repo) };
@@ -117,7 +150,7 @@ export async function prepareStackRun(stack: StackInfo, choice: StackChoice, pla
   for (const a of apis) branches[a.repo.toLowerCase()] = await branchOf(where(a.repo, 'The API'));
   const uiDir = stack.ui ? where(stack.ui.repo, 'The UI') : undefined;
   if (stack.ui && uiDir) branches[stack.ui.repo.toLowerCase()] = await branchOf(uiDir);
-  // One port per API, and one for the UI when it takes one: given back when the run stops.
+  // One port per API, and one for the UI when it takes one: given back when the session ends.
   const wantUi = needsUiPort(stack);
   const picked = await pool.take(apis.length + (wantUi ? 1 : 0));
   const ports: Record<string, number> = {};
@@ -140,7 +173,7 @@ export async function prepareStackRun(stack: StackInfo, choice: StackChoice, pla
       const out = edit ? file : join(dir, `${cardId}.proxy.conf.json`);
       ctx.proxy = out;
       const backup = join(dir, `${cardId}.backup.json`);
-      // Written only once every step has been built, so a mistake in the stack changes nothing.
+      // Written only once every service's steps have been built, so a mistake in the stack changes nothing.
       write = () => {
         mkdirSync(dir, { recursive: true });
         if (edit) writeFileSync(backup, JSON.stringify({ path: file, text: original }));
@@ -148,16 +181,27 @@ export async function prepareStackRun(stack: StackInfo, choice: StackChoice, pla
       };
       cleanup = edit ? () => { writeFileSync(file, original); rmSync(backup, { force: true }); } : () => rmSync(out, { force: true });
     }
-    const steps = stackSteps(stack, pick, ctx);
-    const url = uiUrlFor(stack, pick, ctx);
+    const services = pickedServices(stack, pick);
+    for (const sv of services) serviceSteps(stack, pick, ctx, sv);
     write?.();
     const undo = cleanup;
+    let ended = false;
     return {
-      recipe: { repo: '', workspaceId: stack.workspaceId, steps, ...(url ? { url } : {}), source: stack.source },
-      opts: { choice: runLabel(values, pick.apis, ports, stack.ui ? uiPortFor(stack, pick, ctx) : undefined, stack.ui ? uiProject(stack.ui.steps) ?? app?.name : undefined), cleanup: () => { pool.free(picked); undo?.(); } },
+      cardId, stack, choice: pick, ctx, places, services,
+      label: runLabel(values, pick.apis, ports, stack.ui ? uiPortFor(stack, pick, ctx) : undefined, stack.ui ? uiProject(stack.ui.steps) ?? app?.name : undefined),
+      end: () => { if (ended) return; ended = true; pool.free(picked); undo?.(); },
     };
   } catch (e) {
     pool.free(picked);
     throw e;
   }
+}
+
+/** One service's recipe for the session: its steps then its stop: steps; the UI's carries the app's URL. */
+export function serviceRecipe(session: StackSession, service: string): RunRecipe {
+  const { stack, choice, ctx } = session;
+  if (!session.services.includes(service)) throw new Error(`${service} wasn’t picked for this run. Pick it and start again.`);
+  const { steps, stop } = serviceSteps(stack, choice, ctx, service);
+  const url = service === 'ui' ? uiUrlFor(stack, choice, ctx) : undefined;
+  return { repo: '', workspaceId: stack.workspaceId, steps: [...steps, ...stop], ...(url ? { url } : {}), source: stack.source };
 }

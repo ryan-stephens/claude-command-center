@@ -4,7 +4,7 @@
 // lineLegendFor (the bar at the bottom).
 
 import { askOf, cardRepos, ownFolders, waiting } from '../shared/cards.ts';
-import { cardRecipe, wsRecipeKey } from '../shared/recipes.ts';
+import { anyLive, cardRecipe, runKey, runsOf, wsRecipeKey } from '../shared/recipes.ts';
 import { allMerged, openPrs, prsOf } from '../shared/ship.ts';
 import type { StackChoice } from '../shared/stack.ts';
 import { repoName } from '../shared/workspaces.ts';
@@ -18,7 +18,7 @@ import {
   type Composer,
 } from './line-model.ts';
 import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
-import { addCardContext, answerCard, focusCardTab, sayToCard, send, startCard, tryCard } from './ws.ts';
+import { addCardContext, answerCard, focusCardTab, sayToCard, send, startCard, stopRun, tryCard } from './ws.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
@@ -36,6 +36,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['/', 'Filter the cards by words'],
       ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, the run recipe), Verify (the team’s apps, later), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
       ['j / k  ·  f (Changes panel)', 'The next / previous file, its diff under it  ·  pop the diff out full width, on the same file'],
+      ['j / k  ·  Space  ·  r  ·  q (Try it panel, a lane with a stack)', 'The environment row and each service  ·  change the environment, or tick a service to run  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
       ['Esc (card open)', 'Back to the board, the card still focused; on the board, clear the filter'],
       ['← → (card open)', 'The previous / next card on the board, in column order'],
@@ -301,18 +302,20 @@ export function withdrawLast(id: string): void {
   flash(`Took back: ${last.label}`);
 }
 
-/** Is the card's app running (or still starting)? Then t stops it. */
+/** Is any of the card's runs going (starting or up)? Then t stops them all. */
 export function running(id: string): boolean {
-  const r = get().runs[id];
-  return r?.state === 'running' || r?.state === 'up';
+  return anyLive(get().runs, id);
 }
 
-/** t: run the card's recipe, or stop the app when it is running. The drawer opens on Overview to show it. */
+/**
+ * t: run the card's recipe, or stop it when it runs. With a stack (§82): start every service the
+ * Try it panel has ticked, in the environment it shows, or stop them all; the panel opens either way.
+ */
 export function tryIt(id: string): void {
   const s = get();
   const card = s.cards.find((c) => c.id === id);
   if (!card) return;
-  if (running(id)) { send({ type: 'card.stopRun', id }); flash(`Stopped ${card.key}’s app`); return; }
+  if (running(id)) { stopRun(id); flash(`Stopping ${card.key}’s app`); return; }
   const home = cardRepos(card)[0];
   set({ line: { ...s.line, focus: id, drawer: id, panel: 'try' } });
   const recipe = cardRecipe(s.recipes, card.workspaceId, home);
@@ -320,20 +323,78 @@ export function tryIt(id: string): void {
   const wsRepos = s.workspaces.find((w) => w.id === card.workspaceId)?.repos.length ?? 0;
   if (card.workspaceId && !s.recipes[wsRecipeKey(card.workspaceId)] && wsRepos > 1) { set({ modal: { kind: 'tryPick', id, detect: true } }); return; }
   if (!recipe) { flash(`No run recipe for ${home ? repoName(home) : card.key} yet: e writes one`); return; }
-  // A stack asks first: which environment, which APIs.
-  if (recipe.stack) { set({ modal: { kind: 'tryPick', id } }); return; }
+  if (recipe.stack) {
+    const pick = lastPick(id);
+    if (!pick) { flash('Tick the services to run in the Try it panel, then t again'); return; }
+    tryStack(id, pick);
+    return;
+  }
   tryCard(id).then(() => {
     setTimeout(() => document.getElementById('try-it')?.scrollIntoView({ block: 'nearest' }), 0);
   }, (e: Error) => flash(e.message));
 }
 
-/** Start a card's stack with what the picker chose, and remember the pick for next time. */
+/** Start a card's stack with what was picked (every picked service at once), and remember the pick for next time. */
 export function tryStack(id: string, choice: StackChoice): void {
   rememberPick(id, choice);
   set({ modal: null });
-  tryCard(id, choice).then(() => {
-    setTimeout(() => document.getElementById('try-it')?.scrollIntoView({ block: 'nearest' }), 0);
-  }, (e: Error) => flash(e.message));
+  tryCard(id, choice).then(() => flash(`Starting ${choice.apis.length ? choice.apis.join(', ') : 'the UI'}`), (e: Error) => flash(e.message));
+}
+
+/** r in the Try it panel: start (or start again) the service highlighted, on its own; with nothing running yet, start everything picked. */
+export function tryService(id: string, service: string): void {
+  const s = get();
+  if (!anyLive(s.runs, id) && !runsOf(s.runs, id).length) { tryIt(id); return; }
+  tryCard(id, undefined, service).then(() => flash(`Starting ${service}`), (e: Error) => flash(e.message));
+}
+
+/** q in the Try it panel: stop the service highlighted, the others keep running. */
+export function stopService(id: string, service: string): void {
+  const run = get().runs[runKey(id, service)];
+  if (!run || (run.state !== 'running' && run.state !== 'up')) { flash(`${service} isn’t running`); return; }
+  stopRun(id, service);
+  flash(`Stopping ${service}`);
+}
+
+/** The Try it panel's rows (the environment, then each service) and what j k Space r q do to them: the panel keeps them here for the keys. */
+export interface TryRows {
+  choose: [string, string[]][];
+  /** Each service: an API's repo, or "ui"; `found`: the card has its repo; `fixed`: always runs (the UI). */
+  services: { id: string; found: boolean; fixed: boolean }[];
+}
+export let tryRows: TryRows = { choose: [], services: [] };
+export function setTryRows(rows: TryRows): void { tryRows = rows; }
+
+/** Space in the Try it panel: cycle the environment on its row, or tick / untick the service highlighted. The pick is remembered for t. */
+export function toggleTryRow(id: string): void {
+  const s = get();
+  const at = s.line.at;
+  const pick = lastPick(id) ?? { values: {}, apis: [] };
+  if (at < tryRows.choose.length) {
+    const [k, vals] = tryRows.choose[at];
+    const cur = pick.values[k] ?? vals[0];
+    const next = vals[(vals.indexOf(cur) + 1) % vals.length];
+    rememberPick(id, { ...pick, values: { ...pick.values, [k]: next } });
+    if (anyLive(s.runs, id)) flash(`${k}: ${next} · takes effect when everything is started again (t twice)`);
+    return;
+  }
+  const sv = tryRows.services[at - tryRows.choose.length];
+  if (!sv || sv.fixed) return;
+  if (!sv.found) { flash(`${sv.id} isn’t in this card or its lane`); return; }
+  const apis = pick.apis.includes(sv.id) ? pick.apis.filter((a) => a !== sv.id) : [...pick.apis, sv.id];
+  rememberPick(id, { ...pick, apis });
+}
+
+/** j / k in the Try it panel. */
+export function stepTry(delta: number): void {
+  const s = get();
+  const n = tryRows.choose.length + tryRows.services.length;
+  set({ line: { ...s.line, at: Math.max(0, Math.min(Math.max(0, n - 1), s.line.at + delta)) } });
+}
+
+/** The service on the Try it panel's highlighted row, if a service is highlighted. */
+export function tryRowService(): string | undefined {
+  return tryRows.services[get().line.at - tryRows.choose.length]?.id;
 }
 
 const PICK_KEY = 'cc-control.stackPick';
@@ -343,7 +404,7 @@ export function lastPick(id: string): StackChoice | undefined {
   try { return (JSON.parse(localStorage.getItem(PICK_KEY) ?? '{}') as Record<string, StackChoice>)[id]; } catch { return undefined; }
 }
 
-function rememberPick(id: string, choice: StackChoice): void {
+export function rememberPick(id: string, choice: StackChoice): void {
   try {
     const all = JSON.parse(localStorage.getItem(PICK_KEY) ?? '{}') as Record<string, StackChoice>;
     all[id] = choice;
@@ -351,6 +412,8 @@ function rememberPick(id: string, choice: StackChoice): void {
     const keep = Object.fromEntries(Object.entries(all).slice(-50));
     localStorage.setItem(PICK_KEY, JSON.stringify(keep));
   } catch { /* storage off: the picker starts from the suggestion */ }
+  // The panel reads the pick from the store's tick (storage has no events of its own in the same page).
+  set({ line: { ...get().line, pickTick: (get().line.pickTick ?? 0) + 1 } });
 }
 
 /** o: the app the card's run is serving, in a new browser tab. */
@@ -575,7 +638,14 @@ function drawerKeys(e: KeyboardEvent): boolean {
     case 'C': togglePanel('context'); return true;
     case 'm': togglePanel('more'); return true;
     case '[': case ']': if (s.line.panel) { setPanelW(s.line.panelW + (e.key === ']' ? 40 : -40)); return true; } return false;
-    case 'j': case 'k': if (s.line.panel === 'changes') { stepChange(e.key === 'j' ? 1 : -1, changeCount); return true; } return false;
+    case 'j': case 'k':
+      if (s.line.panel === 'changes') { stepChange(e.key === 'j' ? 1 : -1, changeCount); return true; }
+      if (s.line.panel === 'try') { stepTry(e.key === 'j' ? 1 : -1); return true; }
+      return false;
+    // The Try it panel with a stack (§82): Space ticks, r starts one service (again), q stops one.
+    case ' ': if (s.line.panel === 'try' && s.line.drawer && tryRows.services.length) { toggleTryRow(s.line.drawer); return true; } return false;
+    case 'r': { const sv = s.line.panel === 'try' ? tryRowService() : undefined; if (sv && s.line.drawer) { tryService(s.line.drawer, sv); return true; } return false; }
+    case 'q': { const sv = s.line.panel === 'try' ? tryRowService() : undefined; if (sv && s.line.drawer) { stopService(s.line.drawer, sv); return true; } return false; }
     case 'f': if (s.line.panel === 'changes' && s.line.drawer) { openChanges(s.line.drawer, s.line.at); return true; } return false;
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;
     case 'X': if (s.line.drawer) openWorktrees(s.line.drawer); return true;

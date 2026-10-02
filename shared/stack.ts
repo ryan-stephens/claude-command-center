@@ -399,11 +399,30 @@ export function uiPortFor(stack: Stack, choice: StackChoice, ctx: StackRunContex
  * first, then the APIs' in reverse, so what started last stops first).
  */
 export function stackSteps(stack: Stack, choice: StackChoice, ctx: StackRunContext): string[] {
-  const values = choiceValues(stack, choice.values);
   const run: string[] = [];
   const stops: string[][] = [];
+  for (const api of pickedApis(stack, choice.apis)) {
+    const { steps, stop } = serviceSteps(stack, choice, ctx, api.repo);
+    run.push(...steps);
+    stops.push(stop);
+  }
+  if (stack.ui) {
+    const { steps, stop } = serviceSteps(stack, choice, ctx, 'ui');
+    run.push(...steps);
+    stops.push(stop);
+  }
+  return [...run, ...stops.reverse().flat()];
+}
+
+/**
+ * One service's steps (§82): an API's by its repo name, or the UI's ("ui"), each run in its repo,
+ * with its own stop: steps after them, so a service starts and stops on its own.
+ */
+export function serviceSteps(stack: Stack, choice: StackChoice, ctx: StackRunContext, service: string): { steps: string[]; stop: string[] } {
+  const values = choiceValues(stack, choice.values);
+  const steps: string[] = [];
+  const stop: string[] = [];
   const add = (lines: string[], repo: string, vars: Record<string, string>, where: string, port?: number) => {
-    const mine: string[] = [];
     for (const raw of lines) {
       let line = fill(raw, vars, where);
       let spec = parseStep(line);
@@ -416,16 +435,23 @@ export function stackSteps(stack: Stack, choice: StackChoice, ctx: StackRunConte
       }
       // Steps run in their repo unless the line names another; notes are shown as written.
       const full = spec.note || spec.repo ? line : `@${repo} ${line}`;
-      (spec.stop ? mine : run).push(full);
+      (spec.stop ? stop : steps).push(full);
     }
-    stops.push(mine);
   };
-  for (const api of pickedApis(stack, choice.apis)) {
+  if (service === 'ui') {
+    if (!stack.ui) throw new Error('The stack has no UI.');
+    add(stack.ui.steps, stack.ui.repo, uiVars(values, stack.ui, ctx), 'the UI’s steps');
+  } else {
+    const [api] = pickedApis(stack, [service]);
     const key = api.repo.toLowerCase();
     add(stack.api.steps, api.repo, apiVars(values, api, ctx.branches[key] ?? 'main', ctx.ports?.[key]), `${api.repo}’s steps`, ctx.ports?.[key]);
   }
-  if (stack.ui) add(stack.ui.steps, stack.ui.repo, uiVars(values, stack.ui, ctx), 'the UI’s steps');
-  return [...run, ...stops.reverse().flat()];
+  return { steps, stop };
+}
+
+/** The services a pick runs, in start order: each API, then the UI. */
+export function pickedServices(stack: Stack, choice: StackChoice): string[] {
+  return [...pickedApis(stack, choice.apis).map((a) => a.repo), ...(stack.ui ? ['ui'] : [])];
 }
 
 /** The proxy rules the picked APIs add, in order: each one's template rules, then its own. */

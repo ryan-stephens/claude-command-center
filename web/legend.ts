@@ -121,8 +121,9 @@ export interface LineLegendInput {
   /** Drawer: the card can take more context (c), and has some still waiting (x takes it back). */
   canAdd?: boolean;
   hasWaiting?: boolean;
-  /** Drawer: the dock panel open beside the chat (§81), if any. */
+  /** Drawer: the dock panel open beside the chat (§81), if any; `hasStack`: the lane has a stack, so Try it is a list of services (§82). */
   panel?: CardPanel | null;
+  hasStack?: boolean;
   /** New-card screen: which panel, and whether panel 2 shows the exact text. */
   pane?: 'src' | 'pkt' | 'go';
   preview?: boolean;
@@ -177,7 +178,7 @@ const WORKSPACE_KEYS: LegendItem[] = [
 function tryKeys(x: LineLegendInput): LegendItem[] {
   return [
     // On the open card the dock's Try it is the panel (⇧T), so t reads as what it does: start the app.
-    ...(x.appRunning ? [{ keys: ['t'], label: 'Stop the app' }] : x.canTry ? [{ keys: ['t'], label: x.view === 'drawer' ? 'Start the app' : 'Try it', tone: 'acc' as const }] : []),
+    ...(x.appRunning ? [{ keys: ['t'], label: x.hasStack ? 'Stop all' : 'Stop the app' }] : x.canTry ? [{ keys: ['t'], label: x.view === 'drawer' ? (x.hasStack ? 'Start all ticked' : 'Start the app') : 'Try it', tone: 'acc' as const }] : []),
     ...(x.appUp ? [{ keys: ['o'], label: 'Open the app' }] : x.hasPr ? [{ keys: ['o'], label: 'Open the PR' }] : []),
     ...(x.hasChanges ? [{ keys: ['⇧D'], label: 'Changes' }] : []),
     ...(x.ship ? [{ keys: ['s'], label: x.ship === 'merge' ? 'Merge' : x.ship === 'rest' ? 'Ship the rest' : x.ship === 'report' ? 'Report' : 'Ship' }] : []),
@@ -218,6 +219,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       { keys: ['←', '→'], label: 'Previous / next card' },
       // The dock: the panel open is named, the rest are one key each.
       ...(x.panel === 'changes' ? [{ keys: ['j', 'k'], label: 'File' }, { keys: ['f'], label: 'Pop out' }] : []),
+      ...(x.panel === 'try' && x.hasStack ? [{ keys: ['j', 'k'], label: 'Service' }, { keys: ['Space'], label: 'Tick / environment' }, { keys: ['r'], label: 'Start this one' }, { keys: ['q'], label: 'Stop this one' }] : []),
       ...CARD_PANELS.map((p) => ({ keys: [p.key], label: x.panel === p.id ? `Close ${p.name}` : p.name })),
       ...(x.panel ? [{ keys: ['[', ']'], label: 'Panel width' }] : []),
       ...tryKeys(x).filter((i) => i.keys[0] !== '⇧D'),

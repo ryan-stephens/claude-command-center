@@ -7,7 +7,8 @@ import { after, test } from 'node:test';
 import { validateStack } from '../shared/stack.ts';
 import { PortPool } from './ports.ts';
 import { RunService } from './recipes.ts';
-import { prepareStackRun, readLooseJson, restoreLeftovers, saveStack, stackOf, stackRecipe, stackRows } from './stack.ts';
+import { prepareStackRun, prepareStackSession, readLooseJson, restoreLeftovers, saveStack, serviceRecipe, stackOf, stackRecipe, stackRows } from './stack.ts';
+import { runKey } from '../shared/recipes.ts';
 import { Store } from './store.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'cc-stack-'));
@@ -277,5 +278,55 @@ test('ps: steps run in PowerShell and answers: are typed into its questions', { 
     assert.equal(readFileSync(join(cwd, 'answers.txt'), 'utf8'), 'y 1', 'y to the first, No (1) to the second');
   } finally {
     runs.stopAll();
+  }
+});
+
+test('services (§82): each API and the UI is its own run on the session’s ports; one stops and starts again alone, the UI keeps its port; ending the session frees it all', async () => {
+  const orders = repo('orders-api-s', { 'api.js': API }, 'feature/SVC-1');
+  const fees = repo('fees-api-s', { 'api.js': API }, 'main');
+  const ui = repo('web-ui-s', { 'ui.js': UI, 'apps/shop/proxy.conf.json': PROXY }, 'main');
+  const places = { cwd: ui, repos: { 'orders-api': orders, 'fees-api': fees, 'web-ui': ui } };
+  const store = new Store(join(dir, 'svc.db'));
+  const runsDir = join(dir, 'runs-svc');
+  const runs = new RunService(() => {}, process.env);
+  try {
+    saveStack(store, 'w2', makeStack());
+    const info = stackOf(store, 'w2')!;
+    const pool = new PortPool([18451, 18460]);
+    const session = await prepareStackSession(info, { values: { env: 'dev' }, apis: ['orders-api', 'fees-api'] }, places, 'c9', runsDir, pool);
+    assert.deepEqual(session.services, ['orders-api', 'fees-api', 'ui']);
+    assert.deepEqual(pool.taken(), [18451, 18452], 'a port per API, reserved for the whole session');
+    assert.equal(session.label, 'dev · orders-api :18451, fees-api :18452');
+    for (const sv of session.services) await runs.start(runKey('c9', sv), serviceRecipe(session, sv), session.places, { cardId: 'c9', service: sv, choice: session.label });
+    await until(() => runs.ofCard('c9').every((r) => r.state === 'up'));
+    assert.deepEqual(runs.ofCard('c9').map((r) => r.service).sort(), ['fees-api', 'orders-api', 'ui']);
+    assert.equal(runs.get('c9'), undefined, 'no run under the card’s bare id');
+    assert.equal(await (await fetch('http://localhost:18452')).text(), 'api');
+    assert.match(await (await fetch(runs.get(runKey('c9', 'ui'))!.url!)).text(), /"\/gw\/fees\/\*\*"/, 'the UI’s proxy copy names both APIs');
+
+    // One API stops alone: its stop: step runs, the others stay up.
+    await runs.stop(runKey('c9', 'fees-api'));
+    assert.equal(readFileSync(join(fees, 'down.txt'), 'utf8'), 'fees-api-main');
+    assert.equal(runs.get(runKey('c9', 'orders-api'))!.state, 'up');
+    assert.equal(runs.get(runKey('c9', 'ui'))!.state, 'up');
+    await assert.rejects(fetch('http://localhost:18452'));
+    assert.deepEqual(pool.taken(), [18451, 18452], 'its port stays reserved for the session');
+    // And starts again on the same port, through the same session.
+    await runs.start(runKey('c9', 'fees-api'), serviceRecipe(session, 'fees-api'), session.places, { cardId: 'c9', service: 'fees-api' });
+    await until(() => runs.get(runKey('c9', 'fees-api'))?.state === 'up');
+    assert.equal(await (await fetch('http://localhost:18452')).text(), 'api');
+    assert.throws(() => serviceRecipe(session, 'nope-api'), /wasn’t picked/);
+
+    // The session ends: every service stops (the UI first), the proxy copy goes, the ports come back.
+    await runs.stopCard('c9');
+    session.end();
+    assert.ok(runs.ofCard('c9').every((r) => r.state === 'stopped'));
+    assert.equal(existsSync(join(runsDir, 'c9.proxy.conf.json')), false);
+    assert.deepEqual(pool.taken(), []);
+    session.end();
+    assert.deepEqual(pool.taken(), [], 'ending twice frees nothing twice');
+  } finally {
+    runs.stopAll();
+    store.close();
   }
 });

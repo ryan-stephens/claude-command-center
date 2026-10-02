@@ -72,6 +72,29 @@ export interface CardRun {
   text: string;
   /** What was picked when it started, for a workspace's stack: "dev · orders-api, fees-api". */
   choice?: string;
+  /** A stack's run of one service (§82): an API's repo name, or "ui". Unset: the card's single recipe. */
+  service?: string;
+}
+
+/** The key a run is kept under: the card's id, or `<card>#<service>` for one service of its stack. */
+export function runKey(cardId: string, service?: string): string {
+  return service ? `${cardId}#${service}` : cardId;
+}
+
+/** Every run of a card, the UI's first. */
+export function runsOf(runs: Record<string, CardRun>, cardId: string): CardRun[] {
+  return Object.values(runs).filter((r) => r.cardId === cardId).sort((a, b) => Number(b.service === 'ui') - Number(a.service === 'ui'));
+}
+
+/** The run that stands for the card on a tile and in the legend: its single recipe's, else the UI's, else the first service's. */
+export function mainRun(runs: Record<string, CardRun>, cardId: string): CardRun | undefined {
+  const all = runsOf(runs, cardId);
+  return all.find((r) => !r.service) ?? all.find((r) => r.service === 'ui') ?? all[0];
+}
+
+/** Is any of the card's runs still going (starting or up)? */
+export function anyLive(runs: Record<string, CardRun>, cardId: string): boolean {
+  return runsOf(runs, cardId).some((r) => r.state === 'running' || r.state === 'up');
 }
 
 /** The page keeps workspaces' recipes in the same map, under this key. */

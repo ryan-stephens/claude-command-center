@@ -11,6 +11,7 @@ import { importWorkspace } from '../commands.ts';
 import { INBOX_VIEWS, inView, qaLine, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, ticketFocus } from '../line-model.ts';
+import { mainRun } from '../../shared/recipes.ts';
 import { boardOf, openCard, openComposer, switchInbox, workspaceKey } from '../line-keys.ts';
 import { allMerged, prsLine, prsOf } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
@@ -224,7 +225,7 @@ const EMPTY: Record<Card['stage'], ReactNode> = {
 
 /** On a tile: the card's app, while it runs or when it failed. */
 function RunLine({ id }: { id: string }) {
-  const run = useStore((s) => s.runs[id]);
+  const run = useStore((s) => mainRun(s.runs, id));
   if (!run || run.state === 'stopped' || run.state === 'done') return null;
   const tone = run.state === 'failed' ? 'text-bad' : run.state === 'up' ? 'text-ok' : 'text-busy';
   return (

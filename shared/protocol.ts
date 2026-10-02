@@ -16,7 +16,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
 
-export const PROTOCOL = 23;
+export const PROTOCOL = 24;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -381,7 +381,8 @@ export type ClientMsg =
   /** Answer the permission prompt the terminal relayed (card.live.ask.requestId). Answered with ok or an error. */
   | { type: 'card.answer'; reqId: string; id: string; requestId: string; behavior: 'allow' | 'deny' }
   /** Try it: run the card's recipe in its folder (again, if it ran before), or its workspace's stack with what was picked. Answered with ok or an error. */
-  | { type: 'card.try'; reqId: string; id: string; choice?: StackChoice }
+  /** Try it. With a stack: `choice` starts a new session (every picked service); `service` starts (or starts again) one service of the session that is up (§82). */
+  | { type: 'card.try'; reqId: string; id: string; choice?: StackChoice; service?: string }
   /** Try it with a stack: the picker's rows (which APIs the card has, which changed). Answered with stack.plan. */
   | { type: 'card.stackPlan'; reqId: string; id: string }
   /** Save a workspace's stack (checked on the server); null removes it. Answered with ok or an error. */
@@ -389,7 +390,8 @@ export type ClientMsg =
   /** What the workspace's repos say the stack is (shared/stack-detect.ts): for the editor's starting point, and t with no stack yet. */
   | { type: 'stack.detect'; reqId: string; workspaceId: string }
   /** Stop the card's run and the app it started. */
-  | { type: 'card.stopRun'; id: string }
+  /** Stop the card's run; with a stack, every service and the session (its ports and proxy copy), or one `service` alone. */
+  | { type: 'card.stopRun'; id: string; service?: string }
   /** Save the run recipe you wrote for a repo; no steps goes back to the detected one. Answered with ok or an error. */
   | { type: 'recipe.save'; reqId: string; repo?: string; workspaceId?: string; steps: string[]; url?: string }
   /** Ship: what shipping the card will do, one block per repo it changed (answered with ship.plan), do it (ok or an error), look at its PRs again, merge them. */

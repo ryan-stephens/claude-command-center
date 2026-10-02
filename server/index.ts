@@ -14,7 +14,7 @@ import { CARD_KINDS, cardRepos, folderFor, type Card } from '../shared/cards.ts'
 import type { PromptContext, SavedPrompt } from '../shared/prompts.ts';
 import { writePrompt } from './write-prompt.ts';
 import { doneStatuses, finishesCard } from '../shared/tickets.ts';
-import type { RunRecipe } from '../shared/recipes.ts';
+import { runKey, type RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, cleanDraft, focusTab, userModel, writeHookSettings } from './cards.ts';
 import { cleanSeed, seedAllowed, seedCard, seedTranscript } from './seed.ts';
@@ -22,7 +22,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { ChannelService } from './channel.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
 import { parseRange, PortPool } from './ports.ts';
-import { plainStack, prepareStackRun, restoreLeftovers, runsDir, saveStack, stackOf, stackRecipe, stackRows } from './stack.ts';
+import { plainStack, prepareStackSession, restoreLeftovers, runsDir, saveStack, serviceRecipe, stackOf, stackRecipe, stackRows, type StackSession } from './stack.ts';
 import { detectWorkspaceStack, joinStack } from './stack-detect.ts';
 import { suggested, unknownStackRepos, validateStack } from '../shared/stack.ts';
 import { ShipService } from './ship.ts';
@@ -92,6 +92,15 @@ function ticketsMsg(): ServerMsg {
 }
 
 const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env);
+/** Each card's stack session (§82): its ports and proxy copy, kept while its services run or are started again. */
+const sessions = new Map<string, StackSession>();
+
+/** End a card's stack session: stop every service, free its ports, remove the proxy copy. */
+async function endSession(cardId: string, quiet = false): Promise<void> {
+  await runs.stopCard(cardId, quiet);
+  sessions.get(cardId)?.end();
+  sessions.delete(cardId);
+}
 // Local ports for stack runs, one per API and UI, so two cards can run the same stack at once.
 const ports = new PortPool(parseRange(process.env.CC_CONTROL_PORTS));
 const ship = new ShipService(cards, runs);
@@ -496,7 +505,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     }
     case 'card.delete':
-      void runs.forget(String(msg.id));
+      void endSession(String(msg.id), true);
       cards.delete(String(msg.id));
       return;
     case 'card.addContext': {
@@ -520,7 +529,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'card.removeWorktrees': {
       const id = String(msg.id);
       // A run from those folders would be left pointing at nothing: it stops first, with its stop: steps.
-      await runs.stop(id, true);
+      await endSession(id, true);
       const r = await cards.removeWorktrees(id, msg.force === true, msg.thenDelete === true);
       if (msg.thenDelete === true && !r.kept.length) cards.delete(id);
       send(ws, { type: 'card.worktreesRemoved', reqId: msg.reqId, id, removed: r.removed, kept: r.kept });
@@ -531,14 +540,26 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       if (!card) throw new Error('That card is no longer on the line.');
       const stack = card.workspaceId ? stackOf(store, card.workspaceId) : undefined;
       if (stack) {
+        const service = typeof msg.service === 'string' ? msg.service : undefined;
+        if (service) {
+          // One service of the session that is up: started, or started again after a fix, while the others keep running.
+          const session = sessions.get(card.id);
+          if (!session) throw new Error('Nothing is running for this card yet: pick the environment and the services, then start them.');
+          const recipe = serviceRecipe(session, service);
+          send(ws, { type: 'ok', reqId: msg.reqId });
+          await runs.start(runKey(card.id, service), recipe, session.places, { cardId: card.id, service, choice: session.label });
+          return;
+        }
         const c = (msg.choice ?? {}) as { values?: unknown; apis?: unknown };
         const values = Object.fromEntries(Object.entries((c.values ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)]));
         const apis = Array.isArray(c.apis) ? c.apis.map(String).slice(0, 30) : [];
-        // The last run goes first (its cleanup would otherwise undo the proxy file this one writes).
-        await runs.stop(card.id, true);
-        const { recipe, opts } = await prepareStackRun(stack, { values, apis }, runPlaces(card), card.id, runsDir(DB_PATH), ports);
+        // The last session goes first (its proxy copy and ports are this one's to make again).
+        await endSession(card.id, true);
+        const session = await prepareStackSession(stack, { values, apis }, runPlaces(card), card.id, runsDir(DB_PATH), ports);
+        sessions.set(card.id, session);
         send(ws, { type: 'ok', reqId: msg.reqId });
-        await runs.start(card.id, recipe, runPlaces(card), opts);
+        // Each service as its own run, started together: an API's steps and the UI's run side by side, each with its own stop.
+        for (const sv of session.services) void runs.start(runKey(card.id, sv), serviceRecipe(session, sv), session.places, { cardId: card.id, service: sv, choice: session.label });
         return;
       }
       const home = cardRepos(card)[0];
@@ -550,9 +571,14 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       await runs.start(card.id, recipe, places);
       return;
     }
-    case 'card.stopRun':
-      await runs.stop(String(msg.id));
+    case 'card.stopRun': {
+      const id = String(msg.id);
+      const service = typeof msg.service === 'string' ? msg.service : undefined;
+      if (service) { await runs.stop(runKey(id, service)); return; }
+      if (sessions.has(id)) await endSession(id);
+      else await runs.stop(id);
       return;
+    }
     case 'card.send': {
       const text = String(msg.text ?? '').slice(0, 20_000);
       if (!text.trim()) throw new Error('Nothing to send.');

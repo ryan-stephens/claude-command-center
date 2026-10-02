@@ -253,13 +253,16 @@ interface Live {
   cleanup?: () => void;
 }
 
-/** Extra for a run: what was picked (shown on the page), and what to undo when it stops. */
+/** Extra for a run: what was picked (shown on the page), what to undo when it stops, and for a stack's service (§82) the card and service it belongs to. */
 export interface RunOptions {
   choice?: string;
   cleanup?: () => void;
+  /** The card the run belongs to, when the key isn't the card's id (a service's run is kept under runKey(card, service)). */
+  cardId?: string;
+  service?: string;
 }
 
-/** Runs cards' recipes. One run per card; starting again stops the last one first (and runs its stop: steps). */
+/** Runs cards' recipes, one per key: a card's id, or runKey(card, service) for one service of its stack (§82). Starting a key again stops that run first (and runs its stop: steps). */
 export class RunService {
   private live = new Map<string, Live>();
   private timer: NodeJS.Timeout | null = null;
@@ -279,8 +282,18 @@ export class RunService {
     return [...this.live.values()].map((l) => l.run);
   }
 
-  get(cardId: string): CardRun | undefined {
-    return this.live.get(cardId)?.run;
+  get(key: string): CardRun | undefined {
+    return this.live.get(key)?.run;
+  }
+
+  /** Every run of a card: its own, and its services'. */
+  ofCard(cardId: string): CardRun[] {
+    return [...this.live.values()].map((l) => l.run).filter((r) => r.cardId === cardId);
+  }
+
+  /** The keys of a card's runs. */
+  private keysOf(cardId: string): string[] {
+    return [...this.live.entries()].filter(([, l]) => l.run.cardId === cardId).map(([k]) => k);
   }
 
   /** Tell the page, at most every 250 ms while output streams. */
@@ -296,22 +309,23 @@ export class RunService {
   }
 
   /** Stop what runs now (with its stop: steps), then run the recipe. `places` or a plain folder for a repo's own recipe. */
-  async start(cardId: string, recipe: RunRecipe, places: RunPlaces | string, opts: RunOptions = {}): Promise<CardRun> {
-    await this.stop(cardId, true);
+  async start(key: string, recipe: RunRecipe, places: RunPlaces | string, opts: RunOptions = {}): Promise<CardRun> {
+    await this.stop(key, true);
     const at: RunPlaces = typeof places === 'string' ? { cwd: places, repos: {} } : places;
     const specs = specsOf(recipe);
     const run: CardRun = {
-      cardId, repo: recipe.repo, cwd: at.cwd, state: 'running', startedAt: Date.now(), ...(recipe.url ? { url: recipe.url } : {}),
+      cardId: opts.cardId ?? key, repo: recipe.repo, cwd: at.cwd, state: 'running', startedAt: Date.now(), ...(recipe.url ? { url: recipe.url } : {}),
+      ...(opts.service ? { service: opts.service } : {}),
       steps: specs.map((s) => ({
         cmd: s.cmd, state: s.note ? 'note' : 'wait', tail: [],
         ...(s.repo ? { repo: s.repo } : {}), ...(Object.keys(s.env).length ? { env: Object.keys(s.env) } : {}), ...(s.stop ? { stop: true } : {}),
         ...(s.wait ? { waitFor: waitLabel(s) } : {}),
       })),
-      text: `Starting ${recipe.workspaceId ? 'the workspace' : repoName(recipe.repo)}`,
+      text: `Starting ${opts.service ?? (recipe.workspaceId ? 'the workspace' : repoName(recipe.repo))}`,
       ...(opts.choice ? { choice: opts.choice } : {}),
     };
     const live: Live = { run, specs, places: at, procs: [], lines: specs.map(() => []), made: [], stopped: false, ...(opts.cleanup ? { cleanup: opts.cleanup } : {}) };
-    this.live.set(cardId, live);
+    this.live.set(key, live);
     this.step(live, 0);
     this.changed();
     return run;
@@ -490,18 +504,22 @@ export class RunService {
     }
   }
 
-  /** Stop a card's run: kill everything it started, then run its stop: steps. `quiet`: drop it (it's being started again, or forgotten). */
-  async stop(cardId: string, quiet = false): Promise<void> {
-    const live = this.live.get(cardId);
+  /** Stop a run by its key: kill everything it started, then run its stop: steps. `quiet`: drop it (it's being started again, or forgotten). */
+  async stop(key: string, quiet = false): Promise<void> {
+    const live = this.live.get(key);
     if (!live) return;
-    if (live.stopped) { await live.stopping; if (quiet) this.live.delete(cardId); return; }
+    if (live.stopped) { await live.stopping; if (quiet) this.live.delete(key); return; }
     live.stopped = true;
-    live.stopping = this.finish(live, quiet);
+    live.stopping = this.finish(key, live, quiet);
     await live.stopping;
   }
 
-  private async finish(live: Live, quiet: boolean): Promise<void> {
-    const cardId = live.run.cardId;
+  /** Stop every run of a card: its services in reverse start order (what started last stops first). */
+  async stopCard(cardId: string, quiet = false): Promise<void> {
+    for (const key of this.keysOf(cardId).reverse()) await this.stop(key, quiet);
+  }
+
+  private async finish(key: string, live: Live, quiet: boolean): Promise<void> {
     for (const p of live.procs) killTree(p);
     for (const s of live.run.steps) if (!s.stop && (s.state === 'go' || s.state === 'up' || s.state === 'wait')) s.state = 'off';
     const was = live.run.state;
@@ -511,13 +529,13 @@ export class RunService {
     if (live.specs.some((s) => s.stop)) await this.teardown(live);
     this.cleanup(live);
     if (live.run.state === 'stopped') live.run.text = live.run.steps.some((s) => s.stop && s.state === 'bad') ? 'Stopped, but a stop step failed' : 'Stopped';
-    if (quiet) this.live.delete(cardId);
+    if (quiet) this.live.delete(key);
     this.changed();
   }
 
-  /** Forget a card's run (the card was removed): stop it and drop it. */
+  /** Forget a card's runs (the card was removed): stop them and drop them. */
   async forget(cardId: string): Promise<void> {
-    await this.stop(cardId, true);
+    await this.stopCard(cardId, true);
   }
 
   /** The server is going away: kill what runs now. Stop steps are skipped (there is no time to wait for them). */

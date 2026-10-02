@@ -9,16 +9,17 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { askOf, cardRepos, fmtK, itemTokens, memoryPct, modelName, ownFolders, packetText, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
 import { againstText, changeRows, changeTotals, patchLines, type Changes } from '../../shared/changes.ts';
-import { cardRecipe, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
+import { cardRecipe, mainRun, runKey, runsOf, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
+import type { Stack, StackApiRow } from '../../shared/stack.ts';
 import { allMerged, openPrs, prLine, prsOf, shipLeft, shipMode } from '../../shared/ship.ts';
 import { SOURCE_NAME } from '../../shared/tickets.ts';
 import { repoName } from '../../shared/workspaces.ts';
 import { CARD_PANELS, type CardPanel } from '../line-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard } from '../line-model.ts';
-import { answerAsk, boardOf, editRecipe, goToTab, openAddComposer, openApp, openChanges, openNeighbour, openWorktrees, saySubmit, setChangeCount, shipKey, togglePanel, tryIt } from '../line-keys.ts';
+import { answerAsk, boardOf, editRecipe, goToTab, lastPick, openAddComposer, openApp, openChanges, openNeighbour, openWorktrees, rememberPick, saySubmit, setChangeCount, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
 import { openSession } from '../keys.ts';
 import { get, set, setPanelW, useStore } from '../store.ts';
-import { cardChanges, send } from '../ws.ts';
+import { cardChanges, send, stackPlan } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { KindPill, useExpandKey } from './TicketLine.tsx';
 import { Transcript } from './Transcript.tsx';
@@ -92,8 +93,7 @@ function DockItem({ k, icon, name, on, badge, tone, onClick, title }: { k: strin
 
 /** The dock on the left: the way back, then one key per panel; Ship at the bottom. */
 function Dock({ card, panel }: { card: Card; panel: CardPanel | null }) {
-  const run = useStore((s) => s.runs[card.id]);
-  const up = run?.state === 'up';
+  const up = useStore((s) => runsOf(s.runs, card.id).some((r) => r.state === 'up'));
   const files = card.files?.length ?? 0;
   const left = waiting(card).length;
   const prs = prsOf(card.ship);
@@ -401,17 +401,139 @@ function StepRow({ s }: { s: RunStep }) {
   );
 }
 
-/** Try it: this card's app (its own folders, its own port), the run recipe step by step, and what a failing step said. */
+/** Try it: with a stack, the services (§82); else this card's app, the run recipe step by step, and what a failing step said. */
 function TryIt({ card }: { card: Card }) {
   const home = cardRepos(card)[0];
   const recipe = useStore((s) => cardRecipe(s.recipes, card.workspaceId, home));
+  if (recipe?.stack) return <StackTry card={card} stack={recipe.stack} source={recipe.source} />;
+  return <RecipeTry card={card} />;
+}
+
+/** The state of one service's run, as a word and a tone. */
+function runState(run: CardRun | undefined): { text: string; tone: string; dot: string } {
+  if (!run) return { text: 'not started', tone: 'text-faint', dot: 'border border-line' };
+  switch (run.state) {
+    case 'running': return { text: 'starting', tone: 'text-busy', dot: 'bg-busy' };
+    case 'up': return { text: 'up', tone: 'text-ok', dot: 'bg-ok' };
+    case 'done': return { text: 'finished', tone: 'text-sub', dot: 'bg-faint' };
+    case 'failed': return { text: run.text, tone: 'text-bad', dot: 'bg-bad' };
+    case 'stopped': return { text: 'stopped', tone: 'text-faint', dot: 'bg-faint' };
+  }
+}
+
+/**
+ * A lane with a stack: the environment, then each service (every API, and the UI) with its own
+ * state, Start / Start again and Stop, so one can be fixed and started again while the rest keep
+ * running. t starts every ticked service at once (a new session: ports and the proxy copy), or
+ * stops them all. The pick is remembered per card, in this browser.
+ */
+function StackTry({ card, stack, source }: { card: Card; stack: Stack; source: string }) {
+  const [rows, setRows] = useState<StackApiRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const runs = useStore((s) => s.runs);
+  const at = useStore((s) => s.line.at);
+  useStore((s) => s.line.pickTick);
+  const mine = runsOf(runs, card.id);
+  const live = mine.some((r) => r.state === 'running' || r.state === 'up');
+  const choose = Object.entries(stack.choose);
+  useEffect(() => {
+    let on = true;
+    stackPlan(card.id).then((p) => {
+      if (!on) return;
+      setRows(p.rows);
+      // No pick yet for this card: the suggestion (the APIs changed on its branch, else the ones the ticket names) is the pick, so t can start it.
+      if (!lastPick(card.id)) rememberPick(card.id, { values: Object.fromEntries(choose.map(([k, v]) => [k, v[0]])), apis: p.suggested.filter((r) => p.rows.some((x) => x.repo === r && x.found)) });
+    }, (e: Error) => { if (on) setError(e.message); });
+    return () => { on = false; };
+  }, [card.id]);
+  const pick = lastPick(card.id) ?? { values: {}, apis: [] };
+  const services = [...(rows ?? stack.apis.map((a) => ({ repo: a.repo, found: true, changed: false, named: false, why: '' }))).map((r) => ({ id: r.repo, found: r.found, fixed: false, why: r.why, changed: r.changed })), ...(stack.ui ? [{ id: 'ui', found: true, fixed: true, why: stack.ui.repo, changed: false }] : [])];
+  useEffect(() => { setTryRows({ choose, services: services.map(({ id, found, fixed }) => ({ id, found, fixed })) }); return () => setTryRows({ choose: [], services: [] }); }, [JSON.stringify(choose), services.map((x) => `${x.id}:${x.found}`).join(',')]);
+  useEffect(() => { document.getElementById(`try-${at}`)?.scrollIntoView({ block: 'nearest' }); }, [at]);
+  const highlighted = services[at - choose.length];
+  const run = highlighted ? runs[runKey(card.id, highlighted.id)] : undefined;
+  const shown = run?.steps.find((s) => s.state === 'bad') ?? run?.steps.find((s) => s.state === 'go') ?? run?.steps.find((s) => s.state === 'up');
+  const label = mine[0]?.choice;
+  const ticked = (id: string) => id === 'ui' || pick.apis.includes(id);
+  return (
+    <>
+      <Sec title={live ? `Running · ${label ?? ''}` : 'Services'} right={<button className="flex items-center gap-1.5 text-[12px] text-faint hover:text-ink" onClick={() => editRecipe(card.id)} title="Change the lane's stack">set up <Key k="e" size="sm" /></button>}>
+        {error && <p className="text-[13px] text-bad" role="alert">{error}</p>}
+        <ul className="grid gap-1" role="listbox" aria-label="The environment and the services">
+          {choose.map(([k, vals], i) => (
+            <li key={k} id={`try-${i}`} role="option" aria-selected={at === i} onClick={() => set({ line: { ...get().line, at: i } })}
+              className={`flex cursor-pointer items-center gap-2 rounded-lg border-l-[3px] py-1.5 pl-2 pr-2 ${at === i ? 'border-l-acc bg-acc-soft' : 'border-l-transparent hover:bg-raise/60'}`}>
+              <span className="w-20 shrink-0 text-[12px] font-semibold text-sub">{k}</span>
+              <div className="flex grow flex-wrap gap-1" role="radiogroup" aria-label={k}>
+                {vals.map((v) => (
+                  <button key={v} role="radio" aria-checked={(pick.values[k] ?? vals[0]) === v} onClick={(e) => { e.stopPropagation(); rememberPick(card.id, { ...pick, values: { ...pick.values, [k]: v } }); }}
+                    className={`rounded-md border px-2 py-0.5 font-mono text-[12px] ${(pick.values[k] ?? vals[0]) === v ? 'border-ring bg-surface font-semibold text-ink' : 'border-line bg-raise text-sub'}`}>{v}</button>
+                ))}
+              </div>
+            </li>
+          ))}
+          {services.map((sv, j) => {
+            const i = choose.length + j;
+            const r = runs[runKey(card.id, sv.id)];
+            const st = runState(r);
+            const on = r?.state === 'running' || r?.state === 'up';
+            return (
+              <li key={sv.id} id={`try-${i}`} role="option" aria-selected={at === i} onClick={() => set({ line: { ...get().line, at: i } })}
+                className={`grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 rounded-lg border-l-[3px] py-1.5 pl-2 pr-2 ${at === i ? 'border-l-acc bg-acc-soft' : 'border-l-transparent hover:bg-raise/60'} ${sv.found ? '' : 'opacity-55'}`}>
+                {sv.fixed
+                  ? <span className="grid h-4 w-4 place-items-center rounded border border-line text-[10px] text-faint" title="The UI always runs">●</span>
+                  : <button role="checkbox" aria-checked={ticked(sv.id)} aria-label={`Run ${sv.id}`} disabled={!sv.found} onClick={(e) => { e.stopPropagation(); set({ line: { ...get().line, at: i } }); toggleTryRow(card.id); }}
+                    className={`grid h-4 w-4 place-items-center rounded border text-[11px] font-bold ${ticked(sv.id) ? 'border-ring bg-ring text-bg' : 'border-line bg-surface'}`}>{ticked(sv.id) ? '✓' : ''}</button>}
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="shrink-0 font-mono text-[13px] font-semibold">{sv.id === 'ui' ? `${stack.ui?.repo ?? 'UI'}` : sv.id}</span>
+                  <span className={`flex min-w-0 items-center gap-1.5 text-[12px] ${st.tone}`} title={r?.text}><span className={`h-2 w-2 shrink-0 rounded-full ${st.dot}`} />{r?.state === 'running' && <span className="spinner" />}<span className="truncate">{st.text}</span></span>
+                </span>
+                <span className="flex items-center gap-1">
+                  {sv.id === 'ui' && r?.state === 'up' && r.url && <button className="btn py-0 text-[12px]" onClick={(e) => { e.stopPropagation(); openApp(card.id); }}><Key k="o" size="sm" />Open</button>}
+                  {on
+                    ? <button className="btn py-0 text-[12px]" onClick={(e) => { e.stopPropagation(); stopService(card.id, sv.id); }} title="Stop this one; the others keep running"><Key k="q" size="sm" />Stop</button>
+                    : (live || r) && ticked(sv.id) && <button className="btn py-0 text-[12px]" onClick={(e) => { e.stopPropagation(); tryService(card.id, sv.id); }} title="Start this one on its own"><Key k="r" size="sm" />{r ? 'Again' : 'Start'}</button>}
+                  {on && <button className="btn py-0 text-[12px]" onClick={(e) => { e.stopPropagation(); tryService(card.id, sv.id); }} title="Stop it and start it again, the others keep running"><Key k="r" size="sm" />Again</button>}
+                </span>
+                {!sv.fixed && sv.why && <span className={`col-start-2 text-[11.5px] ${sv.changed ? 'text-attn' : 'text-faint'}`}>{sv.why}</span>}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="flex flex-wrap items-center gap-2">
+          <button className={`btn py-1 ${!live && card.stage === 'try' ? 'btn-primary' : ''}`} onClick={() => tryIt(card.id)}><Key k="t" size="sm" tone={!live && card.stage === 'try' ? 'ghost' : undefined} />{live ? 'Stop all' : `Start ${pick.apis.length ? `${pick.apis.length} API${pick.apis.length === 1 ? '' : 's'}${stack.ui ? ' and the UI' : ''}` : stack.ui ? 'the UI' : 'nothing'}`}</button>
+          {!live && <span className="text-[12px] text-faint">APIs left unticked are served by the shared {pick.values.env ?? choose[0]?.[1][0] ?? ''} environment.</span>}
+        </div>
+        {source.startsWith('from the workspace file') && !live && <div className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">This stack came with a lane file someone shared. Read its steps before starting: they run on this machine.</div>}
+      </Sec>
+      {highlighted && (
+        <Sec id="try-it" title={highlighted.id === 'ui' ? `${stack.ui?.repo ?? 'UI'} · its steps` : `${highlighted.id} · its steps`} right={run ? <span className="text-[12px] text-faint">{run.text}</span> : null}>
+          {run
+            ? <ol className="grid min-w-0 gap-1 rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[12px]">
+              {run.steps.filter((s) => !s.stop).map((s, i) => <StepRow key={i} s={s} />)}
+              {run.steps.some((s) => s.stop) && <li className="mt-1 font-sans text-[11px] font-bold uppercase tracking-wide text-faint">When stopped</li>}
+              {run.steps.filter((s) => s.stop).map((s, i) => <StepRow key={`stop${i}`} s={s} />)}
+            </ol>
+            : <p className="text-[13px] text-faint">Not started yet. Its steps show here as they run.</p>}
+          {shown && shown.tail.length > 0 && (
+            <pre className="m-0 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-snug text-sub">{shown.tail.join('\n')}</pre>
+          )}
+        </Sec>
+      )}
+    </>
+  );
+}
+
+/** A repo's own recipe: the app, the steps as they run, and what a failing step said. */
+function RecipeTry({ card }: { card: Card }) {
+  const home = cardRepos(card)[0];
+  const recipe = useStore((s) => cardRecipe(s.recipes, card.workspaceId, home));
   const wsName = useStore((s) => s.workspaces.find((w) => w.id === card.workspaceId)?.name);
-  const last: CardRun | undefined = useStore((s) => s.runs[card.id]);
+  const last: CardRun | undefined = useStore((s) => mainRun(s.runs, card.id));
   const specs = recipe ? specsOf(recipe) : [];
-  const stack = recipe?.stack;
   const live = last?.state === 'running' || last?.state === 'up';
-  const run = last && (live || stack || (recipe && last.steps.map((s) => s.cmd).join('\n') === specs.map((s) => s.cmd).join('\n'))) ? last : undefined;
-  const name = stack ? `${wsName ?? 'the lane'} stack${run?.choice ? ` · ${run.choice}` : ''}` : recipe?.workspaceId ? `${wsName ?? 'the lane'} lane` : home ? repoName(home) : card.key;
+  const run = last && (live || (recipe && last.steps.map((s) => s.cmd).join('\n') === specs.map((s) => s.cmd).join('\n'))) ? last : undefined;
+  const name = recipe?.workspaceId ? `${wsName ?? 'the lane'} lane` : home ? repoName(home) : card.key;
   const all: RunStep[] = run?.steps ?? specs.map((s) => ({
     cmd: s.cmd, state: s.note ? 'note' as const : 'wait' as const, tail: [],
     ...(s.repo ? { repo: s.repo } : {}), ...(Object.keys(s.env).length ? { env: Object.keys(s.env) } : {}), ...(s.stop ? { stop: true } : {}),
@@ -436,19 +558,13 @@ function TryIt({ card }: { card: Card }) {
           <button className="btn py-1" onClick={() => editRecipe(card.id)} title="Write or edit the run recipe"><Key k="e" size="sm" />{recipe ? 'Edit the recipe' : 'Write a recipe'}</button>
         </div>
       </Sec>
-      <Sec id="try-it" title={`${name}${stack ? '' : ' run recipe'}`} right={<span className="text-[12px] text-faint">{recipe ? recipe.source : 'no recipe yet'}</span>}>
+      <Sec id="try-it" title={`${name} run recipe`} right={<span className="text-[12px] text-faint">{recipe ? recipe.source : 'no recipe yet'}</span>}>
         {steps.length ? (
           <ol className="grid min-w-0 gap-1 rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[12px]">
             {steps.map((s, i) => <StepRow key={i} s={s} />)}
             {stops.length > 0 && <li className="mt-1 font-sans text-[11px] font-bold uppercase tracking-wide text-faint">When stopped</li>}
             {stops.map((s, i) => <StepRow key={`stop${i}`} s={s} />)}
           </ol>
-        ) : stack ? (
-          <div className="grid gap-1 rounded-lg border border-line bg-bg px-3 py-2 text-[13px]">
-            <div><span className="eyebrow mr-2">Asks</span>{Object.entries(stack.choose).map(([k, v]) => `${k}: ${v.join(' / ')}`).join(' · ') || 'nothing'}</div>
-            <div><span className="eyebrow mr-2">APIs</span><span className="font-mono">{stack.apis.map((a) => a.repo).join(', ') || 'none set up'}</span></div>
-            {stack.ui && <div><span className="eyebrow mr-2">Then</span><span className="font-mono">{stack.ui.repo}</span>{stack.ui.proxyFile ? <span className="text-faint">, its {stack.ui.proxyFile} pointed at the APIs you pick</span> : null}</div>}
-          </div>
         ) : <p className="text-[13px] text-faint">No run recipe for {name}: nothing to go on in its package.json or compose file.</p>}
         {recipe?.source.startsWith('from the workspace file') && !run && <div className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">This recipe came with a lane file someone shared. Read the commands before starting: they run on this machine.</div>}
         {shown && shown.tail.length > 0 && (
