@@ -5,6 +5,7 @@ import type { Changes } from '../shared/changes.ts';
 import type { TicketTransition } from '../shared/tickets.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
+import type { PromptContext } from '../shared/prompts.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
 import { activeSession, flash, get, groupKeyOf, set, setFilter } from './store.ts';
 
@@ -103,6 +104,12 @@ export async function listFolder(path?: string): Promise<FolderListing> {
 export async function pickFolderOnDisk(): Promise<string | null> {
   const reply = await request((reqId) => ({ type: 'fs.pickFolder', reqId }), 10 * 60_000);
   return (reply as Extract<ServerMsg, { type: 'fs.picked' }>).path ?? null;
+}
+
+/** Have Claude write the opening message from rough text and the card's context (§62). A cheap model, one turn; up to a minute. */
+export async function writeMessageWithClaude(text: string, context: PromptContext): Promise<string> {
+  const reply = await request((reqId) => ({ type: 'prompt.write', reqId, text, context }), 90_000);
+  return (reply as Extract<ServerMsg, { type: 'prompt.written' }>).text;
 }
 
 /** Files in a session's repos for "@" suggestions (names only). */
@@ -391,6 +398,7 @@ function receive(msg: ServerMsg): void {
     case 'fs.list':
     case 'fs.files':
     case 'fs.picked':
+    case 'prompt.written':
       return; // answers to requests nobody is waiting for any more
     case 'pack':
       pendingExports.get(msg.reqId)?.(msg.pack);

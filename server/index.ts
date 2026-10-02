@@ -4,13 +4,15 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { IncomingMessage } from 'node:http';
 import { existsSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { KEY_HINTS, NEW_CARD_LOOKS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { CARD_KINDS, cardRepos, folderFor, type Card } from '../shared/cards.ts';
-import type { SavedPrompt } from '../shared/prompts.ts';
+import type { PromptContext, SavedPrompt } from '../shared/prompts.ts';
+import { writePrompt } from './write-prompt.ts';
 import { doneStatuses, finishesCard } from '../shared/tickets.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
@@ -199,6 +201,20 @@ function cleanPrompt(raw: unknown): SavedPrompt {
   return { id, name, body, ...(kind ? { kind } : {}), updatedAt: Date.now() };
 }
 
+/** An untrusted prompt context from a client: short strings and lists of them, nothing else. */
+function cleanContext(raw: unknown): PromptContext {
+  const c = (raw ?? {}) as Record<string, unknown>;
+  const s = (v: unknown) => (typeof v === 'string' ? v.slice(0, 300) : undefined);
+  const list = (v: unknown) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').map((x) => (x as string).slice(0, 300)).slice(0, 50) : []);
+  const ticket = (v: unknown) => { const t = v as { key?: unknown; title?: unknown } | null; return t && typeof t.key === 'string' ? { key: t.key.slice(0, 40), title: s(t.title) ?? '' } : null; };
+  return {
+    ticket: ticket(c.ticket),
+    tickets: Array.isArray(c.tickets) ? c.tickets.map(ticket).filter((t): t is { key: string; title: string } => t !== null).slice(0, 50) : [],
+    repos: list(c.repos), folders: list(c.folders),
+    ...(s(c.home) ? { home: s(c.home) } : {}), ...(s(c.lane) ? { lane: s(c.lane) } : {}), ...(s(c.branch) ? { branch: s(c.branch) } : {}), ...(s(c.kind) ? { kind: s(c.kind) } : {}),
+  };
+}
+
 /** Untrusted workspace from a client: a name, a known colour, absolute repo paths (deduplicated). */
 function cleanWorkspace(raw: unknown): Workspace {
   const w = (raw ?? {}) as Partial<Workspace>;
@@ -385,6 +401,11 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       if (typeof msg.id === 'string') store.deletePrompt(msg.id);
       broadcast({ type: 'prompts', prompts: store.loadPrompts() });
       return;
+    case 'prompt.write': {
+      const text = await writePrompt(typeof msg.text === 'string' ? msg.text.slice(0, 6000) : '', cleanContext(msg.context), tmpdir());
+      send(ws, { type: 'prompt.written', reqId: msg.reqId, text });
+      return;
+    }
     case 'workspace.save': {
       const w = cleanWorkspace(msg.workspace);
       const old = store.loadWorkspaces().find((x) => x.id === w.id);

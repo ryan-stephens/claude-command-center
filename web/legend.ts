@@ -146,7 +146,7 @@ function simpleLegend(x: LineLegendInput): LegendItem[] {
   }
   const here: LegendItem[] = sp.block === 'ticket' ? [{ keys: ['Enter'], label: sp.hasTicket ? 'Change ticket' : 'Find a ticket' }, ...(sp.hasTicket ? [{ keys: ['x'], label: 'No ticket' }] : [])]
     : sp.block === 'context' ? [{ keys: ['←', '→'], label: 'Along the chips' }, { keys: ['Enter'], label: 'Include / leave out' }, { keys: ['+'], label: 'Add context' }, ...(sp.ownChip ? [{ keys: ['x'], label: 'Take out' }, { keys: ['w'], label: 'Keep for the lane' }] : [])]
-    : sp.block === 'msg' ? [{ keys: ['Enter'], label: 'Write the message' }, { keys: ['Space'], label: 'Pick a prompt' }, { keys: ['s'], label: 'Save as a prompt' }, { keys: ['⇧E'], label: 'Edit prompts' }]
+    : sp.block === 'msg' ? [{ keys: ['Enter'], label: 'Write the message' }, { keys: ['Space'], label: 'Pick a prompt' }, { keys: ['w'], label: 'Have Claude write it' }, { keys: ['s'], label: 'Save as a prompt' }, { keys: ['⇧E'], label: 'Edit prompts' }]
     : sp.block === 'how' ? (sp.more ? [{ keys: ['←', '→'], label: 'Change' }, { keys: ['Enter'], label: 'Close the options' }] : [{ keys: ['Enter'], label: 'Options' }])
     : [{ keys: ['Enter'], label: 'Start work', tone: 'acc' }];
   return [

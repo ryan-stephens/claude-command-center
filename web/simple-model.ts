@@ -30,6 +30,8 @@ export interface SimpleState {
   /** Which picker is open, and its highlighted row. */
   adding: SimpleAdding | null;
   ai: number;
+  /** Claude is writing the opening message from the rough text (§62). */
+  writing?: boolean;
 }
 
 export const SIMPLE_DEFAULT: SimpleState = { block: 'ticket', ci: 0, more: false, adding: null, ai: 0 };

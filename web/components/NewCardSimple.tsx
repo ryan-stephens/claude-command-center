@@ -12,7 +12,7 @@ import { renderPrompt } from '../../shared/prompts.ts';
 import { SOURCE_NAME } from '../../shared/tickets.ts';
 import { composerKey, pickOption, togglePacketRow, type Composer, type GoRow, type SourceTab } from '../line-model.ts';
 import { leaveComposer, startWork, updateComposer } from '../line-keys.ts';
-import { addTypedFolder, browseFolder, choosePromptAt, closePicker, develop, openPicker, openPromptList, openPromptsDialog, pickAt, pickerList, saveAsPrompt, singlePick, switchLook } from '../simple-keys.ts';
+import { addTypedFolder, browseFolder, choosePromptAt, closePicker, develop, openPicker, openPromptList, openPromptsDialog, pickAt, pickerList, saveAsPrompt, singlePick, switchLook, writeWithClaude } from '../simple-keys.ts';
 import { chips, followPrompt, howFacts, howRows, KIND_OPTIONS, promptContext, promptLabel, promptRows, simpleOf, withSimple, type Chip, type SimpleBlock } from '../simple-model.ts';
 import { get, useStore } from '../store.ts';
 import { usePrLookup, useTicketSearch } from './NewCard.tsx';
@@ -208,6 +208,7 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
       <div className="flex items-baseline justify-between gap-4">
         <label htmlFor="cp-msg" className="eyebrow">Opening message</label>
         <div className="flex items-center gap-4 text-[13px] text-faint">
+          <button className={`hover:text-ink ${sp.writing ? 'text-busy' : ''}`} onClick={writeWithClaude} disabled={Boolean(sp.writing)} title="w: your rough words in the box plus the card’s context go to a cheap model for one turn; its answer replaces the text">{sp.writing ? 'Claude is writing…' : 'Have Claude write it'}</button>
           <button className="hover:text-ink" onClick={saveAsPrompt} title="s">Save as a prompt</button>
           <button className="hover:text-ink" onClick={openPromptsDialog} title="Shift+E">Edit prompts</button>
         </div>
@@ -231,7 +232,7 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
             ))}
           </div>
         )}
-        <textarea id="cp-msg" rows={9} value={c.launch.message} placeholder="What should Claude do first? Space picks a saved prompt."
+        <textarea id="cp-msg" rows={9} value={c.launch.message} placeholder="What should Claude do first? Space picks a saved prompt; or type rough words and w has Claude write it." readOnly={Boolean(sp.writing)}
           onChange={(e) => updateComposer((x) => ({ ...x, msgTouched: true, launch: { ...x.launch, message: e.target.value } }))}
           className="field resize-none rounded-none border-0 bg-transparent text-[14px] leading-relaxed focus:ring-0" spellCheck={false} />
         <div className="border-t border-line/60 px-4 py-2 text-[12.5px] text-faint">{note}</div>

@@ -77,6 +77,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['w (a chip)', 'Keep a repo you added for the whole lane'],
       ['Enter or e (opening message)', 'Write the first thing Claude is told (the context itself arrives through the hook, so keep it to a prompt)'],
       ['Space (opening message)', 'Pick a saved prompt: its {{placeholders}} are filled from the card (ticket, repos, folders, lane, branch, kind) and it follows the card as you add context, until you edit the text; Write your own detaches it. ↑ ↓ Enter, Esc closes'],
+      ['w (opening message)', 'Have Claude write it: the rough words in the box plus the card’s context go to a cheap model for one turn (no tools, nothing read from disk); its answer replaces the text'],
       ['s (opening message)', 'Save the message as a new prompt (what the card filled in goes back to placeholders)'],
       ['Shift+E', 'Saved prompts: ↑ ↓, n new, e or Enter edit (name, kind, body, with the placeholders and a live example from this card beside it; Ctrl+Enter saves), Delete twice removes, Esc'],
       ['Enter (session settings)', 'Open its options: lane, the repo it starts in, branch, mode, model (↑ ↓ a row, ← → change, Enter closes)'],

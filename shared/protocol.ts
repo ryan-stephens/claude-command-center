@@ -1,7 +1,7 @@
 // WebSocket protocol shared by server and web. Plain types only (erasable TS, runs under Node type stripping).
 
 import type { Card, CardDraft, CardWorktree, PacketItem, PrTarget } from './cards.ts';
-import type { SavedPrompt } from './prompts.ts';
+import type { PromptContext, SavedPrompt } from './prompts.ts';
 import type { CardRun, RunRecipe } from './recipes.ts';
 import type { ShipPlan, ShipRequest } from './ship.ts';
 import type { Stack, StackApiRow, StackChoice } from './stack.ts';
@@ -341,6 +341,8 @@ export type ClientMsg =
   /** Save an opening prompt (§62); a new one has a fresh id. */
   | { type: 'prompt.save'; prompt: SavedPrompt }
   | { type: 'prompt.delete'; id: string }
+  /** Have Claude write the opening message from rough text and the card's context (one cheap-model turn, no tools). */
+  | { type: 'prompt.write'; reqId: string; text: string; context: PromptContext }
   /** Create (no matching id) or replace a workspace. */
   | { type: 'workspace.save'; workspace: Workspace; /** New workspaces: a WORKFLOW_TEMPLATES id to seed its workflows. */ template?: string }
   | { type: 'workspace.delete'; id: string }
@@ -445,6 +447,8 @@ export type ServerMsg =
   | { type: 'fs.list'; reqId: string; listing: FolderListing }
   /** The folder picked in the machine's dialog; none when it was cancelled. */
   | { type: 'fs.picked'; reqId: string; path?: string }
+  /** The opening message Claude wrote. */
+  | { type: 'prompt.written'; reqId: string; text: string }
   | { type: 'fs.files'; reqId: string; hits: FileHit[] }
   /** A request with a `reqId` and nothing else to return worked. */
   | { type: 'ok'; reqId: string }

@@ -7,7 +7,7 @@ import { flash, get, set } from './store.ts';
 import { addFolder, cardFolders, composerKey, cycleKind, cycleModel, dropTicket, nextTab, packetRows, pickTicket, repoOrigin, sources, stepOption, ticketSources, togglePacketRow, toggleSource, type Composer, type SourceTab } from './line-model.ts';
 import { foundFor, keepRepo, leaveComposer, startWork, updateComposer } from './line-keys.ts';
 import { chips, howRows, ownMessage, promptContext, promptRows, simpleOf, stepBlock, usePrompt, withSimple } from './simple-model.ts';
-import { listFolder, pickFolderOnDisk, send } from './ws.ts';
+import { listFolder, pickFolderOnDisk, send, writeMessageWithClaude } from './ws.ts';
 
 /** The simple look has no branch choice for Develop: a worktree of each repo, always, so cards never share a checkout. */
 export function develop(c: Composer): Composer {
@@ -189,6 +189,29 @@ export function saveAsPrompt(): void {
   set({ modal: { kind: 'prompts', draft: { body } } });
 }
 
+/**
+ * w on the message: Claude writes it. The rough text in the box plus the card's context go to a
+ * cheap model for one turn (no tools); its answer replaces the text, as the card's own. The box
+ * keeps the rough text until the answer comes, and keeps it if the answer doesn't.
+ */
+export function writeWithClaude(): void {
+  const s = get();
+  const c = s.composer;
+  if (!c) return;
+  if (simpleOf(c).writing) { flash('Claude is writing it…'); return; }
+  const rough = c.launch.message.trim();
+  if (!rough) { flash('Write a few rough words in the box first; w has Claude write the message from them.'); return; }
+  updateComposer((x) => withSimple(x, { writing: true, block: 'msg' }));
+  flash('Claude is writing the opening message…');
+  writeMessageWithClaude(rough, promptContext(c, s.workspaces, composerKey(c, s.nextKey), s.library.repos)).then(
+    (text) => {
+      updateComposer((x) => withSimple({ ...ownMessage(x), launch: { ...x.launch, message: text } }, { writing: false }));
+      flash('Claude wrote the opening message; edit it as you like.');
+    },
+    (e: Error) => { updateComposer((x) => withSimple(x, { writing: false })); flash(e.message); },
+  );
+}
+
 /** Shift+E: the saved prompts, to edit. */
 export function openPromptsDialog(): void {
   set({ modal: { kind: 'prompts' } });
@@ -317,6 +340,7 @@ export function simpleKeys(e: KeyboardEvent, typing: boolean): boolean {
       if (e.key === 'Enter' || e.key === 'e') { focusField('cp-msg'); return true; }
       if (e.key === ' ') { openPromptList(); return true; }
       if (e.key === 's') { saveAsPrompt(); return true; }
+      if (e.key === 'w') { writeWithClaude(); return true; }
       return false;
     case 'how':
       if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight') { updateComposer((x) => withSimple({ ...x, gi: 0 }, { more: true })); return true; }
