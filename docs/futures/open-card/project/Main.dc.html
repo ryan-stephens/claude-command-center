@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction A · The status page</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#4b4f57}a:hover{color:#17181b}
+.ey{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#646871}
+.kc{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:#fff;border:1px solid #cfcbc1;box-shadow:0 1.5px 0 #b9b5ab;font:700 11px/1 Consolas,"Cascadia Mono",monospace;color:#26282d}
+.pill{display:inline-flex;align-items:center;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 12px;border:1px solid #d9d6ce;border-radius:9px;background:#fff;color:#17181b;font-weight:500;font-size:13.5px}
+.primary{background:#b85500;border-color:#b85500;color:#fff}
+.card{background:#fff;border:1px solid #d9d6ce;border-radius:12px}
+.mono{font-family:Consolas,"Cascadia Mono",monospace}
+</style>
+</helmet>
+<div style="width:1280px;height:900px;box-sizing:border-box;background:#eceae5;color:#17181b;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;display:flex;flex-direction:column;overflow:hidden">
+  <!-- Header: the way back, the identity line, the neighbours. Same shape as the new-session header. -->
+  <div style="display:flex;align-items:center;gap:14px;padding:12px 24px;background:#fff;border-bottom:1px solid #d9d6ce">
+    <a href="#" aria-label="Back to the board" style="display:inline-flex;align-items:center;gap:6px;border:1px solid #d9d6ce;border-radius:8px;padding:5px 9px;background:#eceae5;text-decoration:none"><span>←</span><span class="kc">Esc</span></a>
+    <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#646871"><span class="mono" style="background:#e7effd;color:#1c5bc9;border-radius:6px;padding:0 6px;font-weight:700;font-size:11.5px">SHOP-155</span><span class="pill" style="background:#fff0d9;color:#945000">Needs you</span><span>Demo lane</span><span>·</span><span>terminal tab SHOP-155</span></div>
+      <div style="font-size:19px;font-weight:700;letter-spacing:-.01em">Save cart for signed-out users</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#646871"><span class="kc">←</span><span>Card 2 of 4</span><span class="kc">→</span></div>
+    <span class="kc" style="margin-left:6px">?</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);flex:1;min-height:0">
+    <!-- Left: one column, read top to bottom. What needs you first, then what Claude is doing, then what changed, then the quiet facts. -->
+    <div style="display:flex;flex-direction:column;gap:22px;padding:24px 28px;overflow:hidden;border-right:1px solid #d9d6ce;background:#f4f3ef">
+      <section style="display:flex;flex-direction:column;gap:8px">
+        <div class="ey">Needs you · plan ready for review</div>
+        <div class="card" style="border-color:#e3b87a;background:#fff8ee;padding:14px 18px;display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:15px;font-weight:600">Claude wrote a plan and is waiting for your approval.</div>
+          <div style="font-size:13.5px;color:#4b4f57;line-height:1.5;max-height:92px;overflow:hidden">1. Persist the guest cart to localStorage with a 30-day stamp.<br>2. On sign-in, merge it into the account cart without duplicating lines.<br>3. Keep gift cards attached through the merge; add a test for each.</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">y</span>Approve</button>
+            <button class="btn"><span class="kc">n</span>Not yet</button>
+            <button class="btn" style="margin-left:auto"><span class="kc">g</span>Its tab</button>
+          </div>
+        </div>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between"><div class="ey">Steps</div><span style="font-size:12.5px;color:#646871">1 of 4 · from Claude’s to-do list</span></div>
+        <div class="card" style="padding:10px 16px;display:flex;flex-direction:column;gap:7px;font-size:13.5px">
+          <div style="display:flex;gap:10px;align-items:center"><span style="width:18px;height:18px;border-radius:99px;background:#e3f4ea;color:#15703d;display:grid;place-items:center;font-size:11px;font-weight:700">✓</span>Read the cart store and the sign-in flow</div>
+          <div style="display:flex;gap:10px;align-items:center;color:#1c5bc9"><span style="width:18px;height:18px;border-radius:99px;border:2px solid #1c5bc9;display:grid;place-items:center;font-size:10px">●</span>Writing the plan</div>
+          <div style="display:flex;gap:10px;align-items:center;color:#4b4f57"><span style="width:18px;height:18px;border-radius:99px;border:2px solid #d9d6ce"></span>Persist the guest cart</div>
+          <div style="display:flex;gap:10px;align-items:center;color:#4b4f57"><span style="width:18px;height:18px;border-radius:99px;border:2px solid #d9d6ce"></span>Merge on sign-in, with tests</div>
+        </div>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between"><div class="ey">What changed</div><a href="#" style="font-size:12.5px;text-decoration:none">2 files · diffs <span class="kc">⇧D</span></a></div>
+        <div class="card mono" style="padding:10px 16px;font-size:12.5px;display:flex;flex-direction:column;gap:4px"><span>web-app/src/cart/store.ts</span><span>web-app/src/auth/sign-in.ts</span></div>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:baseline;gap:8px"><div class="ey">Session</div><a href="#" style="font-size:12.5px;color:#b85500;text-decoration:underline;text-underline-offset:2px">(details)</a></div>
+        <div class="card" style="padding:10px 16px;display:grid;grid-template-columns:120px 1fr;gap:6px 14px;font-size:13.5px">
+          <span style="color:#646871">Runs in</span><span>a worktree of web-app on <span class="mono" style="font-size:12.5px">shop-155-save-cart-signed-out</span></span>
+          <span style="color:#646871">Model</span><span>Sonnet</span>
+          <span style="color:#646871">Context</span><span>2 repos, the ticket, 1 added since · 4.1k tokens</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right: the transcript, live from the tab, with the message box under it. -->
+    <div style="display:flex;flex-direction:column;min-height:0;background:#fff">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid #d9d6ce"><span style="font-weight:700;font-size:14px">Transcript</span><span style="font-size:12px;color:#646871">live from the terminal tab</span></div>
+      <div style="flex:1;overflow:hidden;padding:16px 20px;display:flex;flex-direction:column;gap:14px;font-size:13.5px;line-height:1.5">
+        <div style="color:#646871;font-size:12.5px">You · 14:02</div>
+        <div>Please review SHOP-155 and take it into context. You’ll likely need web-app and payments-api…</div>
+        <div style="color:#646871;font-size:12.5px">Claude · 14:03</div>
+        <div>I read the cart store and the sign-in flow. The guest cart lives in memory only, so it goes when the tab closes. Here is the plan:</div>
+        <div class="card" style="padding:10px 14px;background:#f4f3ef;color:#4b4f57;font-size:13px">1. Persist the guest cart to localStorage with a 30-day stamp…</div>
+        <div style="display:flex;align-items:center;gap:8px;color:#945000;font-weight:600"><span style="width:8px;height:8px;border-radius:99px;background:#945000"></span>Waiting for your approval</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;padding:12px 20px;border-top:1px solid #d9d6ce">
+        <div style="flex:1;border:1px solid #d9d6ce;border-radius:10px;padding:9px 12px;color:#646871;font-size:13.5px;min-height:40px">Type to SHOP-155’s terminal…</div>
+        <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">Enter</span>Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer: only the actions the stage calls for. -->
+  <div style="display:flex;align-items:center;gap:8px;padding:12px 24px;background:#fff;border-top:1px solid #d9d6ce">
+    <button class="btn"><span class="kc">c</span>Add context</button>
+    <button class="btn"><span class="kc">t</span>Try it</button>
+    <span style="flex:1"></span>
+    <button class="btn" style="color:#4b4f57"><span class="kc">Del</span>Remove card</button>
+    <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">s</span>Ship</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

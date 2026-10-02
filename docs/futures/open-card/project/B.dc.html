@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction B · Transcript first</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#4b4f57}a:hover{color:#17181b}
+.ey{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#646871}
+.kc{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:#fff;border:1px solid #cfcbc1;box-shadow:0 1.5px 0 #b9b5ab;font:700 11px/1 Consolas,"Cascadia Mono",monospace;color:#26282d}
+.pill{display:inline-flex;align-items:center;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 12px;border:1px solid #d9d6ce;border-radius:9px;background:#fff;color:#17181b;font-weight:500;font-size:13.5px}
+.primary{background:#b85500;border-color:#b85500;color:#fff}
+.card{background:#fff;border:1px solid #d9d6ce;border-radius:12px}
+.mono{font-family:Consolas,"Cascadia Mono",monospace}
+.msg{display:flex;flex-direction:column;gap:6px}
+.who{font-size:12px;color:#646871}
+</style>
+</helmet>
+<div style="width:1280px;height:900px;box-sizing:border-box;background:#eceae5;color:#17181b;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;display:flex;flex-direction:column;overflow:hidden">
+  <div style="display:flex;align-items:center;gap:14px;padding:12px 24px;background:#fff;border-bottom:1px solid #d9d6ce">
+    <a href="#" aria-label="Back to the board" style="display:inline-flex;align-items:center;gap:6px;border:1px solid #d9d6ce;border-radius:8px;padding:5px 9px;background:#eceae5;text-decoration:none"><span>←</span><span class="kc">Esc</span></a>
+    <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+      <span class="mono" style="background:#e7effd;color:#1c5bc9;border-radius:6px;padding:0 6px;font-weight:700;font-size:11.5px">SHOP-155</span>
+      <span style="font-size:17px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Save cart for signed-out users</span>
+      <span class="pill" style="background:#fff0d9;color:#945000">Needs you</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#646871"><span class="kc">←</span><span>2 of 4</span><span class="kc">→</span></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) 360px;flex:1;min-height:0">
+    <!-- The transcript is the page: the session read like a conversation, the message box pinned under it. -->
+    <div style="display:flex;flex-direction:column;min-height:0;background:#fff">
+      <div style="flex:1;overflow:hidden;padding:22px 40px;display:flex;flex-direction:column;gap:18px;font-size:14px;line-height:1.55;max-width:860px">
+        <div class="msg"><div class="who">You · 14:02</div><div>Please review SHOP-155 and take it into context. You’ll likely need these repos: web-app, payments-api. Start in web-app.</div></div>
+        <div class="msg"><div class="who">Claude · 14:02 · read 6 files</div><div>I read the cart store and the sign-in flow. The guest cart lives in memory only, so it is lost when the tab closes. Gift cards are attached to cart lines, so the merge has to carry them over.</div></div>
+        <div class="msg"><div class="who">Claude · 14:03 · plan</div>
+          <div class="card" style="padding:12px 16px;background:#f4f3ef;display:flex;flex-direction:column;gap:6px;font-size:13.5px">
+            <div><b>1.</b> Persist the guest cart to localStorage with a 30-day stamp.</div>
+            <div><b>2.</b> On sign-in, merge it into the account cart without duplicating lines (key on sku + options).</div>
+            <div><b>3.</b> Keep gift cards attached through the merge; a test for each path.</div>
+            <div style="color:#646871;font-size:12.5px">Files: web-app/src/cart/store.ts, web-app/src/auth/sign-in.ts, tests beside each.</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;background:#fff8ee;border:1px solid #e3b87a">
+          <span style="flex:1;font-weight:600;color:#945000">Approve the plan?</span>
+          <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">y</span>Approve</button>
+          <button class="btn"><span class="kc">n</span>Not yet</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;padding:12px 40px 16px;border-top:1px solid #d9d6ce">
+        <div style="flex:1;border:1px solid #d9d6ce;border-radius:10px;padding:9px 12px;color:#646871;font-size:13.5px;min-height:40px;max-width:780px">Type to SHOP-155’s terminal…</div>
+        <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">Enter</span>Send</button>
+      </div>
+    </div>
+
+    <!-- The rail: what the board knew, kept quiet beside the conversation. -->
+    <div style="display:flex;flex-direction:column;gap:18px;padding:20px 20px;border-left:1px solid #d9d6ce;background:#f4f3ef;overflow:hidden;font-size:13.5px">
+      <section style="display:flex;flex-direction:column;gap:6px">
+        <div class="ey">Now</div>
+        <div style="display:flex;align-items:center;gap:8px;color:#945000;font-weight:600"><span style="width:8px;height:8px;border-radius:99px;background:#945000"></span>Waiting for your approval · 4m</div>
+      </section>
+      <section style="display:flex;flex-direction:column;gap:6px">
+        <div class="ey">Steps · 1 of 4</div>
+        <div style="display:flex;flex-direction:column;gap:5px;color:#4b4f57">
+          <div><span style="color:#15703d;font-weight:700">✓</span> Read the cart store and sign-in</div>
+          <div style="color:#1c5bc9">● Writing the plan</div>
+          <div>○ Persist the guest cart</div>
+          <div>○ Merge on sign-in, with tests</div>
+        </div>
+      </section>
+      <section style="display:flex;flex-direction:column;gap:6px">
+        <div class="ey">Changed</div>
+        <div class="mono" style="font-size:12.5px;color:#4b4f57;display:flex;flex-direction:column;gap:3px"><span>cart/store.ts</span><span>auth/sign-in.ts</span></div>
+        <a href="#" style="font-size:12.5px;text-decoration:none">diffs <span class="kc">⇧D</span></a>
+      </section>
+      <section style="display:flex;flex-direction:column;gap:6px">
+        <div class="ey">Context</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <span class="pill" style="background:#fff;border:1px solid #d9d6ce;font-weight:500">web-app</span><span class="pill" style="background:#fff;border:1px solid #d9d6ce;font-weight:500">payments-api</span><span class="pill" style="background:#fff;border:1px solid #d9d6ce;font-weight:500">SHOP-155</span><span class="pill" style="background:#fff;border:1px solid #d9d6ce;font-weight:500">+1 since</span>
+        </div>
+        <a href="#" style="font-size:12.5px;color:#b85500;text-decoration:underline;text-underline-offset:2px">everything Claude was given</a>
+      </section>
+      <section style="display:flex;flex-direction:column;gap:6px;margin-top:auto">
+        <div class="ey">Actions</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="btn" style="justify-content:flex-start"><span class="kc">g</span>Its terminal tab</button>
+          <button class="btn" style="justify-content:flex-start"><span class="kc">c</span>Add context</button>
+          <button class="btn" style="justify-content:flex-start"><span class="kc">t</span>Try it</button>
+          <button class="btn" style="justify-content:flex-start"><span class="kc">s</span>Ship</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

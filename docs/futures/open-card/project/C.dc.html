@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction C · The journal</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#4b4f57}a:hover{color:#17181b}
+.ey{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#646871}
+.kc{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:#fff;border:1px solid #cfcbc1;box-shadow:0 1.5px 0 #b9b5ab;font:700 11px/1 Consolas,"Cascadia Mono",monospace;color:#26282d}
+.pill{display:inline-flex;align-items:center;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 12px;border:1px solid #d9d6ce;border-radius:9px;background:#fff;color:#17181b;font-weight:500;font-size:13.5px}
+.primary{background:#b85500;border-color:#b85500;color:#fff}
+.card{background:#fff;border:1px solid #d9d6ce;border-radius:12px}
+.mono{font-family:Consolas,"Cascadia Mono",monospace}
+.row{display:grid;grid-template-columns:64px 22px minmax(0,1fr);gap:0 12px;align-items:start}
+.t{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;color:#646871;padding-top:3px;font-variant-numeric:tabular-nums}
+.dot{width:10px;height:10px;border-radius:99px;margin:6px auto 0;background:#d9d6ce}
+</style>
+</helmet>
+<div style="width:1280px;height:900px;box-sizing:border-box;background:#eceae5;color:#17181b;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;display:flex;flex-direction:column;overflow:hidden">
+  <div style="display:flex;align-items:center;gap:14px;padding:12px 24px;background:#fff;border-bottom:1px solid #d9d6ce">
+    <a href="#" aria-label="Back to the board" style="display:inline-flex;align-items:center;gap:6px;border:1px solid #d9d6ce;border-radius:8px;padding:5px 9px;background:#eceae5;text-decoration:none"><span>←</span><span class="kc">Esc</span></a>
+    <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#646871"><span class="mono" style="background:#e7effd;color:#1c5bc9;border-radius:6px;padding:0 6px;font-weight:700;font-size:11.5px">SHOP-155</span><span class="pill" style="background:#fff0d9;color:#945000">Needs you</span><span>Demo lane · started 14:01 · Sonnet</span></div>
+      <div style="font-size:19px;font-weight:700;letter-spacing:-.01em">Save cart for signed-out users</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#646871"><span class="kc">←</span><span>Card 2 of 4</span><span class="kc">→</span></div>
+  </div>
+
+  <!-- A sticky "now" strip: the one thing to do, with its keys, always in view. -->
+  <div style="display:flex;align-items:center;gap:12px;padding:10px 24px;background:#fff8ee;border-bottom:1px solid #e3b87a">
+    <span style="width:8px;height:8px;border-radius:99px;background:#945000"></span>
+    <span style="font-weight:600;color:#945000">Plan ready for review · waiting 4m</span>
+    <span style="flex:1"></span>
+    <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">y</span>Approve</button>
+    <button class="btn"><span class="kc">n</span>Not yet</button>
+    <button class="btn"><span class="kc">g</span>Its tab</button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;flex:1;min-height:0">
+    <!-- One stream, in time order: how it started, what was added, what Claude did, what it asked, what ran, what shipped. Tabs are gone. -->
+    <div style="overflow:hidden;padding:22px 32px;display:flex;flex-direction:column;gap:14px;background:#fff">
+      <div class="row"><span class="t">14:01</span><span class="dot" style="background:#15703d"></span><div style="color:#4b4f57">Started in a worktree of <b>web-app</b> on <span class="mono" style="font-size:12.5px">shop-155-save-cart-signed-out</span> · given the ticket, 2 repos, the lane notes <a href="#" style="font-size:12.5px;color:#b85500">(everything)</a></div></div>
+      <div class="row"><span class="t">14:02</span><span class="dot"></span><div><div style="font-size:12px;color:#646871;margin-bottom:3px">You</div>Please review SHOP-155 and take it into context. You’ll likely need web-app and payments-api…</div></div>
+      <div class="row"><span class="t">14:02</span><span class="dot" style="background:#1c5bc9"></span><div><div style="font-size:12px;color:#646871;margin-bottom:3px">Claude · read 6 files</div>I read the cart store and the sign-in flow. The guest cart lives in memory only, so it is lost when the tab closes.</div></div>
+      <div class="row"><span class="t">14:03</span><span class="dot" style="background:#1c5bc9"></span><div><div style="font-size:12px;color:#646871;margin-bottom:5px">Claude · plan</div>
+        <div class="card" style="padding:10px 14px;background:#f4f3ef;font-size:13.5px;display:flex;flex-direction:column;gap:4px"><div>1. Persist the guest cart to localStorage with a 30-day stamp.</div><div>2. On sign-in, merge it into the account cart without duplicating lines.</div><div>3. Keep gift cards attached through the merge; a test for each path.</div></div></div></div>
+      <div class="row"><span class="t">14:03</span><span class="dot" style="background:#945000"></span><div style="color:#945000;font-weight:600">Waiting for your approval</div></div>
+      <div class="row"><span class="t">14:05</span><span class="dot"></span><div style="color:#4b4f57">You added <b>docs/cart-merge-flow.png</b> as context · goes with your next message</div></div>
+      <div style="margin-top:auto;display:flex;gap:8px;align-items:flex-end;padding-top:12px;border-top:1px solid #d9d6ce">
+        <div style="flex:1;border:1px solid #d9d6ce;border-radius:10px;padding:9px 12px;color:#646871;font-size:13.5px;min-height:40px">Type to SHOP-155’s terminal…</div>
+        <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">Enter</span>Send</button>
+      </div>
+    </div>
+
+    <!-- The rail: where it stands, in numbers that change; the facts that don't, folded. -->
+    <div style="display:flex;flex-direction:column;gap:18px;padding:20px;border-left:1px solid #d9d6ce;background:#f4f3ef;font-size:13.5px;overflow:hidden">
+      <section style="display:flex;flex-direction:column;gap:6px"><div class="ey">Steps</div><div style="font-size:22px;font-weight:700">1 <span style="font-size:13px;font-weight:500;color:#646871">of 4 done</span></div></section>
+      <section style="display:flex;flex-direction:column;gap:6px"><div class="ey">Changed</div><div style="font-size:22px;font-weight:700">2 <span style="font-size:13px;font-weight:500;color:#646871">files</span></div><a href="#" style="font-size:12.5px;text-decoration:none">diffs <span class="kc">⇧D</span></a></section>
+      <section style="display:flex;flex-direction:column;gap:6px"><div class="ey">Try it</div><div style="color:#4b4f57">npm run dev · not running</div><button class="btn" style="align-self:flex-start"><span class="kc">t</span>Start the app</button></section>
+      <section style="display:flex;flex-direction:column;gap:6px"><div class="ey">Ship</div><div style="color:#4b4f57">No PR yet</div></section>
+      <section style="display:flex;flex-direction:column;gap:6px;margin-top:auto">
+        <a href="#" style="font-size:12.5px;color:#b85500;text-decoration:underline;text-underline-offset:2px">Folder, branch, session id, worktrees…</a>
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn"><span class="kc">c</span>Add context</button><button class="btn" style="color:#4b4f57"><span class="kc">Del</span>Remove</button></div>
+      </section>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

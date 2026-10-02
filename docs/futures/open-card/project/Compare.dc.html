@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Comparing the three</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#4b4f57}a:hover{color:#17181b}
+.ey{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#646871}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-top:1px solid #d9d6ce}
+th{font-size:12px;color:#646871;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-top:0}
+td:first-child{color:#646871;white-space:nowrap}
+</style>
+</helmet>
+<div style="width:1280px;height:760px;box-sizing:border-box;background:#eceae5;color:#17181b;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;padding:32px 40px;display:flex;flex-direction:column;gap:20px;overflow:hidden">
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <div class="ey">The open card · what the three directions share</div>
+    <div style="font-size:15px;color:#4b4f57;max-width:960px;line-height:1.5">All three keep the new-session conventions: the header reads back-button, ticket key, stage, title; eyebrow headings; the Esc keycap in the corner; few keycaps on screen, the legend and ? for the rest; the message box under the transcript; tabs gone. They differ in what the eye lands on first and where the facts go.</div>
+  </div>
+  <div style="background:#fff;border:1px solid #d9d6ce;border-radius:14px;padding:6px 18px 14px">
+    <table>
+      <tr><th style="width:150px"></th><th>A · The status page</th><th>B · Transcript first</th><th>C · The journal</th></tr>
+      <tr><td>Lands on</td><td>What needs you, then steps and changes, read top to bottom; the transcript beside it</td><td>The conversation itself, full width; everything else in a quiet rail</td><td>One stream in time order with a sticky “now” strip; counts in a rail</td></tr>
+      <tr><td>Best for</td><td>Checking on several cards quickly: the state is legible without reading</td><td>Following one card closely; people who think of the card as a chat</td><td>Understanding how a card got here, and showing others what happened</td></tr>
+      <tr><td>Weak at</td><td>Long plans and answers are a column away from the ask</td><td>Glancing: you have to read to know where it stands</td><td>Busy sessions get long; needs folding and a good “jump to now”</td></tr>
+      <tr><td>Closest to today</td><td>Yes: the Overview reordered and trimmed, tabs removed</td><td>Half: the right pane becomes the page</td><td>No: a new merged feed (boot, context, transcript, runs, ship)</td></tr>
+      <tr><td>Narrow window</td><td>One column: status, then the transcript below</td><td>Rail folds into a strip under the header</td><td>Rail folds into the sticky strip</td></tr>
+      <tr><td>Keys</td><td>y n g in the ask card; c t s Del in the footer; Tab gone</td><td>The same keys, in the rail</td><td>The same keys, in the strip and the rail; j / k or ↑ ↓ walk the stream</td></tr>
+      <tr><td>Build size</td><td>Small: reorder and cut inside TicketLine.tsx</td><td>Medium: a rail component, the transcript made the page</td><td>Large: a feed model merging five sources, with tests</td></tr>
+    </table>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div style="background:#fff;border:1px solid #d9d6ce;border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:6px">
+      <div class="ey">A recommendation</div>
+      <div style="font-size:13.5px;line-height:1.5;color:#4b4f57">Start with A. It keeps the two-column shape people already know, it is the smallest change, and it fixes the real complaint: the page shows everything at once with no order of importance. B’s rail and C’s sticky “now” strip can be added to A later without undoing it. Do C only if the owner finds themselves reconstructing what happened from the Context and Transcript tabs.</div>
+    </div>
+    <div style="background:#fff;border:1px solid #d9d6ce;border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:6px">
+      <div class="ey">Where the conventions may bend</div>
+      <div style="font-size:13.5px;line-height:1.5;color:#4b4f57">The new-session popup is a form: top to bottom once. The open card is a place people return to while something runs, so one thing is allowed that the popup never has: a live, pinned “now” (the ask, or what Claude is doing) that stays in view while the rest scrolls. The transcript keeps its own scroll, pinned to the newest line unless you scrolled up.</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":760}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>
