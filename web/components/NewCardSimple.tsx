@@ -277,10 +277,12 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
             <span className="min-w-0 truncate">{label}</span>
             <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" className={`shrink-0 text-faint transition-transform ${open ? 'rotate-180' : ''}`}><path d="M3.5 6l4.5 4.5L12.5 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
-          {open && <span className="truncate text-[12px] text-faint">↑ ↓ then Enter · Esc closes</span>}
         </div>
+        {/* Open, the box behind the list is veiled and the list sits on it as a lifted panel with its own heading, so the two never read as one. */}
+        {open && <div aria-hidden="true" className="absolute inset-x-0 bottom-0 top-[44px] z-[5] rounded-b-xl bg-ink/15 backdrop-blur-[1.5px]" />}
         {open && (
-          <div role="listbox" aria-label="Saved prompts" className="absolute left-3 right-3 top-[46px] z-10 flex max-h-[320px] flex-col overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-[0_24px_60px_rgba(0,0,0,.25)]">
+          <div role="listbox" aria-label="Saved prompts" className="absolute left-3 right-3 top-[46px] z-10 flex max-h-[340px] flex-col overflow-y-auto rounded-xl border border-ink/20 bg-surface p-1.5 pt-1 shadow-[0_6px_14px_rgba(0,0,0,.12),0_28px_70px_rgba(0,0,0,.35)] ring-1 ring-black/5">
+            <div className="flex items-baseline justify-between px-2.5 pb-1.5 pt-1.5"><span className="eyebrow">Saved prompts</span><span className="text-[11.5px] text-faint">Enter picks · Esc closes</span></div>
             {rows.map((r, i) => {
               // The tick: the prompt in use, or Write your own once the text is yours (the default message is neither).
               const using = r.id === null ? !c.promptId && c.msgTouched : r.id === c.promptId;
