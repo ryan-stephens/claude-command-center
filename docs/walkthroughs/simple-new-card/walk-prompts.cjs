@@ -60,6 +60,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('no tick yet: the default message is neither a prompt nor your own', (await list.locator('svg').count()) === 0);
   check('the control reads as a dropdown: expanded, with the chevron', (await promptButton.getAttribute('aria-expanded')) === 'true' && (await promptButton.locator('svg').count()) === 1);
   await shot(page, 'prompt-list');
+  // A click outside the list closes it, like any dropdown; Space opens it again on the same row.
+  await region.getByText('What Claude can see').click();
+  await sleep(200);
+  check('a click outside closes the list', !(await list.isVisible().catch(() => false)));
+  await page.keyboard.press('ArrowDown'); // the click moved the block to the context row; ↓ is the message
+  await page.keyboard.press('Space');
+  await sleep(200);
+  check('Space opens it again', await list.isVisible());
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');

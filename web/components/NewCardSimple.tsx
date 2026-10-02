@@ -247,6 +247,13 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
   // The box grows with its text (§69): never a scrollbar of its own; the popup's body scrolls instead, so the whole message is always in view while typing.
   const box = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { const el = box.current; if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } }, [c.launch.message]);
+  // A click anywhere outside the picker (its button or its list) closes the list, as a dropdown should.
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!(e.target as Element).closest?.('[role="listbox"], [aria-haspopup="listbox"]')) closePicker(); };
+    document.addEventListener('mousedown', away, true);
+    return () => document.removeEventListener('mousedown', away, true);
+  }, [open]);
   const note = c.msgTouched && used ? 'Edited, so it no longer follows the card. Pick the prompt again to fill it in afresh.'
     : rendered ? `Filled in from the card${rendered.missing.length ? `; nothing yet for ${rendered.missing.map((n) => `{{${n}}}`).join(', ')}` : ''}. It follows the card as you add context.`
     : 'The first thing Claude is told. The context itself arrives through the SessionStart hook, so keep this to a prompt.';
