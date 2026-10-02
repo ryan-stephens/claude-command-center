@@ -8,7 +8,7 @@ import { normalize } from 'node:path';
 import { branchFor, cardRepos, folderFor, ownFolders, type BootStep, type Card } from '../shared/cards.ts';
 import { parsePatch, type Changes, type RepoChanges } from '../shared/changes.ts';
 import { allMerged, commitMessage, openPrs, partOf, prBody, prsOf, prTitle, type PullRequest, type RepoShipPlan, type ShipFile, type ShipPlan, type ShipRequest } from '../shared/ship.ts';
-import { isInside, repoName, samePath } from '../shared/workspaces.ts';
+import { repoName, samePath } from '../shared/workspaces.ts';
 
 /** A diff bigger than this is cut: the sheet says so. */
 const MAX_PATCH = 2 * 1024 * 1024;
@@ -166,16 +166,18 @@ export class ShipService {
   }
 
   /**
-   * What the card changed in every repo it works in: its home folder, each worktree of its, and any
-   * other repo of the card it wrote a file in (a Current-branch card edits them in place). A folder
-   * that isn't a git repo, or is the same repo again, is skipped.
+   * What the card changed in every repo it works in: its home folder, each worktree of its, and
+   * every other repo of the card in the folder it works in there (a Current-branch card edits them
+   * in place). Each is read whether or not the hooks saw a file written there (§90: the hooks miss
+   * edits made by hand or by a tool, and the panel is for seeing all of it). A folder that isn't a
+   * git repo, or is the same repo again, is skipped.
    */
   async changes(card: Card): Promise<Changes> {
     const home = this.folder(card);
     const dirs = [home, ...ownFolders(card).map((f) => f.dir)];
     for (const r of cardRepos(card)) {
       const dir = folderFor(card, r);
-      if (!dirs.some((d) => samePath(d, dir)) && (card.files ?? []).some((f) => isInside(f, dir))) dirs.push(dir);
+      if (!dirs.some((d) => samePath(d, dir))) dirs.push(dir);
     }
     const repos: RepoChanges[] = [];
     for (const dir of dirs) {

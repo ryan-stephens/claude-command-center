@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { askOf, cardRepos, fmtK, itemTokens, memoryPct, modelName, ownFolders, packetText, reachable as canReach, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
-import { againstText, changeRows, changeTotals, patchLines, type Changes } from '../../shared/changes.ts';
+import { againstText, changeRows, changeTotals, patchLines, type ChangeRow, type Changes } from '../../shared/changes.ts';
 import { cardRecipe, mainRun, runKey, runsOf, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
 import type { Stack, StackApiRow } from '../../shared/stack.ts';
 import { allMerged, openPrs, prLine, prsOf, shipLeft, shipMode } from '../../shared/ship.ts';
@@ -16,7 +16,7 @@ import { SOURCE_NAME } from '../../shared/tickets.ts';
 import { repoName } from '../../shared/workspaces.ts';
 import { CARD_PANELS, type CardPanel } from '../line-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard } from '../line-model.ts';
-import { answerAsk, boardOf, editRecipe, goToTab, lastPick, openAddComposer, openApp, openChanges, openNeighbour, openOutput, openWorktrees, rememberPick, saySubmit, setChangeCount, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
+import { answerAsk, boardOf, changeHooks, editRecipe, goToTab, lastPick, openAddComposer, openApp, openChanges, openNeighbour, openOutput, openWorktrees, rememberPick, saySubmit, setChangeCount, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
 import { openSession } from '../keys.ts';
 import { get, set, setPanelW, useStore } from '../store.ts';
 import { cardChanges, send, stackPlan } from '../ws.ts';
@@ -318,8 +318,12 @@ function Say({ card }: { card: Card }) {
 function ChangesPanel({ card }: { card: Card }) {
   const [changes, setChanges] = useState<Changes | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Folded repos (by root) and whether the chosen file's diff is open (§90); both start afresh on another card.
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+  const [diffOpen, setDiffOpen] = useState(true);
   const at = useStore((s) => s.line.at);
   const stamp = `${card.files?.length ?? 0}:${card.ship?.steps.length ?? 0}:${card.live?.at ?? 0}`;
+  useEffect(() => { setFolded(new Set()); setDiffOpen(true); }, [card.id]);
   useEffect(() => {
     if (!card.cwd) return;
     let on = true;
@@ -327,55 +331,80 @@ function ChangesPanel({ card }: { card: Card }) {
     return () => { on = false; };
   }, [card.id, card.cwd, stamp]);
   const rows = changes ? changeRows(changes) : [];
-  const files = rows.filter((r) => r.kind === 'file');
-  useEffect(() => { setChangeCount(files.length); return () => setChangeCount(0); }, [files.length]);
-  useEffect(() => { document.getElementById(`pchg-${at}`)?.scrollIntoView({ block: 'nearest' }); }, [at]);
+  const files = rows.filter((r): r is Extract<ChangeRow, { kind: 'file' }> => r.kind === 'file');
+  // The files on screen: a folded repo's are left out, so j / k walk what is shown; `at` counts along these.
+  const shown = files.filter((r) => !folded.has(r.repo.root));
+  const shownKey = shown.map((r) => r.index).join(',');
+  useEffect(() => { setChangeCount(shown.map((r) => r.index)); return () => setChangeCount([]); }, [shownKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const chosenPos = Math.min(at, shown.length - 1);
+  const chosen = chosenPos >= 0 ? shown[chosenPos] : undefined;
+  const toggleFold = (root: string) => setFolded((prev) => { const next = new Set(prev); if (next.has(root)) next.delete(root); else next.add(root); return next; });
+  useEffect(() => {
+    changeHooks.toggleDiff = () => setDiffOpen((v) => !v);
+    changeHooks.foldRepo = () => { if (chosen) toggleFold(chosen.repo.root); };
+    // Z: unfold everything when any repo is folded (the way back after z), else fold every repo.
+    changeHooks.foldAll = () => setFolded((prev) => (prev.size > 0 ? new Set() : new Set(changes?.repos.map((r) => r.root) ?? [])));
+    return () => { changeHooks.toggleDiff = () => {}; changeHooks.foldRepo = () => {}; changeHooks.foldAll = () => {}; };
+  }, [chosen?.repo.root, changes]);
+  useEffect(() => { document.getElementById(`pchg-${chosenPos}`)?.scrollIntoView({ block: 'nearest' }); }, [chosenPos]);
   if (!card.cwd) return <p className="px-4 py-3 text-sm text-faint">Nothing yet: the card hasn’t started.</p>;
   if (error) return <p className="px-4 py-3 text-sm text-bad" role="alert">{error}</p>;
   if (!changes) return <p className="flex items-center gap-2 px-4 py-3 text-sm text-faint"><span className="spinner" />Asking git…</p>;
   const totals = changeTotals(changes);
-  const chosen = Math.min(at, files.length - 1);
   return (
     <div className="grid gap-3 px-3 py-3">
       {totals.files === 0 && <p className="px-1 text-sm text-faint">Nothing changed yet in {changes.repos.map((r) => r.repo).join(', ') || 'its repos'}.</p>}
-      {changes.repos.map((r) => (
-        <section key={r.root} className="overflow-hidden rounded-xl border border-line bg-surface">
-          <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[13px]">
-            <span className="font-bold">{r.repo}</span>
-            <span className="min-w-0 truncate text-[12px] text-faint" title={againstText(r)}>{r.branch && r.branch !== r.base ? r.branch : 'uncommitted'}</span>
-            <span className="grow" />
-            <span className="font-mono text-[11.5px] tabular-nums"><span className="text-ok">+{r.files.reduce((n, f) => n + f.added, 0)}</span> <span className="text-bad">−{r.files.reduce((n, f) => n + f.removed, 0)}</span></span>
-          </div>
-          {r.files.length === 0 && <p className="px-3 py-2 text-[12.5px] text-faint">Nothing changed here.</p>}
-          {rows.filter((x) => x.kind === 'file' && x.repo.root === r.root).map((x) => x.kind === 'file' && (
-            <div key={x.file.path} id={`pchg-${x.index}`} className="border-t border-line/60 first:border-t-0">
-              <button onClick={() => set({ line: { ...get().line, at: x.index } })} aria-pressed={x.index === chosen}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] ${x.index === chosen ? 'bg-raise' : 'hover:bg-raise/60'}`}>
-                <span className={`w-[52px] shrink-0 text-[10.5px] font-bold uppercase ${x.file.kind === 'deleted' ? 'text-bad' : x.file.kind === 'modified' ? 'text-faint' : 'text-ok'}`}>{{ added: 'added', modified: 'changed', deleted: 'deleted', renamed: 'renamed', new: 'new' }[x.file.kind]}</span>
-                <span className="min-w-0 grow truncate font-mono" title={x.file.path}>{x.file.path}</span>
-                {x.file.mine && <span className="shrink-0 rounded-full bg-ok-bg px-1.5 text-[10.5px] font-semibold text-ok" title="Written by this card’s session">card</span>}
-                <span className="shrink-0 font-mono text-[11px] tabular-nums"><span className="text-ok">+{x.file.added}</span> <span className="text-bad">−{x.file.removed}</span></span>
-              </button>
-              {x.index === chosen && (
-                <>
-                  {x.file.binary
-                    ? <p className="px-3 py-1.5 text-[12px] text-faint">A binary file: nothing to show.</p>
-                    : <pre className="m-0 max-h-[42vh] overflow-auto border-t border-line/60 bg-bg py-1 font-mono text-[11.5px] leading-[1.45]">
-                      {patchLines(x.file.patch).filter((l) => l.kind !== 'meta').map((l, i) => (
-                        <div key={i} className={`whitespace-pre px-3 ${l.kind === 'add' ? 'bg-ok-bg text-ok' : l.kind === 'del' ? 'bg-bad-bg text-bad' : l.kind === 'hunk' ? 'bg-raise text-busy' : 'text-sub'}`}>{l.text || ' '}</div>
-                      ))}
-                    </pre>}
-                  {/* The same file, full width: the sheet opens on it. */}
-                  <div className="flex justify-end border-t border-line/60 px-3 py-1">
-                    <button className="flex items-center gap-1.5 text-[12px] text-acc underline decoration-dotted underline-offset-2 hover:decoration-solid" onClick={() => openChanges(card.id, x.index)} title="This diff full width, in its own window">
-                      <Icon name="popout" size={13} />Pop out<Key k="f" size="sm" />
-                    </button>
-                  </div>
-                </>)}
-            </div>
-          ))}
-        </section>
-      ))}
+      {changes.repos.map((r) => {
+        const isFolded = folded.has(r.root);
+        return (
+          <section key={r.root} className="overflow-hidden rounded-xl border border-line bg-surface" aria-label={r.repo}>
+            {/* The header folds the repo's files under it (z on the chosen file's repo, Z for all). */}
+            <button onClick={() => toggleFold(r.root)} aria-expanded={!isFolded} title={isFolded ? `Unfold ${r.repo}’s files` : `Fold ${r.repo}’s files`}
+              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-raise/60 ${isFolded ? '' : 'border-b border-line'}`}>
+              <span className="w-3 shrink-0 text-center text-[11px] text-faint" aria-hidden>{isFolded ? '▸' : '▾'}</span>
+              <span className="font-bold">{r.repo}</span>
+              <span className="min-w-0 truncate text-[12px] text-faint" title={againstText(r)}>{r.branch && r.branch !== r.base ? r.branch : 'uncommitted'}</span>
+              <span className="grow" />
+              {isFolded && <span className="shrink-0 text-[11.5px] text-faint">{r.files.length} file{r.files.length === 1 ? '' : 's'}</span>}
+              <span className="font-mono text-[11.5px] tabular-nums"><span className="text-ok">+{r.files.reduce((n, f) => n + f.added, 0)}</span> <span className="text-bad">−{r.files.reduce((n, f) => n + f.removed, 0)}</span></span>
+            </button>
+            {!isFolded && r.files.length === 0 && <p className="px-3 py-2 text-[12.5px] text-faint">Nothing changed here.</p>}
+            {!isFolded && shown.filter((x) => x.repo.root === r.root).map((x) => {
+              const pos = shown.indexOf(x);
+              const isChosen = pos === chosenPos;
+              return (
+                <div key={x.file.path} id={`pchg-${pos}`} className="border-t border-line/60 first:border-t-0">
+                  {/* A click chooses the file; a second click on the chosen one folds its diff (Space). */}
+                  <button onClick={() => { if (isChosen) setDiffOpen((v) => !v); else { set({ line: { ...get().line, at: pos } }); setDiffOpen(true); } }} aria-pressed={isChosen} aria-expanded={isChosen ? diffOpen : undefined}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] ${isChosen ? 'bg-raise' : 'hover:bg-raise/60'}`}>
+                    <span className="w-3 shrink-0 text-center text-[11px] text-faint" aria-hidden>{isChosen ? (diffOpen ? '▾' : '▸') : ''}</span>
+                    <span className={`w-[52px] shrink-0 text-[10.5px] font-bold uppercase ${x.file.kind === 'deleted' ? 'text-bad' : x.file.kind === 'modified' ? 'text-faint' : 'text-ok'}`}>{{ added: 'added', modified: 'changed', deleted: 'deleted', renamed: 'renamed', new: 'new' }[x.file.kind]}</span>
+                    <span className="min-w-0 grow truncate font-mono" title={x.file.path}>{x.file.path}</span>
+                    {x.file.mine && <span className="shrink-0 rounded-full bg-ok-bg px-1.5 text-[10.5px] font-semibold text-ok" title="Written by this card’s session">card</span>}
+                    <span className="shrink-0 font-mono text-[11px] tabular-nums"><span className="text-ok">+{x.file.added}</span> <span className="text-bad">−{x.file.removed}</span></span>
+                  </button>
+                  {isChosen && diffOpen && (
+                    <>
+                      {x.file.binary
+                        ? <p className="px-3 py-1.5 text-[12px] text-faint">A binary file: nothing to show.</p>
+                        : <pre className="m-0 max-h-[42vh] overflow-auto border-t border-line/60 bg-bg py-1 font-mono text-[11.5px] leading-[1.45]">
+                          {patchLines(x.file.patch).filter((l) => l.kind !== 'meta').map((l, i) => (
+                            <div key={i} className={`whitespace-pre px-3 ${l.kind === 'add' ? 'bg-ok-bg text-ok' : l.kind === 'del' ? 'bg-bad-bg text-bad' : l.kind === 'hunk' ? 'bg-raise text-busy' : 'text-sub'}`}>{l.text || ' '}</div>
+                          ))}
+                        </pre>}
+                      {/* The same file, full width: the sheet opens on it. */}
+                      <div className="flex justify-end border-t border-line/60 px-3 py-1">
+                        <button className="flex items-center gap-1.5 text-[12px] text-acc underline decoration-dotted underline-offset-2 hover:decoration-solid" onClick={() => openChanges(card.id, x.index)} title="This diff full width, in its own window">
+                          <Icon name="popout" size={13} />Pop out<Key k="f" size="sm" />
+                        </button>
+                      </div>
+                    </>)}
+                </div>
+              );
+            })}
+          </section>
+        );
+      })}
       {totals.truncated && <p className="px-1 text-[12.5px] text-attn">The diff was cut: it is very large.</p>}
     </div>
   );

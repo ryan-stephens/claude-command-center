@@ -98,6 +98,7 @@ If you don't write code: ask a developer to do steps 1 to 6 once on your machine
 | | `y` / `n` (card open) | Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal |
 | | `g` (a card) | Go to its terminal tab: brings the Windows Terminal tab forward, for what the page can't relay (the trust-the-folder prompt, a picker) |
 | | `Shift+D` (a card on the board) | Changes full width: what it changed as git sees it, in every repo the card works in (a header per repo), file by file with the diffs (`↑ ↓` file, `s` ships from there); on an open card, the Changes panel |
+| | `j` / `k` · `Space` · `z` / `Z` · `f` (Changes panel) | The next / previous file with its diff under it · fold or unfold that diff · fold or unfold the chosen file's repo, or every repo · pop the diff out full width. Every repo and worktree of the card is listed, whether or not Claude wrote there (edits by hand show too); a header click folds a repo with the mouse |
 | | `Ctrl+Enter` | The card's session in the app, to read along (`Esc`: back to the line) |
 | | `1`–`9` / `0` | One workspace / all of them |
 | | `/` | Filter the cards by words |

@@ -36,7 +36,8 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['1–9  /  0', 'Show one lane’s cards / all of them'],
       ['/', 'Filter the cards by words'],
       ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, or its services, with their output), Verify (the team’s apps, later), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
-      ['j / k  ·  f (Changes panel)', 'The next / previous file, its diff under it  ·  pop the diff out full width, on the same file'],
+      ['j / k  ·  Space  ·  f (Changes panel)', 'The next / previous file, its diff under it  ·  fold or unfold that diff  ·  pop the diff out full width, on the same file'],
+      ['z  ·  Z (Changes panel)', 'Fold or unfold the chosen file’s repo (its files go under the header, which keeps the count)  ·  fold every repo, or unfold them all. A header click does the same with the mouse; a second click on the chosen file folds its diff'],
       ['j / k  ·  Space  ·  r  ·  q (Try it panel, a lane with a stack)', 'The environment row and each service  ·  change the environment, or tick a service to run  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
       ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
@@ -487,9 +488,13 @@ export function stepChange(delta: number, count: number): void {
   set({ line: { ...s.line, at: Math.max(0, Math.min(Math.max(0, count - 1), s.line.at + delta)) } });
 }
 
-/** How many files the Changes panel lists right now (it keeps the count here for j / k). */
+/** How many files the Changes panel shows right now (it keeps the count here for j / k). */
 export let changeCount = 0;
-export function setChangeCount(n: number): void { changeCount = n; }
+/** The panel's shown files, each as its index in the full list (a folded repo's files are left out, §90): f pops the sheet out on the right one. */
+export let changeIndex: number[] = [];
+/** What Space, z and Z do in the Changes panel: the panel sets these while it is up (§90). */
+export const changeHooks = { toggleDiff: (): void => {}, foldRepo: (): void => {}, foldAll: (): void => {} };
+export function setChangeCount(shown: number[]): void { changeCount = shown.length; changeIndex = shown; }
 
 function focusField(id: string): void {
   setTimeout(() => document.getElementById(id)?.focus(), 0);
@@ -654,11 +659,17 @@ function drawerKeys(e: KeyboardEvent): boolean {
       if (s.line.panel === 'try') { stepTry(e.key === 'j' ? 1 : -1); return true; }
       return false;
     // The Try it panel with a stack (§82): Space ticks, r starts one service (again), q stops one.
-    case ' ': if (s.line.panel === 'try' && s.line.drawer && tryRows.services.length) { toggleTryRow(s.line.drawer); return true; } return false;
+    case ' ':
+      if (s.line.panel === 'try' && s.line.drawer && tryRows.services.length) { toggleTryRow(s.line.drawer); return true; }
+      // The Changes panel (§90): Space folds or unfolds the chosen file's diff, z its repo's files, Z every repo's.
+      if (s.line.panel === 'changes' && changeCount) { changeHooks.toggleDiff(); return true; }
+      return false;
+    case 'z': if (s.line.panel === 'changes' && changeCount) { changeHooks.foldRepo(); return true; } return false;
+    case 'Z': if (s.line.panel === 'changes') { changeHooks.foldAll(); return true; } return false;
     case 'r': { const sv = s.line.panel === 'try' ? tryRowService() : undefined; if (sv && s.line.drawer) { tryService(s.line.drawer, sv); return true; } return false; }
     case 'q': { const sv = s.line.panel === 'try' ? tryRowService() : undefined; if (sv && s.line.drawer) { stopService(s.line.drawer, sv); return true; } return false; }
     case 'f':
-      if (s.line.panel === 'changes' && s.line.drawer) { openChanges(s.line.drawer, s.line.at); return true; }
+      if (s.line.panel === 'changes' && s.line.drawer) { openChanges(s.line.drawer, changeIndex[Math.min(s.line.at, changeIndex.length - 1)] ?? s.line.at); return true; }
       if (s.line.panel === 'try' && s.line.drawer) { openOutput(s.line.drawer, tryRowService()); return true; }
       return false;
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;

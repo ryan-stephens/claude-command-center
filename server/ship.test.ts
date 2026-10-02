@@ -225,9 +225,10 @@ test('changes cover every repo the card works in: its home, each worktree, and a
     const inPlace: Card = { ...seed(web.work), packet: { ...card.packet, workspace: [{ kind: 'repo', id: web.work, label: 'web', on: true }, { kind: 'repo', id: api.work, label: 'api', on: true }] }, files: [join(api.work, 'Fees.cs')] };
     const c2 = await ship.changes(inPlace);
     assert.deepEqual(c2.repos.map((r) => r.files.map((f) => f.path).sort()), [['README.md', 'cart.js'], ['Fees.cs']]);
-    // A repo of the card it wrote nothing in is not read.
+    // A repo of the card the hooks saw nothing written in is read all the same (§90): edits made by hand or by another tool show too.
     const untouched: Card = { ...inPlace, files: [] };
-    assert.equal((await ship.changes(untouched)).repos.length, 1);
+    const c3 = await ship.changes(untouched);
+    assert.deepEqual(c3.repos.map((r) => r.files.map((f) => `${f.path}${f.mine ? '*' : ''}`).sort()), [['README.md', 'cart.js'], ['Fees.cs']], 'both repos read; nothing marked as the card’s');
   } finally {
     ship.stop();
   }
