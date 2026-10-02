@@ -12,7 +12,8 @@ import { renderPrompt } from '../../shared/prompts.ts';
 import { SOURCE_NAME } from '../../shared/tickets.ts';
 import { composerKey, pickOption, togglePacketRow, type Composer, type GoRow, type SourceTab } from '../line-model.ts';
 import { leaveComposer, startWork, updateComposer } from '../line-keys.ts';
-import { addTypedFolder, browseFolder, choosePromptAt, closePicker, develop, openPicker, openPromptList, openPromptsDialog, pickAt, pickerList, saveAsPrompt, singlePick, switchLook, typeInPicker, writeWithClaude } from '../simple-keys.ts';
+import { addTypedFolder, browseFolder, choosePromptAt, closePicker, develop, openPicker, openPromptList, openPromptsDialog, pickAt, pickerList, saveAsPrompt, singlePick, switchLook, toggleTicketDetails, typeInPicker, writeWithClaude } from '../simple-keys.ts';
+import type { Ticket } from '../../shared/tickets.ts';
 import { chips, followPrompt, howFacts, howRows, KIND_OPTIONS, promptContext, promptLabel, promptRows, simpleOf, withSimple, type Chip, type SimpleBlock } from '../simple-model.ts';
 import { get, useStore } from '../store.ts';
 import { usePrLookup, useTicketSearch } from './NewCard.tsx';
@@ -113,22 +114,29 @@ function TicketBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; o
   const sp = simpleOf(c);
   const found = useStore((s) => s.found);
   if (t) {
-    const ac = c.packet.ticket.filter((i) => i.kind === 'ac').length;
-    const links = c.packet.ticket.filter((i) => i.kind === 'linked').length;
+    const open = Boolean(sp.details);
     return (
       <section onMouseDown={onFocus} className="flex flex-col gap-2">
         <div className="flex items-baseline gap-2"><div className="eyebrow">Ticket</div><button className="text-[12.5px] text-acc underline decoration-acc/50 underline-offset-2 hover:text-ink hover:decoration-ink" onClick={() => openPicker('replace')} title="Enter">(change)</button></div>
         <div className={`flex flex-col gap-2.5 rounded-xl border border-line bg-surface px-5 py-4 ${focused ? 'blk-focus' : ''}`}>
           <div className="flex items-center gap-2.5 text-[13px] text-faint">
-            <TicketKey k={t.key} source={t.source} /><span>{t.status}</span><span>·</span><span>{SOURCE_NAME[t.source]}{t.demo ? ' (demo)' : ''}</span>
+            {/* The key opens the ticket in the tracker (§70); o does the same from the keyboard. */}
+            {t.url
+              ? <a href={t.url} target="_blank" rel="noreferrer" title={`Open in ${SOURCE_NAME[t.source]} (o)`} className="rounded-md ring-acc/40 hover:ring-2"><TicketKey k={t.key} source={t.source} /></a>
+              : <TicketKey k={t.key} source={t.source} />}
+            <span>{t.status}</span><span>·</span><span>{SOURCE_NAME[t.source]}{t.demo ? ' (demo)' : ''}</span>
             <span className="grow" />
-            {t.url && <a className="hover:text-ink" href={t.url} target="_blank" rel="noreferrer">Open in {SOURCE_NAME[t.source]}</a>}
+            {t.url && <a className="hover:text-ink" href={t.url} target="_blank" rel="noreferrer">Open in {SOURCE_NAME[t.source]} ↗</a>}
           </div>
           <h1 className="m-0 text-[21px] font-bold leading-snug">{t.title}</h1>
-          {t.description.trim() && <p className="m-0 line-clamp-3 text-[14px] leading-relaxed text-sub">{t.description.trim()}</p>}
-          <div className="flex gap-4 border-t border-line/60 pt-2 text-[13px] text-sub">
-            <span>Acceptance criteria · {ac}</span><span>Comments · {t.comments.length}</span>{links > 0 && <span>Linked · {links}</span>}
-          </div>
+          {t.description.trim() && <p className={`m-0 text-[14px] leading-relaxed text-sub ${open ? 'whitespace-pre-wrap' : 'line-clamp-3'}`}>{t.description.trim()}</p>}
+          {/* The counts are a drawer (§70): Space, or a click, shows the criteria, comments and links under them. */}
+          <button type="button" aria-expanded={open} aria-controls="ticket-details" onClick={toggleTicketDetails} title="Space"
+            className="-mx-2 flex items-center gap-4 rounded-lg border-t border-line/60 px-2 pt-2 text-left text-[13px] text-sub hover:text-ink">
+            <span>Acceptance criteria · {t.acceptance.length}</span><span>Comments · {t.comments.length}</span>{t.links.length > 0 && <span>Linked · {t.links.length}</span>}
+            <span className="grow" /><span className="text-xs text-faint">{open ? 'Hide ▴' : 'Show ▾'}</span>
+          </button>
+          {open && <TicketDetails t={t} />}
         </div>
       </section>
     );
@@ -148,6 +156,38 @@ function TicketBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; o
         onChange={(e) => updateComposer((x) => ({ ...x, title: e.target.value }))}
         className="field text-[14px]" />
     </section>
+  );
+}
+
+/** The ticket's drawer: every acceptance criterion, each comment with who and when, the linked tickets. */
+function TicketDetails({ t }: { t: Ticket }) {
+  const when = (at: number) => new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  return (
+    <div id="ticket-details" className="flex flex-col gap-3 text-[13.5px]">
+      <div>
+        <div className="eyebrow mb-1">Acceptance criteria</div>
+        {t.acceptance.length
+          ? <ul className="m-0 flex list-disc flex-col gap-0.5 pl-5 leading-relaxed">{t.acceptance.map((a, i) => <li key={i}>{a}</li>)}</ul>
+          : <div className="text-faint">None on the ticket.</div>}
+      </div>
+      <div>
+        <div className="eyebrow mb-1">Comments</div>
+        {t.comments.length
+          ? <div className="flex flex-col gap-2">{t.comments.map((cm, i) => (
+              <div key={i} className="rounded-lg bg-raise px-3 py-2">
+                <div className="mb-0.5 text-xs text-faint"><b className="font-semibold text-sub">{cm.author}</b> · {when(cm.at)}</div>
+                <div className="whitespace-pre-wrap leading-relaxed">{cm.body}</div>
+              </div>
+            ))}</div>
+          : <div className="text-faint">None yet.</div>}
+      </div>
+      {t.links.length > 0 && (
+        <div>
+          <div className="eyebrow mb-1">Linked</div>
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">{t.links.map((l) => <li key={l.key} className="flex items-center gap-2"><span className="text-faint">{l.relation}</span><TicketKey k={l.key} source={t.source} /><span>{l.title}</span></li>)}</ul>
+        </div>
+      )}
+    </div>
   );
 }
 

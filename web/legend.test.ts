@@ -77,4 +77,10 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(onRepos.includes('A folder of repos') && !onRepos.includes('Take the folder off'), onRepos.join(','));
   assert.ok(labels({ view: 'composer', simple: { ...base, repos: true, onSource: true }, bindings: {} }).includes('Take the folder off'));
   assert.ok(!labels({ view: 'composer', simple: { ...base, folders: true }, bindings: {} }).includes('A folder of repos'));
+  // The ticket block (§70): Space for the details, o only when the ticket has a link.
+  const ticket = { block: 'ticket' as const, adding: false, more: false, hasTicket: true, ownChip: false };
+  const onTicket = labels({ view: 'composer', simple: ticket, bindings: {} });
+  assert.ok(onTicket.includes('Details') && !onTicket.includes('Open in the tracker'), onTicket.join(','));
+  const linked = labels({ view: 'composer', simple: { ...ticket, details: true, ticketLink: true }, bindings: {} });
+  assert.ok(linked.includes('Hide details') && linked.includes('Open in the tracker'), linked.join(','));
 });

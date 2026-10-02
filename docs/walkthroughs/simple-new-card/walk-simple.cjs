@@ -74,6 +74,25 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('Session settings list branch, Plan first, model', /Branch/.test(settings) && /Plan first/.test(settings) && /Model/.test(settings), settings.replace(/\n/g, ' | ').slice(0, 200));
   await shot(page, 'simple-with-ticket');
 
+  // ↑ to the ticket: Space opens the drawer under the counts (§70), Space closes it; o on a demo ticket says it has no link.
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Space');
+  await sleep(250);
+  const drawer = region.locator('#ticket-details');
+  check('Space opens the ticket’s details', await drawer.isVisible());
+  const dt = await drawer.innerText();
+  check('the drawer lists every criterion, each comment with its author, and the linked ticket', /survives closing the tab/.test(dt) && /Gift cards/.test(dt) && /Priya/.test(dt) && /cookie banner/.test(dt) && /SHOP-98/.test(dt), dt.replace(/\n/g, ' | ').slice(0, 200));
+  check('the counts row says Hide', /Hide/.test(await region.getByRole('button', { name: /Acceptance criteria/ }).innerText()));
+  await shot(page, 'simple-ticket-details');
+  await page.keyboard.press('Space');
+  await sleep(200);
+  check('Space again closes it', (await drawer.count()) === 0);
+  check('the key is not a link on a demo ticket', (await region.locator('a', { hasText: 'SHOP-155' }).count()) === 0);
+  await page.keyboard.press('o');
+  await sleep(200);
+  check('o on a demo ticket says it has no link', /no link to open/.test(await page.locator('header').innerText()));
+  await page.keyboard.press('ArrowDown'); // back to the context row
+
   // Picking a ticket lands on the context row: → to + Context, Enter: the popup; pick docs-site.
   for (let i = 0; i < 2; i++) await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter');

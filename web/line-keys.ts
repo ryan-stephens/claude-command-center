@@ -70,7 +70,9 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ['Shift+L', 'The other look: the full three-panel screen, or back to this one (remembered as a setting; also in ? B)'],
       ['↑ ↓ / Tab', 'Move through the blocks in reading order: ticket → what Claude can see → opening message → session settings → Start'],
-      ['Enter / Space (ticket)', 'Pick a ticket, or change it (/ searches, Jira too; x takes it off and a title can be typed instead)'],
+      ['Enter (ticket)', 'Pick a ticket, or change it (/ searches, Jira too; x takes it off and a title can be typed instead)'],
+      ['Space (ticket)', 'Show or hide the ticket’s details under its counts: every acceptance criterion, each comment with who and when, the linked tickets'],
+      ['o (ticket)', 'Open the ticket in the tracker, in the browser (its key is a link too)'],
       ['← → (what Claude can see)', 'Move along the chips: the lane’s repos, this card’s repos, folders and related tickets, then + Context'],
       ['Enter / Space (a chip)', 'Include or leave out a lane repo; on + Context, open the picker'],
       ['+ or a (what Claude can see)', 'Add context: a popup with Repos (the library), Folders (ones from disk: type or paste a path and Enter, or b browses in the Windows folder dialog; on one listed, Enter leaves it out or brings it back, x takes it off) and Tickets (related ones; Jira is searched too). ← → or Tab switch tabs, ↑ ↓ move, Enter adds one and keeps the list open (on one already ticked, takes it out), Esc closes'],

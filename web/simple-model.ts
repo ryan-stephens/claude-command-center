@@ -34,6 +34,8 @@ export interface SimpleState {
   writing?: boolean;
   /** What the picker's last action came to, shown inside the popup under its box (§68): a refusal (`bad`) or a word of what happened. Cleared on typing, a tab switch or closing. */
   note?: { text: string; bad?: boolean };
+  /** The ticket's drawer is open (§70): its acceptance criteria, comments and linked tickets under the counts. */
+  details?: boolean;
 }
 
 export const SIMPLE_DEFAULT: SimpleState = { block: 'ticket', ci: 0, more: false, adding: null, ai: 0 };

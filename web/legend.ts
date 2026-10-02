@@ -126,7 +126,7 @@ export interface LineLegendInput {
   /** New-card screen, panel 2: the highlighted row is a repo this card added (w keeps it for the workspace). */
   cardRepo?: boolean;
   /** New-card screen in its simple look (§59): which block, a picker open, the options open, a ticket picked. */
-  simple?: { block: 'ticket' | 'context' | 'msg' | 'how' | 'start'; adding: boolean; /** The context picker (Repos / Folders / Tickets tabs), not the ticket search. */ context?: boolean; /** Its Folders tab is showing. */ folders?: boolean; /** Its Repos tab is showing; `onSource`: the highlighted row is the heading of a folder added for this card (§65). */ repos?: boolean; onSource?: boolean; /** The list of saved prompts is open under the opening message. */ prompt?: boolean; more: boolean; hasTicket: boolean; ownChip: boolean };
+  simple?: { block: 'ticket' | 'context' | 'msg' | 'how' | 'start'; adding: boolean; /** The context picker (Repos / Folders / Tickets tabs), not the ticket search. */ context?: boolean; /** Its Folders tab is showing. */ folders?: boolean; /** Its Repos tab is showing; `onSource`: the highlighted row is the heading of a folder added for this card (§65). */ repos?: boolean; onSource?: boolean; /** The list of saved prompts is open under the opening message. */ prompt?: boolean; more: boolean; hasTicket: boolean; /** The ticket's drawer is open; the ticket has a link to the tracker (§70). */ details?: boolean; ticketLink?: boolean; ownChip: boolean };
   bindings: Bindings;
 }
 
@@ -146,7 +146,7 @@ function simpleLegend(x: LineLegendInput): LegendItem[] {
       { keys: ['Esc'], label: sp.context ? 'Done' : 'Close' },
     ];
   }
-  const here: LegendItem[] = sp.block === 'ticket' ? [{ keys: ['Enter'], label: sp.hasTicket ? 'Change ticket' : 'Find a ticket' }, ...(sp.hasTicket ? [{ keys: ['x'], label: 'No ticket' }] : [])]
+  const here: LegendItem[] = sp.block === 'ticket' ? [{ keys: ['Enter'], label: sp.hasTicket ? 'Change ticket' : 'Find a ticket' }, ...(sp.hasTicket ? [{ keys: ['Space'], label: sp.details ? 'Hide details' : 'Details' }, ...(sp.ticketLink ? [{ keys: ['o'], label: 'Open in the tracker' }] : []), { keys: ['x'], label: 'No ticket' }] : [])]
     : sp.block === 'context' ? [{ keys: ['←', '→'], label: 'Along the chips' }, { keys: ['Enter'], label: 'Include / leave out' }, { keys: ['+'], label: 'Add context' }, ...(sp.ownChip ? [{ keys: ['x'], label: 'Take out' }, { keys: ['w'], label: 'Keep for the lane' }] : [])]
     : sp.block === 'msg' ? [{ keys: ['Enter'], label: 'Write the message' }, { keys: ['Space'], label: 'Pick a prompt' }, { keys: ['w'], label: 'Have Claude write it' }, { keys: ['s'], label: 'Save as a prompt' }, { keys: ['⇧E'], label: 'Edit prompts' }]
     : sp.block === 'how' ? (sp.more ? [{ keys: ['←', '→'], label: 'Change' }, { keys: ['Enter'], label: 'Close the options' }] : [{ keys: ['Enter'], label: 'Options' }])

@@ -56,6 +56,19 @@ const clearNote = (x: Composer): Composer => (simpleOf(x).note ? withSimple(x, {
 
 const started = () => new Set(get().cards.map((c) => c.key));
 
+/** Space on the ticket (§70): the drawer under its counts opens or closes: acceptance criteria, comments, linked tickets. */
+export function toggleTicketDetails(): void {
+  updateComposer((x) => (x.ticket ? withSimple(x, { block: 'ticket', details: !simpleOf(x).details }) : x));
+}
+
+/** o on the ticket (§70): it opens in the tracker, in the browser. */
+export function openTicketInTracker(): void {
+  const t = get().composer?.ticket;
+  if (!t) return;
+  if (!t.url) { flash(`${t.key} has no link to open${t.demo ? ': demo tickets live nowhere' : ''}.`); return; }
+  window.open(t.url, '_blank', 'noopener');
+}
+
 /** Open a picker: context (on the repos tab), or a ticket in place of this one. The search box takes focus. */
 export function openPicker(kind: 'context' | 'replace', tab: SourceTab = 'repos'): void {
   updateComposer((x) => withSimple({ ...x, tab: kind === 'replace' ? 'tickets' : tab, q: '' }, { adding: kind, ai: 0, note: undefined }));
@@ -416,7 +429,9 @@ export function simpleKeys(e: KeyboardEvent, typing: boolean): boolean {
   }
   switch (sp.block) {
     case 'ticket':
-      if (e.key === 'Enter' || e.key === ' ') { if (c.ticket) openPicker('replace'); else focusField('cp-q'); return true; }
+      if (e.key === 'Enter') { if (c.ticket) openPicker('replace'); else focusField('cp-q'); return true; }
+      if (e.key === ' ') { if (c.ticket) toggleTicketDetails(); else focusField('cp-q'); return true; }
+      if (e.key === 'o' && c.ticket) { openTicketInTracker(); return true; }
       if ((e.key === 'x' || e.key === 'Delete') && c.ticket) { updateComposer((x) => dropTicket(x, s.nextKey)); return true; }
       if (e.key === '/') { if (!c.ticket) focusField('cp-q'); else openPicker('replace'); return true; }
       return false;
