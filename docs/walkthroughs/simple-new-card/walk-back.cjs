@@ -26,14 +26,25 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(300);
   const crumb = page.locator('header');
   const cardTiles = () => page.getByText(/^CARD-\d+$/);
-  const hadCards = await cardTiles().count();
+  let hadCards = await cardTiles().count();
   check('the board’s breadcrumb is just Sessions', /Sessions/.test(await crumb.innerText()) && !/\//.test((await crumb.innerText()).replace(/Sessions/, '').split('\n')[0] || ''), (await crumb.innerText()).split('\n').slice(0, 3).join(' | '));
 
   // Open the first card on the board with Enter (the walkthroughs leave none; use the half-built card? no: focus a card tile).
   // There may be no card yet: this walkthrough needs one. Make a plain one straight on the board through the page's own socket.
-  const tile = cardTiles().first();
+  let tile = cardTiles().first();
   if (!(await tile.isVisible().catch(() => false))) {
-    check('no card to open: make one by starting a card is out of scope', false, 'seed a card first (a started card in the Demo lane)');
+    // No card yet: seed one (§80), with no terminal tab or session behind it.
+    const DEMO = (process.env.TEMP || process.env.TMP).replace(/\\/g, '/') + '/cc-demo';
+    await page.evaluate(({ DEMO }) => new Promise((resolve) => {
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+      ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.reqId === 'seed-back') { ws.close(); resolve(); } };
+      ws.onopen = () => ws.send(JSON.stringify({ type: 'cards.seed', reqId: 'seed-back', options: { repos: [`${DEMO}/web-app`], workspaceId: 'ws-demo-simple', key: 'CARD-900', state: 'working', title: 'A seeded card for the way back' } }));
+      setTimeout(() => { ws.close(); resolve(); }, 3000);
+    }), { DEMO });
+    await sleep(600);
+    tile = cardTiles().first();
+    check('a card was seeded to open', await tile.isVisible().catch(() => false));
+    hadCards = await cardTiles().count();
   }
   await tile.click();
   await sleep(400);

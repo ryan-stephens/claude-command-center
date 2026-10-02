@@ -12,6 +12,16 @@ import { relatedItem, ticketItems, ticketSub, type Ticket } from '../shared/tick
 import { homeRepo, repoName, samePath } from '../shared/workspaces.ts';
 
 /** Which workspace's cards the board shows. */
+/** The open card's dock (§81): the panel open beside it, if any. */
+export type CardPanel = 'changes' | 'try' | 'verify' | 'context' | 'more';
+export const CARD_PANELS: { id: CardPanel; name: string; key: string }[] = [
+  { id: 'changes', name: 'Changes', key: '⇧D' },
+  { id: 'try', name: 'Try it', key: '⇧T' },
+  { id: 'verify', name: 'Verify', key: 'v' },
+  { id: 'context', name: 'Context', key: '⇧C' },
+  { id: 'more', name: 'More', key: 'm' },
+];
+
 export type LineFilter = 'all' | string;
 
 /** Does the / filter's text match? Every word must appear somewhere in `hay`. */

@@ -114,7 +114,7 @@ export function onCardChange(prev: Card | undefined, next: Card): void {
   n.onclick = () => {
     window.focus();
     closeComposer(); // a half-built card is kept for c
-    set({ screen: 'line', openId: null, modal: null, line: { ...get().line, focus: next.id, drawer: next.id, tab: 'over' } });
+    set({ screen: 'line', openId: null, modal: null, line: { ...get().line, focus: next.id, drawer: next.id } });
     n.close();
   };
 }

@@ -8,10 +8,11 @@ import { loadFolds, saveFolds, toggled, type FoldKey, type Folds } from './folds
 import type { QaState } from './questions.ts';
 import type { Flags } from './home-model.ts';
 import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
-import { asDraft, hasWork, type Composer, type LineFilter } from './line-model.ts';
+import { asDraft, hasWork, type CardPanel, type Composer, type LineFilter } from './line-model.ts';
 
 /** Where keys go inside the session view. Esc steps outward: composer → number pad → the line. */
 export type SessionZone = 'composer' | 'board';
+
 /** Where a repo picked from the library goes. */
 export type RepoTarget = { kind: 'session'; id: string } | { kind: 'workspace'; id: string };
 
@@ -109,7 +110,7 @@ interface State {
    * The board: the focused card, the card open in the drawer and its tab, the workspace shown, and
    * the text filter (/).
    */
-  line: { focus: string | null; drawer: string | null; tab: 'over' | 'ctx' | 'tx'; filter: LineFilter; q: string; searching: boolean; /** The Inbox's view (v): yours, or ready for QA. */ view: InboxView };
+  line: { focus: string | null; drawer: string | null; /** The open card's dock panel (§81), kept from card to card; `at`: the file chosen in Changes. */ panel: CardPanel | null; at: number; filter: LineFilter; q: string; searching: boolean; /** The Inbox's view (v): yours, or ready for QA. */ view: InboxView };
   /** What the tracker's search found for the new-card screen's search box (other people's tickets too). */
   found: Found;
   /** The new-card screen, while it is open. */
@@ -183,7 +184,7 @@ export const useStore = create<State>(() => ({
   runs: {},
   ticketProjects: [],
   ticketSources: null,
-  line: { focus: null, drawer: null, tab: 'over', filter: loadFilter(), q: '', searching: false, view: loadView() },
+  line: { focus: null, drawer: null, panel: null, at: 0, filter: loadFilter(), q: '', searching: false, view: loadView() },
   found: NO_FOUND,
   composer: null,
   draft: loadDraft(),

@@ -13,7 +13,7 @@ import { exportWorkspace, importWorkspace } from './commands.ts';
 import { openSession } from './keys.ts';
 import { closeComposer, currentWorkspace, flash, get, set, setFilter, setInboxView, takeDraft, type WorkspaceAction } from './store.ts';
 import {
-  addComposer, additionOf, cardFolders, stepCard, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
+  addComposer, additionOf, cardFolders, type CardPanel, stepCard, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
@@ -25,7 +25,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
     title: 'Ticket Line',
     keys: [
       ['← → ↑ ↓', 'Move between cards'],
-      ['Enter', 'Open the card full screen: Overview, Context (how it started, what Claude was given), and its live Transcript beside them'],
+      ['Enter', 'Open the card: its chat (the session, live from the terminal tab, with the message box and what it is asking) and a dock on the left whose panels open beside it'],
       ['n / Enter (a ticket in the Inbox)', 'Start work on it: the new-card screen, with the ticket as its context'],
       ['v', 'Inbox: your tickets, or every ticket Ready for QA in your projects'],
       ['Delete (a ticket in the Inbox)', 'Hide it from the Inbox (nothing changes in Jira or Trello; Shift+T shows it again)'],
@@ -34,13 +34,14 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['c', 'New card: build its context and start work in a terminal tab. A card you left half-built (Esc, Alt+L) is picked up again; Shift+C starts a fresh one'],
       ['1–9  /  0', 'Show one lane’s cards / all of them'],
       ['/', 'Filter the cards by words'],
-      ['Tab (card open)', 'Overview or Context (on a narrow window, Transcript too)'],
+      ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, the run recipe), Verify (the team’s apps, later), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
+      ['j / k  ·  f (Changes panel)', 'The next / previous file, its diff under it  ·  the diffs full width'],
       ['Esc (card open)', 'Back to the board, the card still focused; on the board, clear the filter'],
       ['← → (card open)', 'The previous / next card on the board, in column order'],
       ['Enter (card open)', 'Type to its terminal: the message box under the transcript sends into the session itself (Esc leaves the box)'],
       ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal'],
       ['g (a card)', 'Go to its terminal tab: brings the Windows Terminal tab forward, for what the page can’t relay (the trust-the-folder prompt, a picker)'],
-      ['Shift+D (a card)', 'Changes: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
+      ['Shift+D (a card on the board)', 'Changes full width: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
       ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a lane stack, pick the environment and the APIs first. A lane with no stack yet: what its repos say the stack is (okteto.yml, angular.json, the proxy file), Enter keeps it, e edits it first'],
@@ -260,7 +261,7 @@ export function startWork(): void {
   set({ composer: { ...c, starting: true, error: null } });
   startCard(draft).then(
     (id) => {
-      set({ composer: null, line: { ...get().line, focus: id, drawer: id, tab: 'ctx' } });
+      set({ composer: null, line: { ...get().line, focus: id, drawer: id, panel: 'context' } });
       flash('Started in a terminal tab');
     },
     (e: Error) => {
@@ -278,7 +279,7 @@ function addToCard(c: Composer): void {
   set({ composer: { ...c, starting: true, error: null } });
   addCardContext(id, add.items, add.note).then(
     () => {
-      set({ composer: null, line: { ...get().line, focus: id, drawer: id, tab: 'ctx' } });
+      set({ composer: null, line: { ...get().line, focus: id, drawer: id, panel: 'context' } });
       setTimeout(() => document.getElementById('added-since')?.scrollIntoView({ block: 'nearest' }), 0);
       const card = get().cards.find((x) => x.id === id);
       flash(card?.sessionId ? `Waiting on ${key}: it goes in with your next message in its tab` : `Waiting on ${key}: it goes in when the session starts`);
@@ -312,7 +313,7 @@ export function tryIt(id: string): void {
   if (!card) return;
   if (running(id)) { send({ type: 'card.stopRun', id }); flash(`Stopped ${card.key}’s app`); return; }
   const home = cardRepos(card)[0];
-  set({ line: { ...s.line, focus: id, drawer: id, tab: 'over' } });
+  set({ line: { ...s.line, focus: id, drawer: id, panel: 'try' } });
   const recipe = cardRecipe(s.recipes, card.workspaceId, home);
   // A workspace of several repos with no recipe or stack of its own: what its repos say the stack is, to keep with one key (§54).
   const wsRepos = s.workspaces.find((w) => w.id === card.workspaceId)?.repos.length ?? 0;
@@ -396,10 +397,24 @@ export function editRecipe(id: string): void {
 }
 
 export function openCard(id: string): void {
-  set({ line: { ...get().line, focus: id, drawer: id, tab: 'over' } });
+  set({ line: { ...get().line, focus: id, drawer: id } });
 }
 
-const TABS = ['over', 'ctx', 'tx'] as const;
+/** A dock key on the open card (§81): opens that panel beside the chat, or closes it when it is the one open. */
+export function togglePanel(panel: CardPanel): void {
+  const s = get();
+  set({ line: { ...s.line, panel: s.line.panel === panel ? null : panel, at: 0 } });
+}
+
+/** j / k in the Changes panel: the next or previous file across every repo. */
+export function stepChange(delta: number, count: number): void {
+  const s = get();
+  set({ line: { ...s.line, at: Math.max(0, Math.min(Math.max(0, count - 1), s.line.at + delta)) } });
+}
+
+/** How many files the Changes panel lists right now (it keeps the count here for j / k). */
+export let changeCount = 0;
+export function setChangeCount(n: number): void { changeCount = n; }
 
 function focusField(id: string): void {
   setTimeout(() => document.getElementById(id)?.focus(), 0);
@@ -552,19 +567,19 @@ function drawerKeys(e: KeyboardEvent): boolean {
   switch (e.key) {
     case 'Escape': set({ line: { ...s.line, drawer: null } }); return true;
     case 'ArrowLeft': case 'ArrowRight': if (s.line.drawer) openNeighbour(s.line.drawer, e.key === 'ArrowRight' ? 1 : -1); return true;
-    case 'Tab': {
-      // Wide screens show the transcript beside the tabs, so Tab only switches Overview and Context.
-      const tabs = window.matchMedia?.('(min-width: 1024px)').matches ? TABS.filter((t) => t !== 'tx') : [...TABS];
-      const i = Math.max(0, tabs.indexOf(s.line.tab));
-      set({ line: { ...s.line, tab: tabs[(i + (e.shiftKey ? tabs.length - 1 : 1)) % tabs.length] } });
-      return true;
-    }
+    // The dock (§81): each panel's key opens it beside the chat, or closes it.
+    case 'D': togglePanel('changes'); return true;
+    case 'T': togglePanel('try'); return true;
+    case 'v': togglePanel('verify'); return true;
+    case 'C': togglePanel('context'); return true;
+    case 'm': togglePanel('more'); return true;
+    case 'j': case 'k': if (s.line.panel === 'changes') { stepChange(e.key === 'j' ? 1 : -1, changeCount); return true; } return false;
+    case 'f': if (s.line.panel === 'changes' && s.line.drawer) { openChanges(s.line.drawer); return true; } return false;
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;
     case 'X': if (s.line.drawer) openWorktrees(s.line.drawer); return true;
     case 'Enter': if (s.line.drawer) focusSay(s.line.drawer); return true;
     case 'y': case 'n': if (s.line.drawer) answerAsk(s.line.drawer, e.key === 'y' ? 'allow' : 'deny'); return true;
     case 'g': if (s.line.drawer) goToTab(s.line.drawer); return true;
-    case 'D': if (s.line.drawer) openChanges(s.line.drawer); return true;
     case 'c': if (s.line.drawer) openAddComposer(s.line.drawer); return true;
     case 'x': if (s.line.drawer) withdrawLast(s.line.drawer); return true;
     case 't': if (s.line.drawer) tryIt(s.line.drawer); return true;

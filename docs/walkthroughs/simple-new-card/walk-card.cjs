@@ -1,11 +1,11 @@
-// The open card (PLAN §80 onward) on the isolated server at :7802: seeds a Demo lane and one card
-// per state through cards.seed (no terminal tab, no Claude session), opens each and screenshots it.
-// Run walk-simple.cjs first for the lane, or let this one make it.
+// The open card (PLAN §80, §81: direction F) on the isolated server at :7802: seeds a Demo lane and
+// one card per state through cards.seed (no terminal tab, no Claude session), opens each, walks the
+// dock's panels and the keys, and screenshots what it sees. DARK=1 for dark mode, W=900 for a narrow window.
 const { chromium } = require('C:/Users/ryans/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright');
 const path = require('node:path');
 const fs = require('node:fs');
 const PORT = process.env.PORT || '7802';
-const OUT = path.join(__dirname, 'shots-card');
+const OUT = path.join(__dirname, process.env.DARK === '1' ? 'shots-card-dark' : process.env.W ? `shots-card-${process.env.W}` : 'shots-card');
 fs.mkdirSync(OUT, { recursive: true });
 const DEMO = (process.env.TEMP || process.env.TMP).replace(/\\/g, '/') + '/cc-demo';
 let n = 0; const results = [];
@@ -37,7 +37,7 @@ async function ask(page, msg) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`http://127.0.0.1:${PORT}/`);
-  await page.evaluate((dark) => { localStorage.setItem('cc-control.welcomed.v2', '1'); if (dark) localStorage.setItem('cc-control.theme', 'dark'); }, dark);
+  await page.evaluate((dark) => { localStorage.setItem('cc-control.welcomed.v2', '1'); localStorage.removeItem('cc-control.seen'); if (dark) localStorage.setItem('cc-control.theme', 'dark'); }, dark);
   await page.evaluate(({ DEMO }) => new Promise((resolve) => {
     const ws = new WebSocket(`ws://${location.host}/ws`);
     ws.onopen = () => {
@@ -47,6 +47,14 @@ async function ask(page, msg) {
   }), { DEMO });
   await page.reload();
   await sleep(800);
+
+  // Earlier runs' cards go first, so the board holds one card per state.
+  const old = await page.evaluate(() => new Promise((resolve) => {
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === 'cards') { ws.close(); resolve(m.cards.map((c) => c.id)); } };
+    setTimeout(() => { ws.close(); resolve([]); }, 2000);
+  }));
+  for (const id of old) await page.evaluate((id) => new Promise((resolve) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => { ws.send(JSON.stringify({ type: 'card.delete', id })); setTimeout(() => { ws.close(); resolve(); }, 150); }; }), id);
 
   // One card per state. Changes needs real folders: the demo repos themselves (web-app has uncommitted edits to show).
   const states = ['plan', 'tool', 'working', 'idle', 'done'];
@@ -61,21 +69,113 @@ async function ask(page, msg) {
   await sleep(400);
   await shot(page, 'board');
 
-  for (const state of states) {
-    await page.locator(`#card-${ids[state]}`).click();
-    await sleep(700);
-    const view = page.locator('section[aria-label^="SHOP-"]').first();
-    check(`${state}: the card opens`, await view.isVisible());
-    await shot(page, `card-${state}`);
-    if (state === 'plan') {
-      check('plan: the transcript shows the seeded plan', await view.getByText('Persist the guest cart to localStorage').first().isVisible().catch(() => false));
-    }
-    await page.keyboard.press('Escape');
-    await sleep(300);
-  }
+  const view = () => page.locator('section[aria-label^="SHOP-"]').first();
+  const kcCount = async () => view().locator('.kc:visible').count();
+
+  // The plan card: the chat is the page, the ask under it with y / n, the dock on the left, no panel open.
+  await page.locator(`#card-${ids.plan}`).click();
+  await sleep(800);
+  check('plan: the card opens', await view().isVisible());
+  const dockBox = await view().getByRole('button', { name: 'Back to the board' }).boundingBox();
+  const viewBox = await view().boundingBox();
+  check('the way back is at the top left of the dock', dockBox && viewBox && dockBox.x - viewBox.x < 20 && dockBox.y - viewBox.y < 20, JSON.stringify(dockBox));
+  check('no panel open at first', (await view().getByRole('region').count()) === 0);
+  check('the ask is under the chat with Approve', await view().getByRole('button', { name: /Approve/ }).isVisible());
+  check('the plan text is in the chat', await view().getByText('Persist the guest cart to localStorage').first().isVisible().catch(() => false));
+  check('no tabs', (await view().getByText('Overview').count()) === 0);
+  console.log(`keycaps on the plan card: ${await kcCount()}`);
+  await shot(page, 'plan-chat');
+
+  // Shift+D: the Changes panel opens beside the dock, grouped by repo, with real git diffs from the demo repos.
+  await page.keyboard.press('D');
+  await sleep(1500);
+  const changes = view().getByRole('region', { name: 'Changes' });
+  check('Shift+D opens the Changes panel', await changes.isVisible());
+  check('Changes groups by repo (web-app)', await changes.getByText('web-app', { exact: true }).first().isVisible().catch(() => false));
+  const diffShown = await changes.locator('pre').count();
+  check('the chosen file’s diff shows under it', diffShown >= 1);
+  await shot(page, 'plan-changes');
+  await page.keyboard.press('j');
+  await sleep(200);
+  const pressed = await changes.locator('button[aria-pressed="true"]').first().innerText().catch(() => '');
+  check('j moves to the next file', pressed.length > 0, pressed.replace(/\n/g, ' '));
+  await page.keyboard.press('f');
+  await sleep(600);
+  check('f opens the full-width Changes sheet', await page.getByRole('dialog', { name: 'Changes' }).isVisible());
+  await shot(page, 'plan-changes-full');
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  check('Esc closes the sheet, the panel stays', await changes.isVisible());
+
+  // The other dock keys.
+  await page.keyboard.press('T');
+  await sleep(300);
+  check('Shift+T: Try it replaces Changes', await view().getByRole('region', { name: 'Try it' }).isVisible() && !(await changes.isVisible()));
+  await shot(page, 'plan-try');
+  await page.keyboard.press('C');
+  await sleep(300);
+  const ctx = view().getByRole('region', { name: 'Context' });
+  check('Shift+C: Context, with what was added since', await ctx.isVisible() && await ctx.getByText('Round money down').isVisible());
+  await shot(page, 'plan-context');
+  await page.keyboard.press('m');
+  await sleep(300);
+  const more = view().getByRole('region', { name: 'More' });
+  check('m: More, with the steps and where it runs', await more.isVisible() && await more.getByText('Where it runs').isVisible());
+  await shot(page, 'plan-more');
+  await page.keyboard.press('v');
+  await sleep(300);
+  check('v: Verify', await view().getByRole('region', { name: 'Verify' }).isVisible());
+  await page.keyboard.press('v');
+  await sleep(300);
+  check('v again closes it', (await view().getByRole('region').count()) === 0);
+
+  // The panel stays open from card to card: open Changes, → to the next card, it is still open.
+  await page.keyboard.press('D');
+  await sleep(300);
+  await page.keyboard.press('ArrowRight');
+  await sleep(1200);
+  check('→ opens the next card', /SHOP-151/.test(await view().getAttribute('aria-label')));
+  check('the Changes panel stayed open', await view().getByRole('region', { name: 'Changes' }).isVisible());
+  check('tool: the ask names the command with Allow', await view().getByRole('button', { name: /Allow/ }).isVisible());
+  await shot(page, 'tool-changes');
+  await page.keyboard.press('D');
+  await sleep(300);
+
+  // Working, idle, done: by their tiles (the board orders cards by column, so → from a Needs-you card goes to Try it).
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  await page.locator(`#card-${ids.working}`).click();
+  await sleep(900);
+  check('working: nothing asked, the status line says what Claude is doing', (await view().getByRole('button', { name: /Allow|Approve/ }).count()) === 0 && await view().getByText('editing sign-in.ts').isVisible());
+  await shot(page, 'working');
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  await page.locator(`#card-${ids.idle}`).click();
+  await sleep(900);
+  check('idle: the Changes badge counts its files', /3/.test(await view().getByRole('button', { name: /Changes/ }).innerText()));
+  await shot(page, 'idle');
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  await page.locator(`#card-${ids.done}`).click();
+  await sleep(900);
+  check('done: no message box', (await view().locator('#card-say').count()) === 0);
+  await page.keyboard.press('m');
+  await sleep(300);
+  check('done: More shows the merged PR', await view().getByRole('region', { name: 'More' }).getByRole('link', { name: /#418/ }).isVisible());
+  await shot(page, 'done-more');
+  await page.keyboard.press('m');
+
+  // Back to the board with Esc, then reopen the plan card: the "new since you last looked" line is not there (nothing new).
+  await page.keyboard.press('Escape');
+  await sleep(400);
+  check('Esc goes back to the board', !(await view().isVisible().catch(() => false)));
+  await page.locator(`#card-${ids.plan}`).click();
+  await sleep(700);
+  check('reopened: no "new since" line when nothing changed', (await view().getByRole('separator', { name: 'New since you last looked' }).count()) === 0);
+  await page.keyboard.press('Escape');
+  await sleep(300);
+
   check('no console errors', errors.length === 0, errors.join(' | ').slice(0, 300));
-  // Leave the cards for other walkthroughs unless asked to clean up.
-  if (process.env.CLEAN === '1') for (const id of Object.values(ids)) await page.evaluate((id) => new Promise((resolve) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => { ws.send(JSON.stringify({ type: 'card.delete', id })); setTimeout(() => { ws.close(); resolve(); }, 200); }; }), id);
   await browser.close();
   const fails = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - fails.length}/${results.length} passed`);

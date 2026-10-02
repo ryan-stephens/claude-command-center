@@ -85,7 +85,7 @@ function ShipForm({ id }: { id: string }) {
     shipCard(id, { commit, title, body, repos }).then(() => {
       close();
       const prs = prsOf(get().cards.find((c) => c.id === id)?.ship);
-      set({ line: { ...get().line, focus: id, drawer: id, tab: 'over' } });
+      set({ line: { ...get().line, focus: id, drawer: id, panel: 'more' } });
       flash(rest ? `Shipped ${left.join(', ')} · every repo has its PR now; s merges them once their checks pass`
         : prs.length > 1 ? `Opened ${prs.length} PRs (${prs.map((p) => `#${p.number}`).join(', ')}) · o opens one; s merges them once their checks pass`
         : prs.length ? `Opened PR #${prs[0].number} · o opens it; s merges it once its checks pass (looked at every few minutes)` : 'Pushed. Open the PR in the browser; d when it is merged');
