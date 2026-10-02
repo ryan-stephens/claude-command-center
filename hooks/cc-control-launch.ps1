@@ -55,17 +55,24 @@ Add-Type -Namespace CcControl -Name Con -MemberDefinition @'
   [FieldOffset(14)] public char Char;
   [FieldOffset(16)] public uint ControlKeyState;
 }
+[DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] public static extern IntPtr CreateFileW(string name, uint access, uint share, IntPtr sec, uint disp, uint flags, IntPtr template);
+[DllImport("kernel32.dll", SetLastError = true)] public static extern bool CloseHandle(IntPtr h);
+// The screen as it is now: CONOUT$ is the console's *active* screen buffer, which claude draws
+// into (its own, not the one this script's stdout handle points at, so that handle reads stale text).
 public static string Screen() {
-  IntPtr h = GetStdHandle(-11);
-  CONSOLE_SCREEN_BUFFER_INFO info;
-  if (!GetConsoleScreenBufferInfo(h, out info)) return "";
-  int rows = info.Window.B - info.Window.T + 1, cols = info.Size.X;
-  if (rows <= 0 || cols <= 0) return "";
-  var buf = new char[rows * cols];
-  uint read;
-  COORD at; at.X = 0; at.Y = info.Window.T;
-  if (!ReadConsoleOutputCharacterW(h, buf, (uint)buf.Length, at, out read)) return "";
-  return new string(buf, 0, (int)read);
+  IntPtr h = CreateFileW("CONOUT$", 0xC0000000u, 3u, IntPtr.Zero, 3u, 0u, IntPtr.Zero);
+  if (h == IntPtr.Zero || h == new IntPtr(-1)) h = GetStdHandle(-11);
+  try {
+    CONSOLE_SCREEN_BUFFER_INFO info;
+    if (!GetConsoleScreenBufferInfo(h, out info)) return "";
+    int rows = info.Window.B - info.Window.T + 1, cols = info.Size.X;
+    if (rows <= 0 || cols <= 0) return "";
+    var buf = new char[rows * cols];
+    uint read;
+    COORD at; at.X = 0; at.Y = info.Window.T;
+    if (!ReadConsoleOutputCharacterW(h, buf, (uint)buf.Length, at, out read)) return "";
+    return new string(buf, 0, (int)read);
+  } finally { if (h != GetStdHandle(-11)) CloseHandle(h); }
 }
 [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern short VkKeyScanW(char c);
 [DllImport("user32.dll")] public static extern uint MapVirtualKeyW(uint code, uint type);
@@ -102,10 +109,12 @@ function Type-Text([string]$text) {
   Start-Sleep -Milliseconds 700
   [void][CcControl.Con]::PressEnter()
 }
-# Claude Code's prompt is on screen (its shortcut hint under the input box); before that, keys would be lost.
+# Claude Code's prompt is on screen: the status line under the input box ("? for shortcuts" up to
+# 2.1.2xx, "? for agents" and "(shift+tab to cycle)" after), or the empty box's "Try …" hint.
+# Before that, keys would be lost.
 function Prompt-Ready() {
   $screen = [CcControl.Con]::Screen()
-  return ($screen -match '\? for shortcuts') -or ($screen -match 'Try "')
+  return ($screen -match '\? for \w+') -or ($screen -match 'shift\+tab to cycle') -or ($screen -match 'Try "')
 }
 function Press-Keys([string[]]$keys) {
   foreach ($k in $keys) {
@@ -123,11 +132,42 @@ $card = $env:CC_CONTROL_CARD
 $token = $env:CC_CONTROL_TOKEN
 $base = $env:CC_CONTROL_URL
 $polling = $card -and $token -and $base -and ($base -match '^http://127\.0\.0\.1:\d{1,5}$')
+# What this launcher did and when, for a tab where a message was slow or lost (PLAN §90): one line
+# per event in ~\.cc-control\launcher.log, with the card's id. Nothing typed is written, only sizes.
+$logFile = Join-Path $env:USERPROFILE '.cc-control\launcher.log'
+$started = Get-Date
+function Log([string]$line) {
+  try { Add-Content -Path $logFile -Value ("{0} {1} +{2:N1}s {3}" -f (Get-Date).ToString('o'), $(if ($card) { $card.Substring(0, 8) } else { '-' }), ((Get-Date) - $started).TotalSeconds, $line) -ErrorAction SilentlyContinue } catch {}
+}
+# The poll goes straight to the loopback address with no proxy: on a managed laptop, the system
+# proxy (and its auto-detection) can hold a web request for many seconds even for 127.0.0.1, which
+# is what made messages arrive minutes late. A plain HttpWebRequest with Proxy = $null never asks.
 function Poll-Next([int]$waitSeconds) {
+  $t0 = Get-Date
   try {
-    $res = Invoke-WebRequest -UseBasicParsing -Uri "$base/launcher/poll?wait=$($waitSeconds * 1000)" -Headers @{ 'x-cc-control-card' = $card; 'x-cc-control-token' = $token } -TimeoutSec ($waitSeconds + 10)
-    if ($res.StatusCode -eq 200 -and $res.Content) { return ConvertFrom-Json $res.Content }
-  } catch { Start-Sleep -Seconds 2 }
+    $req = [System.Net.HttpWebRequest]::Create("$base/launcher/poll?wait=$($waitSeconds * 1000)")
+    $req.Method = 'GET'
+    $req.Proxy = $null
+    $req.KeepAlive = $true
+    $req.Timeout = ($waitSeconds + 10) * 1000
+    $req.ReadWriteTimeout = ($waitSeconds + 10) * 1000
+    $req.Headers.Add('x-cc-control-card', $card)
+    $req.Headers.Add('x-cc-control-token', $token)
+    $res = $req.GetResponse()
+    try {
+      if ([int]$res.StatusCode -eq 200) {
+        $reader = New-Object System.IO.StreamReader($res.GetResponseStream(), [Text.Encoding]::UTF8)
+        $body = $reader.ReadToEnd()
+        $reader.Close()
+        if ($body) { Log ("poll: something to type after {0:N1}s" -f ((Get-Date) - $t0).TotalSeconds); return ConvertFrom-Json $body }
+      }
+    } finally { $res.Close() }
+    $took = ((Get-Date) - $t0).TotalSeconds
+    if ($took -gt $waitSeconds + 3) { Log ("poll: slow, {0:N1}s for a {1}s wait" -f $took, $waitSeconds) }
+  } catch {
+    Log ("poll failed after {0:N1}s: {1}" -f ((Get-Date) - $t0).TotalSeconds, $_.Exception.Message)
+    Start-Sleep -Seconds 2
+  }
   return $null
 }
 
@@ -145,20 +185,34 @@ $watching = $true
 # Nothing is typed until the prompt is on screen (or 40 s have passed, in case its hint changes).
 $readyBy = (Get-Date).AddSeconds(40)
 $ready = $false
+$script:hintSeen = $false
 # What came before the prompt was ready waits here, in order; the polls go on meanwhile so the server keeps seeing the tab alive.
 $pending = New-Object System.Collections.ArrayList
+Log "started: polling $polling, $exe"
+# One item, typed when the prompt is up: after a message was sent, the prompt takes a moment to
+# come back, and a second message typed into that moment lands over the first; so each item waits
+# (up to 8 s) for the prompt again, and a sent message is followed by a short pause.
 function Type-Item($item) {
-  if ($item.kind -eq 'text' -and $item.text) { Type-Text ([string]$item.text) }
-  elseif ($item.kind -eq 'keys' -and $item.keys) { Press-Keys @($item.keys | ForEach-Object { [string]$_ }) }
+  # Only a tab whose hint has been seen waits for it again: where it never shows, waiting would only delay every item.
+  if ($script:hintSeen) { $waitUntil = (Get-Date).AddSeconds(8); while (-not (Prompt-Ready) -and (Get-Date) -lt $waitUntil) { Start-Sleep -Milliseconds 200 } }
+  if ($item.kind -eq 'text' -and $item.text) { Type-Text ([string]$item.text); Log ("typed a message of {0} chars (prompt up: {1})" -f ([string]$item.text).Length, (Prompt-Ready)); Start-Sleep -Milliseconds 1200 }
+  elseif ($item.kind -eq 'keys' -and $item.keys) { Press-Keys @($item.keys | ForEach-Object { [string]$_ }); Log ("pressed {0} key(s)" -f @($item.keys).Count) }
 }
 while (-not $p.HasExited) {
   if ($watching) {
     $screen = [CcControl.Con]::Screen()
-    if ($screen -match 'Loading development channels' -and $screen -match 'I am using this for local development') { [void][CcControl.Con]::PressEnter(); $watching = $false }
+    if ($screen -match 'Loading development channels' -and $screen -match 'I am using this for local development') { [void][CcControl.Con]::PressEnter(); $watching = $false; Log 'pressed Enter at the development-channels prompt' }
     elseif ((Get-Date) -ge $deadline) { $watching = $false }
   }
-  if (-not $ready) { $ready = (Prompt-Ready) -or ((Get-Date) -ge $readyBy) }
-  if ($ready -and $pending.Count -gt 0) { foreach ($item in @($pending)) { Type-Item $item }; $pending.Clear() }
+  if (-not $ready) {
+    $script:hintSeen = Prompt-Ready
+    $ready = $script:hintSeen -or ((Get-Date) -ge $readyBy)
+    if ($ready) {
+      if ($script:hintSeen) { Log 'prompt ready: its hint is on screen' }
+      else { $tail = ([CcControl.Con]::Screen() -replace '\s+', ' ').Trim(); Log ("gave up waiting for the prompt hint, typing anyway; the screen ends: {0}" -f $(if ($tail.Length -gt 160) { $tail.Substring($tail.Length - 160) } else { $tail })) }
+    }
+  }
+  if ($ready -and $pending.Count -gt 0) { Log ("typing {0} item(s) that waited for the prompt" -f $pending.Count); foreach ($item in @($pending)) { Type-Item $item }; $pending.Clear() }
   if ($polling) {
     $next = Poll-Next $(if ($watching -or -not $ready) { 1 } else { 20 })
     if ($next -and -not $p.HasExited) {
@@ -171,4 +225,5 @@ while (-not $p.HasExited) {
 }
 
 $p.WaitForExit()
+Log ("claude exited with {0}" -f $p.ExitCode)
 exit $p.ExitCode
