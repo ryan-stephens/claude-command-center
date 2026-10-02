@@ -3,10 +3,6 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { addPath, homeRepo, isInside, removePath, repoName, samePath, WORKSPACE_COLORS, workspaceRepos, workspacesFor } from '../../shared/workspaces.ts';
 import { WORKFLOW_TEMPLATES } from '../../shared/templates.ts';
 import type { SourceState } from '../../shared/tickets.ts';
-import { parseSteps, recipeFor, wsRecipeKey } from '../../shared/recipes.ts';
-import { stackDraft, stackWarnings, unknownStackRepos, validateStack, type Stack } from '../../shared/stack.ts';
-import type { Finding } from '../../shared/stack-detect.ts';
-import { StackTable } from './StackTable.tsx';
 import { exportWorkspace } from '../commands.ts';
 import { looksLikePath } from '../folder-model.ts';
 import { keymap, openSession, toggleHints } from '../keys.ts';
@@ -14,7 +10,7 @@ import { deleteCard, openWorktrees, runWorkspaceAction, updateComposer } from '.
 import { addFolder } from '../line-model.ts';
 import { isClean, ownFolders, type CardWorktree } from '../../shared/cards.ts';
 import { flash, get, NO_BINDINGS, sessionById, set, setFilter as showWorkspace, useStore, type RepoTarget, type WorkspaceAction } from '../store.ts';
-import { cardWorktrees, createSession, detectStack, removeCardWorktrees, saveRecipe, saveStack, send, setSources } from '../ws.ts';
+import { cardWorktrees, createSession, removeCardWorktrees, send, setSources } from '../ws.ts';
 import { BindingsDialog } from './BindingsDialog.tsx';
 import { ChangesSheet } from './ChangesSheet.tsx';
 import { DeleteDialog, EditDialog, TemplateDialog, VoiceMatchDialog } from './CommandDialogs.tsx';
@@ -23,8 +19,8 @@ import { OutputSheet } from './OutputSheet.tsx';
 import { Palette } from './Palette.tsx';
 import { PromptsDialog } from './PromptsDialog.tsx';
 import { ReportSheet } from './ReportSheet.tsx';
+import { RunSetup } from './RunSetup.tsx';
 import { ShipSheet } from './ShipSheet.tsx';
-import { TryPick } from './TryPick.tsx';
 import { StackSetup } from './StackSetup.tsx';
 import { Welcome } from './Welcome.tsx';
 import { close, DialogKeys, DialogTitle, Overlay, useDialogKeys } from './Overlay.tsx';
@@ -52,9 +48,8 @@ export function Dialogs() {
     case 'sources': return <SourcesDialog />;
     case 'deleteCard': return <DeleteCardDialog id={modal.id} />;
     case 'worktrees': return <WorktreesDialog id={modal.id} thenDelete={modal.thenDelete === true} />;
-    case 'recipe': return <RecipeDialog repo={modal.repo} workspaceId={modal.workspaceId} initial={modal.scope} />;
-    case 'tryPick': return <TryPick id={modal.id} detect={modal.detect === true} />;
-    case 'stackSetup': return <StackSetup workspaceId={modal.workspaceId} />;
+    case 'runSetup': return <RunSetup repo={modal.repo} />;
+    case 'stackSetup': return <StackSetup workspaceId={modal.workspaceId} then={modal.then} />;
     case 'ship': return <ShipSheet id={modal.id} />;
     case 'report': return <ReportSheet id={modal.id} />;
     case 'changes': return <ChangesSheet id={modal.id} at={modal.at} />;
@@ -669,189 +664,6 @@ function WorktreesDialog({ id, thenDelete }: { id: string; thenDelete: boolean }
       )}
       <DialogKeys items={canRemove ? [['Enter', `remove the clean ${clean.length === 1 ? 'one' : 'ones'}`], ['f', 'remove all of them, work and all'], ['Esc', 'keep them']] : [['Esc', 'back']]} />
     </Overlay>
-  );
-}
-
-/**
- * e in a card's drawer: the run recipe, for its repo or for its whole workspace, one step per line;
- * or the workspace's stack (the APIs t can start and the UI pointed at them), as JSON. Alt+W
- * goes through the three.
- */
-function RecipeDialog({ repo, workspaceId, initial }: { repo: string; workspaceId?: string; initial?: 'repo' | 'workspace' | 'table' | 'stack' }) {
-  const repoRecipe = useStore((s) => recipeFor(s.recipes, repo));
-  const wsEntry = useStore((s) => (workspaceId ? s.recipes[wsRecipeKey(workspaceId)] : undefined));
-  const wsName = useStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.name);
-  // The workspace's entry is its stack when it has one; its plain recipe is then not in use.
-  const stack = wsEntry?.stack;
-  const wsRecipe = stack ? undefined : wsEntry;
-  // The stack has two tabs: the table (each part a row, e changes it) and the same stack as JSON.
-  type Scope = 'repo' | 'workspace' | 'table' | 'stack';
-  // Opens on what the card runs: the stack (its table), else the workspace's recipe, else the repo's (or where it was asked to).
-  const [scope, setScope] = useState<Scope>(() => (initial && (initial === 'repo' || workspaceId) ? initial : stack ? 'table' : wsRecipe ? 'workspace' : 'repo'));
-  // What the workspace's repos say the stack is, read when a stack tab opens: no stack yet, it is the starting point; with one, the table says where they differ.
-  const [found, setFound] = useState<Finding[] | null>(null);
-  const [detected, setDetected] = useState<Stack | undefined>(undefined);
-  const recipe = scope === 'workspace' ? wsRecipe : scope === 'repo' ? repoRecipe : undefined;
-  // The stored list (stable), mapped outside the selector: a new array from a selector re-renders forever.
-  const wsRepos = useStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.repos);
-  const wsRepoNames = (wsRepos ?? []).map(repoName);
-  const libNames = useStore((s) => s.library.repos);
-  // The stack being edited: the saved one, else a draft from the workspace's own repos (never made-up names) until the repos are read.
-  const [draft, setDraft] = useState<Stack>(() => stack ?? stackDraft(wsRepoNames));
-  const [touched, setTouched] = useState(false);
-  const stackText = (st = draft) => JSON.stringify(st, null, 2);
-  // A stack naming repos that aren't here (the old example's orders-api, say) says so.
-  const shown = scope === 'table' ? draft : stack;
-  const strangers = shown ? unknownStackRepos(shown, [...wsRepoNames, ...libNames.map((r) => r.name)]) : [];
-  const warnings = shown ? stackWarnings(shown) : [];
-  const textFor = (sc: Scope) => (sc === 'stack' ? stackText() : sc === 'table' ? '' : (sc === 'workspace' ? wsRecipe : repoRecipe)?.steps.join('\n') ?? '');
-  const [text, setText] = useState(() => textFor(scope));
-  const [url, setUrl] = useState(() => recipe?.url ?? '');
-  const [error, setError] = useState<string | null>(null);
-  const order: Scope[] = workspaceId ? ['repo', 'workspace', 'table', 'stack'] : ['repo'];
-  useEffect(() => {
-    if ((scope !== 'stack' && scope !== 'table') || !workspaceId || found) return;
-    let on = true;
-    detectStack(workspaceId).then((d) => {
-      if (!on) return;
-      setFound(d.findings);
-      setDetected(d.stack);
-      // No stack saved: what was found is the starting point, unless something was changed already.
-      if (d.stack && !stack && !touched) {
-        setDraft(d.stack);
-        setText((t) => (t === stackText() ? JSON.stringify(d.stack, null, 2) : t));
-      }
-    }, () => { if (on) setFound([]); });
-    return () => { on = false; };
-  }, [scope, stack, workspaceId, found]);
-  const switchTo = (next: Scope) => {
-    if (next === scope || !order.includes(next)) return;
-    // Leaving the JSON: what it says becomes the stack the table shows, if it reads.
-    if (scope === 'stack') {
-      if (text.trim()) {
-        try { setDraft(validateStack(JSON.parse(text))); setTouched(true); } catch (e) { setError(`The JSON can’t be read as a stack: ${(e as Error).message}`); return; }
-      }
-    }
-    // Untouched text follows the switch; edited step text stays, so a repo's recipe can become the workspace's.
-    const untouched = text === textFor(scope);
-    if (untouched || next === 'stack' || next === 'table' || scope === 'stack' || scope === 'table') { setText(textFor(next)); setUrl((next === 'workspace' ? wsRecipe : next === 'repo' ? repoRecipe : undefined)?.url ?? ''); }
-    setError(null);
-    setScope(next);
-  };
-  const save = () => {
-    if (scope === 'table' && workspaceId) {
-      saveStack(workspaceId, draft).then(close, (e: Error) => setError(e.message));
-      return;
-    }
-    if (scope === 'stack' && workspaceId) {
-      let parsed: unknown = null;
-      if (text.trim()) {
-        try { parsed = JSON.parse(text); } catch (e) { setError(`That isn’t valid JSON: ${(e as Error).message}`); return; }
-      }
-      saveStack(workspaceId, parsed).then(close, (e: Error) => setError(e.message));
-      return;
-    }
-    const target = scope === 'workspace' && workspaceId ? { workspaceId } : { repo };
-    saveRecipe(target, parseSteps(text), url.trim() || undefined).then(close, (e: Error) => setError(e.message));
-  };
-  const keys = (e: ReactKeyboardEvent) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
-    else if (e.key === 'Escape') { e.preventDefault(); close(); }
-    else if (e.altKey && e.key.toLowerCase() === 'w') { e.preventDefault(); switchTo(order[(order.indexOf(scope) + 1) % order.length]); }
-  };
-  const tab = (id: Scope, label: string, off = false) => (
-    <button disabled={off} onClick={() => switchTo(id)} onKeyDown={keys}
-      className={`rounded-lg border px-2.5 py-1 text-[13px] ${scope === id ? 'border-ring bg-surface font-semibold text-ink shadow-[0_0_0_2px_color-mix(in_srgb,var(--c-ring)_22%,transparent)]' : 'border-line bg-raise text-sub'} disabled:opacity-50`}>{label}</button>
-  );
-  return (
-    <Overlay label="Run recipe" wide={scope === 'table' ? 'xl' : true}>
-      <DialogTitle>Run recipe</DialogTitle>
-      <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        <span className="eyebrow mr-1">For</span>
-        {tab('repo', `This repo: ${repoName(repo)}`)}
-        {tab('workspace', workspaceId ? `The whole lane: ${wsName ?? 'this one'}` : 'The whole lane (the card has none)', !workspaceId)}
-        {tab('table', workspaceId ? 'The lane’s stack: APIs + UI' : 'A stack (the card has no lane)', !workspaceId)}
-        {tab('stack', 'as JSON', !workspaceId)}
-        <Key k="Alt W" size="sm" />
-      </div>
-      <p className="mb-3 text-sm text-sub">
-        {scope === 'table'
-          ? <>{!stack && <b className="text-ink">{found ? `What ${wsName ?? 'the lane'}’s repos say the stack is: check it and save. ` : `Reading ${wsName ?? 'the lane'}’s repos… `}</b>}Every {wsName ?? ''} card’s <Key k="t" size="sm" inline /> asks the values in the first row and which APIs to run, runs the template’s steps in each picked API’s repo with that API’s values filled in (each on a local port picked for the run), then starts the UI with its proxy file pointed at them. <Key k="e" size="sm" inline /> on a row changes it; the last column says which files it was read from{stack ? ', and where the repos now say otherwise' : ''}.{stack ? ` Now: ${wsEntry?.source}.` : ''}</>
-          : scope === 'stack'
-          ? <>{!stack && <b className="text-ink">A draft from {wsName ?? 'the lane'}’s repos: change the commands and the proxy file to yours before saving. </b>}Every {wsName ?? ''} card’s <Key k="t" size="sm" inline /> asks which values to use (<code>choose</code>: dev or uat) and which APIs to run. It runs <code>api.steps</code> in each picked API’s repo, with <code>{'{{env}}'}</code>, <code>{'{{branch}}'}</code>, <code>{'{{deployment}}'}</code> (name-branch, cut to 50) and the API’s <code>values</code> filled in. <code>{'{{port}}'}</code> is a local port picked for that run and <code>{'{{uiPort}}'}</code> the UI’s, so two cards can run the same stack at once; <code>{'{{appPort}}'}</code> is the port the API listens on in its container. Then it starts the UI with <code>{'{{proxy}}'}</code>: a copy of <code>ui.proxyFile</code> with each picked API’s proxy rules put first. The repo’s file isn’t touched (<code>"proxyMode": "edit"</code> changes it in place and puts it back on stop). <code>stop:</code> steps run when you stop it.{stack ? ` Now: ${wsEntry?.source}.` : ''}</>
-          : scope === 'workspace'
-            ? <>Every {wsName ?? ''} card runs this instead of its repo’s, so it can start several repos: a backend, then the UI pointed at it.{stack ? ' The lane has a stack, which is what its cards run; this recipe is kept but not used.' : ''}</>
-            : 'Try it runs these in the card’s folder.'}
-        {scope !== 'stack' && scope !== 'table' && <>{' '}Steps run one after another; a step that keeps running and serves is the app, and the next step starts.
-        {recipe ? ` Now: ${recipe.source}.` : scope === 'repo' ? ' Nothing was detected for this repo.' : ' The lane has none yet.'}</>}
-      </p>
-      {(scope === 'stack' || scope === 'table') && strangers.length > 0 && (
-        <div className="mb-3 rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn" role="alert">
-          This stack names {strangers.join(', ')}, which {strangers.length === 1 ? 'isn’t a repo' : 'aren’t repos'} in {wsName ?? 'the lane'} or the library{/orders-api|web-ui/.test(strangers.join(' ')) ? ': they are the example’s made-up names' : ''}. Put in your own repos’ folder names{wsRepoNames.length ? ` (${wsRepoNames.join(', ')})` : ''}, or empty the box and save to start again from a draft of your repos.
-        </div>
-      )}
-      {(scope === 'stack' || scope === 'table') && warnings.length > 0 && (
-        <ul className="mb-3 grid gap-1 rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn" aria-label="Before two cards can run this at once">
-          {warnings.map((w) => <li key={w}>{w}</li>)}
-        </ul>
-      )}
-      {scope === 'stack' && !stack && found && <Findings findings={found} />}
-      {scope === 'table' && workspaceId && (
-        <StackTable stack={draft} findings={found} detected={stack ? detected : undefined} onChange={(next) => { setDraft(next); setTouched(true); }} onSave={save} onNext={() => switchTo('stack')} />
-      )}
-      {scope !== 'table' && <>
-      <label className="eyebrow mb-1.5 block" htmlFor="recipe-steps">{scope === 'stack' ? 'The stack, as JSON' : 'Steps, one per line'}</label>
-      <textarea id="recipe-steps" autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={keys} rows={scope === 'stack' ? 18 : 7} spellCheck={false}
-        placeholder={scope === 'workspace'
-          ? '@api okteto deploy --wait\n@web API_URL=https://api-you.okteto.example npm run dev\n! Sign in as a test borrower\nstop: @api okteto destroy'
-          : scope === 'stack' ? 'Empty: save to remove the stack' : 'pnpm install\npnpm dev'}
-        className="field w-full resize-y font-mono text-[13px]" />
-      <div className="mt-1.5 grid gap-0.5 text-[12.5px] text-faint">
-        <span><code>@repo</code> runs a step in that repo (by folder name) · <code>NAME=value</code> before the command sets a variable for that step · <code>! …</code> is something to do by hand (shown, not run) · <code>stop: …</code> runs when the app is stopped · <code># …</code> is a comment.</span>
-        <span><code>ps:</code> runs the step in PowerShell · <code>wait:"Now listening on"</code>, <code>wait:port:8080</code> or <code>wait:http:8080/health</code> (answers below 500) says when a step that keeps running is ready · <code>answers:"y,n"</code> answers the questions it asks, in order{scope === 'stack' ? <> · an <code>okteto up</code> line runs with a copy of the folder’s okteto.yml forwarding the picked <code>{'{{port}}'}</code> to <code>{'{{appPort}}'}</code> (the copy is never committed); <code>{'forward:{{port}}:{{appPort}}'}</code> says so in so many words, <code>forward:no</code> keeps the manifest’s own forward</> : ''}.</span>
-      </div>
-      </>}
-      {scope !== 'stack' && scope !== 'table' && <>
-        <label className="eyebrow mb-1.5 mt-3 block" htmlFor="recipe-url">Where the app will be (optional; otherwise read from what it prints)</label>
-        <input id="recipe-url" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={keys} placeholder="http://localhost:5173" className="field w-full font-mono text-[13px]" />
-      </>}
-      {scope === 'table' ? null : scope === 'stack' ? stack && <p className="mt-2 text-[13px] text-faint">Empty the box and save to remove the stack (cards go back to the workspace’s or the repo’s recipe).</p>
-        : recipe?.edited && <p className="mt-2 text-[13px] text-faint">{scope === 'workspace' ? 'Empty the steps and save to remove the lane’s recipe (cards go back to their repo’s).' : 'Empty the steps and save to go back to the detected recipe.'}</p>}
-      {error && <div className="mt-3 rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
-      <div className="mt-5 flex items-center justify-end gap-2.5">
-        <button className="btn" onClick={close}>Cancel<Key k="Esc" size="sm" /></button>
-        <button className="btn btn-primary" onClick={save}>Save{scope === 'workspace' ? ' for the lane' : scope === 'stack' || scope === 'table' ? ' the stack' : ''}<Key k={scope === 'table' ? 'Enter' : 'Ctrl Enter'} size="sm" tone="ghost" /></button>
-      </div>
-    </Overlay>
-  );
-}
-
-/**
- * What the workspace's repos said the stack is: one line per thing read (✓, with the file) or
- * assumed (?, to check). Shown over the stack editor's box and in t's offer of the found stack.
- */
-export function Findings({ findings, title = 'Found in your repos' }: { findings: Finding[]; title?: string }) {
-  if (!findings.length) return <p className="mb-3 text-[13px] text-faint">Nothing in the repos says how they run (no okteto.yml, .csproj, angular.json, project.json or package.json). Below is a draft to change.</p>;
-  const groups = [...new Set(findings.map((f) => f.repo))];
-  return (
-    <div className="mb-3 rounded-lg border border-line bg-bg px-3 py-2" aria-label={title}>
-      <div className="eyebrow mb-1">{title}</div>
-      <ul className="grid gap-0.5 text-[12.5px]">
-        {groups.map((g) => (
-          <li key={g || '*'} className="grid grid-cols-[7rem_1fr] gap-x-2">
-            <span className="truncate font-mono text-[12px] text-sub">{g || 'the stack'}</span>
-            <ul className="grid gap-0.5">
-              {findings.filter((f) => f.repo === g).map((f, i) => (
-                <li key={i} className={f.asked ? 'text-attn' : ''}>
-                  <span className={`mr-1.5 font-mono font-bold ${f.asked ? 'text-attn' : 'text-ok'}`}>{f.asked ? '?' : '✓'}</span>{f.text}{f.from && <span className="text-faint"> · {f.from}</span>}
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-1.5 text-[12px] text-faint">✓ read from that file · ? assumed: check it</p>
-    </div>
   );
 }
 

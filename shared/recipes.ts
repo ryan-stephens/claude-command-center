@@ -210,10 +210,10 @@ export function stepLabel(s: StepSpec): string {
   return [s.repo ? `@${s.repo}` : '', env, s.cmd].filter(Boolean).join(' ');
 }
 
-/** The line in the workspace layer of the packet: "Run recipe: pnpm install, pnpm dev". */
+/** The line in the workspace layer of the packet: "How it runs: pnpm install, pnpm dev". */
 export function recipeLabel(r: RunRecipe): string {
-  if (r.stack) return `Run: the workspace’s stack (APIs ${r.stack.apis.map((a) => a.repo).join(', ') || 'none'}${r.stack.ui ? `; UI ${r.stack.ui.repo}` : ''})`;
-  return `Run recipe: ${specsOf(r).filter((s) => !s.stop && !s.note).map(stepLabel).join(', ')}`;
+  if (r.stack) return `How it runs: the lane’s stack (APIs ${r.stack.apis.map((a) => a.repo).join(', ') || 'none'}${r.stack.ui ? `; UI ${r.stack.ui.repo}` : ''})`;
+  return `How it runs: ${specsOf(r).filter((s) => !s.stop && !s.note).map(stepLabel).join(', ')}`;
 }
 
 /** What Claude is told about running the app, under "## Running the app". */

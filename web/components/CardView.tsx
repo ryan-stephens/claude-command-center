@@ -109,7 +109,7 @@ function Dock({ card, panel }: { card: Card; panel: CardPanel | null }) {
   };
   const icons: Record<CardPanel, IconName> = { changes: 'diff', try: 'window', verify: 'clipboard', context: 'book', more: 'dots' };
   const titles: Record<CardPanel, string> = {
-    changes: 'What it changed, by repo, with the diffs', try: 'Its app: start it, open it, the run recipe', verify: 'Check it in the team’s apps (later)',
+    changes: 'What it changed, by repo, with the diffs', try: 'Its app, or its services: start them, open them, read their output', verify: 'Check it in the team’s apps (later)',
     context: 'How it started, what Claude was given, what was added since', more: 'Steps, where it runs, the pull request, the report, worktrees',
   };
   return (
@@ -573,18 +573,18 @@ function RecipeTry({ card }: { card: Card }) {
             : <p className="text-[13px] text-sub">{run ? `${run.text}.` : 'Not running.'}{ownFolders(card).length ? ' It runs from this card’s own folders, so only this card’s change is in it.' : ''}</p>}
         <div className="flex flex-wrap gap-2">
           {can && <button className={`btn py-1 ${!live && card.stage === 'try' ? 'btn-primary' : ''}`} onClick={() => tryIt(card.id)}><Key k="t" size="sm" tone={!live && card.stage === 'try' ? 'ghost' : undefined} />{live ? 'Stop' : run ? 'Start again' : 'Start'}</button>}
-          <button className="btn py-1" onClick={() => editRecipe(card.id)} title="Write or edit the run recipe"><Key k="e" size="sm" />{recipe ? 'Edit the recipe' : 'Write a recipe'}</button>
+          <button className="btn py-1" onClick={() => editRecipe(card.id)} title="How it runs: what starts it, where it serves"><Key k="e" size="sm" />{recipe ? 'How it runs' : 'Set up how it runs'}</button>
         </div>
       </Sec>
-      <Sec id="try-it" title={`${name} run recipe`} right={<span className="text-[12px] text-faint">{recipe ? recipe.source : 'no recipe yet'}</span>}>
+      <Sec id="try-it" title={`How ${name} runs`} right={<span className="text-[12px] text-faint">{recipe ? recipe.source : 'not set up yet'}</span>}>
         {steps.length ? (
           <ol className="grid min-w-0 gap-1 rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[12px]">
             {steps.map((s, i) => <StepRow key={i} s={s} />)}
             {stops.length > 0 && <li className="mt-1 font-sans text-[11px] font-bold uppercase tracking-wide text-faint">When stopped</li>}
             {stops.map((s, i) => <StepRow key={`stop${i}`} s={s} />)}
           </ol>
-        ) : <p className="text-[13px] text-faint">No run recipe for {name}: nothing to go on in its package.json or compose file.</p>}
-        {recipe?.source.startsWith('from the workspace file') && !run && <div className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">This recipe came with a lane file someone shared. Read the commands before starting: they run on this machine.</div>}
+        ) : <p className="text-[13px] text-faint">Nothing in {name} says how it starts (no package.json or compose file): e sets it up.</p>}
+        {recipe?.source.startsWith('from the workspace file') && !run && <div className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">This came with a lane file someone shared. Read the commands before starting: they run on this machine.</div>}
         <Output card={card} run={run} />
       </Sec>
     </>

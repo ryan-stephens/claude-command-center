@@ -34,7 +34,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['c', 'New card: build its context and start work in a terminal tab. A card you left half-built (Esc, Alt+L) is picked up again; Shift+C starts a fresh one'],
       ['1–9  /  0', 'Show one lane’s cards / all of them'],
       ['/', 'Filter the cards by words'],
-      ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, the run recipe), Verify (the team’s apps, later), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
+      ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, or its services, with their output), Verify (the team’s apps, later), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
       ['j / k  ·  f (Changes panel)', 'The next / previous file, its diff under it  ·  pop the diff out full width, on the same file'],
       ['j / k  ·  Space  ·  r  ·  q (Try it panel, a lane with a stack)', 'The environment row and each service  ·  change the environment, or tick a service to run  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
       ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
@@ -47,10 +47,9 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Shift+D (a card on the board)', 'Changes full width: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
       ['c (card open)', 'Add context: repos, tickets or a note wait on the card and go in with your next message in its tab. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
-      ['t (a card)', 'Try it: run its repo’s recipe in the card’s folder; again stops the app. With a lane stack, pick the environment and the APIs first. A lane with no stack yet: what its repos say the stack is (okteto.yml, angular.json, the proxy file), Enter keeps it, e edits it first'],
-      ['t picker: ← →  /  ↑ ↓ Space  /  a n  /  Enter', 'Environment (dev, uat …)  /  which APIs run (changed ones are ticked)  /  all or none  /  start them, then the UI'],
+      ['t (a card)', 'Try it: start its app in the card’s own folder; again stops it. With a lane stack, the Try it panel’s ticked services start, each on a port of its own. A lane with no stack yet: the stack form opens, filled from what the repos say (okteto.yml, angular.json, the proxy file), and Save and start goes on'],
       ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
-      ['e (a card)', 'Set up how Try it starts things. A lane of several repos: its stack as a form (the environments, the UI and its proxy file, each API’s name, port, folder, health path and route, and how an API starts on the dev environment in three answers; the step lines are written from them, or edited by hand; Ctrl+Enter saves). A single repo: its run recipe'],
+      ['e (a card)', 'How it runs. A lane of several repos: its stack as a form (the environments, the UI, the APIs to tick with their names and routes, and how an API starts on the dev environment in three answers; ports, folders, health paths, the proxy rule and the lines behind Advanced). A single repo: what starts it, an install step, where it serves, what runs on stop; Ctrl+Enter saves either'],
       ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket, in each repo the card changed (one block per repo in the sheet; the PRs link each other); if it stops part-way, s again ships only the repos left; on a card in Ship with every PR open, merge them. On a QA or review card: its report (Enter copies, j posts it on the Jira ticket and m moves the ticket, each after you confirm; o opens the PR, d moves the card to Done)'],
       ['d (a card in Ship)', 'Done: the PR was merged or closed by hand, or the host isn’t one Ship can follow'],
       ['Shift+X (a card)', 'Worktrees: the folders the card made, with what each still holds; on a Done card, remove them and their branch (Enter the clean ones, f all of them)'],
@@ -320,10 +319,10 @@ export function tryIt(id: string): void {
   const home = cardRepos(card)[0];
   set({ line: { ...s.line, focus: id, drawer: id, panel: 'try' } });
   const recipe = cardRecipe(s.recipes, card.workspaceId, home);
-  // A workspace of several repos with no recipe or stack of its own: what its repos say the stack is, to keep with one key (§54).
+  // A lane of several repos with no stack yet: the stack form, filled from what the repos say, with Save and start (§86).
   const wsRepos = s.workspaces.find((w) => w.id === card.workspaceId)?.repos.length ?? 0;
-  if (card.workspaceId && !s.recipes[wsRecipeKey(card.workspaceId)] && wsRepos > 1) { set({ modal: { kind: 'tryPick', id, detect: true } }); return; }
-  if (!recipe) { flash(`No run recipe for ${home ? repoName(home) : card.key} yet: e writes one`); return; }
+  if (card.workspaceId && !s.recipes[wsRecipeKey(card.workspaceId)] && wsRepos > 1) { set({ modal: { kind: 'stackSetup', workspaceId: card.workspaceId, then: id } }); return; }
+  if (!recipe) { flash(`${home ? repoName(home) : card.key} doesn’t say how it runs: e sets it up`); return; }
   if (recipe.stack) {
     const pick = lastPick(id);
     if (!pick) { flash('Tick the services to run in the Try it panel, then t again'); return; }
@@ -454,16 +453,15 @@ export function shipKey(id: string): void {
   set({ modal: { kind: 'ship', id } });
 }
 
-/** e in a card's drawer: write or edit the run recipe: its workspace's if it has one, else its repo's (the dialog switches). */
+/** e on a card: how it runs. A lane of several repos: its stack, as a form (§83). A single repo: its own form (§86). */
 export function editRecipe(id: string): void {
   const s = get();
   const card = s.cards.find((c) => c.id === id);
   const home = card && cardRepos(card)[0];
   if (!home) return;
-  // A lane of several repos: its stack, as a form (§83). A single repo: its own recipe.
   const wsRepos = s.workspaces.find((w) => w.id === card.workspaceId)?.repos.length ?? 0;
   if (card.workspaceId && (wsRepos > 1 || s.recipes[wsRecipeKey(card.workspaceId)]?.stack)) { set({ modal: { kind: 'stackSetup', workspaceId: card.workspaceId } }); return; }
-  set({ modal: { kind: 'recipe', repo: home, ...(card.workspaceId ? { workspaceId: card.workspaceId } : {}) } });
+  set({ modal: { kind: 'runSetup', repo: home } });
 }
 
 export function openCard(id: string): void {

@@ -224,7 +224,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       ...CARD_PANELS.map((p) => ({ keys: [p.key], label: x.panel === p.id ? `Close ${p.name}` : p.name })),
       ...(x.panel ? [{ keys: ['[', ']'], label: 'Panel width' }] : []),
       ...tryKeys(x).filter((i) => i.keys[0] !== '⇧D'),
-      { keys: ['e'], label: 'Run recipe' },
+      { keys: ['e'], label: 'How it runs' },
       ...(x.canAdd ? [{ keys: ['c'], label: 'Add context', tone: 'acc' as const }] : []),
       ...(x.hasWaiting ? [{ keys: ['x'], label: 'Take back' }] : []),
       ...(x.hasSession ? [{ ...full, label: 'Its session' }] : []),
@@ -235,7 +235,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   return [
     { keys: ['←', '→', '↑', '↓'], label: 'Move' },
     ...(x.onTicket ? [{ keys: ['n', 'Enter'], label: 'Start work', tone: 'acc' as const }, { keys: ['Delete'], label: 'Hide' }] : []),
-    ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open the card' }, ...tryKeys(x), ...(x.hasTab ? [{ keys: ['g'], label: x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab ? { tone: 'attn' as const } : {}) }] : []), { keys: ['e'], label: 'Run recipe' }] : []),
+    ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open the card' }, ...tryKeys(x), ...(x.hasTab ? [{ keys: ['g'], label: x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab ? { tone: 'attn' as const } : {}) }] : []), { keys: ['e'], label: 'How it runs' }] : []),
     ...(x.hasSession ? [full] : []),
     ...(x.hasDraft ? [{ keys: ['c'], label: 'Pick up your card', tone: 'acc' as const }, { keys: ['⇧C'], label: 'New card' }] : [{ keys: ['c'], label: 'New card', tone: 'acc' as const }]),
     { keys: ['⇧T'], label: 'Tickets' },

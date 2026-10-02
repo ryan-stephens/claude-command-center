@@ -64,6 +64,7 @@ test('a recipe you write wins over the detected one; saving none goes back', () 
     const web = join(dir, 'web');
     saveRecipe(store, web, ['pnpm i', '  ', 'pnpm dev --port 5000'], 'http://localhost:5000');
     assert.deepEqual(recipeOf(store, web.toUpperCase()), { repo: web.toUpperCase(), steps: ['pnpm i', 'pnpm dev --port 5000'], url: 'http://localhost:5000', source: 'written by you', edited: true });
+    assert.equal(recipeOf(store, web.replace(/\\/g, '/'))?.source, 'written by you', 'the same folder with forward slashes (a card’s packet keeps the path as given)');
     assert.throws(() => saveRecipe(store, web, ['x'], 'localhost'), /should look like/);
     saveRecipe(store, web, []);
     assert.equal(recipeOf(store, web)!.source, 'detected from package.json');
@@ -170,7 +171,7 @@ test('a step line: @repo, variables, stop:, notes and comments', () => {
 
 test('a workspace recipe, told to Claude step by step; a card runs its workspace’s when there is one', () => {
   const ws = { repo: '', workspaceId: 'w1', source: '', url: 'http://localhost:4200', steps: ['@api okteto deploy --wait', '@web API_URL=https://x npm start', '! Sign in', 'stop: @api okteto destroy'] };
-  assert.equal(recipeLabel(ws), 'Run recipe: @api okteto deploy --wait, @web API_URL=… npm start');
+  assert.equal(recipeLabel(ws), 'How it runs: @api okteto deploy --wait, @web API_URL=… npm start');
   assert.equal(recipeText(ws), 'The workspace’s run recipe, in order:\n- in api: okteto deploy --wait\n- in web: (with API_URL set) npm start\n- By hand: Sign in\n- When stopping: in api: okteto destroy\nMost of these keep running (the app); then open http://localhost:4200. cc-control runs this when you press Try it; don’t leave a copy of the app running.'.replace('don’t', "don't"));
   const repoR = { repo: 'D:\\r\\web', source: '', steps: ['pnpm dev'] };
   const map = { 'D:\\r\\web': repoR, [wsRecipeKey('w1')]: ws };

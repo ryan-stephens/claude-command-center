@@ -290,7 +290,7 @@ test('the workspace layer carries the home repo’s run recipe, and Claude is to
   const recipes = { 'D:\\r\\tokens': { repo: 'D:\\r\\tokens', steps: ['pnpm install', 'pnpm dev'], url: 'http://localhost:5173', source: 'detected from package.json' } };
   const c = newComposer(W1, 'CARD-3', null, recipes);
   const recipe = c.packet.workspace.find((i) => i.kind === 'recipe')!;
-  assert.equal(recipe.label, 'Run recipe: pnpm install, pnpm dev');
+  assert.equal(recipe.label, 'How it runs: pnpm install, pnpm dev');
   assert.match(packetText({ ...c, title: 'x' }, 'CARD-3'), /## Running the app\nIn tokens: pnpm install && pnpm dev, then open http:\/\/localhost:5173\./);
   const off = togglePacketRow(c, c.packet.workspace.indexOf(recipe)) as Composer;
   assert.doesNotMatch(packetText({ ...off, title: 'x' }, 'CARD-3'), /Running the app/, 'Space leaves it out');

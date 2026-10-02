@@ -154,6 +154,7 @@ async function ask(page, msg) {
   check('the UI repo is picked', (await sheet.locator('select').inputValue()) === 'web-app');
   check('the API is ticked with its values', (await sheet.getByRole('checkbox', { name: 'payments-api is part of the stack' }).isChecked()) && (await sheet.getByLabel('payments-api: route').inputValue()) === 'payments');
   check('the hand-written lines are kept and shown', /edited by hand/.test(await sheet.innerText()) && /api\.cjs/.test(await sheet.getByLabel('The step lines').inputValue()));
+  check('the per-API ports and folders sit behind Advanced', (await sheet.getByLabel('payments-api: container port').count()) === 0 && !/recipe/i.test(await sheet.innerText()));
   await shot(page, 'setup');
   // Changing an answer writes the lines afresh.
   await sheet.getByPlaceholder('New-DevDeployment -Name {{name}} -Environment {{env}}').fill('Make-It {{name}} {{env}}');
@@ -165,9 +166,47 @@ async function ask(page, msg) {
   await page.keyboard.press('Escape');
   await sleep(300);
   check('Esc closes it without saving', !(await sheet.isVisible().catch(() => false)));
+  // A one-repo lane (§86): e opens "How it runs" as a form; the answers write the lines; Save, then t starts it that way.
+  await page.evaluate(({ DEMO }) => new Promise((resolve) => {
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onopen = () => { ws.send(JSON.stringify({ type: 'workspace.save', workspace: { id: 'ws-demo-one', name: 'One', color: 'teal', repos: [`${DEMO}/docs-site`], notes: '' } })); setTimeout(() => { ws.close(); resolve(); }, 600); };
+  }), { DEMO });
+  await ask(page, { type: 'recipe.save', repo: `${DEMO}/docs-site`, steps: [] });
+  const one = await ask(page, { type: 'cards.seed', options: { repos: [`${DEMO}/docs-site`], workspaceId: 'ws-demo-one', key: 'DOC-7', state: 'idle', title: 'Docs: paging' } });
+  await page.reload();
+  await sleep(900);
+  await page.locator(`#card-${one.id}`).click();
+  await sleep(700);
+  await page.keyboard.press('T');
+  await sleep(600);
+  const onePanel = page.locator('section[aria-label^="DOC-7"]').getByRole('region', { name: 'Try it' });
+  check('a one-repo card’s Try it panel says how it runs, not “recipe”', /How docs-site runs/.test(await onePanel.innerText()) && !/recipe/i.test(await onePanel.innerText()));
+  await page.keyboard.press('e');
+  await sleep(600);
+  const how = page.getByRole('dialog', { name: 'How it runs' });
+  check('e opens How it runs for the repo', await how.isVisible() && /How docs-site runs/.test(await how.innerText()));
+  await how.getByLabel('Start', { exact: true }).fill(`node ${STANDINS}/ui.cjs 18777`);
+  await how.getByLabel('Where it serves').fill('http://localhost:18777');
+  await sleep(200);
+  check('the answers write the lines', (await how.getByLabel('The lines').inputValue()) === `node ${STANDINS}/ui.cjs 18777`);
+  await shot(page, 'how-it-runs');
+  await page.keyboard.press('Control+Enter');
+  await sleep(800);
+  check('Ctrl+Enter saves and closes', !(await how.isVisible().catch(() => false)));
+  check('the panel shows the saved start line', await until(async () => /ui\.cjs 18777/.test(await onePanel.innerText()) && /written by you/.test(await onePanel.innerText()), 5000));
+  await page.keyboard.press('t');
+  await sleep(1500);
+  const flashed = await page.locator('header').innerText().catch(() => '');
+  check('t starts it the saved way, up at its address', await until(async () => /Running at http:\/\/localhost:18777/.test(await onePanel.innerText()), 25000), `${flashed.replace(/\s+/g, ' ').slice(0, 200)} | ${(await onePanel.innerText()).replace(/\s+/g, ' ').slice(0, 200)}`);
+  await shot(page, 'one-repo-up');
+  await page.keyboard.press('t');
+  check('t stops it', await until(async () => /Stopped/.test(await onePanel.innerText()), 15000));
+  await page.keyboard.press('Escape');
+  await sleep(300);
   check('no console errors', errors.length === 0, errors.join(' | ').slice(0, 300));
-  // Leave the server as it was found: the card and the lane go (the other walkthroughs press 1 for the Demo lane).
-  await page.evaluate((id) => new Promise((resolve) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => { ws.send(JSON.stringify({ type: 'card.delete', id })); ws.send(JSON.stringify({ type: 'workspace.delete', id: 'ws-demo-stack' })); setTimeout(() => { ws.close(); resolve(); }, 400); }; }), seeded.id);
+  // Leave the server as it was found: the cards and the lanes go (the other walkthroughs press 1 for the Demo lane).
+  await ask(page, { type: 'recipe.save', repo: `${DEMO}/docs-site`, steps: [] });
+  await page.evaluate(({ id, oneId }) => new Promise((resolve) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => { ws.send(JSON.stringify({ type: 'card.delete', id })); ws.send(JSON.stringify({ type: 'card.delete', id: oneId })); ws.send(JSON.stringify({ type: 'workspace.delete', id: 'ws-demo-stack' })); ws.send(JSON.stringify({ type: 'workspace.delete', id: 'ws-demo-one' })); setTimeout(() => { ws.close(); resolve(); }, 400); }; }), { id: seeded.id, oneId: one.id });
   await browser.close();
   const fails = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - fails.length}/${results.length} passed`);

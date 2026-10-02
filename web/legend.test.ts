@@ -42,7 +42,7 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   const labels = (x: Parameters<typeof lineLegendFor>[0]) => lineLegendFor(x).map((i) => i.label);
   assert.deepEqual(labels({ view: 'board', bindings: {} }), ['Move', 'New card', 'Tickets', 'Inbox: mine / QA', 'Lane / all', 'Filter', 'Repos', 'Lane', 'Share / import', 'Folders']);
   const focused = labels({ view: 'board', hasFocus: true, hasSession: true, filtered: true, bindings: {} });
-  assert.ok(focused.includes('Open the card') && focused.includes('Its session') && focused.includes('Clear filter') && focused.includes('Remove') && focused.includes('Run recipe'));
+  assert.ok(focused.includes('Open the card') && focused.includes('Its session') && focused.includes('Clear filter') && focused.includes('Remove') && focused.includes('How it runs'));
   assert.ok(!labels({ view: 'board', hasFocus: true, bindings: {} }).includes('Its session'), 'no session linked yet: nothing to open');
   assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Add or remove'));
   assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Tickets / Repos / Folders'));
@@ -53,7 +53,7 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(labels({ view: 'composer', pane: 'pkt', cardRepo: true, bindings: {} }).includes('Keep for the lane'));
   assert.ok(!labels({ view: 'composer', pane: 'pkt', preview: true, bindings: {} }).includes('Remove'), 'the preview has nothing to toggle');
   assert.ok(labels({ view: 'composer', pane: 'go', bindings: {} }).includes('Change'));
-  assert.deepEqual(labels({ view: 'drawer', bindings: {} }), ['Back to the board', 'Previous / next card', 'Changes', 'Try it', 'Verify', 'Context', 'More', 'Run recipe', 'Remove card']);
+  assert.deepEqual(labels({ view: 'drawer', bindings: {} }), ['Back to the board', 'Previous / next card', 'Changes', 'Try it', 'Verify', 'Context', 'More', 'How it runs', 'Remove card']);
   assert.ok(labels({ view: 'drawer', hasSession: true, bindings: {} }).includes('Its session'));
   assert.deepEqual(labels({ view: 'drawer', canSay: true, asking: true, bindings: {} }).slice(0, 3), ['Back to the board', 'Allow / deny', 'Type to it'], 'a channel: y / n first while it asks, then Enter');
   assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Type to it'), 'no session yet: no message box (a card with one can always be typed to, §85)');
@@ -61,11 +61,11 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.deepEqual(labels({ view: 'drawer', panel: 'changes', bindings: {} }).slice(2, 5), ['File', 'Pop out', 'Close Changes'], 'the Changes panel open: j k walk files, f is the full sheet, its key closes it');
   assert.deepEqual(labels({ view: 'drawer', panel: 'try', hasStack: true, canTry: true, bindings: {} }).slice(2, 8), ['Service', 'Tick / environment', 'Start this one', 'Stop this one', 'Output', 'Changes'], 'the Try it panel with a stack: the service keys, then f for the output');
   assert.ok(!labels({ view: 'drawer', panel: 'try', bindings: {} }).includes('Output'), 'nothing to run: no output key');
-  assert.deepEqual(labels({ view: 'drawer', canAdd: true, hasWaiting: true, bindings: {} }).slice(7, 10), ['Run recipe', 'Add context', 'Take back']);
+  assert.deepEqual(labels({ view: 'drawer', canAdd: true, hasWaiting: true, bindings: {} }).slice(7, 10), ['How it runs', 'Add context', 'Take back']);
   assert.deepEqual(labels({ view: 'drawer', hasWorktrees: true, bindings: {} }).slice(-2), ['Worktrees', 'Remove card'], 'a worktree card: Shift+X before Delete');
   assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Worktrees'));
   assert.ok(labels({ view: 'board', hasFocus: true, hasWorktrees: true, bindings: {} }).includes('Worktrees'));
-  assert.deepEqual(labels({ view: 'drawer', canTry: true, bindings: {} }).slice(7, 9), ['Start the app', 'Run recipe'], 'open card: t starts the app (Try it is the dock panel)');
+  assert.deepEqual(labels({ view: 'drawer', canTry: true, bindings: {} }).slice(7, 9), ['Start the app', 'How it runs'], 'open card: t starts the app (Try it is the dock panel)');
   assert.deepEqual(labels({ view: 'drawer', canTry: true, appRunning: true, appUp: true, bindings: {} }).slice(7, 9), ['Stop the app', 'Open the app']);
   assert.ok(labels({ view: 'board', hasFocus: true, canTry: true, bindings: {} }).includes('Try it'));
   assert.ok(labels({ view: 'board', hasFocus: true, ship: 'ship', bindings: {} }).includes('Ship'));

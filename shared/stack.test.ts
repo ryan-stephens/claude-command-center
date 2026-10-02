@@ -196,7 +196,7 @@ test('suggestions: changed APIs first, else the ones the ticket names', () => {
 
 test('the card’s context says the stack runs the app', () => {
   const r = { repo: '', workspaceId: 'w1', steps: [], source: '', stack };
-  assert.equal(recipeLabel(r), 'Run: the workspace’s stack (APIs orders-api, fees-api; UI web-ui)');
+  assert.equal(recipeLabel(r), 'How it runs: the lane’s stack (APIs orders-api, fees-api; UI web-ui)');
   assert.match(recipeText(r), /you pick env \(dev \/ uat\) and which APIs to run: orders-api, fees-api\. Each gets a local port of its own for that run\. Then web-ui starts, with apps\/shop\/proxy\.conf\.json pointed at the APIs that run \(a copy; the repo’s file isn’t changed\), at http:\/\/localhost:4200\./);
 });
 

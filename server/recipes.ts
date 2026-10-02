@@ -74,7 +74,8 @@ export function detectRecipe(dir: string): RunRecipe | undefined {
   return { repo: dir, steps, ...(url ? { url } : {}), source: `detected from ${from.join(' + ')}` };
 }
 
-const key = (repo: string) => `recipe:${repo.replace(/[\\/]+$/, '').toLowerCase()}`;
+// The same repo written with either slash (a card's packet keeps the path as it was given) finds the same entry.
+const key = (repo: string) => `recipe:${repo.replace(/[\\/]+$/, '').replace(/\//g, '\\').toLowerCase()}`;
 const wsKey = (id: string) => `recipe:ws:${id}`;
 
 function saved(store: Store, k: string): Pick<RunRecipe, 'steps' | 'url'> & { imported?: boolean } | undefined {

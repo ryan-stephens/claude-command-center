@@ -572,7 +572,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       }
       const home = cardRepos(card)[0];
       const recipe = cardRecipeOf(store, card.workspaceId, home);
-      if (!recipe) throw new Error(`${card.key} has no run recipe yet. e writes one for ${home ? repoName(home) : 'its repo'}.`);
+      if (!recipe) throw new Error(`${card.key} doesn’t know how ${home ? repoName(home) : 'its repo'} runs yet: e sets it up.`);
       const places = runPlaces(card);
       if (!existsSync(places.cwd)) throw new Error(`${places.cwd} isn’t there any more.`);
       send(ws, { type: 'ok', reqId: msg.reqId });
@@ -661,8 +661,9 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         }
       }
       saveStack(store, id, msg.stack ?? null);
-      send(ws, { type: 'ok', reqId: msg.reqId });
+      // The new stack reaches the page before the ok, so what waits on the save (t after Save and start, §86) finds it.
       broadcast(recipesMsg());
+      send(ws, { type: 'ok', reqId: msg.reqId });
       return;
     }
     case 'card.changes': {

@@ -7,7 +7,7 @@ const items: LegendItem[] = [
   { keys: ['Esc'], label: 'Back to the board' },
   { keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' },
   { keys: ['t'], label: 'Try it', tone: 'acc' },
-  { keys: ['e'], label: 'Run recipe' },
+  { keys: ['e'], label: 'How it runs' },
 ];
 
 test('key hints cycle always → on hover → off → always', () => {

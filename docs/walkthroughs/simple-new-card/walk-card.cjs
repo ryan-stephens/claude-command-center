@@ -142,6 +142,15 @@ async function ask(page, msg) {
   await sleep(300);
   check('Shift+T: Try it replaces Changes', await view().getByRole('region', { name: 'Try it' }).isVisible() && !(await changes.isVisible()));
   await shot(page, 'plan-try');
+  // t on a lane of two repos with no stack yet (§86): the stack form opens filled from the repos, with Save and start; Esc leaves it.
+  await page.keyboard.press('t');
+  await sleep(1500);
+  const setup = page.getByRole('dialog', { name: 'Set up the stack' });
+  check('t with no stack opens the stack form, with Save and start', await setup.isVisible() && await setup.getByRole('button', { name: /Save and start/ }).isVisible());
+  check('no “recipe” on the form', !/recipe/i.test(await setup.innerText()));
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  check('Esc closes the form, the card stays open', !(await setup.isVisible().catch(() => false)) && await view().isVisible());
   await page.keyboard.press('C');
   await sleep(300);
   const ctx = view().getByRole('region', { name: 'Context' });
