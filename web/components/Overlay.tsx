@@ -3,10 +3,11 @@ import { set } from '../store.ts';
 import { Key } from './ui.tsx';
 
 /** `keepKeys`: its keycaps show whatever the key-hints setting (the dialogs that are about keys). */
-export function Overlay({ children, label, wide = false, keepKeys = false }: { children: ReactNode; label: string; wide?: boolean | 'xl'; keepKeys?: boolean }) {
+/** `wide: 'full'`: nearly the whole window (the Changes sheet: people review code in it). */
+export function Overlay({ children, label, wide = false, keepKeys = false }: { children: ReactNode; label: string; wide?: boolean | 'xl' | 'full'; keepKeys?: boolean }) {
   return (
-    <div className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-3 pt-[8vh] md:p-4 md:pt-[10vh]" role="dialog" aria-modal="true" aria-label={label}>
-      <div className={`w-full ${wide === 'xl' ? 'max-w-6xl' : wide ? 'max-w-3xl' : 'max-w-xl'} rounded-2xl border border-line bg-surface p-5 shadow-2xl md:p-6 ${keepKeys ? 'kc-keep' : ''}`}>{children}</div>
+    <div className={`fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-3 ${wide === 'full' ? 'md:p-5' : 'pt-[8vh] md:p-4 md:pt-[10vh]'}`} role="dialog" aria-modal="true" aria-label={label}>
+      <div className={`w-full ${wide === 'full' ? 'max-w-[1800px]' : wide === 'xl' ? 'max-w-6xl' : wide ? 'max-w-3xl' : 'max-w-xl'} rounded-2xl border border-line bg-surface p-5 shadow-2xl md:p-6 ${keepKeys ? 'kc-keep' : ''}`}>{children}</div>
     </div>
   );
 }

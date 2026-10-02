@@ -41,7 +41,7 @@ export function ChangesSheet({ id, at: start = 0 }: { id: string; at?: number })
   const several = (changes?.repos.length ?? 0) > 1;
   const one = changes?.repos[0];
   return (
-    <Overlay label="Changes" wide="xl">
+    <Overlay label="Changes" wide="full">
       <DialogTitle><span className="flex min-w-0 items-center gap-2">Changes · <TicketKey k={card.key} source={card.ticket?.source} /><span className="truncate">{card.title}</span></span></DialogTitle>
       {error && <div className="rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
       {!changes && !error && <p className="flex items-center gap-2 text-sm text-faint"><span className="spinner" />Asking git…</p>}
@@ -55,7 +55,7 @@ export function ChangesSheet({ id, at: start = 0 }: { id: string; at?: number })
             {totals.truncated && <span className="text-attn"> · the diff was cut: it is very large</span>}
           </p>
           {totals.files > 0 && (
-            <div className="grid h-[62vh] grid-cols-[minmax(220px,300px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-3">
+            <div className="grid h-[calc(100vh-15rem)] min-h-[40vh] grid-cols-[minmax(240px,340px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-3">
               <ul className="min-h-0 overflow-y-auto rounded-xl border border-line" role="listbox" aria-label="Changed files">
                 {rows.map((r) => r.kind === 'repo'
                   ? (
@@ -65,7 +65,7 @@ export function ChangesSheet({ id, at: start = 0 }: { id: string; at?: number })
                   )
                   : (
                     <li key={`${r.repo.root}:${r.file.path}`} id={`chg-${r.index}`} role="option" aria-selected={r.index === at} onClick={() => setAt(r.index)}
-                      className={`flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[12.5px] [li+&]:border-t [li+&]:border-line/60 ${r.index === at ? 'is-focus bg-raise' : 'hover:bg-raise/60'}`}>
+                      className={`flex cursor-pointer items-center gap-2 border-l-[3px] py-2 pl-2 pr-2.5 text-[12.5px] [li+&]:border-t [li+&]:border-line/60 ${r.index === at ? 'border-l-acc bg-acc-soft font-semibold' : 'border-l-transparent hover:bg-raise/60'}`}>
                       <span className={`w-12 shrink-0 text-[10.5px] font-bold uppercase ${r.file.kind === 'deleted' ? 'text-bad' : r.file.kind === 'modified' ? 'text-faint' : 'text-ok'}`}>{KIND[r.file.kind]}</span>
                       <span className="min-w-0 grow truncate font-mono" title={`${several ? `${r.repo.repo}/` : ''}${r.file.path}`}>{r.file.path}</span>
                       {r.file.mine && <span className="shrink-0 rounded-full bg-ok-bg px-1.5 text-[10.5px] font-semibold text-ok" title="Written by this card’s session">card</span>}
@@ -77,7 +77,7 @@ export function ChangesSheet({ id, at: start = 0 }: { id: string; at?: number })
                 {several && chosen?.kind === 'file' && <div className="sticky top-0 border-b border-line/60 bg-raise px-3 py-1 font-mono text-[11.5px] text-sub">{chosen.repo.repo}/{chosen.file.path}</div>}
                 {file?.binary
                   ? <p className="px-3 py-2 text-sm text-faint">A binary file: nothing to show.</p>
-                  : <pre className="m-0 px-0 py-1 font-mono text-[12px] leading-[1.45]">
+                  : <pre className="m-0 px-0 py-1 font-mono text-[12.5px] leading-[1.5]">
                     {patchLines(file?.patch ?? '').map((l, i) => (
                       <div key={i} className={`whitespace-pre px-3 ${l.kind === 'add' ? 'bg-ok-bg text-ok' : l.kind === 'del' ? 'bg-bad-bg text-bad' : l.kind === 'hunk' ? 'bg-raise text-busy' : l.kind === 'meta' ? 'text-faint' : 'text-sub'}`}>{l.text || ' '}</div>
                     ))}
