@@ -6,7 +6,7 @@ import type { IncomingMessage } from 'node:http';
 import { existsSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { KEY_HINTS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
+import { KEY_HINTS, NEW_CARD_LOOKS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
 import { cardRepos, folderFor, type Card } from '../shared/cards.ts';
@@ -181,6 +181,8 @@ function cleanSettings(raw: unknown): Settings {
   const h = (raw as Settings)?.keyHints;
   if (h && KEY_HINTS.includes(h)) out.keyHints = h;
   if ((raw as Settings)?.trustWorktrees === true) out.trustWorktrees = true;
+  const look = (raw as Settings)?.newCardLook;
+  if (look && NEW_CARD_LOOKS.includes(look)) out.newCardLook = look;
   return out;
 }
 

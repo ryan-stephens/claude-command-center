@@ -100,6 +100,8 @@ kbd:not(.kc) { font: 600 12px var(--font-mono); padding: 0 5px; border: 1px soli
 
 /* A focused row or tile: lifted with the accent ring, so where the keys go is obvious. */
 .is-focus { outline: 2px solid var(--c-ring); outline-offset: -2px; box-shadow: 0 0 0 5px color-mix(in srgb, var(--c-ring) 16%, transparent); }
+/* The simple new-card screen (§59): the focused block is the card itself, a one-pixel accent border and a faint halo, never its heading. */
+.blk-focus { border-color: var(--c-ring) !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-ring) 18%, transparent); }
 
 .spinner { width: 12px; height: 12px; flex-shrink: 0; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

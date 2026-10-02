@@ -21,6 +21,7 @@ import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '..
 import { send } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { NewCard } from './NewCard.tsx';
+import { NewCardSimple } from './NewCardSimple.tsx';
 import { Transcript } from './Transcript.tsx';
 import { Icon, Key, Pill, SWATCH, TicketKey, WsBadge } from './ui.tsx';
 
@@ -34,6 +35,8 @@ const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit
 
 export function TicketLine() {
   const composer = useStore((s) => Boolean(s.composer));
+  // The simple look (§59) makes cards; adding to a running card keeps the full screen, which knows that job.
+  const simple = useStore((s) => Boolean(s.composer && !s.composer.addTo && (s.settings.newCardLook ?? 'simple') === 'simple'));
   const drawer = useStore((s) => s.line.drawer);
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -42,7 +45,7 @@ export function TicketLine() {
       <div className="relative flex min-h-0 flex-1">
         <Board />
         {drawer && <CardView id={drawer} />}
-        {composer && <NewCard />}
+        {composer && (simple ? <NewCardSimple /> : <NewCard />)}
       </div>
     </div>
   );

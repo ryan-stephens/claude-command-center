@@ -1774,3 +1774,27 @@ What it costs: nothing. No VU dependency.
 The simple look adds folders from disk as context (a spec folder, a tool's output). A browser can't hand a page the path of a folder the user picks, but the server runs on the same machine, so it opens the picker itself: `server/pick-folder.ts` runs a few lines of C# through a PowerShell STA process that calls `IFileOpenDialog` with `FOS_PICKFOLDERS` (the modern *Select Folder* window Explorer and editors use), owned by the foreground window so it opens over the browser, and answers with the path; Cancel answers with nothing. Protocol: `fs.pickFolder` (page → server, with a `reqId`) and `fs.picked` (the path, or none); `pickFolderOnDisk` in `web/ws.ts` waits as long as the dialog is open (ten minutes). Elsewhere than Windows the request fails with a plain message and the path can still be typed.
 
 **Verified:** by hand once, the picker opened over the browser and the path came back into the card. Playwright can't drive a native window, so the walkthroughs type paths instead.
+
+### The simple look
+
+Direction A of the owner's redesign walk-through: one column, read top to bottom, as a popup over the board (the board stays behind it; a click outside keeps the half-built card for `c`). Built beside the full three-panel screen, not in its place: `Settings.newCardLook` (`simple`, the default, or `full`) picks, `Shift+L` on the screen switches and the `?` `B` dialog has the row. Both looks edit the same `Composer`, so switching loses nothing. Adding context to a running card (`c` with a card open) always uses the full screen, which knows that job.
+
+**What it shows,** top to bottom (`↑ ↓` or `Tab` move between the blocks; the focused block carries a one-pixel accent border, `blk-focus`, never its heading):
+- **Kind** as a segmented control in the header: Develop, QA, Code review (`k` cycles it from anywhere).
+- **Ticket:** the card's ticket (key, status, source, title, three lines of description, counts of criteria, comments and links) with *Change ticket* (`Enter`), a single pick that takes the old ticket's place with its description and criteria; `x` takes it off. With no ticket, the block is the search box itself, its list opening under it (Jira is searched too); a title can be typed instead.
+- **What Claude can see** as chips: the lane's repos (`Enter` includes or leaves one out), this card's repos and folders and its related tickets (`x` takes one out, `w` keeps a repo for the lane), then *+ Context*.
+- **Your note**, a two-line box (`e` or `Enter` to write).
+- **Session settings:** a read-only list of lane, the repo it starts in, branch, first step, model, opening message and where it runs, each with a note on what it means (`howFacts`); *Change* (`Enter`) opens the option rows behind it (`← →` change, `Enter` or *Done* closes). A Develop card here always works in a worktree of each repo, so there is no branch row for it (`develop()` sets it; the full look keeps the older choices).
+- **Start work** (`Ctrl+Enter` anywhere, or `Enter` on the button); `p` previews exactly what Claude gets.
+
+**The Add context popup** (`+` or `a` on the chips, or the *+ Context* chip): Repos (the library; `Enter` adds one and keeps the list open, on one already ticked takes it out), Folders (ones from disk: type or paste a path and `Enter`, or `b` browses in the Windows picker above; `Enter` on one listed leaves it out or brings it back, `x` takes it off) and Tickets (related ones; Jira is searched too). `← →` or `Tab` switch tabs, `/` focuses the search, `Esc` or *Done* closes. Everything added is on the card already. The popup is `role="group"`, not a dialog: the app's own keys drive it.
+
+**Keycaps** on the screen are few (`Esc`, `Ctrl Enter`, `?`); the legend bar (`simpleLegend` in `web/legend.ts`) says the keys for where you are, and `?` has a *New card (simple look)* section beside the full look's.
+
+**How.** `web/components/NewCardSimple.tsx` (the page), `web/simple-model.ts` (the little state the column needs: block, chip, picker, options open; `chips`, `howRows`, `howFacts`), `web/simple-keys.ts` (every key; `line-keys.ts` hands the key over while the setting says simple). The composer's `simple` field holds that state. `openComposer` starts in the ticket search for the simple look.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (284), and five scripted Playwright walkthroughs on an isolated server (`docs/walkthroughs/simple-new-card/`: the column and its keys, the Add context popup on each tab, folders typed in, Change ticket, the slim chrome), with screenshots looked at. They expect a server on :7802 seeded the way `walk-simple.cjs` seeds it: a Demo lane of `%TEMP%\cc-demo\web-app` and `payments-api`, the library pointed at `%TEMP%\cc-demo`, demo tickets on, `SHOP` mapped to the lane. Run them after any change to the screen.
+
+**Lessons:** anything inside `role="dialog"` swallows keys, so popups the app's keys drive are `role="group"`; the legend bar keys its nodes by label, so two items with one label leave a stale keycap; a walkthrough pressing `Ctrl+Enter` inside the full look's folder dialog once started a real card, so tests add folders by typing a path into the simple look's Folders tab.
+
+**Next:** the popup should use the page (a wide two-column layout), and *Your note* becomes an opening message picked from saved prompts that fill in the context (`docs/prompts/continue-opening-prompts.md`).

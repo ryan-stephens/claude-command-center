@@ -181,6 +181,8 @@ export interface Composer {
   prLooking?: boolean;
   /** Why no pull request was found, a line per repo. */
   prNotes?: string[];
+  /** The simple look's own state (web/simple-model.ts); unset means its defaults. The full look ignores it. */
+  simple?: import('./simple-model.ts').SimpleState;
 }
 
 /** The running card the new-card screen adds to, and what it already has (so it isn't added twice). */

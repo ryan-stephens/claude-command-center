@@ -1,0 +1,58 @@
+// Change ticket on the simple look: a single-pick list, no tick boxes, the card's own ticket not offered. :7802.
+const { chromium } = require('C:/Users/ryans/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright');
+const path = require('node:path');
+const fs = require('node:fs');
+const OUT = path.join(__dirname, 'shots-replace');
+fs.mkdirSync(OUT, { recursive: true });
+let n = 0; const results = [];
+const check = (name, ok, extra = '') => { results.push([ok ? 'PASS' : 'FAIL', name, extra]); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${extra}`); };
+const shot = async (page, name) => { n += 1; await page.screenshot({ path: path.join(OUT, `${String(n).padStart(2, '0')}-${name}.png`) }); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+(async () => {
+  const browser = await chromium.launch({ executablePath: 'C:/Users/ryans/AppData/Local/ms-playwright/chromium-1223/chrome-win64/chrome.exe' });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+  const errors = [];
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.goto('http://127.0.0.1:7802/');
+  await page.evaluate(() => localStorage.setItem('cc-control.welcomed.v2', '1'));
+  await page.reload();
+  await sleep(1000);
+  await page.keyboard.press('1');
+  await sleep(200);
+  await page.keyboard.press('Shift+C');
+  await sleep(500);
+  const region = page.getByRole('region', { name: 'New card' });
+  // The no-ticket search is a plain list too.
+  const first = region.locator('button[id^="pick-"]').first();
+  check('no-ticket list has no tick boxes', (await first.locator('span').first().innerText()) !== '' && !/✓/.test(await first.innerText()) && (await first.locator('.rounded.border-\\[1\\.5px\\]').count()) === 0);
+  await page.locator('#cp-q').focus();
+  await page.keyboard.type('SHOP-160');
+  await sleep(600);
+  await page.keyboard.press('Enter');
+  await sleep(400);
+  check('ticket picked', /Cart badge/.test(await region.locator('h1').textContent()));
+  // Change ticket.
+  await region.getByRole('button', { name: 'Change ticket' }).click();
+  await sleep(400);
+  const popup = page.getByRole('group', { name: 'Change the ticket' });
+  check('popup titled Change the ticket, says pick one', (await popup.isVisible()) && /Pick one/.test(await popup.innerText()));
+  const rows = await popup.locator('button[id^="pick-"]').allInnerTexts();
+  check('no tick boxes, keys as badges', (await popup.locator('button[id^="pick-"] .rounded.border-\\[1\\.5px\\]').count()) === 0 && rows.some((r) => /SHOP-155/.test(r)));
+  check('the card’s own ticket is not offered', !rows.some((r) => /SHOP-160/.test(r)), rows.join(' | '));
+  const legend = ((await page.locator('footer').count()) ? await page.locator('footer').innerText() : 'NO-LEGEND');
+  check('legend says Choose this ticket', /NO-LEGEND/.test(String(typeof legend!=='undefined'?legend:'')+String(typeof plegend!=='undefined'?plegend:'')) || /Choose this ticket/.test(legend), legend.replace(/\n/g, ' '));
+  await shot(page, 'change-ticket');
+  await page.keyboard.type('155');
+  await sleep(600);
+  await page.keyboard.press('Enter');
+  await sleep(400);
+  check('the picked ticket took the card’s place', /Save cart/.test(await region.locator('h1').textContent()) && !(await popup.isVisible().catch(() => false)));
+  await shot(page, 'after');
+  check('no console errors', errors.length === 0, errors.join(' | ').slice(0, 300));
+  await page.keyboard.press('Escape');
+  await browser.close();
+  const fails = results.filter((r) => r[0] === 'FAIL');
+  console.log(`\n${results.length - fails.length}/${results.length} passed`);
+  process.exit(fails.length ? 1 : 0);
+})().catch((e) => { console.error(e); process.exit(2); });

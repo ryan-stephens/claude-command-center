@@ -17,6 +17,7 @@ import {
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
   type Composer,
 } from './line-model.ts';
+import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
 import { addCardContext, answerCard, focusCardTab, sayToCard, send, startCard, tryCard } from './ws.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
@@ -64,8 +65,28 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
     ],
   },
   {
-    title: 'New card',
+    title: 'New card (simple look)',
     keys: [
+      ['Shift+L', 'The other look: the full three-panel screen, or back to this one (remembered as a setting; also in ? B)'],
+      ['↑ ↓ / Tab', 'Move down the column: ticket → what Claude can see → your note → how it starts → Start'],
+      ['Enter / Space (ticket)', 'Pick a ticket, or change it (/ searches, Jira too; x takes it off and a title can be typed instead)'],
+      ['← → (what Claude can see)', 'Move along the chips: the lane’s repos, this card’s repos, folders and related tickets, then + Context'],
+      ['Enter / Space (a chip)', 'Include or leave out a lane repo; on + Context, open the picker'],
+      ['+ or a (what Claude can see)', 'Add context: a popup with Repos (the library), Folders (ones from disk: type or paste a path and Enter, or b browses in the Windows folder dialog; on one listed, Enter leaves it out or brings it back, x takes it off) and Tickets (related ones; Jira is searched too). ← → or Tab switch tabs, ↑ ↓ move, Enter adds one and keeps the list open (on one already ticked, takes it out), Esc closes'],
+      ['x (a chip)', 'Take out something this card added'],
+      ['w (a chip)', 'Keep a repo you added for the whole lane'],
+      ['e', 'Write your note for Claude'],
+      ['Enter (how it starts)', 'Open its options: lane, the repo it starts in, branch, mode, model, opening message (↑ ↓ a row, ← → change, Enter closes)'],
+      ['k / m', 'Kind of work (Develop, QA, Code review) / the model, from anywhere on the screen'],
+      ['p', 'Preview exactly what Claude gets'],
+      ['Ctrl+Enter (or Enter on Start)', 'Start work'],
+      ['Esc', 'Close the picker or the options, then cancel (a half-built card is kept for c)'],
+    ],
+  },
+  {
+    title: 'New card (full look)',
+    keys: [
+      ['Shift+L', 'The simple one-column look'],
       ['Tab / Shift+Tab', 'Next / previous panel: add context → what Claude will know → how it starts'],
       ['↑ ↓', 'Move in the panel'],
       ['← → (add context)', 'Tickets, Repos or Folders'],
@@ -188,7 +209,8 @@ export function openComposer(ticket: Ticket | null = null, fresh = false): void 
   const mapped = ticket?.workspaceId ? s.workspaces.find((w) => w.id === ticket.workspaceId) : undefined;
   const ws = mapped ?? (s.line.filter !== 'all' ? s.workspaces.find((w) => w.id === s.line.filter) ?? null : s.workspaces[0] ?? null);
   set({ composer: newComposer(ws, s.nextKey, ticket, s.recipes), line: { ...s.line, drawer: null } });
-  if (!ticket) setTimeout(() => document.getElementById('cp-title')?.focus(), 0);
+  // The simple look starts in the ticket search (its list opens under it); the full one in the title.
+  if (!ticket) setTimeout(() => document.getElementById(simpleLook() ? 'cp-q' : 'cp-title')?.focus(), 0);
 }
 
 /** Esc (or the Cancel button) on the new-card screen: a card with work on it is kept for c. */
@@ -410,8 +432,10 @@ function composerTyping(e: KeyboardEvent, c: Composer): boolean {
 function composerKeys(e: KeyboardEvent, typing: boolean): boolean {
   const s = get();
   const c = s.composer!;
+  if (simpleLook()) return simpleKeys(e, typing);
   if (typing) return composerTyping(e, c);
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { startWork(); return true; }
+  if (e.key === 'L' && e.shiftKey && !e.ctrlKey && !e.altKey && !c.addTo) { switchLook(); return true; }
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
   if (e.key === 'Escape') { if (c.preview) updateComposer((x) => ({ ...x, preview: false })); else leaveComposer(); return true; }
   if (e.key === 'Tab') { updateComposer((x) => ({ ...x, pane: PANES[(PANES.indexOf(x.pane) + (e.shiftKey ? 2 : 1)) % 3] })); return true; }

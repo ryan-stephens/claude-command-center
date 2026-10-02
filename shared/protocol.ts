@@ -245,7 +245,12 @@ export interface Settings {
   keyHints?: KeyHints;
   /** Mark a card's new worktrees trusted in ~/.claude.json before its tab opens, so Claude Code doesn't ask. Unset: off. */
   trustWorktrees?: boolean;
+  /** The new-card screen: the one-column simple look (§59), or the full three-panel one. Unset: simple. */
+  newCardLook?: NewCardLook;
 }
+
+export type NewCardLook = 'simple' | 'full';
+export const NEW_CARD_LOOKS: NewCardLook[] = ['simple', 'full'];
 
 // ---- Command board ---------------------------------------------------------
 

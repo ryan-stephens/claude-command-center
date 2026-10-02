@@ -125,7 +125,38 @@ export interface LineLegendInput {
   preview?: boolean;
   /** New-card screen, panel 2: the highlighted row is a repo this card added (w keeps it for the workspace). */
   cardRepo?: boolean;
+  /** New-card screen in its simple look (§59): which block, a picker open, the options open, a ticket picked. */
+  simple?: { block: 'ticket' | 'context' | 'note' | 'how' | 'start'; adding: boolean; /** The context picker (Repos / Folders / Tickets tabs), not the ticket search. */ context?: boolean; /** Its Folders tab is showing. */ folders?: boolean; more: boolean; hasTicket: boolean; ownChip: boolean };
   bindings: Bindings;
+}
+
+/** The simple look's bar: few keys, the ones for where you are. */
+function simpleLegend(x: LineLegendInput): LegendItem[] {
+  const sp = x.simple!;
+  if (x.preview) return [{ keys: ['p', 'Esc'], label: 'Back' }, { keys: ['Ctrl Enter'], label: 'Start work', tone: 'acc' }];
+  if (sp.adding) {
+    return [
+      ...(sp.context ? [{ keys: ['←', '→'], label: 'Repos · Folders · Tickets' }] : []),
+      { keys: ['↑', '↓'], label: 'Move' },
+      { keys: ['Enter'], label: sp.folders ? 'Add the path / leave out' : sp.context ? 'Add / take out' : 'Choose this ticket', tone: 'acc' },
+      ...(sp.folders ? [{ keys: ['b'], label: 'Browse' }, { keys: ['x'], label: 'Take off' }] : [{ keys: ['/'], label: 'Search' }]),
+      { keys: ['Esc'], label: sp.context ? 'Done' : 'Close' },
+    ];
+  }
+  const here: LegendItem[] = sp.block === 'ticket' ? [{ keys: ['Enter'], label: sp.hasTicket ? 'Change ticket' : 'Find a ticket' }, ...(sp.hasTicket ? [{ keys: ['x'], label: 'No ticket' }] : [])]
+    : sp.block === 'context' ? [{ keys: ['←', '→'], label: 'Along the chips' }, { keys: ['Enter'], label: 'Include / leave out' }, { keys: ['+'], label: 'Add context' }, ...(sp.ownChip ? [{ keys: ['x'], label: 'Take out' }, { keys: ['w'], label: 'Keep for the lane' }] : [])]
+    : sp.block === 'note' ? [{ keys: ['Enter'], label: 'Write the note' }]
+    : sp.block === 'how' ? (sp.more ? [{ keys: ['←', '→'], label: 'Change' }, { keys: ['Enter'], label: 'Close the options' }] : [{ keys: ['Enter'], label: 'Options' }])
+    : [{ keys: ['Enter'], label: 'Start work', tone: 'acc' }];
+  return [
+    { keys: ['↑', '↓'], label: 'Move' },
+    ...here,
+    { keys: ['p'], label: 'Preview' },
+    ...(sp.block === 'start' ? [] : [{ keys: ['Ctrl Enter'], label: 'Start work', tone: 'acc' as const }]),
+    // Labels double as React keys in the bar: never the same as Enter's above.
+    { keys: ['Esc'], label: sp.more ? 'Close' : 'Cancel' },
+    { keys: ['⇧L'], label: 'Full look' },
+  ];
 }
 
 /** The workspace keys, shown on the board. */
@@ -149,6 +180,7 @@ function tryKeys(x: LineLegendInput): LegendItem[] {
 
 /** The Ticket Line's bar: the board, a card's drawer, or the new-card screen. */
 export function lineLegendFor(x: LineLegendInput): LegendItem[] {
+  if (x.view === 'composer' && x.simple) return simpleLegend(x);
   if (x.view === 'composer') {
     return [
       { keys: ['Tab'], label: 'Next panel' },
@@ -166,6 +198,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       { keys: ['p'], label: x.preview ? 'Back to the list' : 'Preview' },
       { keys: ['Ctrl Enter'], label: x.addingTo ? `Add to ${x.addingTo}` : 'Start work', tone: 'acc' },
       { keys: ['Esc'], label: 'Cancel' },
+      ...(x.addingTo ? [] : [{ keys: ['⇧L'], label: 'Simple look' }]),
     ];
   }
   const full: LegendItem = { keys: [k(x.bindings, 'expand')], label: 'Its session' };

@@ -12,6 +12,7 @@ import { applyHints, trimLegend } from './hints.ts';
 import { legendFor, lineLegendFor } from './legend.ts';
 import { packetRows } from './line-model.ts';
 import { goHome } from './line-keys.ts';
+import { chips, simpleOf } from './simple-model.ts';
 import { TicketLine } from './components/TicketLine.tsx';
 import { stopVoice } from './voice.ts';
 import { maybeShowWelcome } from './components/Welcome.tsx';
@@ -73,9 +74,18 @@ function Legend() {
   const hasWaiting = Boolean(drawerCard && waiting(drawerCard).length);
   const hasWorktrees = Boolean(shown && ownFolders(shown).length);
   const hints = useStore((s) => s.settings.keyHints ?? 'always');
+  const isSimple = useStore((s) => Boolean(s.composer && !s.composer.addTo && (s.settings.newCardLook ?? 'simple') === 'simple'));
+  const spBlock = useStore((s) => (s.composer ? simpleOf(s.composer).block : 'ticket'));
+  const spAdding = useStore((s) => Boolean(s.composer && simpleOf(s.composer).adding));
+  const spContext = useStore((s) => Boolean(s.composer && simpleOf(s.composer).adding === 'context'));
+  const spFolders = useStore((s) => Boolean(s.composer && simpleOf(s.composer).adding === 'context' && s.composer.tab === 'folders'));
+  const spMore = useStore((s) => Boolean(s.composer && simpleOf(s.composer).more));
+  const spTicket = useStore((s) => Boolean(s.composer?.ticket));
+  const spOwn = useStore((s) => Boolean(s.composer && chips(s.composer, s.library.repos)[simpleOf(s.composer).ci]?.own));
+  const simple = isSimple ? { block: spBlock, adding: spAdding, context: spContext, folders: spFolders, more: spMore, hasTicket: spTicket, ownChip: spOwn } : undefined;
   if (modal) return null;
   const items = trimLegend(screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, hasTab, needsTab, hasChanges, hasDraft, tab, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, hasTab, needsTab, hasChanges, hasDraft, tab, simple, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings }), hints);
   if (!items) return null;
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');

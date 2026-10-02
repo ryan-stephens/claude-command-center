@@ -43,6 +43,8 @@ The owner likes the mock a lot. Keep its look, its words and its keys, including
 - The UI starts on a proxy copy pointed at the picked APIs, and stop tears them down.
 - Tested against stand-ins only.
 
+**Done (§59, 2026-10-01): the simple look of the new-card screen**, direction A of the owner's redesign walk-through (one column: ticket, what Claude can see as chips, your note, one line on how it starts with the options behind it, Start). Built beside the full screen, not in its place: `Settings.newCardLook` (`?` `B`, `Shift+L` on the screen) picks; `web/components/NewCardSimple.tsx`, `web/simple-model.ts`, `web/simple-keys.ts`. **Next:** the owner's redesign continues from this screen (QA review and PR / code review flows are the other two workflows); the open card and the board are the next screens to strip back.
+
 **Done (§43): a review before rollout** fixed the token leak into tabs and steps, the dev-origin hole, a dozen loop frictions (`d` done by hand, `o` opens the PR, `e` on the board, Esc fixes, column hints) and trimmed the busiest screens. §43 ends with ten proposals, the first (bring the card’s terminal tab forward from Needs you) the most valuable.
 
 **Done (§44): type to the card's terminal from the page, and answer its prompts.** Claude Code's channels, with a launcher that presses through the development-channels confirmation. Proven live on this laptop. What's next for "leave the app less" is at the end of §44 (Jira comments and transitions, PR comments inline, builds from TFS).

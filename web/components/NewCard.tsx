@@ -78,7 +78,7 @@ export function NewCard() {
  * The search box on Tickets also asks the tracker, so anyone's ticket can be found (one to review,
  * one someone asked you to test). A short pause after typing; only the latest text's answer counts.
  */
-function useTicketSearch(c: Composer) {
+export function useTicketSearch(c: Composer) {
   const q = c.tab === 'tickets' ? c.q.trim() : '';
   useEffect(() => {
     if (q.length < 2) { if (get().found !== NO_FOUND) set({ found: NO_FOUND }); return; }
@@ -94,7 +94,7 @@ function useTicketSearch(c: Composer) {
 }
 
 /** QA and review cards: ask the ticket's code hosts for its pull request, once per ticket. */
-function usePrLookup(c: Composer) {
+export function usePrLookup(c: Composer) {
   const key = wantsPr(c);
   useEffect(() => {
     if (!key) return;
