@@ -28,6 +28,8 @@ export interface SeedOptions {
   channel?: boolean;
   /** Files the card wrote (absolute), for the dock's badge and What changed. */
   files?: string[];
+  /** A token for the card (test servers only): a launcher or hook started by hand can prove itself to it (§87). */
+  token?: string;
 }
 
 const PLAN = ['1. Persist the guest cart to localStorage with a 30-day stamp.', '2. On sign-in, merge it into the account cart without duplicating lines (key on sku + options).', '3. Keep gift cards attached through the merge; a test for each path.'].join('\n');
@@ -125,5 +127,6 @@ export function cleanSeed(raw: unknown): SeedOptions {
     ...(state ? { state } : {}),
     ...(typeof r.channel === 'boolean' ? { channel: r.channel } : {}),
     ...(Array.isArray(r.files) ? { files: strs(r.files, 50) } : {}),
+    ...(typeof r.token === 'string' && /^[\w-]{8,80}$/.test(r.token) ? { token: r.token } : {}),
   };
 }

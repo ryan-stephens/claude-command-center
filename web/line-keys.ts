@@ -3,7 +3,7 @@
 // expanding a session. Every key here has a row in LINE_SECTIONS (the ? overlay) and in
 // lineLegendFor (the bar at the bottom).
 
-import { askOf, cardRepos, ownFolders, waiting } from '../shared/cards.ts';
+import { askOf, cardRepos, ownFolders, reachable, waiting } from '../shared/cards.ts';
 import { anyLive, cardRecipe, runKey, runsOf, wsRecipeKey } from '../shared/recipes.ts';
 import { allMerged, openPrs, prsOf } from '../shared/ship.ts';
 import type { StackChoice } from '../shared/stack.ts';
@@ -748,7 +748,7 @@ export function saySubmit(id: string): void {
   const text = el?.value.trim();
   if (!el || !text) return;
   const card = get().cards.find((c) => c.id === id);
-  if (card && (!card.channel || card.live?.phase === 'ended')) flash(`Opening a new tab on ${card.key}’s session; your message goes in once it connects`);
+  if (card && !reachable(card)) flash(`Opening a new tab on ${card.key}’s session; your message goes in once it connects`);
   sayToCard(id, text).then(() => { el.value = ''; flash(`Sent to ${card?.key ?? 'the card'}’s terminal`); }, (e: Error) => flash(e.message));
 }
 
@@ -788,7 +788,7 @@ export function answerAsk(id: string, behavior: 'allow' | 'deny'): void {
   const card = get().cards.find((c) => c.id === id);
   const ask = card && askOf(card);
   if (!ask) { flash(`${card?.key ?? 'It'} isn’t asking anything`); return; }
-  if (!ask.requestId) { flash(ask.kind === 'question' ? 'Answer the question in the message box (Enter), or in its tab' : `Answer it in its terminal tab, ${card!.key}`); return; }
+  if (!ask.requestId && !ask.typed) { flash(ask.kind === 'question' ? 'Answer the question in the message box (Enter), or in its tab' : `Answer it in its terminal tab, ${card!.key}`); return; }
   answerCard(id, ask.requestId, behavior).then(() => flash(behavior === 'allow' ? (ask.kind === 'plan' ? 'Plan approved' : `Allowed ${ask.tool}`) : `Denied ${ask.tool}`), (e: Error) => flash(e.message));
 }
 

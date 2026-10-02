@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { askOf, cardRepos, fmtK, itemTokens, memoryPct, modelName, ownFolders, packetText, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
+import { askOf, cardRepos, fmtK, itemTokens, memoryPct, modelName, ownFolders, packetText, reachable as canReach, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
 import { againstText, changeRows, changeTotals, patchLines, type Changes } from '../../shared/changes.ts';
 import { cardRecipe, mainRun, runKey, runsOf, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
 import type { Stack, StackApiRow } from '../../shared/stack.ts';
@@ -276,9 +276,9 @@ function BootLines({ card }: { card: Card }) {
 function Say({ card }: { card: Card }) {
   if (!card.sessionId) return null;
   const ended = card.live?.phase === 'ended';
-  const reachable = Boolean(card.channel) && !ended;
+  const reachable = canReach(card);
   const ask = askOf(card);
-  const answerable = Boolean(ask?.requestId);
+  const answerable = Boolean(ask?.requestId || ask?.typed);
   return (
     <div className="grid gap-2.5 border-t border-line bg-surface px-5 py-3">
       {ask && (
@@ -288,7 +288,7 @@ function Say({ card }: { card: Card }) {
             {answerable
               ? <><button className="btn btn-primary py-0.5" onClick={() => answerAsk(card.id, 'allow')}><Key k="y" size="sm" tone="ghost" />{ask.kind === 'plan' ? 'Approve' : 'Allow'}</button>
                 <button className="btn py-0.5" onClick={() => answerAsk(card.id, 'deny')}><Key k="n" size="sm" />{ask.kind === 'plan' ? 'Not yet' : 'Deny'}</button></>
-              : ask.kind === 'question' && card.channel ? <span className="text-faint">answer below</span>
+              : ask.kind === 'question' && reachable ? <span className="text-faint">answer below</span>
               : <button className="btn py-0.5" onClick={() => goToTab(card.id)}><Key k="g" size="sm" />Answer in its tab</button>}
           </div>
           {ask.kind === 'plan' && ask.plan && <div className="md max-h-56 overflow-y-auto rounded-lg border border-line bg-surface px-3 py-2 text-[13px]"><Markdown remarkPlugins={[remarkGfm]}>{ask.plan}</Markdown></div>}
@@ -298,12 +298,15 @@ function Say({ card }: { card: Card }) {
       <div className="mx-auto flex w-full max-w-[880px] items-end gap-2">
         <textarea id="card-say" rows={2} placeholder={reachable ? `Type to ${card.key}’s terminal… Enter sends, Shift+Enter is a new line` : `Type to ${card.key}’s session… Enter opens a new tab on it and sends`} spellCheck={false} className="field grow resize-none text-[13.5px]" />
         {card.stage !== 'done' && <button className="btn py-1.5" onClick={() => openAddComposer(card.id)} title="Add a repo, a ticket or a note: it goes in with your next message"><Key k="c" size="sm" />Context</button>}
-        <button className="btn btn-primary py-1.5" onClick={() => saySubmit(card.id)} title={reachable ? 'Sends into the terminal session itself, not a copy' : 'Opens a new terminal tab on the session (claude --resume) and sends once it connects'}><Key k="Enter" size="sm" tone="ghost" />{reachable ? 'Send' : 'Resume and send'}</button>
+        <button className="btn btn-primary py-1.5" onClick={() => saySubmit(card.id)} title={reachable ? (card.channel ? 'Sends into the terminal session itself, not a copy' : 'Typed into its terminal tab by the launcher there (channels aren’t allowed, so this is the way in)') : 'Opens a new terminal tab on the session (claude --resume) and sends once it connects'}><Key k="Enter" size="sm" tone="ghost" />{reachable ? 'Send' : 'Resume and send'}</button>
       </div>
       {!reachable && (
         <p className="mx-auto w-full max-w-[880px] text-[12.5px] text-faint" role="note">
-          {ended ? 'Its session ended.' : 'Its tab can’t be reached (it closed, or the server restarted and the channel hasn’t reconnected).'} Sending opens a new tab that resumes the session, with the card following it as before.
+          {ended ? 'Its session ended.' : 'Its tab can’t be reached (it closed, or the server restarted and nothing has reconnected yet).'} Sending opens a new tab that resumes the session, with the card following it as before.
         </p>
+      )}
+      {reachable && !card.channel && (
+        <p className="mx-auto w-full max-w-[880px] text-[12.5px] text-faint" role="note">Typed into its tab: channels aren’t allowed here, so the launcher in the tab types what you send, and y / n press its prompt’s keys.</p>
       )}
     </div>
   );

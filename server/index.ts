@@ -20,6 +20,7 @@ import { CardService, cleanDraft, focusTab, userModel, writeHookSettings } from 
 import { cleanSeed, seedAllowed, seedCard, seedTranscript } from './seed.ts';
 import { timingSafeEqual } from 'node:crypto';
 import { ChannelService } from './channel.ts';
+import { Typist } from './typist.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
 import { parseRange, PortPool } from './ports.ts';
 import { plainStack, prepareStackSession, restoreLeftovers, runsDir, saveStack, serviceRecipe, stackOf, stackRecipe, stackRows, type StackSession } from './stack.ts';
@@ -81,9 +82,24 @@ tickets.followCards({
   moved: (t) => { cards.ticketMoved(t, finishesCard(t, doneNames)); },
 });
 
+// Cards' tabs, typed into by their launcher when channels aren't allowed (§87; hooks/cc-control-launch.ps1 polls /launcher/poll).
+const typist = new Typist((id, on) => cards.keysState(id, on));
+typist.start();
+
+/** Type into the card's terminal: through its channel, else its tab's launcher. Throws when neither is there. */
+async function typeInto(id: string, text: string): Promise<void> {
+  if (channels.has(id)) { channels.send(id, text); return; }
+  if (typist.alive(id)) { await typist.send(id, { kind: 'text', text }); return; }
+  throw new Error('This card’s terminal can’t be reached from here (its tab is gone, or it started before this): type in its tab.');
+}
+
 // Cards' terminals, reachable through their channel (hooks/cc-control-channel.mjs).
+function tokenOk(id: string, token: string): boolean {
+  const t = store.cardToken(id);
+  return Boolean(t) && t!.length === token.length && timingSafeEqual(Buffer.from(t!), Buffer.from(token));
+}
 const channels = new ChannelService({
-  tokenOk: (id, token) => { const t = store.cardToken(id); return Boolean(t) && t!.length === token.length && timingSafeEqual(Buffer.from(t!), Buffer.from(token)); },
+  tokenOk,
   state: (id, on) => cards.channelState(id, on),
   ask: (id, req) => cards.channelAsk(id, req.tool_name, req.request_id, req.description),
 });
@@ -598,13 +614,13 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const text = String(msg.text ?? '').slice(0, 20_000);
       if (!text.trim()) throw new Error('Nothing to send.');
       const id = String(msg.id);
-      // No channel (the tab closed, the session ended, or the card started before channels): the
-      // session is resumed in a new tab and the message goes in once its channel connects (§85).
-      if (!channels.has(id) || cards.get(id)?.live?.phase === 'ended') {
+      // No way in (the tab closed, the session ended, or the card started before this): the session
+      // is resumed in a new tab and the message goes in once its channel connects or its launcher polls (§85, §87).
+      if ((!channels.has(id) && !typist.alive(id)) || cards.get(id)?.live?.phase === 'ended') {
         await cards.reopen(id);
-        await channels.waitFor(id, RESUME_WAIT_MS);
+        await Promise.any([channels.waitFor(id, RESUME_WAIT_MS), typist.waitFor(id, RESUME_WAIT_MS)]).catch((e: AggregateError) => { throw e.errors[0]; });
       }
-      channels.send(id, text);
+      await typeInto(id, text);
       send(ws, { type: 'ok', reqId: msg.reqId });
       return;
     }
@@ -615,8 +631,8 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         await focusTab(card.key);
         send(ws, { type: 'ok', reqId: msg.reqId });
       } catch (e) {
-        // No tab by that name: with a session to go back to, open one on it (§85).
-        if (!card.sessionId) throw e;
+        // No tab by that name: with a session to go back to, open one on it (§85), unless its launcher says it is there.
+        if (!card.sessionId || typist.alive(card.id)) throw e;
         await cards.reopen(card.id);
         send(ws, { type: 'ok', reqId: msg.reqId, note: 'reopened' });
       }
@@ -624,8 +640,16 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     }
     case 'card.answer': {
       const behavior = msg.behavior === 'deny' ? 'deny' : 'allow';
-      channels.answer(String(msg.id), String(msg.requestId).slice(0, 80), behavior);
-      cards.channelAnswered(String(msg.id), String(msg.requestId));
+      const id = String(msg.id);
+      if (typeof msg.requestId === 'string' && msg.requestId) {
+        channels.answer(id, msg.requestId.slice(0, 80), behavior);
+        cards.channelAnswered(id, msg.requestId);
+      } else {
+        // No channel: the launcher types the prompt's keys (§87): 1 is the first choice (yes), Escape says no.
+        if (!typist.alive(id)) throw new Error('This card’s terminal can’t be reached from here: answer in its tab.');
+        await typist.send(id, { kind: 'keys', keys: behavior === 'allow' ? ['1'] : ['Escape'] });
+        cards.typedAnswer(id);
+      }
       send(ws, { type: 'ok', reqId: msg.reqId });
       return;
     }
@@ -774,7 +798,8 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const id = crypto.randomUUID();
       const card = seedCard(o, id, Date.now());
       seededTranscripts.set(card.sessionId!, seedTranscript(card.key, o.state ?? 'plan'));
-      cards.put(card);
+      // A token (test servers only): a launcher or hook started by hand can prove itself to the card (§87's walkthrough).
+      if (o.token) cards.putWithToken(card, o.token); else cards.put(card);
       send(ws, { type: 'card.started', reqId: msg.reqId, id });
       return;
     }
@@ -829,6 +854,15 @@ function buildApp(guard: MiddlewareHandler, routes?: (app: Hono) => void): Hono 
  * cross-site without a CORS preflight, which this never answers, so web pages can't forge it.
  */
 function hookRoutes(app: Hono): void {
+  // The launcher in a card's tab asks what to type next (§87): a long poll, the card's token in a header like the hooks.
+  app.get('/launcher/poll', async (c) => {
+    const id = c.req.header('x-cc-control-card') ?? '';
+    const token = c.req.header('x-cc-control-token') ?? '';
+    if (!id || !token || !tokenOk(id, token)) return c.text('Forbidden', 403);
+    const wait = Math.min(25_000, Math.max(0, Number(c.req.query('wait')) || 0));
+    const item = await typist.poll(id, wait);
+    return item ? c.json(item) : c.body(null, 204);
+  });
   app.post('/hooks/:event', async (c) => {
     const id = c.req.header('x-cc-control-card') ?? '';
     const token = c.req.header('x-cc-control-token') ?? '';
@@ -956,6 +990,8 @@ function shutdown(): void {
   manager.stopAll();
   runs.stopAll();
   channels.closeAll();
+  typist.forgetAll();
+  typist.stop();
   ship.stop();
   cards.stop();
   tickets.stop();

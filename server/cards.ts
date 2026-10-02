@@ -46,6 +46,15 @@ export function focusTab(key: string): Promise<void> {
   });
 }
 
+/** Is a terminal tab titled with the card's key open? Only looks (§87); false when the look itself fails. */
+export function tabExists(key: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', FOCUS_SCRIPT, '-Title', key, '-Find'], { timeout: 15_000, windowsHide: true }, (err, stdout) => {
+      resolve(!err && stdout.trim() === 'ok');
+    });
+  });
+}
+
 /** Cards start with a channel into their terminal (a research-preview flag); CC_CONTROL_CHANNEL=0 turns it off. */
 export const CHANNEL_ON = process.env.CC_CONTROL_CHANNEL !== '0';
 
@@ -440,7 +449,9 @@ export class CardService {
     const token = this.store.cardToken(id);
     if (!token) throw new Error(`${card.key} has no token, so a new tab couldn’t prove itself. Start a new card.`);
     const spokeAt = card.live?.phase !== 'ended' ? card.live?.at ?? 0 : 0;
-    if (Date.now() - spokeAt < ALIVE_MS) throw new Error(`${card.key}’s tab looks open (its session spoke ${Math.round((Date.now() - spokeAt) / 1000)} s ago) but has no channel: g brings the tab forward.`);
+    if (Date.now() - spokeAt < ALIVE_MS) throw new Error(`${card.key}’s tab looks open (its session spoke ${Math.round((Date.now() - spokeAt) / 1000)} s ago) but can’t be reached: g brings the tab forward.`);
+    // The tab itself, by its title: an idle one is still a tab, and a second claude on its session would write the same transcript.
+    if (await tabExists(card.key)) throw new Error(`${card.key}’s tab is open but can’t be reached from here (it started before this, or its launcher is gone): g brings it forward.`);
     const home = card.cwd;
     const others = this.otherFolders(card, cardRepos(card)[0] ?? home).filter((r) => !samePath(r, home));
     const claudeArgs = ['--resume', card.sessionId, ...this.claudeArgs(card), ...others.flatMap((r) => ['--add-dir', r])];
@@ -465,9 +476,29 @@ export class CardService {
     this.save(card);
   }
 
-  /** The server just started: no channel is connected yet, whatever the cards say (each says so again as it reconnects). */
+  /** The server just started: no channel is connected and no launcher has polled yet, whatever the cards say (each says so again as it reconnects). */
   resetChannels(): void {
-    for (const card of this.list()) if (card.channel) this.store.saveCard({ ...card, channel: false });
+    for (const card of this.list()) if (card.channel || card.keys) this.store.saveCard({ ...card, channel: false, keys: false });
+  }
+
+  /** The card's tab can be typed into through its launcher (§87), or no longer. */
+  keysState(id: string, on: boolean): void {
+    const card = this.get(id);
+    if (!card || Boolean(card.keys) === on) return;
+    this.save({ ...card, keys: on });
+  }
+
+  /** The page answered a prompt by keys typed into the tab: the hooks say what Claude does next. */
+  typedAnswer(id: string): void {
+    const card = this.get(id);
+    if (!card?.live) return;
+    this.save({ ...card, live: { ...card.live, text: 'Answered from here' } });
+  }
+
+  /** A card made outside start (a seeded one, §80) with a token, so a launcher or hook can prove itself to it on a test server. */
+  putWithToken(card: Card, token: string): void {
+    this.store.saveCard(card, token);
+    this.opts.changed();
   }
 
   /** With the setting on, new worktrees are marked trusted so the tab doesn't stop at Claude Code's prompt. A problem is a boot line, never a failed start. */

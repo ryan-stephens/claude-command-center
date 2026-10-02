@@ -2,7 +2,8 @@
 # tab was opened with `wt nt --title <KEY>`). Windows Terminal has no command for "focus the tab
 # called X" (`wt ft` wants an index), so this walks its windows with UI Automation, selects the
 # matching tab and brings that window forward. Prints "ok" or "not found"; touches nothing else.
-param([Parameter(Mandatory = $true)][string]$Title)
+# -Find only looks: "ok" when such a tab exists, nothing selected or brought forward (§87).
+param([Parameter(Mandatory = $true)][string]$Title, [switch]$Find)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
@@ -26,6 +27,7 @@ foreach ($w in $windows) {
     $name = [string]$t.Current.Name
     # The tab's name is the title, sometimes followed by state ("KEY", or "KEY - ...").
     if ($name -eq $Title -or $name.StartsWith("$Title ") -or $name.StartsWith("$Title -")) {
+      if ($Find) { Write-Output 'ok'; exit 0 }
       $sel = $t.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
       $sel.Select()
       $h = [IntPtr]$w.Current.NativeWindowHandle

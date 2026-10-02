@@ -204,8 +204,8 @@ export async function sayToCard(id: string, text: string): Promise<void> {
 }
 
 /** Answer the permission prompt the card's terminal relayed. */
-export async function answerCard(id: string, requestId: string, behavior: 'allow' | 'deny'): Promise<void> {
-  await request((reqId) => ({ type: 'card.answer', reqId, id, requestId, behavior }));
+export async function answerCard(id: string, requestId: string | undefined, behavior: 'allow' | 'deny'): Promise<void> {
+  await request((reqId) => ({ type: 'card.answer', reqId, id, ...(requestId ? { requestId } : {}), behavior }), 30_000);
 }
 
 /** Bring the card's terminal tab to the front (the UI Automation walk can take a moment). True when there was no tab and a new one was opened on the session (§85). */

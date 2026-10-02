@@ -379,7 +379,8 @@ export type ClientMsg =
   /** Bring the card's Windows Terminal tab to the front (g). Answered with ok or an error. */
   | { type: 'card.focusTab'; reqId: string; id: string }
   /** Answer the permission prompt the terminal relayed (card.live.ask.requestId). Answered with ok or an error. */
-  | { type: 'card.answer'; reqId: string; id: string; requestId: string; behavior: 'allow' | 'deny' }
+  /** Answer the permission prompt the terminal relayed (card.live.ask.requestId), or with no requestId, by keys typed into the tab (§87). Answered with ok or an error. */
+  | { type: 'card.answer'; reqId: string; id: string; requestId?: string; behavior: 'allow' | 'deny' }
   /** Try it: run the card's recipe in its folder (again, if it ran before), or its workspace's stack with what was picked. Answered with ok or an error. */
   /** Try it. With a stack: `choice` starts a new session (every picked service); `service` starts (or starts again) one service of the session that is up (§82). */
   | { type: 'card.try'; reqId: string; id: string; choice?: StackChoice; service?: string }

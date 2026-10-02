@@ -221,6 +221,8 @@ export interface Card extends CardDraft {
   sessionId?: string;
   /** Its terminal is reachable through the channel: messages and permission answers go in from here. */
   channel?: boolean;
+  /** Its tab's launcher is polling (§87): what is sent from here is typed into the tab (the way in when channels aren't allowed). */
+  keys?: boolean;
   /**
    * The permission prompt the terminal relayed through the channel, until it is answered or the
    * tool runs. Kept apart from live.ask: the hooks that describe the same prompt arrive in their own
@@ -295,13 +297,19 @@ export function waiting(c: Pick<Card, 'later'>): LaterItem[] {
  * the plan text, the question), else the relayed prompt alone. `answerable` means y / n go through
  * the channel; a question is answered by typing instead.
  */
-export function askOf(c: Pick<Card, 'live' | 'relayed' | 'channel'>): { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string; requestId?: string } | undefined {
+export function askOf(c: Pick<Card, 'live' | 'relayed' | 'channel' | 'keys'>): { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string; requestId?: string; /** y / n are typed into the tab (§87): no channel, but its launcher is there. */ typed?: true } | undefined {
   const ask = c.live?.ask;
   const r = c.relayed;
   const matches = r && (!ask || ask.tool === r.tool);
-  if (ask) return matches && c.channel ? { ...ask, requestId: r.requestId } : ask;
+  const typed = !c.channel && c.keys ? { typed: true as const } : {};
+  if (ask) return matches && c.channel ? { ...ask, requestId: r.requestId } : { ...ask, ...(ask.kind === 'question' ? {} : typed) };
   if (r && c.channel) return { kind: r.tool === 'ExitPlanMode' ? 'plan' : 'tool', tool: r.tool, ...(r.description ? { detail: r.description } : {}), requestId: r.requestId };
   return undefined;
+}
+
+/** Can the card be typed to from here: through its channel, or its tab's launcher (§87)? An ended session can't. */
+export function reachable(c: Pick<Card, 'channel' | 'keys' | 'live'>): boolean {
+  return Boolean(c.channel || c.keys) && c.live?.phase !== 'ended';
 }
 
 export function cardRepos(c: Pick<Card, 'packet' | 'later'>): string[] {
