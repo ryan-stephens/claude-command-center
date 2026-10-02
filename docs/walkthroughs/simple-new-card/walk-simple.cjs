@@ -149,6 +149,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(300);
   const pre = (await region.locator('pre').allTextContents()).join('\n');
   check('preview holds the message and the ticket', /SHOP-155/.test(pre) && /round down/.test(pre));
+  check('preview is in the order Claude gets it: the hook’s context, then the opening message', pre.indexOf('SHOP-155') < pre.indexOf('round down') && /1 · The context, first/i.test(await region.innerText()));
   await shot(page, 'simple-preview');
   const plegend = ((await page.locator('footer').count()) ? await page.locator('footer').innerText() : 'NO-LEGEND');
   check('preview legend is only Back and Start', /NO-LEGEND/.test(plegend) || /Back/.test(plegend) && !/options/.test(plegend), plegend.replace(/\n/g, ' '));

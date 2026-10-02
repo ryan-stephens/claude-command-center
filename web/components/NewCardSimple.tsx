@@ -65,11 +65,12 @@ export function NewCardSimple() {
       <div className="flex min-h-0 flex-1 justify-center overflow-y-auto">
         <div className="w-full max-w-[1480px] px-8 py-7">
           {c.preview
+            // One sequence, in the order Claude gets it (§66): the context the SessionStart hook returns, then the opening message as the first user turn.
             ? <section className="flex flex-col gap-2">
-                <div className="eyebrow">The opening message · what Claude is told first</div>
-                <pre className="m-0 whitespace-pre-wrap break-words rounded-xl border border-line bg-surface px-4 py-3 text-[13.5px] leading-relaxed">{c.launch.message.trim() || <span className="text-faint">(none)</span>}</pre>
-                <div className="mt-3 flex items-baseline justify-between"><div className="eyebrow">Exactly what Claude receives with it</div><span className="text-xs text-faint">{fmtK(tokens(text))} tokens · returned by the SessionStart hook</span></div>
+                <div className="flex items-baseline justify-between"><div className="eyebrow">1 · The context, first: returned by the SessionStart hook before your message</div><span className="text-xs text-faint">{fmtK(tokens(text))} tokens</span></div>
                 <pre className="m-0 whitespace-pre-wrap break-words rounded-xl border border-line bg-surface px-4 py-3 font-mono text-[12.5px] leading-relaxed">{text}</pre>
+                <div className="mt-3 flex items-baseline justify-between"><div className="eyebrow">2 · Then the opening message: your first message in the session</div><span className="text-xs text-faint">{fmtK(tokens(c.launch.message))} tokens · the prompt claude starts with</span></div>
+                <pre className="m-0 whitespace-pre-wrap break-words rounded-xl border border-line bg-surface px-4 py-3 text-[13.5px] leading-relaxed">{c.launch.message.trim() || <span className="text-faint">(none)</span>}</pre>
               </section>
             : <div className="grid grid-cols-1 gap-x-10 gap-y-7 min-[1100px]:grid-cols-2">
               <div className="flex min-w-0 flex-col gap-7">
