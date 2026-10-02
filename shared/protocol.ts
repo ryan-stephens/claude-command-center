@@ -413,6 +413,8 @@ export type ClientMsg =
   | { type: 'card.findPr'; reqId: string; key: string; repos: string[] }
   /** A QA or review card is finished with: it goes to Done. */
   | { type: 'card.done'; id: string }
+  /** Tests only: a card that looks started, with no terminal tab or session. Refused on the default port. Answered with card.started. */
+  | { type: 'cards.seed'; reqId: string; options: unknown }
   /** The card's worktrees as they are now (Shift+X). */
   | { type: 'card.worktrees'; reqId: string; id: string }
   /** Remove them (and their branch): only the clean ones unless `force`; `thenDelete` takes the card off the line after. */

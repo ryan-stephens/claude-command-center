@@ -325,6 +325,11 @@ export class CardService {
     return next;
   }
 
+  /** A card made outside start (a seeded one, §80): saved as it is and announced. */
+  put(card: Card): void {
+    this.save(card);
+  }
+
   private save(card: Card): void {
     this.store.saveCard(card);
     this.opts.changed();

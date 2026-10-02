@@ -17,6 +17,7 @@ import { doneStatuses, finishesCard } from '../shared/tickets.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, cleanDraft, focusTab, userModel, writeHookSettings } from './cards.ts';
+import { cleanSeed, seedAllowed, seedCard, seedTranscript } from './seed.ts';
 import { timingSafeEqual } from 'node:crypto';
 import { ChannelService } from './channel.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
@@ -143,6 +144,9 @@ function runPlaces(card: Card): RunPlaces {
   if (home) repos[repoName(home).toLowerCase()] = cwd;
   return { cwd, repos };
 }
+
+/** Transcripts of seeded cards (§80), by their made-up session id; session.open serves these instead of asking the SDK. */
+const seededTranscripts = new Map<string, TranscriptItem[]>();
 
 function cardsMsg(): ServerMsg {
   const mine = userModel();
@@ -316,10 +320,13 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       send(ws, { type: 'session.created', reqId: msg.reqId, id });
       return;
     }
-    case 'session.open':
+    case 'session.open': {
+      const seeded = seededTranscripts.get(msg.id);
+      if (seeded) { send(ws, { type: 'session.transcript', id: msg.id, items: seeded }); return; }
       mirror.watch(ws, msg.id);
       send(ws, { type: 'session.transcript', id: msg.id, items: await manager.transcript(msg.id) });
       return;
+    }
     case 'session.send':
       await manager.send(msg.id, String(msg.text ?? ''), cleanImages(msg.images));
       return;
@@ -701,6 +708,18 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'card.done':
       cards.finish(String(msg.id));
       return;
+    case 'cards.seed': {
+      // A card for walkthroughs (§80): never on the owner's server, and only in folders that exist.
+      if (!seedAllowed(PORT)) throw new Error('cards.seed only works on a test server (CC_CONTROL_PORT set to something other than the default).');
+      const o = cleanSeed(msg.options);
+      for (const d of [...o.repos, ...(o.worktrees ?? [])]) if (!existsSync(d) || !statSync(d).isDirectory()) throw new Error(`${d} is not a folder.`);
+      const id = crypto.randomUUID();
+      const card = seedCard(o, id, Date.now());
+      seededTranscripts.set(card.sessionId!, seedTranscript(card.key, o.state ?? 'plan'));
+      cards.put(card);
+      send(ws, { type: 'card.started', reqId: msg.reqId, id });
+      return;
+    }
     case 'workspace.import': {
       const r = workspaceFromFile(msg.file, (library(true) as Extract<ServerMsg, { type: 'library' }>).repos);
       const w = cleanWorkspace({ ...r.workspace, id: crypto.randomUUID() });

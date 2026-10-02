@@ -72,6 +72,7 @@ The main concepts:
   1. Build: `pnpm exec vite build --outDir ../dist/web-test --emptyOutDir`.
   2. Run with `CC_CONTROL_PORT=7788 CC_CONTROL_DB=$TEMP/cc-test-4.db CC_CONTROL_MODEL=claude-haiku-4-5-20251001 CC_CONTROL_WEB_DIST=D:/repos/cc-control/dist/web-test node server/index.ts`.
   3. Stop it by the PID on `:7788`, after checking its command line is `server/index.ts`. Delete `dist/web-test` afterwards.
+- **A card for tests without a terminal** (§80): on a server whose `CC_CONTROL_PORT` isn't the default, the `cards.seed` message (`options: { repos, worktrees?, workspaceId?, key?, title?, state?: 'plan'|'tool'|'working'|'idle'|'done', channel?, files? }`, answered with `card.started`) writes a card that looks started, with a seeded transcript served for its made-up session id. `docs/walkthroughs/simple-new-card/walk-card.cjs` seeds one per state and screenshots each. The owner's server at :7777 refuses it.
 - **Headless Playwright:** `require('C:/Users/ryans/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright')`, with `executablePath: 'C:/Users/ryans/AppData/Local/ms-playwright/chromium-1223/chrome-win64/chrome.exe'`. Set `localStorage['cc-control.welcomed.v2']='1'` to skip the welcome.
   - Seed data (workspaces, sessions) from inside the page with `page.evaluate` and a WebSocket, because the server checks the Origin header.
 - **Screenshots only inside a Demo workspace.** "Everything else" shows the owner's real sessions. Demo git repos are in `%TEMP%\cc-demo` (web-app, docs-site, payments-api, cdn-worker, design-tokens).
