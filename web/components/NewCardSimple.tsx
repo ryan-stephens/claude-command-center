@@ -133,7 +133,10 @@ function TicketBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; o
           {/* The counts are a drawer (§70): Space, or a click, shows the criteria, comments and links under them. */}
           <button type="button" aria-expanded={open} aria-controls="ticket-details" onClick={toggleTicketDetails} title="Space"
             className="-mx-2 flex items-center gap-4 rounded-lg border-t border-line/60 px-2 pt-2 text-left text-[13px] text-sub hover:text-ink">
-            <span>Acceptance criteria · {t.acceptance.length}</span><span>Comments · {t.comments.length}</span>{t.links.length > 0 && <span>Linked · {t.links.length}</span>}
+            {/* The counts stand in for the drawer; open, the drawer's own headings say it all, so the row is just the way to close it. */}
+            {open
+              ? <span className="text-faint">Details</span>
+              : <><span>Acceptance criteria · {t.acceptance.length}</span><span>Comments · {t.comments.length}</span>{t.links.length > 0 && <span>Linked · {t.links.length}</span>}</>}
             <span className="grow" /><span className="text-xs text-faint">{open ? 'Hide ▴' : 'Show ▾'}</span>
           </button>
           {open && <TicketDetails t={t} />}
