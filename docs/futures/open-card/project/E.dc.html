@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction E · The inbox</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#4b4f57}a:hover{color:#17181b}
+.ey{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#646871}
+.kc{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:#fff;border:1px solid #cfcbc1;box-shadow:0 1.5px 0 #b9b5ab;font:700 11px/1 Consolas,"Cascadia Mono",monospace;color:#26282d}
+.pill{display:inline-flex;align-items:center;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 12px;border:1px solid #d9d6ce;border-radius:9px;background:#fff;color:#17181b;font-weight:500;font-size:13.5px}
+.primary{background:#b85500;border-color:#b85500;color:#fff}
+.card{background:#fff;border:1px solid #d9d6ce;border-radius:12px}
+.mono{font-family:Consolas,"Cascadia Mono",monospace}
+.q{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-radius:10px;border:1px solid transparent}
+.q .t{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.q .s{font-size:12px;color:#646871}
+.who{font-size:12px;color:#646871}
+</style>
+</helmet>
+<div style="width:1280px;height:900px;box-sizing:border-box;background:#eceae5;color:#17181b;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;display:grid;grid-template-columns:300px minmax(0,1fr);overflow:hidden">
+  <!-- The queue never leaves: the board folded into a list, so the next card is one key away. -->
+  <div style="display:flex;flex-direction:column;gap:14px;padding:16px 14px;background:#f4f3ef;border-right:1px solid #d9d6ce;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:8px"><a href="#" aria-label="Back to the board" style="display:inline-flex;align-items:center;gap:6px;border:1px solid #d9d6ce;border-radius:8px;padding:5px 9px;background:#fff;text-decoration:none"><span>←</span><span class="kc">Esc</span></a><span style="font-weight:700">Demo lane</span><span class="kc" style="margin-left:auto">?</span></div>
+    <section style="display:flex;flex-direction:column;gap:4px">
+      <div class="ey" style="padding:0 12px">Needs you · 3</div>
+      <div class="q" style="background:#fff;border-color:#e3b87a"><div class="t"><span class="mono" style="font-size:11px;color:#1c5bc9">SHOP-155</span> · Save cart for signed-out users</div><div class="s" style="color:#945000">Plan ready · 4m</div></div>
+      <div class="q"><div class="t"><span class="mono" style="font-size:11px;color:#1c5bc9">SHOP-152</span> · Gift card balance on receipt</div><div class="s" style="color:#945000">Allow pnpm test? · 1m</div></div>
+      <div class="q"><div class="t"><span class="mono" style="font-size:11px;color:#1c5bc9">SHOP-149</span> · Address form autocomplete</div><div class="s" style="color:#945000">Finished · ready to try</div></div>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:4px">
+      <div class="ey" style="padding:0 12px">Working · 2</div>
+      <div class="q"><div class="t"><span class="mono" style="font-size:11px;color:#1c5bc9">SHOP-160</span> · Order history paging</div><div class="s">Editing · 3 files · 12m</div></div>
+      <div class="q"><div class="t"><span class="mono" style="font-size:11px;color:#1c5bc9">SHOP-158</span> · Rate limit on checkout</div><div class="s">Reading the code · 2m</div></div>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:4px">
+      <div class="ey" style="padding:0 12px">Done today · 1</div>
+      <div class="q"><div class="t" style="color:#646871"><span class="mono" style="font-size:11px">SHOP-144</span> · Empty cart message</div><div class="s">PR #418 merged</div></div>
+    </section>
+    <div style="margin-top:auto;display:flex;align-items:center;gap:8px;font-size:12.5px;color:#646871;padding:0 12px"><span class="kc">↑</span><span class="kc">↓</span><span>next card that needs you</span></div>
+  </div>
+
+  <!-- The card: decide, do what it needs, move on. -->
+  <div style="display:flex;flex-direction:column;min-height:0">
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 28px 10px;background:#fff;border-bottom:1px solid #d9d6ce">
+      <span class="mono" style="background:#e7effd;color:#1c5bc9;border-radius:6px;padding:0 6px;font-weight:700;font-size:11.5px">SHOP-155</span>
+      <span style="font-size:17px;font-weight:700;letter-spacing:-.01em">Save cart for signed-out users</span>
+      <span class="pill" style="background:#fff0d9;color:#945000">Needs you</span>
+      <span style="flex:1"></span>
+      <button class="btn"><span class="kc">g</span>Its tab</button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px;padding:20px 28px;flex:1;min-height:0;overflow:hidden">
+      <!-- The question first, as a question. -->
+      <section class="card" style="border-color:#e3b87a;background:#fff8ee;padding:14px 18px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px"><span style="font-size:15px;font-weight:600;color:#945000">Approve the plan?</span><span style="font-size:12.5px;color:#646871">waiting 4m</span></div>
+        <div style="font-size:13.5px;color:#4b4f57;line-height:1.5">1. Persist the guest cart to localStorage with a 30-day stamp. 2. On sign-in, merge it into the account cart without duplicating lines. 3. Keep gift cards attached through the merge; a test for each path.</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">y</span>Approve</button>
+          <button class="btn"><span class="kc">n</span>Not yet</button>
+          <span style="font-size:12.5px;color:#646871;margin-left:6px">or type below to change it</span>
+        </div>
+      </section>
+
+      <!-- Three glances, side by side: enough to judge; Enter on one opens it full. -->
+      <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:14px;flex:1;min-height:0">
+        <section class="card" style="display:flex;flex-direction:column;min-height:0;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #d9d6ce"><span class="ey">Chat · last 3 turns</span><span class="pill" style="background:#e7effd;color:#1c5bc9;margin-left:auto">1 new</span></div>
+          <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5;flex:1;overflow:hidden">
+            <div><div class="who">You · 14:02</div>Please review SHOP-155 and take it into context…</div>
+            <div><div class="who">Claude · 14:02 · read 6 files</div>The guest cart lives in memory only, so it is lost when the tab closes. Gift cards are attached to cart lines, so the merge has to carry them over.</div>
+            <div><div class="who">Claude · 14:03 · plan</div>Three steps, two files, tests beside each.</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-end;padding:10px 14px;border-top:1px solid #d9d6ce">
+            <div style="flex:1;border:1px solid #d9d6ce;border-radius:10px;padding:8px 11px;color:#646871;font-size:13px;min-height:36px">Type to SHOP-155’s terminal…</div>
+            <button class="btn primary" style="min-height:36px"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">Enter</span>Send</button>
+          </div>
+        </section>
+
+        <section class="card" style="display:flex;flex-direction:column;gap:10px;padding:12px 14px;overflow:hidden">
+          <div class="ey">Changes · by repo</div>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+            <div style="display:flex;flex-direction:column;gap:3px"><div style="display:flex;justify-content:space-between"><span style="font-weight:600">web-app</span><span style="color:#646871">2 files · <span style="color:#15703d">+80</span> <span style="color:#9b2c20">−12</span></span></div><div class="mono" style="font-size:12px;color:#646871">cart/store.ts · auth/sign-in.ts</div></div>
+            <div style="display:flex;flex-direction:column;gap:3px"><div style="display:flex;justify-content:space-between"><span style="font-weight:600">payments-api</span><span style="color:#646871">1 file · <span style="color:#15703d">+4</span></span></div><div class="mono" style="font-size:12px;color:#646871">giftcards/attach.ts</div></div>
+          </div>
+          <a href="#" style="font-size:12.5px;text-decoration:none;margin-top:auto">read the diffs <span class="kc">⇧D</span></a>
+        </section>
+
+        <section class="card" style="display:flex;flex-direction:column;gap:10px;padding:12px 14px;overflow:hidden">
+          <div class="ey">Try it · this card only</div>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:13px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="width:7px;height:7px;border-radius:99px;background:#15703d"></span><span style="font-weight:600">web-app</span><span class="mono" style="color:#646871;font-size:12px">:4312</span><button class="btn" style="min-height:26px;padding:0 8px;font-size:12px;margin-left:auto"><span class="kc">o</span>Open</button></div>
+            <div style="display:flex;align-items:center;gap:8px"><span style="width:7px;height:7px;border-radius:99px;border:1.5px solid #cfcbc1"></span><span style="font-weight:600">payments-api</span><span class="mono" style="color:#646871;font-size:12px">:4313</span><button class="btn" style="min-height:26px;padding:0 8px;font-size:12px;margin-left:auto"><span class="kc">t</span>Start</button></div>
+          </div>
+          <div style="font-size:12.5px;color:#4b4f57;line-height:1.45">Sign out, add two items, close the tab, reopen: the cart is still there.</div>
+          <a href="#" style="font-size:12.5px;color:#b85500;text-decoration:underline;text-underline-offset:2px;margin-top:auto">how to test this card</a>
+        </section>
+      </div>
+    </div>
+
+    <!-- The loop closes here: handle it, go to the next one. -->
+    <div style="display:flex;align-items:center;gap:8px;padding:12px 28px;background:#fff;border-top:1px solid #d9d6ce">
+      <button class="btn"><span class="kc">c</span>Add context</button>
+      <button class="btn"><span class="kc">s</span>Ship</button>
+      <a href="#" style="font-size:12.5px;color:#b85500;text-decoration:underline;text-underline-offset:2px;margin-left:10px">steps, session, worktrees (details)</a>
+      <span style="flex:1"></span>
+      <button class="btn" style="color:#4b4f57"><span class="kc">Del</span>Remove</button>
+      <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">↓</span>Next: SHOP-152 · Allow pnpm test?</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

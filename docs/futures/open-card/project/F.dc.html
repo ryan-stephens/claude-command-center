@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction F · Chat with a dock</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#4b4f57}a:hover{color:#17181b}
+.ey{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#646871}
+.kc{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:#fff;border:1px solid #cfcbc1;box-shadow:0 1.5px 0 #b9b5ab;font:700 11px/1 Consolas,"Cascadia Mono",monospace;color:#26282d}
+.pill{display:inline-flex;align-items:center;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 12px;border:1px solid #d9d6ce;border-radius:9px;background:#fff;color:#17181b;font-weight:500;font-size:13.5px}
+.primary{background:#b85500;border-color:#b85500;color:#fff}
+.card{background:#fff;border:1px solid #d9d6ce;border-radius:12px}
+.mono{font-family:Consolas,"Cascadia Mono",monospace}
+.dock{display:flex;flex-direction:column;align-items:center;gap:4px;width:84px;padding:10px 0;border:0;background:transparent;border-radius:10px;font-size:11.5px;font-weight:600;color:#4b4f57;position:relative}
+.dock.on{background:#fff;border:1px solid #d9d6ce;color:#17181b}
+.badge{position:absolute;top:6px;right:12px;min-width:16px;height:16px;border-radius:99px;background:#1c5bc9;color:#fff;font-size:10.5px;font-weight:700;display:grid;place-items:center;padding:0 4px}
+.msg{display:flex;flex-direction:column;gap:6px}
+.who{font-size:12px;color:#646871}
+</style>
+</helmet>
+<div style="width:1280px;height:900px;box-sizing:border-box;background:#eceae5;color:#17181b;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;display:flex;flex-direction:column;overflow:hidden">
+  <div style="display:flex;align-items:center;gap:14px;padding:12px 24px;background:#fff;border-bottom:1px solid #d9d6ce">
+    <a href="#" aria-label="Back to the board" style="display:inline-flex;align-items:center;gap:6px;border:1px solid #d9d6ce;border-radius:8px;padding:5px 9px;background:#eceae5;text-decoration:none"><span>←</span><span class="kc">Esc</span></a>
+    <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+      <span class="mono" style="background:#e7effd;color:#1c5bc9;border-radius:6px;padding:0 6px;font-weight:700;font-size:11.5px">SHOP-155</span>
+      <span style="font-size:17px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Save cart for signed-out users</span>
+      <span class="pill" style="background:#e3f4ea;color:#15703d">Working</span>
+      <span style="font-size:12.5px;color:#646871">editing · 11m</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#646871"><span class="kc">←</span><span>2 of 4</span><span class="kc">→</span></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) 440px 100px;flex:1;min-height:0">
+    <!-- By default this is all there is: the conversation, and the message box. Nothing to distract from the work. -->
+    <div style="display:flex;flex-direction:column;min-height:0;background:#fff">
+      <div style="flex:1;overflow:hidden;padding:22px 32px;display:flex;flex-direction:column;gap:18px;font-size:14px;line-height:1.55">
+        <div class="msg"><div class="who">Claude · 14:03 · plan approved by you</div><div>Starting with the guest cart. I’ll persist it under a 30-day stamp and then do the merge.</div></div>
+        <div class="msg"><div class="who">Claude · 14:09 · edited web-app/src/cart/store.ts</div><div>The guest cart now survives a closed tab. I keyed lines on sku + options so the merge can’t double them up.</div></div>
+        <div class="msg"><div class="who">Claude · 14:12 · ran pnpm vitest run src/cart · 14 passed</div><div>All green. Moving to the merge on sign-in.</div></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:4px 0;color:#646871;font-size:12.5px"><span style="flex:1;border-top:1px solid #d9d6ce"></span>new since you last looked<span style="flex:1;border-top:1px solid #d9d6ce"></span></div>
+        <div class="msg"><div class="who">Claude · 14:14 · editing web-app/src/auth/sign-in.ts</div><div>Merging the guest lines into the account cart after a successful sign-in. Gift cards ride along on their lines; I’m adding a test for a line with one attached.</div></div>
+        <div style="display:flex;align-items:center;gap:8px;color:#15703d;font-weight:600;font-size:13px"><span style="width:8px;height:8px;border-radius:99px;background:#15703d"></span>Working · nothing needs you</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;padding:12px 32px 16px;border-top:1px solid #d9d6ce">
+        <div style="flex:1;border:1px solid #d9d6ce;border-radius:10px;padding:9px 12px;color:#646871;font-size:13.5px;min-height:40px">Type to SHOP-155’s terminal…</div>
+        <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">Enter</span>Send</button>
+      </div>
+    </div>
+
+    <!-- A drawer: one of the dock's panels, open beside the chat. Here, Changes. Closing it gives the width back. -->
+    <div style="display:flex;flex-direction:column;min-height:0;background:#f4f3ef;border-left:1px solid #d9d6ce">
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid #d9d6ce"><span style="font-weight:700">Changes</span><span style="font-size:12.5px;color:#646871">3 files in 2 repos</span><a href="#" aria-label="Close" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-size:14px">×<span class="kc">Esc</span></a></div>
+      <div style="padding:14px 18px;display:flex;flex-direction:column;gap:14px;overflow:hidden;flex:1">
+        <section style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="font-weight:700;font-size:13.5px">web-app</span><span class="mono" style="font-size:11.5px;color:#646871">shop-155-save-cart-signed-out</span><span style="margin-left:auto;font-size:12px"><span style="color:#15703d">+80</span> <span style="color:#9b2c20">−12</span></span></div>
+          <div class="card" style="display:flex;flex-direction:column;font-size:13px">
+            <div style="display:flex;gap:8px;padding:8px 12px;border-bottom:1px solid #eeece6;background:#f9f8f5"><span class="mono">src/cart/store.ts</span><span style="margin-left:auto;color:#646871;font-size:12px">+61 −8</span></div>
+            <div class="mono" style="font-size:11.5px;line-height:1.5;display:flex;flex-direction:column;padding:6px 0"><span style="padding:0 12px;background:#fbe9e7;color:#9b2c20">- // guest carts live in memory only</span><span style="padding:0 12px;background:#e3f4ea;color:#15703d">+ const GUEST_KEY = 'cart:guest';</span><span style="padding:0 12px;background:#e3f4ea;color:#15703d">+ function persistGuest() {</span><span style="padding:0 12px;color:#646871">  … 58 more</span></div>
+            <div style="display:flex;gap:8px;padding:8px 12px;border-top:1px solid #eeece6"><span class="mono">src/auth/sign-in.ts</span><span style="margin-left:auto;color:#646871;font-size:12px">+19 −4</span></div>
+          </div>
+        </section>
+        <section style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="font-weight:700;font-size:13.5px">payments-api</span><span style="margin-left:auto;font-size:12px"><span style="color:#15703d">+4</span></span></div>
+          <div class="card" style="font-size:13px"><div style="display:flex;gap:8px;padding:8px 12px"><span class="mono">src/giftcards/attach.ts</span><span style="margin-left:auto;color:#646871;font-size:12px">+4</span></div></div>
+        </section>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:10px;font-size:12.5px;color:#646871"><span class="kc">j</span><span class="kc">k</span><span>next / previous file</span><a href="#" style="margin-left:auto;text-decoration:none">full width <span class="kc">⇧D</span></a></div>
+      </div>
+    </div>
+
+    <!-- The dock: everything else, one key away, with a badge when it changed. Steps and session are behind "More". -->
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 8px;background:#eceae5;border-left:1px solid #d9d6ce">
+      <button class="dock on"><span class="kc">⇧D</span><span>Changes</span><span class="badge">3</span></button>
+      <button class="dock"><span class="kc">t</span><span>Try it</span><span class="badge" style="background:#15703d">on</span></button>
+      <button class="dock"><span class="kc">v</span><span>Verify</span></button>
+      <button class="dock"><span class="kc">⇧C</span><span>Context</span><span class="badge">+1</span></button>
+      <span style="flex:1"></span>
+      <button class="dock"><span class="kc">c</span><span>Add context</span></button>
+      <button class="dock"><span class="kc">g</span><span>Its tab</span></button>
+      <button class="dock"><span class="kc">s</span><span>Ship</span></button>
+      <button class="dock" style="color:#646871"><span class="kc">…</span><span>More</span></button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

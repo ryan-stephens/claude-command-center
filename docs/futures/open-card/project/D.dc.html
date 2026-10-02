@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction D · The review desk</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#4b4f57}a:hover{color:#17181b}
+.ey{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#646871}
+.kc{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:#fff;border:1px solid #cfcbc1;box-shadow:0 1.5px 0 #b9b5ab;font:700 11px/1 Consolas,"Cascadia Mono",monospace;color:#26282d}
+.pill{display:inline-flex;align-items:center;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 12px;border:1px solid #d9d6ce;border-radius:9px;background:#fff;color:#17181b;font-weight:500;font-size:13.5px}
+.primary{background:#b85500;border-color:#b85500;color:#fff}
+.card{background:#fff;border:1px solid #d9d6ce;border-radius:12px}
+.mono{font-family:Consolas,"Cascadia Mono",monospace}
+.file{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid #eeece6;font-size:13px}
+.file:first-of-type{border-top:0}
+.hunk{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;line-height:1.55;display:flex;flex-direction:column;border-top:1px solid #eeece6}
+.hunk span{padding:0 14px 0 44px;white-space:pre}
+.add{background:#e3f4ea;color:#15703d}
+.del{background:#fbe9e7;color:#9b2c20}
+.who{font-size:12px;color:#646871}
+</style>
+</helmet>
+<div style="width:1280px;height:900px;box-sizing:border-box;background:#eceae5;color:#17181b;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;display:flex;flex-direction:column;overflow:hidden">
+  <div style="display:flex;align-items:center;gap:14px;padding:12px 24px;background:#fff;border-bottom:1px solid #d9d6ce">
+    <a href="#" aria-label="Back to the board" style="display:inline-flex;align-items:center;gap:6px;border:1px solid #d9d6ce;border-radius:8px;padding:5px 9px;background:#eceae5;text-decoration:none"><span>←</span><span class="kc">Esc</span></a>
+    <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+      <span class="mono" style="background:#e7effd;color:#1c5bc9;border-radius:6px;padding:0 6px;font-weight:700;font-size:11.5px">SHOP-155</span>
+      <span style="font-size:17px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Save cart for signed-out users</span>
+      <span class="pill" style="background:#fff0d9;color:#945000">Needs you</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#646871"><span class="kc">←</span><span>2 of 4</span><span class="kc">→</span></div>
+  </div>
+
+  <!-- The pinned ask: the one thing to decide, always in view while the diff scrolls. -->
+  <div style="display:flex;align-items:center;gap:12px;padding:10px 24px;background:#fff8ee;border-bottom:1px solid #e3b87a">
+    <span style="width:8px;height:8px;border-radius:99px;background:#945000"></span>
+    <span style="font-weight:600;color:#945000">Claude wants to run the tests in web-app · waiting 2m</span>
+    <span style="font-size:13px;color:#4b4f57" class="mono">pnpm vitest run src/cart</span>
+    <span style="flex:1"></span>
+    <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">y</span>Allow</button>
+    <button class="btn"><span class="kc">n</span>Deny</button>
+    <button class="btn"><span class="kc">g</span>Its tab</button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) 420px;flex:1;min-height:0">
+    <!-- The page is the diff, grouped by repo (each repo is its own worktree). Read it like a PR before it is one. -->
+    <div style="display:flex;flex-direction:column;gap:16px;padding:20px 28px;overflow:hidden;background:#f4f3ef;border-right:1px solid #d9d6ce">
+      <div style="display:flex;align-items:baseline;justify-content:space-between">
+        <div class="ey">What changed · 2 repos · 3 files</div>
+        <div style="display:flex;gap:12px;font-size:12.5px;color:#646871"><span style="color:#15703d;font-weight:600">+84</span><span style="color:#9b2c20;font-weight:600">−12</span><span>since you last looked: 1 file</span></div>
+      </div>
+
+      <section class="card" style="overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border-bottom:1px solid #d9d6ce">
+          <span style="font-weight:700">web-app</span>
+          <span class="mono" style="font-size:12px;color:#646871">shop-155-save-cart-signed-out</span>
+          <span style="flex:1"></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#15703d;font-weight:600"><span style="width:7px;height:7px;border-radius:99px;background:#15703d"></span>running on :4312</span>
+          <button class="btn" style="min-height:28px;padding:0 9px;font-size:12.5px"><span class="kc">o</span>Open</button>
+        </div>
+        <div class="file" style="background:#f9f8f5"><span style="color:#646871">▾</span><span class="mono">src/cart/store.ts</span><span style="color:#15703d;font-size:12px">+61</span><span style="color:#9b2c20;font-size:12px">−8</span><span class="pill" style="background:#e7effd;color:#1c5bc9;margin-left:auto">new since you looked</span></div>
+        <div class="hunk">
+          <span style="color:#646871;background:#f9f8f5">@@ -12,4 +12,19 @@ export function createCartStore()</span>
+          <span>  const lines = new Map&lt;string, CartLine&gt;();</span>
+          <span class="del">- // guest carts live in memory only</span>
+          <span class="add">+ const GUEST_KEY = 'cart:guest';</span>
+          <span class="add">+ const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;</span>
+          <span class="add">+ function persistGuest() {</span>
+          <span class="add">+   localStorage.setItem(GUEST_KEY, JSON.stringify({ at: Date.now(), lines: [...lines.values()] }));</span>
+          <span class="add">+ }</span>
+          <span>  …</span>
+        </div>
+        <div class="file"><span style="color:#646871">▸</span><span class="mono">src/auth/sign-in.ts</span><span style="color:#15703d;font-size:12px">+19</span><span style="color:#9b2c20;font-size:12px">−4</span></div>
+      </section>
+
+      <section class="card" style="overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border-bottom:1px solid #d9d6ce">
+          <span style="font-weight:700">payments-api</span>
+          <span class="mono" style="font-size:12px;color:#646871">shop-155-save-cart-signed-out</span>
+          <span style="flex:1"></span>
+          <span style="font-size:12.5px;color:#646871">not running</span>
+          <button class="btn" style="min-height:28px;padding:0 9px;font-size:12.5px"><span class="kc">t</span>Start on :4313</button>
+        </div>
+        <div class="file"><span style="color:#646871">▸</span><span class="mono">src/giftcards/attach.ts</span><span style="color:#15703d;font-size:12px">+4</span><span style="color:#9b2c20;font-size:12px">−0</span><span style="margin-left:auto;font-size:12px;color:#945000">also touched by SHOP-152</span></div>
+      </section>
+
+      <div style="display:flex;align-items:center;gap:14px;font-size:12.5px;color:#646871;margin-top:auto">
+        <a href="#" style="text-decoration:none">whole file, side by side <span class="kc">⇧D</span></a>
+        <span>·</span>
+        <a href="#" style="color:#b85500;text-decoration:underline;text-underline-offset:2px">steps, model, context, session (details)</a>
+      </div>
+    </div>
+
+    <!-- The chat, a column wide: read the last turns, answer, send. -->
+    <div style="display:flex;flex-direction:column;min-height:0;background:#fff">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid #d9d6ce"><span style="font-weight:700;font-size:14px">Chat</span><span style="font-size:12px;color:#646871">live from the terminal tab</span><span class="pill" style="background:#e7effd;color:#1c5bc9;margin-left:auto">2 new</span></div>
+      <div style="flex:1;overflow:hidden;padding:16px 18px;display:flex;flex-direction:column;gap:12px;font-size:13.5px;line-height:1.5">
+        <div><div class="who">Claude · 14:03 · plan approved</div>Persisting the guest cart first, then the merge on sign-in.</div>
+        <div><div class="who">Claude · 14:09 · edited 2 files</div>The guest cart now survives a closed tab for 30 days. Starting the merge: lines are keyed on sku + options so nothing doubles up.</div>
+        <div><div class="who">Claude · 14:12</div>Before I write the gift-card test I want to run the cart tests to make sure nothing broke.</div>
+        <div style="display:flex;align-items:center;gap:8px;color:#945000;font-weight:600"><span style="width:8px;height:8px;border-radius:99px;background:#945000"></span>Asking to run <span class="mono" style="font-weight:500">pnpm vitest run src/cart</span></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;padding:12px 18px;border-top:1px solid #d9d6ce">
+        <div style="flex:1;border:1px solid #d9d6ce;border-radius:10px;padding:9px 12px;color:#646871;font-size:13.5px;min-height:40px">Type to SHOP-155’s terminal…</div>
+        <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">Enter</span>Send</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:8px;padding:12px 24px;background:#fff;border-top:1px solid #d9d6ce">
+    <button class="btn"><span class="kc">c</span>Add context</button>
+    <span style="flex:1"></span>
+    <button class="btn" style="color:#4b4f57"><span class="kc">Del</span>Remove card</button>
+    <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">s</span>Ship</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

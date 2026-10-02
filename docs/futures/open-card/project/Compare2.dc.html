@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Comparing D to G against what the owner asked for</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#4b4f57}a:hover{color:#17181b}
+.ey{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#646871}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-top:1px solid #d9d6ce;line-height:1.45}
+th{font-size:12px;color:#646871;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-top:0}
+td:first-child{color:#646871;white-space:nowrap}
+</style>
+</helmet>
+<div style="width:1500px;height:900px;box-sizing:border-box;background:#eceae5;color:#17181b;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;padding:32px 40px;display:flex;flex-direction:column;gap:18px;overflow:hidden">
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <div class="ey">What the owner said, 2026-10-02</div>
+    <div style="font-size:14.5px;color:#4b4f57;max-width:1300px;line-height:1.5">The app is not a new face for a terminal; it is for getting through many sessions faster, by developers and non-developers. When someone opens a card they should see what they need to make a quick judgment call, do the one thing the card needs (answer, approve, type), and move on to the next card. That means the chat (read, send, approve), the diffs grouped by repo, and starting this card’s apps on their own ports with clear instructions on how to test this one; later, hooks into the team’s own apps to look up and add records and create test data from the card’s context. Claude’s to-do list and the session’s details can stay out of sight. Every card is its own slice (its worktrees, its own app instances), so a card is tested on its own; merging across cards is for later.</div>
+  </div>
+  <div style="background:#fff;border:1px solid #d9d6ce;border-radius:14px;padding:6px 18px 12px">
+    <table>
+      <tr><th style="width:150px"></th><th>D · The review desk</th><th>E · The inbox</th><th>F · Chat with a dock</th><th>G · The test bench</th></tr>
+      <tr><td>Lands on</td><td>The diff, grouped by repo, with the ask pinned above it; the chat a column wide</td><td>The question, then three glances (chat, changes by repo, try it), with the queue of cards beside it</td><td>Only the chat and the message box; everything else in a dock of drawers, one key each</td><td>This card’s apps on their ports and the steps to prove it; the chat a column wide</td></tr>
+      <tr><td>Chat</td><td>A 420px column, the last turns, the message box</td><td>A compact card, last three turns; Enter opens it full</td><td>The page</td><td>A 420px column; a failed step lands here as your message</td></tr>
+      <tr><td>Diffs by repo</td><td>The page: one section per repo (its worktree, its port), files fold open to hunks</td><td>Counts per repo; the diff a key away</td><td>A drawer: per repo, files fold open; j / k walk them</td><td>A key away (the pinned strip)</td></tr>
+      <tr><td>Try it, how to test</td><td>Per repo in each section’s header: running on :4312 / start on :4313</td><td>A card: each app, its port, one sentence on what to try</td><td>A drawer (shown closed here)</td><td>The page: each app with its URL and port, numbered steps from the plan and the ticket’s criteria, pass / fail per step</td></tr>
+      <tr><td>Team’s apps, later</td><td>Would be another section under the repos</td><td>Would be a fourth glance</td><td>The Verify drawer, already in the dock</td><td>A section under the steps: look up, add fields, create test data from the card</td></tr>
+      <tr><td>Out of sight</td><td>Steps, model, context, session: one (details) link</td><td>Steps, session, worktrees: one (details) link in the footer</td><td>Behind More in the dock</td><td>One (details) link in the footer</td></tr>
+      <tr><td>Next card</td><td>← → as today</td><td>↓ to the next card that needs you, without leaving; the footer names it</td><td>← → as today</td><td>← → as today</td></tr>
+      <tr><td>Best for</td><td>Developers whose call is “is the code right”</td><td>Working a queue of asks fast; the board stays in view</td><td>Following one card while it works; a calm default, depth on demand</td><td>Non-developers verifying; closing the loop from a failed step to Claude</td></tr>
+      <tr><td>Weak at</td><td>A card with no changes yet is an empty page</td><td>Three small panes read busier than one; long plans get cramped</td><td>Glancing: nothing says where it stands until you read or open a drawer</td><td>Early in a card (nothing to test yet) it falls back to the chat</td></tr>
+      <tr><td>Narrow window</td><td>Chat below the diff; the ask strip stays pinned</td><td>Queue folds to a strip under the header</td><td>Drawers open over the chat, full width</td><td>Chat below the bench</td></tr>
+      <tr><td>New keys</td><td>o opens the app (exists); none new</td><td>↓ ↑ next / previous card needing you (Alt+↑ ↓ exists for sessions)</td><td>v Verify, ⇧C Context; j / k in a drawer; … More</td><td>p / f pass or fail the current step; v Verify</td></tr>
+      <tr><td>Build size</td><td>Medium: a per-repo diff view (today’s ⇧D made the page), a pinned ask strip</td><td>Large: the board folded into a list beside the card; three compact panes</td><td>Medium: a dock and drawer component; the transcript made the page; badges need “since you last looked”</td><td>Large: test steps derived from the plan and criteria, pass / fail that writes to the chat; the app list exists (Try it)</td></tr>
+    </table>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div style="background:#fff;border:1px solid #d9d6ce;border-radius:14px;padding:14px 18px;display:flex;flex-direction:column;gap:6px">
+      <div class="ey">What changed from A, B and C</div>
+      <div style="font-size:13.5px;line-height:1.5;color:#4b4f57">A, B and C all still showed Steps and Session on the page. D to G take the owner at their word: steps and session go behind one link, the chat is always reachable but only F makes it the page, and the diff is grouped by repo everywhere because each card runs its own worktrees and ports. Two things appear that no earlier board had: a “since you last looked” marker (D, E, F), and the test steps that turn a verifier’s fail into a message to Claude (G).</div>
+    </div>
+    <div style="background:#fff;border:1px solid #d9d6ce;border-radius:14px;padding:14px 18px;display:flex;flex-direction:column;gap:6px">
+      <div class="ey">A way to read them together</div>
+      <div style="font-size:13.5px;line-height:1.5;color:#4b4f57">They are not exclusive. F is a frame: a calm chat with a dock. D’s per-repo diff and G’s test bench are what two of F’s drawers would hold, and E’s queue is a left rail that could sit beside any of them. If one has to be first, F with D’s drawer gives the chat, the diffs by repo and Try it on day one, and leaves room for G and the team’s apps without a redesign.</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1500,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

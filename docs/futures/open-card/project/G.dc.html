@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction G · The test bench</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#4b4f57}a:hover{color:#17181b}
+.ey{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#646871}
+.kc{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:#fff;border:1px solid #cfcbc1;box-shadow:0 1.5px 0 #b9b5ab;font:700 11px/1 Consolas,"Cascadia Mono",monospace;color:#26282d}
+.pill{display:inline-flex;align-items:center;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 12px;border:1px solid #d9d6ce;border-radius:9px;background:#fff;color:#17181b;font-weight:500;font-size:13.5px}
+.primary{background:#b85500;border-color:#b85500;color:#fff}
+.card{background:#fff;border:1px solid #d9d6ce;border-radius:12px}
+.mono{font-family:Consolas,"Cascadia Mono",monospace}
+.step{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:start;padding:10px 14px;border-top:1px solid #eeece6;font-size:13.5px;line-height:1.45}
+.step:first-of-type{border-top:0}
+.n{width:22px;height:22px;border-radius:99px;display:grid;place-items:center;font-size:11.5px;font-weight:700;border:1.5px solid #cfcbc1;color:#4b4f57}
+.pf{display:inline-flex;gap:4px}
+.pf button{min-height:26px;padding:0 8px;font-size:12px}
+.who{font-size:12px;color:#646871}
+</style>
+</helmet>
+<div style="width:1280px;height:900px;box-sizing:border-box;background:#eceae5;color:#17181b;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;display:flex;flex-direction:column;overflow:hidden">
+  <div style="display:flex;align-items:center;gap:14px;padding:12px 24px;background:#fff;border-bottom:1px solid #d9d6ce">
+    <a href="#" aria-label="Back to the board" style="display:inline-flex;align-items:center;gap:6px;border:1px solid #d9d6ce;border-radius:8px;padding:5px 9px;background:#eceae5;text-decoration:none"><span>←</span><span class="kc">Esc</span></a>
+    <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+      <span class="mono" style="background:#e7effd;color:#1c5bc9;border-radius:6px;padding:0 6px;font-weight:700;font-size:11.5px">SHOP-155</span>
+      <span style="font-size:17px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Save cart for signed-out users</span>
+      <span class="pill" style="background:#e7effd;color:#1c5bc9">Ready to try</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#646871"><span class="kc">←</span><span>2 of 4</span><span class="kc">→</span></div>
+  </div>
+
+  <!-- The pinned "now": Claude is done; the next move is yours and this page says exactly what it is. -->
+  <div style="display:flex;align-items:center;gap:12px;padding:10px 24px;background:#e7effd;border-bottom:1px solid #b9cdf2">
+    <span style="width:8px;height:8px;border-radius:99px;background:#1c5bc9"></span>
+    <span style="font-weight:600;color:#1c5bc9">Claude finished · 3 files in 2 repos · 14 tests passed · now test it yourself</span>
+    <span style="flex:1"></span>
+    <button class="btn"><span class="kc">⇧D</span>Diffs</button>
+    <button class="btn"><span class="kc">g</span>Its tab</button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) 420px;flex:1;min-height:0">
+    <!-- The page is the test bench: this card's own apps on their own ports, and the steps to prove it, written for someone who did not write the code. -->
+    <div style="display:flex;flex-direction:column;gap:16px;padding:20px 28px;overflow:hidden;background:#f4f3ef;border-right:1px solid #d9d6ce">
+      <section style="display:flex;flex-direction:column;gap:8px">
+        <div class="ey">This card’s apps · its own worktrees, its own ports</div>
+        <div class="card" style="display:flex;flex-direction:column;font-size:13.5px">
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px"><span style="width:8px;height:8px;border-radius:99px;background:#15703d"></span><span style="font-weight:600">web-app</span><a href="#" class="mono" style="font-size:12.5px;color:#b85500;text-decoration:underline;text-underline-offset:2px">http://localhost:4312</a><span style="color:#646871;font-size:12.5px">up 9m · talks to payments-api on :4313</span><button class="btn" style="margin-left:auto;min-height:28px;padding:0 9px;font-size:12.5px"><span class="kc">o</span>Open</button></div>
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid #eeece6"><span style="width:8px;height:8px;border-radius:99px;background:#15703d"></span><span style="font-weight:600">payments-api</span><a href="#" class="mono" style="font-size:12.5px;color:#b85500;text-decoration:underline;text-underline-offset:2px">http://localhost:4313</a><span style="color:#646871;font-size:12.5px">up 9m · test data seeded</span><button class="btn" style="margin-left:auto;min-height:28px;padding:0 9px;font-size:12.5px"><span class="kc">t</span>Restart</button></div>
+        </div>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:8px;flex:1;min-height:0">
+        <div style="display:flex;align-items:baseline;justify-content:space-between"><div class="ey">How to test this card</div><span style="font-size:12.5px;color:#646871">from the plan and the ticket’s criteria · 1 of 4 checked</span></div>
+        <div class="card" style="display:flex;flex-direction:column;overflow:hidden">
+          <div class="step"><span class="n" style="background:#e3f4ea;border-color:#15703d;color:#15703d">✓</span><div>Sign out, open <span class="mono">:4312</span>, add two items to the cart.</div><div class="pf"><span style="font-size:12px;color:#15703d;font-weight:600;align-self:center">passed</span></div></div>
+          <div class="step" style="background:#fff8ee"><span class="n" style="border-color:#945000;color:#945000">2</span><div>Close the tab. Open <span class="mono">:4312</span> again: both items are still in the cart.</div><div class="pf"><button class="btn"><span class="kc">p</span>Pass</button><button class="btn"><span class="kc">f</span>Fail</button></div></div>
+          <div class="step"><span class="n">3</span><div>Sign in as the demo buyer. The guest items join the account’s cart with no duplicates.</div><div class="pf"></div></div>
+          <div class="step"><span class="n">4</span><div>Attach a gift card to a line before signing in; it is still attached after.</div><div class="pf"></div></div>
+          <div style="padding:8px 14px;border-top:1px solid #eeece6;font-size:12.5px;color:#646871">A fail asks what you saw and sends it to Claude as a message, with the step and the URL.</div>
+        </div>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:8px">
+        <div class="ey">Verify in the team’s apps · coming later</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" style="color:#646871"><span class="kc">v</span>Look up a field</button>
+          <button class="btn" style="color:#646871">Add fields to the record</button>
+          <button class="btn" style="color:#646871">Create a test loan from this card</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- The chat, a column wide: a fail lands here as your message; Claude's answer comes back here. -->
+    <div style="display:flex;flex-direction:column;min-height:0;background:#fff">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid #d9d6ce"><span style="font-weight:700;font-size:14px">Chat</span><span style="font-size:12px;color:#646871">live from the terminal tab</span></div>
+      <div style="flex:1;overflow:hidden;padding:16px 18px;display:flex;flex-direction:column;gap:12px;font-size:13.5px;line-height:1.5">
+        <div><div class="who">Claude · 14:21 · ran pnpm vitest run src/cart · 14 passed</div>Done. The guest cart persists for 30 days and merges on sign-in with gift cards attached. Both apps are up on this card’s ports if you want to try it.</div>
+        <div><div class="who">You · 14:24 · step 1</div>Passed.</div>
+        <div style="display:flex;align-items:center;gap:8px;color:#15703d;font-weight:600;font-size:13px"><span style="width:8px;height:8px;border-radius:99px;background:#15703d"></span>Idle · waiting for you</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;padding:12px 18px;border-top:1px solid #d9d6ce">
+        <div style="flex:1;border:1px solid #d9d6ce;border-radius:10px;padding:9px 12px;color:#646871;font-size:13.5px;min-height:40px">Type to SHOP-155’s terminal…</div>
+        <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">Enter</span>Send</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:8px;padding:12px 24px;background:#fff;border-top:1px solid #d9d6ce">
+    <button class="btn"><span class="kc">c</span>Add context</button>
+    <a href="#" style="font-size:12.5px;color:#b85500;text-decoration:underline;text-underline-offset:2px;margin-left:10px">steps, model, session, worktrees (details)</a>
+    <span style="flex:1"></span>
+    <button class="btn" style="color:#4b4f57"><span class="kc">Del</span>Remove card</button>
+    <button class="btn primary"><span class="kc" style="background:transparent;border-color:currentColor;color:#fff;box-shadow:none">s</span>Ship · open a PR</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>
