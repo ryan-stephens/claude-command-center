@@ -270,7 +270,7 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
             <span className="min-w-0 truncate">{label}</span>
             <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" className={`shrink-0 text-faint transition-transform ${open ? 'rotate-180' : ''}`}><path d="M3.5 6l4.5 4.5L12.5 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
-          <span className="truncate text-[12px] text-faint">{open ? '↑ ↓ then Enter · Esc closes' : 'Space opens the list'}</span>
+          {open && <span className="truncate text-[12px] text-faint">↑ ↓ then Enter · Esc closes</span>}
         </div>
         {open && (
           <div role="listbox" aria-label="Saved prompts" className="absolute left-3 right-3 top-[46px] z-10 flex max-h-[320px] flex-col overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-[0_24px_60px_rgba(0,0,0,.25)]">
