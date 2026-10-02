@@ -12,7 +12,7 @@ import { renderPrompt } from '../../shared/prompts.ts';
 import { SOURCE_NAME } from '../../shared/tickets.ts';
 import { composerKey, pickOption, togglePacketRow, type Composer, type GoRow, type SourceTab } from '../line-model.ts';
 import { leaveComposer, startWork, updateComposer } from '../line-keys.ts';
-import { addTypedFolder, browseFolder, choosePromptAt, closePicker, develop, openPicker, openPromptList, openPromptsDialog, pickAt, pickerList, saveAsPrompt, singlePick, switchLook, toggleTicketDetails, typeInPicker, writeWithClaude } from '../simple-keys.ts';
+import { addTypedFolder, browseFolder, choosePromptAt, closePicker, develop, openPicker, openPromptList, openPromptsDialog, pickAt, pickerList, saveAsPrompt, singlePick, toggleTicketDetails, typeInPicker, writeWithClaude } from '../simple-keys.ts';
 import type { Ticket } from '../../shared/tickets.ts';
 import { chips, followPrompt, howFacts, howRows, KIND_OPTIONS, promptContext, promptLabel, promptRows, simpleOf, withSimple, type Chip, type SimpleBlock } from '../simple-model.ts';
 import { get, useStore } from '../store.ts';
@@ -58,7 +58,6 @@ export function NewCardSimple() {
           {ws && <span className="text-[13px] text-faint">{ws.name} lane</span>}
         </div>
         <div className="flex items-center gap-4 text-[13px] text-faint">
-          <button className="hover:text-ink" onClick={switchLook} title="Shift+L">Full look</button>
           <button className="flex items-center gap-1.5 hover:text-ink" onClick={leaveComposer}>Cancel <Key k="Esc" size="sm" /></button>
         </div>
       </div>
