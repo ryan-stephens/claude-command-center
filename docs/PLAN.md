@@ -1906,3 +1906,7 @@ Versioning: `updatedAt` is kept, nothing else.
 They are two different things, and the preview now says so by putting them in the order they arrive: **1 · The context, first** (what the SessionStart hook returns, before any message) with its token count, then **2 · Then the opening message** (the prompt `claude` starts with: the first user turn) with its own count. Before, the message sat above the hook's text as if it were separate from "exactly what Claude receives", and in the wrong order. `NewCardSimple.tsx` only; the full look's preview is unchanged.
 
 **Verified:** `pnpm typecheck`; `walk-simple.cjs` (30, with a new check that the hook's context comes before the message), screenshot looked at.
+
+## 67. Ticket (change)
+
+2026-10-01, the owner: "where the title says 'TICKET' can you move the change ticket link on the right side to just be (change) next to the 'TICKET' header so its TICKET (change) with the change being easily visible that it's clickable link". Done as said: the heading reads *Ticket (change)*, the link in the accent colour and underlined, the same `Enter` on the block. `walk-replace.cjs` clicks it by its new name.

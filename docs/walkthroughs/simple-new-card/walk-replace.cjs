@@ -33,7 +33,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(400);
   check('ticket picked', /Cart badge/.test(await region.locator('h1').textContent()));
   // Change ticket.
-  await region.getByRole('button', { name: 'Change ticket' }).click();
+  await region.getByRole('button', { name: '(change)' }).click();
   await sleep(400);
   const popup = page.getByRole('group', { name: 'Change the ticket' });
   check('popup titled Change the ticket, says pick one', (await popup.isVisible()) && /Pick one/.test(await popup.innerText()));

@@ -117,7 +117,7 @@ function TicketBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; o
     const links = c.packet.ticket.filter((i) => i.kind === 'linked').length;
     return (
       <section onMouseDown={onFocus} className="flex flex-col gap-2">
-        <div className="flex items-baseline justify-between"><div className="eyebrow">Ticket</div><button className="text-[13px] text-faint hover:text-ink" onClick={() => openPicker('replace')}>Change ticket</button></div>
+        <div className="flex items-baseline gap-2"><div className="eyebrow">Ticket</div><button className="text-[12.5px] text-acc underline decoration-acc/50 underline-offset-2 hover:text-ink hover:decoration-ink" onClick={() => openPicker('replace')} title="Enter">(change)</button></div>
         <div className={`flex flex-col gap-2.5 rounded-xl border border-line bg-surface px-5 py-4 ${focused ? 'blk-focus' : ''}`}>
           <div className="flex items-center gap-2.5 text-[13px] text-faint">
             <TicketKey k={t.key} source={t.source} /><span>{t.status}</span><span>·</span><span>{SOURCE_NAME[t.source]}{t.demo ? ' (demo)' : ''}</span>
