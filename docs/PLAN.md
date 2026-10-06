@@ -2254,3 +2254,29 @@ Not planned: Claude Code feature parity for its own sake; any public deployment.
 **Found on the way** (not speed, recorded for later): when the app stops a card's session (`q.close()`, a worktree removal, a restart), the CLI's MCP servers (started through `npx` / `cmd`) outlive it on Windows. They keep the card's worktree as their working folder, so the folder can't be deleted (*EPERM*), and they pile up: the machine had dozens of orphaned `mcp-server-trello` processes going back to 9/28. The walk stops its card's session before restarting the server and retries the removal; it doesn't fix the cause.
 
 **Verified:** `pnpm typecheck`; `walk-perf.cjs` end to end three times (22 checks pass; the numbers above; it fails on the open-card typing budget, as it should until that is fixed).
+
+## 96. The chat doesn't redraw itself per token; no AudioContext on the first key
+
+2026-10-06. The first fix of the speed push (§94), the one §95 measured over budget: typing while the open card streams.
+
+**Why it was slow.** `Chat` (and `SessionView`) read the streaming partial from the store, so every token re-rendered the whole chat: all 300 transcript items, react-markdown for every message, and the partial itself parsed again from its start. The main thread was 56 to 59 % busy with one card streaming at 40 deltas a second, and a key waited for it.
+
+**What changed.**
+- **`Streaming`** (`web/components/Transcript.tsx`): the text Claude is writing is its own component, the only one that reads `partials[id]`; `Chat` and `SessionView` only ask whether there is one. It splits the text into blocks (`web/stream-md.ts`, `streamBlocks`: blank lines outside code fences); finished blocks are memoised and parsed once, only the last one again as it grows. It keeps the chat at the bottom through an `onGrow` callback rather than the chat's own effect on the partial.
+- **`Transcript` is memoised**, and so are its parts: blocks and results are computed once per items array, `Item` renders again only for its own item, `Steps` only when its tools or their results change (`sameSteps`; `toBlocks` makes new arrays each time). The chat's "new since you last looked" halves are memoised slices.
+- **One store update per frame for partials** (`web/ws.ts`, `queuePartial`): deltas that arrive within a frame are applied together (a 50 ms timer stands in when the tab is hidden and gets no frames). A clear goes at once, so the landed message and the partial never show together.
+- **The chimes are WAV clips** (`web/chime.ts`, `chimeWav`, the same notes and envelope rendered to samples) played by an `<audio>` element. The `AudioContext` the first key made (so a chime could play later) blocked the page for **~200 ms** on Windows: the first key pressed after every load (found by the walk's long-task log, placed with its phase marks). Made lazily at the first chime, it froze the page then instead; an `<audio>` element decodes and plays off the main thread. Checked: the clip decodes and plays in Chromium (0.42 s).
+
+**After** (same machine and walk as §95):
+
+| | Before | After |
+|---|---|---|
+| A key → painted while the open card streams (p95) | 18 to 26 ms (max 34 to 62) | **10 ms** (max 11) |
+| Main thread while the open card streams | 56 to 59 % | **20 to 22 %** |
+| Long tasks in the whole walk (seeded part) | one of ~200 ms (the first key) | **none** |
+| Key → painted, nothing streaming / 3 others streaming | 5 / 9 ms | 5 / 9 ms |
+| Card switch cold / warm (median) | 38 to 43 / 28 to 35 ms | 41 / 29 ms |
+
+The other numbers didn't move, as expected: the bytes are §97's.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (340: `streamBlocks` on paragraphs, an unfinished blank line, fences open and closed, and that the blocks rejoin to the text; `chimeWav`'s header, length and peak). `walk-perf.cjs --no-real`: all within budget. `walk-card.cjs` 59/59 light and 59/59 dark (the open card in every state, the partial included).

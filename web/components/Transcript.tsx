@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { memo, useLayoutEffect, useMemo, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { TranscriptItem } from '../../shared/protocol.ts';
 import { diffStats, lineDiff } from '../diff.ts';
 import { toolStep, type StepIcon } from '../plain.ts';
+import { useStore } from '../store.ts';
+import { streamBlocks } from '../stream-md.ts';
 import { DiffView } from './Approval.tsx';
 import { Icon, type IconName } from './ui.tsx';
 
@@ -31,19 +33,46 @@ const STEP_ICON: Record<StepIcon, IconName> = { read: 'read', edit: 'edit', run:
 /** Long runs show the last few steps; the rest fold away. */
 const SHOW_LAST = 4;
 
-export function Transcript({ items, cwd, expand }: { items: TranscriptItem[]; cwd?: string; expand: boolean }) {
-  const results = new Map<string, Result>();
-  for (const it of items) if (it.kind === 'tool_result') results.set(it.toolUseId, it);
+/**
+ * The conversation. Memoised (§96): it renders again only when its items change, and each message
+ * and run of steps only when its own items do, so a streaming reply or a card's change elsewhere
+ * doesn't re-render 300 messages.
+ */
+export const Transcript = memo(function Transcript({ items, cwd, expand }: { items: TranscriptItem[]; cwd?: string; expand: boolean }) {
+  const results = useMemo(() => {
+    const m = new Map<string, Result>();
+    for (const it of items) if (it.kind === 'tool_result') m.set(it.toolUseId, it);
+    return m;
+  }, [items]);
+  const blocks = useMemo(() => toBlocks(items), [items]);
   return (
     <>
-      {toBlocks(items).map((b) => (b.kind === 'steps'
+      {blocks.map((b) => (b.kind === 'steps'
         ? <Steps key={b.key} tools={b.tools} results={results} cwd={cwd} expand={expand} />
         : <Item key={b.item.uuid} it={b.item} />))}
     </>
   );
+});
+
+/** One finished block of a streaming reply: parsed once. */
+const StreamBlock = memo(function StreamBlock({ text }: { text: string }) {
+  return <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>;
+});
+
+/**
+ * What Claude is writing right now, word by word, until the message lands (§96). Its own component,
+ * so a token re-renders this and not the transcript; finished blocks are parsed once and only the
+ * last is parsed again. `onGrow` runs after each change (the chat keeps to the bottom).
+ */
+export function Streaming({ id, onGrow }: { id: string; onGrow?: () => void }) {
+  const text = useStore((s) => s.partials[id] ?? '');
+  const blocks = useMemo(() => streamBlocks(text), [text]);
+  useLayoutEffect(() => { onGrow?.(); }, [text, onGrow]);
+  if (!text) return null;
+  return <div className="md leading-relaxed" aria-live="off" data-partial>{blocks.map((b, i) => <StreamBlock key={i} text={b} />)}</div>;
 }
 
-function Item({ it }: { it: Exclude<TranscriptItem, Tool | Result> }) {
+const Item = memo(function Item({ it }: { it: Exclude<TranscriptItem, Tool | Result> }) {
   switch (it.kind) {
     case 'user':
       return <div className="ml-auto max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-acc-soft px-4 py-2.5">{it.text}</div>;
@@ -61,9 +90,14 @@ function Item({ it }: { it: Exclude<TranscriptItem, Tool | Result> }) {
     case 'notice':
       return <div className="flex items-center gap-2 text-[13px] text-calm"><Icon name="bg" size={14} />{it.text.replace(/^⧉\s*/, '')}</div>;
   }
-}
+});
 
-function Steps({ tools, results, cwd, expand }: { tools: Tool[]; results: Map<string, Result>; cwd?: string; expand: boolean }) {
+type StepsProps = { tools: Tool[]; results: Map<string, Result>; cwd?: string; expand: boolean };
+/** The same steps with the same results: nothing to draw again (toBlocks makes new arrays each time). */
+const sameSteps = (a: StepsProps, b: StepsProps) => a.cwd === b.cwd && a.expand === b.expand && a.tools.length === b.tools.length
+  && a.tools.every((t, i) => t === b.tools[i] && a.results.get(t.toolUseId) === b.results.get(t.toolUseId));
+
+const Steps = memo(function Steps({ tools, results, cwd, expand }: StepsProps) {
   const [all, setAll] = useState(false);
   const hidden = all || expand ? 0 : Math.max(0, tools.length - SHOW_LAST);
   const failed = tools.filter((t) => results.get(t.toolUseId)?.isError).length;
@@ -77,7 +111,7 @@ function Steps({ tools, results, cwd, expand }: { tools: Tool[]; results: Map<st
       {tools.slice(hidden).map((t) => <Step key={t.uuid} t={t} r={results.get(t.toolUseId)} cwd={cwd} expand={expand} />)}
     </div>
   );
-}
+}, sameSteps);
 
 function Step({ t, r, cwd, expand }: { t: Tool; r?: Result; cwd?: string; expand: boolean }) {
   const [open, setOpen] = useState(false);

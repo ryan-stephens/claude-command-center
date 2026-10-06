@@ -4,18 +4,26 @@
 import type { Card } from '../shared/cards.ts';
 import type { SessionStatus, SessionSummary } from '../shared/protocol.ts';
 import { activeSession, closeComposer, get, markRead, set } from './store.ts';
+import { chimeWav } from './chime.ts';
 
 type Kind = 'needs' | 'done';
 
-let audio: AudioContext | null = null;
+/** Each chime as a WAV clip, made the first time it plays. */
+const clips: Partial<Record<Kind, string>> = {};
 let armed = false;
+/** The page has had a key or a click: audio may play from now on (the browser's autoplay rule). */
+let gestured = false;
 
-/** Browsers only allow audio and the notification prompt after a user gesture, so arm on the first key or click. */
+/**
+ * Browsers only allow audio and the notification prompt after a user gesture, so arm on the first
+ * key or click. The chimes are WAV clips an <audio> element plays (§96): making an AudioContext
+ * blocked the page for ~200 ms on Windows, on the first key or the first chime.
+ */
 export function armOnFirstGesture(): void {
   if (armed) return;
   armed = true;
   const arm = () => {
-    audio ??= new AudioContext();
+    gestured = true;
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission();
     window.removeEventListener('keydown', arm, true);
     window.removeEventListener('pointerdown', arm, true);
@@ -51,22 +59,10 @@ function signal(kind: Kind, s: SessionSummary): void {
 }
 
 function chime(kind: Kind): void {
-  if (!audio) return;
-  if (audio.state === 'suspended') audio.resume();
+  if (!gestured) return;
   // Two rising notes for "needs you", one soft note for "done".
-  const notes = kind === 'needs' ? [660, 880] : [520];
-  notes.forEach((freq, i) => {
-    const t = audio!.currentTime + i * 0.12;
-    const osc = audio!.createOscillator();
-    const gain = audio!.createGain();
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(kind === 'needs' ? 0.2 : 0.1, t + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-    osc.connect(gain).connect(audio!.destination);
-    osc.start(t);
-    osc.stop(t + 0.3);
-  });
+  clips[kind] ??= URL.createObjectURL(new Blob([kind === 'needs' ? chimeWav([660, 880], 0.2) : chimeWav([520], 0.1)], { type: 'audio/wav' }));
+  new Audio(clips[kind]).play().catch(() => { /* no sound device, or not allowed yet */ });
 }
 
 let openFromNotification: (id: string) => void = () => {};

@@ -21,6 +21,33 @@ const pendingRequests = new Map<string, { resolve: (msg: ServerMsg) => void; rej
 /** The server said hello on this connection (servers from before the handshake never do). */
 let greeted = false;
 
+/**
+ * Streaming text waits for the next frame (§96): one store update per frame however many deltas
+ * arrived, rather than one per token for every component that reads the store. A clear goes at once
+ * (its message is landing in the transcript).
+ */
+const pendingPartials = new Map<string, string>();
+let partialTimer: ReturnType<typeof setTimeout> | undefined;
+function flushPartials(): void {
+  partialTimer = undefined;
+  if (!pendingPartials.size) return;
+  set({ partials: { ...get().partials, ...Object.fromEntries(pendingPartials) } });
+  pendingPartials.clear();
+}
+function queuePartial(id: string, text: string): void {
+  if (!text) {
+    pendingPartials.delete(id);
+    if (get().partials[id]) set({ partials: { ...get().partials, [id]: '' } });
+    return;
+  }
+  pendingPartials.set(id, text);
+  // The next frame; a hidden tab gets no frames, so a timer stands in.
+  if (partialTimer === undefined) {
+    partialTimer = setTimeout(flushPartials, 50);
+    requestAnimationFrame(() => { if (partialTimer !== undefined) { clearTimeout(partialTimer); flushPartials(); } });
+  }
+}
+
 const OUTDATED = 'The cc-control server is older than this page, so it ignores this. Restart it: stop it and run pnpm start.';
 
 export function connect(): void {
@@ -30,6 +57,7 @@ export function connect(): void {
     retryMs = 1000;
     // The server re-sends every pending approval on connect; anything we still hold is stale.
     greeted = false;
+    pendingPartials.clear();
     set({ connected: true, lastError: null, permissions: {}, partials: {}, activity: {}, outdated: null });
     const { openId } = get();
     if (openId) {
@@ -353,7 +381,7 @@ function receive(msg: ServerMsg): void {
       set({ todos: { ...get().todos, [msg.id]: msg.todos } });
       return;
     case 'session.partial':
-      set({ partials: { ...get().partials, [msg.id]: msg.text } });
+      queuePartial(msg.id, msg.text);
       return;
     case 'permission.request': {
       set({ permissions: { ...get().permissions, [msg.request.reqId]: msg.request } });

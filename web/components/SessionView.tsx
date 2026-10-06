@@ -1,6 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FileHit, ImageAttachment, ModelChoice, SessionSummary, SlashInfo, Todo, TranscriptItem, Workspace } from '../../shared/protocol.ts';
 import { repoName, samePath, workspacesFor } from '../../shared/workspaces.ts';
 import { turnClock } from '../activity-label.ts';
@@ -16,7 +14,7 @@ import { searchFiles, send } from '../ws.ts';
 import { ActivityBar, useNow } from './ActivityBar.tsx';
 import { ApprovalCard } from './Approval.tsx';
 import { NumPad } from './NumPad.tsx';
-import { Transcript } from './Transcript.tsx';
+import { Streaming, Transcript } from './Transcript.tsx';
 import { Icon, Key, Pill, WsBadge } from './ui.tsx';
 
 const EMPTY: TranscriptItem[] = [];
@@ -47,7 +45,8 @@ export function SessionView() {
   const session = useStore((s) => s.sessions.find((x) => x.id === id));
   const items = useStore((s) => s.transcripts[id] ?? EMPTY);
   const loaded = useStore((s) => id in s.transcripts);
-  const partial = useStore((s) => s.partials[id] ?? '');
+  // Whether Claude is writing right now; what it writes is Streaming's, so a token doesn't re-render the view (§96).
+  const writing = useStore((s) => Boolean(s.partials[id]));
   const permission = useStore((s) => Object.values(s.permissions).find((p) => p.sessionId === id));
   const zone = useStore((s) => (activeSession(s) === id ? s.zone : null));
   const expandTools = useStore((s) => s.expandTools);
@@ -60,10 +59,11 @@ export function SessionView() {
   useLayoutEffect(() => { stick.current = true; }, [id]);
 
   // Follow the output while the user is at the bottom.
-  useLayoutEffect(() => {
+  const toBottom = useCallback(() => {
     const el = scrollRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [items, partial, permission]);
+  }, []);
+  useLayoutEffect(toBottom, [items, permission, toBottom]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -92,9 +92,9 @@ export function SessionView() {
             className="min-h-0 flex-1 overflow-y-auto outline-none"
           >
             <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-5 md:px-6">
-              {items.length === 0 && !partial && <p className="text-faint">{loaded ? 'No messages yet. Tell Claude what you want below.' : 'Loading the conversation…'}</p>}
+              {items.length === 0 && !writing && <p className="text-faint">{loaded ? 'No messages yet. Tell Claude what you want below.' : 'Loading the conversation…'}</p>}
               <Transcript items={items} cwd={session?.cwd} expand={expandTools} />
-              {partial && <div className="md leading-relaxed"><Markdown remarkPlugins={[remarkGfm]}>{partial}</Markdown></div>}
+              <Streaming id={id} onGrow={toBottom} />
               {permission && <ApprovalCard p={permission} cwd={session?.cwd} />}
             </div>
           </div>

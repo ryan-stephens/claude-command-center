@@ -150,6 +150,8 @@ async function timedKey(page, key, ready, timeout = 20000) {
   await page.waitForFunction(() => window.__res !== undefined, null, { timeout });
   return page.evaluate(() => window.__res);
 }
+/** A named point in the walk, in the page's clock, so long tasks can be placed. */
+const mark = (page, name) => page.evaluate((name) => { (window.__marks ??= []).push({ name, at: performance.now() }); }, name);
 const openLabel = (page) => page.evaluate(() => document.querySelector('section[data-card]')?.getAttribute('aria-label') ?? null);
 /** The open card is another than `from`, and its chat shows its transcript's last message. */
 const chatOf = (from) => `() => { const s = document.querySelector('section[data-card]'); if (!s || s.getAttribute('aria-label') === ${JSON.stringify(from)}) return false; const md = s.querySelectorAll('[data-chat] .md'); const last = md[md.length - 1]; return Boolean(last && /Both apps are up|survives a closed tab/.test(last.textContent)); }`;
@@ -228,8 +230,10 @@ async function wsWindow(page, fn) {
 
   await page.reload();
   await page.waitForFunction(() => window.__perf.msgs > 5);
+  await mark(page, 'page load');
   await sleep(800);
   info('page load: bytes over the WebSocket', await page.evaluate(() => window.__perf.bytes), `(${await page.evaluate(() => Object.entries(window.__perf.byType).sort((a, b) => b[1].bytes - a[1].bytes).slice(0, 4).map(([t, v]) => `${t} ${v.bytes}`).join(', '))})`);
+  await mark(page, 'lane 1');
   await page.keyboard.press('1');
   await sleep(300);
   await page.screenshot({ path: path.join(OUT, '01-board.png') });
@@ -256,18 +260,23 @@ async function wsWindow(page, fn) {
   await page.keyboard.press('Escape');
   await sleep(200);
   const cold = []; const warm = [];
+  await mark(page, 'first card open');
   let from = await openLabel(page);
   let t = await timedKey(page, 'Enter', chatOf(from));
   cold.push(t);
   const first = await openLabel(page);
   check('Enter opens a card on its chat', Boolean(first), first ?? '');
   await page.screenshot({ path: path.join(OUT, '02-card.png') });
+  await mark(page, '→ cold');
   for (let i = 0; i < 5; i++) { from = await openLabel(page); cold.push(await timedKey(page, 'ArrowRight', chatOf(from))); await sleep(150); }
   for (let i = 0; i < 5; i++) { from = await openLabel(page); warm.push(await timedKey(page, 'ArrowLeft', chatOf(from))); await sleep(150); }
   const switchLong = await page.evaluate(() => window.__perf.long.map((l) => l.ms));
   measure(`Enter / → to a card, cold (${SIZE} items), median`, median(cold), BUDGET.switchCold, `(all: ${cold.map(Math.round).join(', ')})`);
   measure(`← to a card, warm (${SIZE} items), median`, median(warm), BUDGET.switchWarm, `(all: ${warm.map(Math.round).join(', ')})`);
   info('longest task so far', r1(max(switchLong)));
+  // Where the long tasks were: against the walk's phase marks.
+  const marks = await page.evaluate(() => ({ long: window.__perf.long.filter((l) => l.ms > 50), marks: window.__marks ?? [] }));
+  for (const l of marks.long) info('  a long task', `${Math.round(l.ms)} ms`, `after ${[...marks.marks].reverse().find((m) => m.at <= l.at)?.name ?? 'the start'} (+${Math.round(l.at - ([...marks.marks].reverse().find((m) => m.at <= l.at)?.at ?? 0))} ms)`);
 
   // ---- A key in the message box → painted ----
   const typeInto = async (text) => {

@@ -4,7 +4,7 @@
 // and the chat and stays open from card to card. Nothing else is on the page. Keys: web/line-keys.ts
 // (drawerKeys); the legend and ? list them.
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { askOf, cardRepos, fmtK, itemTokens, memoryPct, modelName, ownFolders, packetText, reachable as canReach, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
@@ -24,7 +24,7 @@ import { cardChanges, send, stackPlan } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { RunLog } from './RunLog.tsx';
 import { KindPill, useExpandKey } from './TicketLine.tsx';
-import { Transcript } from './Transcript.tsx';
+import { Streaming, Transcript } from './Transcript.tsx';
 import { Icon, Key, Pill, TicketKey, type IconName } from './ui.tsx';
 
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
@@ -209,8 +209,8 @@ function Chat({ card }: { card: Card }) {
   const ref = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const items = useStore((s) => (card.sessionId ? s.transcripts[card.sessionId] : undefined));
-  // What Claude is writing right now (§93), word by word, until the message lands in the items.
-  const partial = useStore((s) => (card.sessionId ? s.partials[card.sessionId] ?? '' : ''));
+  // Whether Claude is writing right now (§93); what it writes is Streaming's, so a token doesn't re-render the chat (§96).
+  const writing = useStore((s) => Boolean(card.sessionId && s.partials[card.sessionId]));
   const count = items?.length ?? 0;
   const [seen, setSeen] = useState(() => loadSeen()[card.id] ?? 0);
   const latest = useRef(count);
@@ -224,10 +224,14 @@ function Chat({ card }: { card: Card }) {
     pinned.current = true;
     return () => saveSeen(card.id, latest.current);
   }, [card.id]);
-  useEffect(() => {
+  const toBottom = useCallback(() => {
     const el = ref.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [count, card.id, partial]);
+  }, []);
+  useLayoutEffect(toBottom, [count, card.id, toBottom]);
+  // The two sides of the "new since you last looked" line, the same arrays while nothing changes (the transcript is memoised).
+  const before = useMemo(() => items?.slice(0, seen), [items, seen]);
+  const since = useMemo(() => items?.slice(seen), [items, seen]);
   const act = cardActivity(card);
   const now = useNow(act.state === 'go');
   const mark = seen > 0 && seen < count;
@@ -238,13 +242,13 @@ function Chat({ card }: { card: Card }) {
         {!card.sessionId && !booting(card) && <p className="text-sm text-faint">The chat shows once the session has started and linked to this card.</p>}
         {items && (mark
           ? <>
-            <Transcript items={items.slice(0, seen)} cwd={card.cwd} expand={false} />
+            <Transcript items={before!} cwd={card.cwd} expand={false} />
             <div className="flex items-center gap-3 py-1 text-[12.5px] text-faint" role="separator" aria-label="New since you last looked"><span className="grow border-t border-line" />new since you last looked<span className="grow border-t border-line" /></div>
-            <Transcript items={items.slice(seen)} cwd={card.cwd} expand={false} />
+            <Transcript items={since!} cwd={card.cwd} expand={false} />
           </>
           : <Transcript items={items} cwd={card.cwd} expand={false} />)}
-        {partial && <div className="md leading-relaxed" aria-live="off" data-partial><Markdown remarkPlugins={[remarkGfm]}>{partial}</Markdown></div>}
-        {card.sessionId && items && !items.length && !partial && <p className="text-sm text-faint">Nothing written yet.</p>}
+        {card.sessionId && <Streaming id={card.sessionId} onGrow={toBottom} />}
+        {card.sessionId && items && !items.length && !writing && <p className="text-sm text-faint">Nothing written yet.</p>}
         {card.live && !askOf(card) && !booting(card) && (
           <div className={`flex items-center gap-2 text-[13px] font-semibold ${act.state === 'go' ? 'text-busy' : act.state === 'off' ? 'text-faint' : act.state === 'bad' ? 'text-attn' : 'text-ok'}`}>
             {act.state === 'go' ? <span className="spinner" /> : <span className={`h-2 w-2 rounded-full ${act.state === 'off' ? 'bg-faint' : act.state === 'bad' ? 'bg-attn' : 'bg-ok'}`} />}
