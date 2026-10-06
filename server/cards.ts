@@ -347,7 +347,8 @@ interface CardOpts {
   inTerminal?: boolean;
   /** Each hook event a card's app session reports, after it is applied (the server's timing lines). */
   onEvent?: (card: Card, event: string) => void;
-  changed: () => void;
+  /** A card changed (it, when one did: the page gets just that card), or several, or one was deleted (all of them). */
+  changed: (card?: Card) => void;
 }
 
 /**
@@ -395,7 +396,7 @@ export class CardService {
   }
 
   get(id: string): Card | undefined {
-    return this.store.loadCards().find((c) => c.id === id);
+    return this.store.loadCard(id);
   }
 
   /** Change a card and tell the page (Ship's steps and PR). Returns the card as saved. */
@@ -414,7 +415,7 @@ export class CardService {
 
   private save(card: Card): void {
     this.store.saveCard(card);
-    this.opts.changed();
+    this.opts.changed(card);
   }
 
   private step(card: Card, text: string, state: BootStep['state'] = 'ok'): void {
@@ -489,7 +490,7 @@ export class CardService {
         this.store.deleteCard(card.id);
         throw e;
       }
-      this.opts.changed();
+      this.opts.changed(card);
       return card;
     }
     const claudeArgs = [...this.claudeArgs(card), ...others.flatMap((r) => ['--add-dir', r])];
@@ -497,7 +498,7 @@ export class CardService {
     this.step(card, `Opened a Windows Terminal tab in ${card.cwd}${others.length ? ` with ${others.length} more repo${others.length === 1 ? '' : 's'}` : ''}`);
     this.step(card, 'Waiting for the session to start', 'go');
     this.store.saveCard(card, token);
-    this.opts.changed();
+    this.opts.changed(card);
     this.waits.set(card.id, setTimeout(() => this.noWord(card.id), HOOK_WAIT_MS));
     return card;
   }
@@ -592,7 +593,7 @@ export class CardService {
   /** A card made outside start (a seeded one, §80) with a token, so a launcher or hook can prove itself to it on a test server. */
   putWithToken(card: Card, token: string): void {
     this.store.saveCard(card, token);
-    this.opts.changed();
+    this.opts.changed(card);
   }
 
   /** With the setting on, new worktrees are marked trusted so the tab doesn't stop at Claude Code's prompt. A problem is a boot line, never a failed start. */

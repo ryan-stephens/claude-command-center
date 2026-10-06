@@ -19,6 +19,7 @@ import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, CARDS_IN_TERMINAL, cleanDraft, focusTab, userModel, writeHookSettings } from './cards.ts';
 import { cleanSeed, seedAllowed, seedCard, seedTranscript } from './seed.ts';
 import { fakeTurns } from './perf-stream.ts';
+import { PartialFanout } from './partial-stream.ts';
 import { answersComplete, answerText, questionKeys, readAnswers } from '../shared/questions.ts';
 import { timingSafeEqual } from 'node:crypto';
 import { ChannelService } from './channel.ts';
@@ -60,6 +61,14 @@ function broadcast(msg: ServerMsg): void {
 function send(ws: WebSocket, msg: ServerMsg): void {
   ws.send(JSON.stringify(msg));
 }
+/** A transcript for a page that holds some of it already (§97): only what follows, when what it holds is still the start. */
+function transcriptFor(id: string, items: TranscriptItem[], have?: { count: number; last: string }): ServerMsg {
+  const n = Number(have?.count);
+  if (have && Number.isInteger(n) && n > 0 && n <= items.length && items[n - 1].uuid === have.last) return { type: 'session.transcript', id, items: items.slice(n), from: n };
+  return { type: 'session.transcript', id, items };
+}
+/** What Claude is writing, to the page showing that session only, as deltas, about once a frame (§97). */
+const partials = new PartialFanout<WebSocket>((ws, m) => { if (ws.readyState === ws.OPEN) send(ws, { type: 'session.partial', ...m }); });
 
 const broker = new PermissionBroker(
   (request, toolInput) => {
@@ -101,7 +110,8 @@ const cards = new CardService(store, {
     logSend(card.id, `started in the app (${card.launch.message.length} chars)`);
   },
   onEvent: (card, event) => { if (event === 'PostToolUse' && card.sessionId) timed(card.sessionId, 'ran'); },
-  changed: () => broadcast(cardsMsg()),
+  // One card changed: the page gets that card (§97); all of them when one was deleted.
+  changed: (card) => broadcast(card ? { type: 'card.upsert', card, nextKey: cards.peekKey() } : cardsMsg()),
 });
 
 const tickets = new TicketService(store, () => broadcast(ticketsMsg()));
@@ -254,10 +264,11 @@ const manager: SessionManager = new SessionManager({
     if (items.some((i) => i.kind === 'assistant' || i.kind === 'tool')) timed(id, 'item');
   },
   partial: (id, text) => {
-    broadcast({ type: 'session.partial', id, text });
+    partials.update(id, text);
     if (text) timed(id, 'partial');
   },
   forked: (oldId, newId) => {
+    partials.rename(oldId, newId);
     broadcast({ type: 'session.forked', oldId, newId });
     // A card's session moved (/clear, §93): the card goes with it.
     cards.followSession(oldId, newId);
@@ -430,9 +441,11 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     }
     case 'session.open': {
       const seeded = seededTranscripts.get(msg.id);
-      if (seeded && !manager.isLive(msg.id)) { send(ws, { type: 'session.transcript', id: msg.id, items: seeded }); return; }
+      if (seeded && !manager.isLive(msg.id)) { send(ws, transcriptFor(msg.id, seeded, msg.have)); partials.watch(ws, msg.id); return; }
       mirror.watch(ws, msg.id);
-      send(ws, { type: 'session.transcript', id: msg.id, items: await manager.transcript(msg.id) });
+      send(ws, transcriptFor(msg.id, await manager.transcript(msg.id), msg.have));
+      // From now on what Claude writes in it comes to this page (and only the session it shows).
+      partials.watch(ws, msg.id);
       return;
     }
     case 'session.send':
@@ -1084,7 +1097,7 @@ const localApp = buildApp(async (c, next) => {
 const wss = new WebSocketServer({ noServer: true });
 wss.on('connection', (ws) => {
   clients.add(ws);
-  ws.on('close', () => { clients.delete(ws); follows.delete(ws); mirror.forget(ws); });
+  ws.on('close', () => { clients.delete(ws); follows.delete(ws); mirror.forget(ws); partials.forget(ws); });
   ws.on('message', (raw) => {
     let msg: ClientMsg;
     try { msg = JSON.parse(String(raw)); } catch { return; }

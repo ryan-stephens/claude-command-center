@@ -20,7 +20,7 @@ import { QuestionForm } from './QuestionForm.tsx';
 import { answerAsk, boardOf, changeHooks, editRecipe, goToTab, lastPick, openAddComposer, openApp, openChanges, openNeighbour, openOutput, openWorktrees, rememberPick, saySubmit, setChangeCount, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
 import { openSession } from '../keys.ts';
 import { get, set, setPanelW, useStore } from '../store.ts';
-import { cardChanges, send, stackPlan } from '../ws.ts';
+import { cardChanges, openTranscript, send, stackPlan } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { RunLog } from './RunLog.tsx';
 import { KindPill, useExpandKey } from './TicketLine.tsx';
@@ -215,9 +215,11 @@ function Chat({ card }: { card: Card }) {
   const [seen, setSeen] = useState(() => loadSeen()[card.id] ?? 0);
   const latest = useRef(count);
   latest.current = count;
+  // Opening it also makes this page the one its streaming text goes to (§97): again after a reconnect.
+  const connected = useStore((s) => s.connected);
   useEffect(() => {
-    if (card.sessionId) send({ type: 'session.open', id: card.sessionId });
-  }, [card.sessionId]);
+    if (card.sessionId && connected) openTranscript(card.sessionId);
+  }, [card.sessionId, connected]);
   // Opening a card reads where you left it; leaving it (or moving to the next) remembers where it was.
   useEffect(() => {
     setSeen(loadSeen()[card.id] ?? 0);

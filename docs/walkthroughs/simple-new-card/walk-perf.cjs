@@ -268,8 +268,10 @@ async function wsWindow(page, fn) {
   check('Enter opens a card on its chat', Boolean(first), first ?? '');
   await page.screenshot({ path: path.join(OUT, '02-card.png') });
   await mark(page, '→ cold');
-  for (let i = 0; i < 5; i++) { from = await openLabel(page); cold.push(await timedKey(page, 'ArrowRight', chatOf(from))); await sleep(150); }
-  for (let i = 0; i < 5; i++) { from = await openLabel(page); warm.push(await timedKey(page, 'ArrowLeft', chatOf(from))); await sleep(150); }
+  const coldW = await wsWindow(page, async () => { for (let i = 0; i < 5; i++) { from = await openLabel(page); cold.push(await timedKey(page, 'ArrowRight', chatOf(from))); await sleep(300); } });
+  const warmW = await wsWindow(page, async () => { for (let i = 0; i < 5; i++) { from = await openLabel(page); warm.push(await timedKey(page, 'ArrowLeft', chatOf(from))); await sleep(300); } });
+  info('5 cold switches: bytes received', coldW.bytesPerSec * coldW.secs | 0, `(main thread ${coldW.cpu}% busy over ${coldW.secs.toFixed(1)} s)`);
+  info('5 warm switches: bytes received', warmW.bytesPerSec * warmW.secs | 0, `(main thread ${warmW.cpu}% busy over ${warmW.secs.toFixed(1)} s)`);
   const switchLong = await page.evaluate(() => window.__perf.long.map((l) => l.ms));
   measure(`Enter / → to a card, cold (${SIZE} items), median`, median(cold), BUDGET.switchCold, `(all: ${cold.map(Math.round).join(', ')})`);
   measure(`← to a card, warm (${SIZE} items), median`, median(warm), BUDGET.switchWarm, `(all: ${warm.map(Math.round).join(', ')})`);
@@ -374,7 +376,9 @@ async function wsWindow(page, fn) {
       void word;
       return { ...r, into, serverPartial };
     };
-    const s1 = await sendOnce('Reply with one short sentence that ends with the word PERFWORD.', 'PERFWORD');
+    let s1;
+    const realW = await wsWindow(page, async () => { s1 = await sendOnce('Write four short paragraphs about keyboards, then end with the word PERFWORD.', 'PERFWORD'); });
+    info('a real reply on the open card: WebSocket bytes/s', realW.bytesPerSec, `(main thread ${realW.cpu}% busy; ${realW.byType.slice(0, 6).map(([ty, n, b]) => `${ty} ${n}×/${Math.round(b / 1024)}k`).join(', ')})`);
     measure('Enter (send) → your message in the chat', r1(s1.echo), BUDGET.sendEcho);
     info('send → first streamed text on the page', `${Math.round(s1.partial)} ms`, `(server: into the CLI ${s1.into} ms, first partial ${s1.serverPartial} ms)`);
     // Ours: the page's time less the model's (the server's first partial less the time to the CLI's input).

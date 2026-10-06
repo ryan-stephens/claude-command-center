@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
+import type { Card } from '../shared/cards.ts';
 import { DEFAULT_PROMPTS } from '../shared/prompts.ts';
 import { Store } from './store.ts';
 
@@ -53,4 +54,33 @@ test('a saved prompt keeps its place; a new one goes to the end', () => {
   assert.deepEqual(store.loadPrompts().map((p) => p.name), [a.name, 'B2', c.name, 'Mine']);
   assert.equal(store.loadPrompts()[3].kind, undefined, 'no kind: offered for every card');
   store.close();
+});
+
+test('cards are kept in memory and written through: copies out, saves and deletes seen at once, all of it in SQLite (§97)', () => {
+  const path = join(dir, 'cards.db');
+  const s = new Store(path);
+  const card = (id: string, createdAt: number, title: string) => ({ id, key: `CARD-${id}`, title, createdAt, stage: 'build', boot: [] } as unknown as Card);
+  s.saveCard(card('b', 2, 'B'));
+  s.saveCard(card('a', 1, 'A'));
+  assert.deepEqual(s.loadCards().map((c) => c.id), ['a', 'b']); // oldest first
+  s.saveCard(card('c', 3, 'C'));
+  s.saveCard(card('a0', 0, 'A0'));
+  assert.deepEqual(s.loadCards().map((c) => c.id), ['a0', 'a', 'b', 'c']);
+  // A copy: changing what came out changes nothing until it is saved.
+  const got = s.loadCard('b')!;
+  got.title = 'changed';
+  assert.equal(s.loadCard('b')!.title, 'B');
+  s.saveCard(got);
+  assert.equal(s.loadCards().find((c) => c.id === 'b')!.title, 'changed');
+  // What was saved is a stored copy: changing the object afterwards doesn't leak in.
+  got.title = 'later';
+  assert.equal(s.loadCard('b')!.title, 'changed');
+  s.deleteCard('a');
+  assert.equal(s.loadCard('a'), undefined);
+  assert.deepEqual(s.loadCards().map((c) => c.id), ['a0', 'b', 'c']);
+  // SQLite has the same: a second store on the file reads it back.
+  const again = new Store(path);
+  assert.deepEqual(again.loadCards().map((c) => [c.id, c.title]), [['a0', 'A0'], ['b', 'changed'], ['c', 'C']]);
+  again.close();
+  s.close();
 });

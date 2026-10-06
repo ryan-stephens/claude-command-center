@@ -16,7 +16,7 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
 
-export const PROTOCOL = 25;
+export const PROTOCOL = 26;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -313,7 +313,8 @@ export interface SlotRef {
 
 export type ClientMsg =
   | { type: 'session.create'; reqId: string; cwd: string; prompt?: string; extraDirs?: string[] }
-  | { type: 'session.open'; id: string }
+  /** `have` (§97): how much of the transcript the page holds; the server then sends only what follows. */
+  | { type: 'session.open'; id: string; have?: { count: number; last: string } }
   | { type: 'session.send'; id: string; text: string; images?: ImageAttachment[] }
   /** Files in a session's repos matching what follows "@". Names only. */
   | { type: 'fs.files'; reqId: string; sessionId: string; query: string }
@@ -439,10 +440,12 @@ export type ServerMsg =
   | { type: 'session.created'; reqId: string; id: string }
   /** Sending to a session owned elsewhere forked it: the client should follow `newId`. */
   | { type: 'session.forked'; oldId: string; newId: string }
-  | { type: 'session.transcript'; id: string; items: TranscriptItem[] }
+  /** `from` (§97): these items follow the first `from` the page said it has; absent, they are all of it. */
+  | { type: 'session.transcript'; id: string; items: TranscriptItem[]; from?: number }
   | { type: 'session.items'; id: string; items: TranscriptItem[] }
   /** Streaming text of the assistant message in progress; '' clears it. */
-  | { type: 'session.partial'; id: string; text: string }
+  /** What Claude is writing, to the page showing the session (§97): `from` appends `text` at that offset; absent, `text` is all of it. */
+  | { type: 'session.partial'; id: string; text: string; from?: number }
   | { type: 'session.activity'; id: string; activity: SessionActivity }
   /** A live session's to-do list changed. */
   | { type: 'session.todos'; id: string; todos: Todo[] }
@@ -488,6 +491,8 @@ export type ServerMsg =
   /** A followed run's output so far (the whole log: on follow, and again when the run starts afresh), then the lines since. */
   | { type: 'run.log'; key: string; lines: LogLine[] }
   | { type: 'run.lines'; key: string; lines: LogLine[] }
+  /** One card changed (§97): the page replaces it, or adds it; `cards` comes on connect and when one is deleted. */
+  | { type: 'card.upsert'; card: Card; nextKey: string }
   | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string; /** The model in the user's Claude Code settings (a card's default otherwise). */ userModel?: string; /** Cards start in a terminal tab (legacy, CC_CONTROL_CARDS_IN_TERMINAL=1, §93), not in the app. */ inTerminal?: boolean }
   | { type: 'card.started'; reqId: string; id: string }
   | { type: 'tickets'; tickets: Ticket[]; projects: TicketProject[]; sources: TicketSources }

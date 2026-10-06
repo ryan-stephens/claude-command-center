@@ -7,6 +7,7 @@ import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type RepoInfo, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import type { PromptContext } from '../shared/prompts.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
+import { haveOf, mergeTranscript } from './transcript-merge.ts';
 import { activeSession, flash, get, groupKeyOf, set, setFilter } from './store.ts';
 
 let socket: WebSocket | null = null;
@@ -34,7 +35,13 @@ function flushPartials(): void {
   set({ partials: { ...get().partials, ...Object.fromEntries(pendingPartials) } });
   pendingPartials.clear();
 }
-function queuePartial(id: string, text: string): void {
+function queuePartial(id: string, text: string, from?: number): void {
+  // A delta (§97) goes on the end of what the page has: what waits for this frame, else the store's.
+  if (from !== undefined) {
+    const base = pendingPartials.get(id) ?? get().partials[id] ?? '';
+    if (from > base.length) return; // a gap: never on one connection, which is ordered
+    text = base.slice(0, from) + text;
+  }
   if (!text) {
     pendingPartials.delete(id);
     if (get().partials[id]) set({ partials: { ...get().partials, [id]: '' } });
@@ -46,6 +53,11 @@ function queuePartial(id: string, text: string): void {
     partialTimer = setTimeout(flushPartials, 50);
     requestAnimationFrame(() => { if (partialTimer !== undefined) { clearTimeout(partialTimer); flushPartials(); } });
   }
+}
+
+/** Open a session's transcript, saying how much of it the page holds, so only the rest comes (§97). */
+export function openTranscript(id: string): void {
+  send({ type: 'session.open', id, have: haveOf(get().transcripts[id]) });
 }
 
 const OUTDATED = 'The cc-control server is older than this page, so it ignores this. Restart it: stop it and run pnpm start.';
@@ -61,7 +73,7 @@ export function connect(): void {
     set({ connected: true, lastError: null, permissions: {}, partials: {}, activity: {}, outdated: null });
     const { openId } = get();
     if (openId) {
-      send({ type: 'session.open', id: openId });
+      openTranscript(openId);
       send({ type: 'board.get', sessionId: openId });
     }
     // The Output views open on the page follow their runs again on the new connection.
@@ -366,9 +378,14 @@ function receive(msg: ServerMsg): void {
       if (get().openId === msg.newId) send({ type: 'board.get', sessionId: msg.newId });
       return;
     }
-    case 'session.transcript':
-      set({ transcripts: { ...get().transcripts, [msg.id]: msg.items } });
+    case 'session.transcript': {
+      // The page's own items are kept (§97): a warm card shows at once and isn't drawn again.
+      const before = get().transcripts[msg.id];
+      const next = mergeTranscript(before, msg.items, msg.from);
+      if (!next) send({ type: 'session.open', id: msg.id }); // its copy was replaced meanwhile: all of it, then
+      else if (next !== before) set({ transcripts: { ...get().transcripts, [msg.id]: next } });
       return;
+    }
     case 'session.items': {
       const t = get().transcripts;
       set({ transcripts: { ...t, [msg.id]: [...(t[msg.id] ?? []), ...msg.items] } });
@@ -381,7 +398,7 @@ function receive(msg: ServerMsg): void {
       set({ todos: { ...get().todos, [msg.id]: msg.todos } });
       return;
     case 'session.partial':
-      queuePartial(msg.id, msg.text);
+      queuePartial(msg.id, msg.text, msg.from);
       return;
     case 'permission.request': {
       set({ permissions: { ...get().permissions, [msg.request.reqId]: msg.request } });
@@ -429,6 +446,15 @@ function receive(msg: ServerMsg): void {
     case 'library':
       set({ library: { sources: msg.sources, repos: msg.repos, suggested: msg.suggested } });
       return;
+    case 'card.upsert': {
+      // One card changed (§97): the others keep their objects, so what shows them doesn't redraw.
+      const cards = get().cards;
+      const at = cards.findIndex((c) => c.id === msg.card.id);
+      const before = at >= 0 ? cards[at] : undefined;
+      set({ cards: at >= 0 ? cards.map((c, i) => (i === at ? msg.card : c)) : [...cards, msg.card], nextKey: msg.nextKey });
+      onCardChange(before, msg.card);
+      return;
+    }
     case 'cards': {
       const before = new Map(get().cards.map((c) => [c.id, c]));
       set({ cards: msg.cards, nextKey: msg.nextKey, cardModel: msg.model ?? null, userModel: msg.userModel ?? null, cardsInTerminal: msg.inTerminal === true });

@@ -21,6 +21,8 @@ export const DB_PATH = process.env.CC_CONTROL_DB || join(homedir(), '.cc-control
 /** One SQLite file for everything cc-control owns: commands, settings, workspaces, per-session extra repos and Ticket Line cards. */
 export class Store {
   private db: DatabaseSyncType;
+  /** The cards, once read (loadCards). */
+  private cards?: Card[];
 
   constructor(path = DB_PATH) {
     mkdirSync(dirname(path), { recursive: true });
@@ -194,18 +196,40 @@ export class Store {
     this.setMeta('library.sources', JSON.stringify(sources));
   }
 
+  /**
+   * Every card, oldest first. Read from SQLite once and kept, written through (§97): a busy turn
+   * looks cards up several times per hook event, and parsing every card each time was most of it.
+   * Each call hands out copies, so a caller that changes one before saving it changes nothing else.
+   */
   loadCards(): Card[] {
-    const rows = this.db.prepare('SELECT id, data FROM cards ORDER BY created').all() as { id: string; data: string }[];
-    return rows.flatMap((r) => {
+    this.cards ??= (this.db.prepare('SELECT id, data FROM cards ORDER BY created').all() as { id: string; data: string }[]).flatMap((r) => {
       try { return [{ ...(JSON.parse(r.data) as Card), id: r.id }]; } catch { return []; }
     });
+    return this.cards.map((c) => ({ ...c }));
+  }
+
+  /** One card by id, a copy, without copying the rest. */
+  loadCard(id: string): Card | undefined {
+    if (!this.cards) this.loadCards();
+    const c = this.cards!.find((x) => x.id === id);
+    return c && { ...c };
   }
 
   /** Insert or update. The token (what the card's hook proves itself with) is set once, on insert. */
   saveCard(card: Card, token?: string): void {
     const { id, ...data } = card;
+    const json = JSON.stringify(data);
     this.db.prepare('INSERT INTO cards (id, created, token, data) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
-      .run(id, card.createdAt, token ?? crypto.randomUUID(), JSON.stringify(data));
+      .run(id, card.createdAt, token ?? crypto.randomUUID(), json);
+    if (!this.cards) return;
+    // What SQLite now holds, as a reader gets it back: a stored copy, so later changes to `card` don't leak in.
+    const saved = { ...(JSON.parse(json) as Card), id };
+    const at = this.cards.findIndex((c) => c.id === id);
+    if (at >= 0) this.cards[at] = saved;
+    else {
+      const after = this.cards.findIndex((c) => c.createdAt > card.createdAt);
+      this.cards.splice(after < 0 ? this.cards.length : after, 0, saved);
+    }
   }
 
   cardToken(id: string): string | undefined {
@@ -214,6 +238,7 @@ export class Store {
 
   deleteCard(id: string): void {
     this.db.prepare('DELETE FROM cards WHERE id = ?').run(id);
+    this.cards = this.cards?.filter((c) => c.id !== id);
   }
 
   /** CARD-1, CARD-2 …: never reused, even after a card is deleted. */

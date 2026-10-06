@@ -12,7 +12,7 @@ import { cancelVoice, isListening, startVoice, stopVoice } from './voice.ts';
 import {
   activeSession, attention, currentGroup, currentWorkspace, flash, get, markRead, pendingFor, sessionById, set, toggleFold, toggleSound,
 } from './store.ts';
-import { lastPermissionAt, send } from './ws.ts';
+import { lastPermissionAt, openTranscript, send } from './ws.ts';
 import { answersFor, enterOnRow, firstOpen, freshQa, goTo, MODE_LABEL, nextMode, pick } from './questions.ts';
 import { explainPermission } from './plain.ts';
 import { expandFromLine, goHome, LINE_SECTIONS, lineKeys, lineSessionIds, openLine } from './line-keys.ts';
@@ -136,7 +136,7 @@ function isTextTarget(t: EventTarget | null): boolean {
 export function openSession(id: string): void {
   markRead(id);
   set({ screen: 'session', openId: id, zone: pendingFor(id) ? 'board' : 'composer', board: null, modal: null });
-  send({ type: 'session.open', id });
+  openTranscript(id);
   send({ type: 'board.get', sessionId: id });
 }
 

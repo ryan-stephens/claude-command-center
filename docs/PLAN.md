@@ -2280,3 +2280,31 @@ Not planned: Claude Code feature parity for its own sake; any public deployment.
 The other numbers didn't move, as expected: the bytes are §97's.
 
 **Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (340: `streamBlocks` on paragraphs, an unfinished blank line, fences open and closed, and that the blocks rejoin to the text; `chimeWav`'s header, length and peak). `walk-perf.cjs --no-real`: all within budget. `walk-card.cjs` 59/59 light and 59/59 dark (the open card in every state, the partial included).
+
+## 97. Traffic: streaming text as deltas to the page that shows it, one card per change, cards in memory, warm opens send nothing
+
+2026-10-06. The second fix of the speed push (§94), the bytes §95 measured: 159 KB/s on the board with three sessions streaming, 200 KB/s with one of them open, growing with each reply's length and the number of cards.
+
+**What changed.**
+- **Streaming text** (`server/partial-stream.ts`, `PartialFanout`): the session manager still reports the whole reply so far per token; the fan-out sends each page only the session it has open (its last `session.open`), only what it hasn't got (`session.partial` gained `from`: append at that offset; absent, the text is all of it), and at most one message per 30 ms per session: the first token at once (so first text isn't delayed), the rest coalesced, a clear at once (the message is landing). Opening a session sends where its reply is now, even nothing (a page that looked elsewhere while a message landed would otherwise keep a stale partial). `/clear` and forks carry the watchers over. The page applies deltas in `queuePartial`; the open card re-opens its session after a reconnect so the server knows again what it shows.
+- **One card per change** (`card.upsert`, with `nextKey`): `CardService.changed(card)` names the card it saved, and the page replaces just that one, keeping the other cards' objects (nothing that shows them redraws). The whole list still goes on connect and when a card is deleted. Each hook event of a busy turn used to send all 20 cards (38 KB); now about 2 KB.
+- **Cards in memory** (`Store.loadCards` / `loadCard`): read from SQLite once and written through on every save and delete. `get`, `list`, `bySession` and the hook path parsed every card's JSON several times per hook event. Each read hands out shallow copies, so code that changes a card before saving it (`reopen`, `sessionStart`) changes nothing else; a save stores its own parsed copy.
+- **Warm opens send nothing** (`web/transcript-merge.ts`): `session.open` says what the page holds (`have`: its count and last uuid), and the server sends only what follows (`session.transcript` gained `from`). Whole transcripts are merged by uuid, keeping the page's own objects, and the store isn't touched when nothing changed. Before, a warm card switch drew the cached chat, then drew all 300 items again when the server's identical copy arrived (new objects, so nothing memoised held), and sent ~50 KB to do it.
+- `PROTOCOL` 26. A page from before this on a new server would show streaming text wrongly (it reads each delta as the whole text) until it reloads; a new page on an old server works (it gets whole partials, all cards and whole transcripts, which it still handles).
+
+**After** (same walk; the board with three sessions streaming, five card switches, one open card streaming, a real Haiku reply):
+
+| | Before | After |
+|---|---|---|
+| Board, 3 streaming | 159 KB/s, 98 messages/s | **2.3 KB/s**, 1 message/s |
+| Open card streaming | 200 KB/s | **8 KB/s** (30 messages/s) |
+| 5 warm card switches | ~50 KB each, a second full redraw | **924 bytes in all**, no redraw |
+| 5 cold card switches | 260 KB | 260 KB (the transcripts themselves) |
+| Main thread, open card streaming | 20 % (§96) | 18 to 20 % |
+| A real reply on the open card | — | 12 KB/s, of which one 46 KB `sessions` snapshot (below) |
+
+Everything else held: key → paint 5 / 9 / 10 ms (p95: idle, others streaming, the open card streaming); cold / warm switch 41 / 34 ms; Ctrl+K 15 ms; Enter → message 13 ms; our overhead on first text 15 ms; y → ran 22 ms; Ctrl+Enter → card 222 ms; restart → first text 1.6 s. No long tasks.
+
+**Still open, measured:** the history index (`HistoryIndex`) refreshes 1.5 s after any `.jsonl` write, the app's own streaming sessions included: `listSessions(300)` takes ~120 ms here (mostly async; the event loop stalls 11 to 13 ms), and then every page gets the whole sessions list (46 KB). That is one per 1.5 s while anything streams. Next.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (351: the fan-out's windows, clears, mid-reply opens, a page moving between sessions, renames; the store's write-through cache; the transcript merge's tails, races and uuid reuse). `walk-perf.cjs` (24, all within budget), `walk-card.cjs` 59/59 light and dark, `walk-hub.cjs` 29/29 (real Haiku: the plan and replies streamed, y, the question form, Esc, reopen, restart and resume).
