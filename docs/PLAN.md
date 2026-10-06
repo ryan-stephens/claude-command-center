@@ -2492,3 +2492,16 @@ Screenshots looked at (the Look up button wrapped; fixed). `walk-card.cjs` 59/59
 **Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (372: the file missing, with a BOM, cleaned of unknown keys and bad URLs, not JSON, UTF-16; read again only when it changes; the lookup's error naming the tool and `recordField`; the legend without *Setup*). `walk-verify.cjs` (38, light and dark): no file, so the panel says where it goes and there is no form; Enter says the set has no address; the file written while the panel is open shows within seconds with the tools by name; the check, drift, refresh, lookup, Prod and pages as before; *Add in UAT ↗* only on the field UAT's set lacks, opening UAT's add-to-set page with the id copied; `Shift+O` copied the missing id; the stand-ins saw only the reads and the lookup form; no values in the server log. Screenshots light and dark, looked at (the fallback names read "The field set" mid-sentence; now lower case). `walk-card.cjs` 59/59 light and dark, `walk-hub.cjs` 29/29, `walk-perf.cjs --no-real` 12/12 (the full run's real card doesn't touch this). `pnpm run doctor` with a sample file prints the line and the `recordField` warning.
 
 **To check at VU:** `git pull`, restart (ask first). Write the file once (the owner has the line to paste; it holds the real addresses and names, so it is not in the repo), fill in `recordField` from the record lookup's form, then `pnpm run doctor` and, on a card, `v`. The rest as in §105.
+
+## 108. Start work: the SDK's CLI missing on a machine
+
+2026-10-06. The owner: *Start work* on a new card failed with "Native CLI binary for win32-x64 not found. Reinstall @anthropic-ai/claude-agent-sdk without --omit=optional, or set options.pathToClaudeCodeExecutable." The SDK runs its CLI from an optional dependency (`@anthropic-ai/claude-agent-sdk-win32-x64`, a 245 MB `claude.exe`). An install that skips optional dependencies, a feed without that package, or antivirus removing the exe leaves none, and every SDK session fails. This laptop had it, so the failing install was elsewhere.
+
+**What changed.**
+- `server/claude-exe.ts`: `findClaude` moved here from `cards.ts` (still exported there). `sdkClaude()` picks the CLI for the SDK's sessions, in this order: `CC_CONTROL_CLAUDE`; then the SDK's own binary if it is on disk (the SDK finds it itself); then `claude.exe` on PATH (your own Claude Code install). Worked out once per server run.
+- All three `query()` calls (a card's session, the idle one for models and commands, *Write it for me*) pass it as `pathToClaudeCodeExecutable`.
+- `pnpm run doctor`: a *Claude for the app's sessions* line that says which CLI is used and fails when there is neither.
+
+**Verified:** `pnpm typecheck`, `pnpm test` (372). With the SDK's `claude.exe` renamed away: doctor reported the fallback to `~\.local\bin\claude.exe`, and a real one-turn `query()` through `sdkClaude()` answered. Then the binary was put back, and doctor reports the SDK's own again.
+
+**To check at VU:** `git pull`, restart (ask first), `pnpm run doctor`. The new line should say the SDK's own binary or the one on PATH. Then *Start work* on a new card. If it says neither, install Claude Code or set `CC_CONTROL_CLAUDE` in `config.env` to the full path of `claude.exe`.

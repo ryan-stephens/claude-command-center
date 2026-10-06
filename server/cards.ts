@@ -11,7 +11,7 @@ import { execFile, spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   BRANCH_NAME, branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, folderFor, PACKET_KINDS, homeOf, includedRepos, isClean, LAUNCH_MODES, laterText, modelFor, ownFolders, packetText, tokens, fmtK, waiting, worktreeFor, wtArg,
@@ -25,6 +25,9 @@ import { SECRET } from './config.ts';
 import { normalizeFolder } from './fs-browse.ts';
 import { DB_PATH, type Store } from './store.ts';
 import { trustFolders } from './trust.ts';
+import { findClaude } from './claude-exe.ts';
+
+export { findClaude };
 
 const HOOK_SCRIPT = fileURLToPath(new URL('../hooks/cc-control-hook.mjs', import.meta.url));
 /** How long a new tab has to report in before the card says something may be wrong. */
@@ -273,16 +276,6 @@ export async function removeWorktrees(card: Pick<Card, 'folders' | 'branchName' 
     }
   }
   return { removed, kept, problems };
-}
-
-/** claude.exe on PATH, so Windows Terminal starts the same one a terminal would. */
-export function findClaude(): string {
-  if (process.env.CC_CONTROL_CLAUDE) return process.env.CC_CONTROL_CLAUDE;
-  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
-    const exe = join(dir, 'claude.exe');
-    if (dir && existsSync(exe)) return exe;
-  }
-  return 'claude';
 }
 
 /**

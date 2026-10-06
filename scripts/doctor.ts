@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CARDS_IN_TERMINAL, CHANNEL_ON, findClaude } from '../server/cards.ts';
+import { bundledClaude, sdkClaude } from '../server/claude-exe.ts';
 import { config, CONFIG_FILE } from '../server/config.ts';
 import { AzureDevOpsHost, GitHubHost, hostFor } from '../server/hosts.ts';
 import { parseRange } from '../server/ports.ts';
@@ -60,6 +61,9 @@ line(major >= 24 ? 'ok' : 'bad', 'Node', process.versions.node, major >= 24 ? ''
 const claude = findClaude();
 const cv = version(claude);
 line(cv ? 'ok' : 'bad', 'Claude Code', cv ? `${cv} (${claude})` : `not found (${claude})`, cv ? '' : 'Install Claude Code and sign in (claude), or set CC_CONTROL_CLAUDE to claude.exe.');
+const sdkExe = sdkClaude();
+const bundled = bundledClaude();
+line(sdkExe || bundled ? 'ok' : 'bad', 'Claude for the app’s sessions', process.env.CC_CONTROL_CLAUDE ? `${sdkExe} (CC_CONTROL_CLAUDE)` : bundled ? `the SDK’s own (${bundled})` : sdkExe ? `the SDK’s own is missing, so the one on PATH (${sdkExe})` : 'the SDK’s own is missing and none is on PATH', sdkExe || bundled ? '' : 'Run pnpm install again without --no-optional / omit=optional, or install Claude Code, or set CC_CONTROL_CLAUDE to claude.exe.');
 // §93: a card's session runs in the app (through the SDK), so the chat needs no terminal, no channel and no proxy of its own.
 line('ok', 'Card sessions', CARDS_IN_TERMINAL ? 'in a Windows Terminal tab (CC_CONTROL_CARDS_IN_TERMINAL=1, the old way, for one release)' : 'run in the app: the card’s chat is the session (no tab, channel or typed keys in between)', CARDS_IN_TERMINAL ? 'Remove CC_CONTROL_CARDS_IN_TERMINAL from config.env to run them in the app.' : '');
 if (CARDS_IN_TERMINAL) line(CHANNEL_ON ? 'ok' : 'info', 'Channel into card terminals', CHANNEL_ON ? 'on: messages and y / n from a card go into its terminal (a Claude Code research-preview flag)' : 'off (CC_CONTROL_CHANNEL=0): answer and type in the tab', CHANNEL_ON ? 'If a card’s tab fails to start and mentions channels, set CC_CONTROL_CHANNEL=0 in config.env.' : '');

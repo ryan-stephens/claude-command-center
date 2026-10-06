@@ -5,6 +5,7 @@
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { fillers, PLACEHOLDERS, type PromptContext } from '../shared/prompts.ts';
+import { sdkClaude } from './claude-exe.ts';
 import { withoutSecrets } from './config.ts';
 
 export const WRITE_MODEL = process.env.CC_CONTROL_WRITE_MODEL || 'claude-haiku-4-5-20251001';
@@ -44,6 +45,7 @@ export async function writePrompt(rough: string, ctx: PromptContext, cwd: string
       // No settings and no CLAUDE.md from anywhere: the model sees the request and nothing of the machine.
       cwd, model: WRITE_MODEL, maxTurns: 1, tools: [], persistSession: false, systemPrompt: SYSTEM, settingSources: [],
       env: { ...withoutSecrets(process.env) } as Record<string, string>,
+      pathToClaudeCodeExecutable: sdkClaude(),
     },
   });
   try {

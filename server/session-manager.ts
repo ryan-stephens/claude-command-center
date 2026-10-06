@@ -2,6 +2,7 @@ import { getSessionMessages, query, renameSession, type ModelInfo, type Query, t
 import { statSync } from 'node:fs';
 import { MODES, type ImageAttachment, type PermissionMode, type SessionActivity, type SessionStatus, type SessionSummary, type Todo, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { applyEvent, backgroundRunning, idleActivity, setApproval, startTurn } from './activity.ts';
+import { sdkClaude } from './claude-exe.ts';
 import { withoutSecrets } from './config.ts';
 import { applyTodos, NO_TODOS, type TodoState } from './todos.ts';
 import { ACTIVE_ELSEWHERE_MS, HistoryIndex } from './history-index.ts';
@@ -467,7 +468,7 @@ export class SessionManager {
     if (this.probing) return;
     this.probing = true;
     async function* idle(): AsyncGenerator<never> { await new Promise(() => {}); }
-    const q = query({ prompt: idle(), options: { cwd, model: MODEL, env: SDK_ENV } });
+    const q = query({ prompt: idle(), options: { cwd, model: MODEL, env: SDK_ENV, pathToClaudeCodeExecutable: sdkClaude() } });
     const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timed out')), 20_000));
     Promise.race([Promise.all([q.supportedCommands(), q.supportedModels()]), timeout])
       .then(([cmds, models]) => {
@@ -525,6 +526,7 @@ export class SessionManager {
         cwd: opts.cwd,
         model: MODEL,
         env: SDK_ENV,
+        pathToClaudeCodeExecutable: sdkClaude(),
         includePartialMessages: true,
         permissionMode: this.modes.get(id) ?? card?.mode ?? 'default',
         additionalDirectories: dirs,
