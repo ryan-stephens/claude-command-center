@@ -2387,3 +2387,13 @@ Not changed: what Jira sends. The default JQL (*assigned to you, not in the done
 - The change-kind column is wide enough for *CHANGED*, so the file names line up.
 
 **Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (354). On an isolated server, a seeded card on three demo repos (two with changes, one without) opened with `Shift+D`: three headers; a click folds a repo (7 → 3 files) and a second unfolds it; `Z` folds all and `Z` again unfolds; `z` folds the chosen file's repo and the choice moves to a shown file; `j` past the end stays on shown files; no page errors. Screenshots light and dark, looked at. `walk-card.cjs` 59/59.
+
+## 102. Try it: Open opens a stack's UI
+
+2026-10-06. Found at VU, testing Try it with a lane stack (a local UI against a local API): every service came up, the UI reached the API, the logs came through, but **Open** on the UI said *Nothing running yet: t tries it* while the UI was serving.
+
+**Cause.** `openApp` looked the run up as `runs[cardId]`, the key of a card's single recipe. A stack's runs are keyed per service (`runKey`: `card#ui`, `card#orders-api`, §82), so for a stack card it found nothing. The Open button itself showed, because it checks the UI's own run. `o` on the card and in the Output sheet had the same fault.
+
+**Fix.** `appToOpen` (`shared/recipes.ts`, pure): the run that stands for the card, as the tile and the legend already pick it (`mainRun`: the single recipe's, else the UI's, else the first service's), its URL once up, *starting* while it comes up. `openApp` uses it; a PR still opens when nothing runs, as before.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (355: a stack's UI opens over its API, a single recipe's run, starting, stopped, another card's). Not run here: a real stack (it needs the VU repos and their dev environment). **To check at VU:** `git pull`, `pnpm build`, reload (a page-only change: no restart); start the stack, then Open (or `o`) on the UI opens it in a new tab.

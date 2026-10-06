@@ -19,7 +19,7 @@ The main concepts:
 - **A repo library** scanned from source folders; `+` on the line adds a repo from it to a workspace.
 - **The Ticket Line is the home page** (PLAN §27–§30): cards on a board (Inbox → Plan → Build → Needs you → Try it → Ship → Done), each with its own Claude Code session, which the app runs (§93; before that, each ran in a terminal tab). A session opens full screen from its card (`Ctrl+Enter`); `Ctrl+K` finds any session, card or not. The old three-column Home is gone.
 
-**Latest direction (2026-10-06, PLAN §92):** a card's session runs inside the app through the SDK; the terminal is the escape hatch (`g`), and the launcher and channel are being retired. The phased plan is `docs/prompts/continue-hub.md`; Phase A is done (§93, `walk-hub.cjs`). **Now (§94): speed first, the other phases tabled: `docs/prompts/continue-speed.md`.** The earlier direction, for history:
+**Latest direction (2026-10-06, PLAN §92):** a card's session runs inside the app through the SDK; the terminal is the escape hatch (`g`), and the launcher and channel are being retired. The phased plan is `docs/prompts/continue-hub.md`; Phase A is done (§93, `walk-hub.cjs`). **Speed (§94 to §99) is done:** every number in the budget holds, and `walk-perf.cjs` keeps it so (where it stands and what is left: `docs/prompts/continue-speed.md`). The owner called it "fucking amazing". **Now (2026-10-06): the owner is testing Try it on the VU laptop** with a lane stack (a local UI against a local API they ticked): the services start, the UI reaches the API, the logs come through. The first bug from that round, Open saying *Nothing running yet* while the UI was up, is fixed in §102. Fix what that testing finds; the hub phases B, D to F stay tabled. The earlier direction, for history:
 
 **Direction (2026-09-29):** the owner still reaches for plain Claude Code terminals over the app. They want it to *sit on top of* terminal sessions and to help people see and follow the development work, rather than replicate Claude Code features. How to get there is open; talk it through with them. `docs/PLAN.md` §26 has the reasoning. **Chosen (§27):** the *Ticket Line*, a board of tickets moving through the loop with a new-card screen for context. The spec is `docs/futures/path-line.html`; the build handoff is `docs/prompts/continue-ticket-line.md`.
 
@@ -59,7 +59,7 @@ The main concepts:
 
 ## State
 - **Push finished work to `main`** (owner, 2026-09-30): once a change is verified and committed, push it without asking. The owner now works and tests mainly on their Veterans United laptop, from a clone they `git pull`; that is where the real Jira Cloud, TFS and Okteto are. Restarting a running server, writing to Jira or TFS, and opening real PRs still need asking.
-- Checks: `pnpm typecheck`, `pnpm test` (192 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
+- Checks: `pnpm typecheck`, `pnpm test` (355 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
 
 ## How to work here
 - Windows 11, Node 24, pnpm; files are CRLF. The Bash tool's heredocs eat backslashes (regexes, Windows paths), so use Write/Edit, or a Python script written with Write.

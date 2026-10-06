@@ -4,7 +4,7 @@
 // lineLegendFor (the bar at the bottom).
 
 import { askOf, cardRepos, ownFolders, reachable, waiting } from '../shared/cards.ts';
-import { anyLive, cardRecipe, runKey, runsOf, wsRecipeKey } from '../shared/recipes.ts';
+import { anyLive, appToOpen, cardRecipe, runKey, runsOf, wsRecipeKey } from '../shared/recipes.ts';
 import { allMerged, openPrs, prsOf } from '../shared/ship.ts';
 import type { StackChoice } from '../shared/stack.ts';
 import { repoName } from '../shared/workspaces.ts';
@@ -433,13 +433,13 @@ export function rememberPick(id: string, choice: StackChoice): void {
 /** o: the app the card's run is serving, in a new browser tab. */
 export function openApp(id: string): void {
   const s = get();
-  const run = s.runs[id];
+  const app = appToOpen(s.runs, id);
   const card = s.cards.find((c) => c.id === id);
   // The card's PRs: the first still open, else the first; a QA or review card's is the one it looks at.
   const prs = card ? prsOf(card.ship) : [];
   const pr = openPrs(prs)[0] ?? prs[0] ?? card?.pr;
-  if (run?.state === 'up' && run.url) window.open(run.url, '_blank', 'noopener');
-  else if (run?.state === 'running') flash('The app is still starting');
+  if (app && app !== 'starting') window.open(app.url, '_blank', 'noopener');
+  else if (app === 'starting') flash('The app is still starting');
   else if (pr) { window.open(pr.url, '_blank', 'noopener'); if (prs.length > 1) flash(`Opened PR #${pr.number}${pr.repo ? ` (${pr.repo})` : ''}; the others are in the Ship section`); }
   else flash('Nothing running yet: t tries it');
 }

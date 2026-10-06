@@ -109,6 +109,17 @@ export function mainRun(runs: Record<string, CardRun>, cardId: string): CardRun 
   return all.find((r) => !r.service) ?? all.find((r) => r.service === 'ui') ?? all[0];
 }
 
+/**
+ * What o opens (§102): the URL of the run that stands for the card (its single recipe's, else the
+ * UI's, else the first service's) once it is up; `starting` while it comes up. A stack's runs are
+ * keyed by service (`card#ui`), so the card's id alone found nothing and Open said nothing ran.
+ */
+export function appToOpen(runs: Record<string, CardRun>, cardId: string): { url: string } | 'starting' | null {
+  const run = mainRun(runs, cardId);
+  if (run?.state === 'up' && run.url) return { url: run.url };
+  return run?.state === 'running' ? 'starting' : null;
+}
+
 /** Is any of the card's runs still going (starting or up)? */
 export function anyLive(runs: Record<string, CardRun>, cardId: string): boolean {
   return runsOf(runs, cardId).some((r) => r.state === 'running' || r.state === 'up');
