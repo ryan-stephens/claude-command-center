@@ -26,13 +26,13 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
     title: 'Ticket Line',
     keys: [
       ['← → ↑ ↓', 'Move between cards'],
-      ['Enter', 'Open the card: its chat (the session, live from the terminal tab, with the message box and what it is asking) and a dock on the left whose panels open beside it'],
+      ['Enter', 'Open the card: its chat (the session the app runs for it, streaming as Claude writes, with the message box and what it is asking) and a dock on the left whose panels open beside it'],
       ['n / Enter (a ticket in the Inbox)', 'Start work on it: the new-card screen, with the ticket as its context'],
       ['v', 'Inbox: your tickets, or every ticket Ready for QA in your projects'],
       ['Delete (a ticket in the Inbox)', 'Hide it from the Inbox (nothing changes in Jira or Trello; Shift+T shows it again)'],
       ['Shift+T', 'Tickets: demo tickets (D), Jira and Trello (R refreshes), which lane each project goes to, and tickets you hid'],
-      ['Ctrl+Enter', 'The card’s session in the app, to read along (Esc comes back; typing here forks it, the terminal tab is where you answer)'],
-      ['c', 'New card: build its context and start work in a terminal tab. A card you left half-built (Esc, Alt+L) is picked up again; Shift+C starts a fresh one'],
+      ['Ctrl+Enter', 'The card’s session full screen, in the app’s session view (Esc comes back)'],
+      ['c', 'New card: build its context and start work; Claude runs in the app. A card you left half-built (Esc, Alt+L) is picked up again; Shift+C starts a fresh one'],
       ['1–9  /  0', 'Show one lane’s cards / all of them'],
       ['/', 'Filter the cards by words'],
       ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, or its services, with their output), Verify (the team’s apps, later), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
@@ -41,14 +41,14 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['j / k  ·  Space  ·  r  ·  q (Try it panel, a lane with a stack)', 'The environment row and each service  ·  change the environment, or tick a service to run  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
       ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
-      ['Esc (card open)', 'Back to the board, the card still focused; on the board, clear the filter'],
+      ['Esc (card open)', 'While Claude is working: stop it, as Esc does in Claude Code. Otherwise back to the board, the card still focused; on the board, clear the filter'],
       ['← → (card open)', 'The previous / next card on the board, in column order'],
-      ['Enter (card open)', 'Type to its terminal: the message box under the transcript sends into the session itself (Esc leaves the box). When its tab is gone or the session ended, sending opens a new tab that resumes the session first, and g does the same when there is no tab to bring forward'],
-      ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts), straight to its terminal'],
-      ['1–9  ·  Tab / Shift+Tab  ·  y (a question on the card)', 'Claude’s question form, drawn as it is in the tab: a digit picks an option (a single choice moves on to the next question; boxes toggle), the digit after the options is Type something  ·  the next / previous question, or Submit at the end  ·  submit the answers, pressed into the tab by its launcher. Typing in the message box instead cancels the form and sends your message as the answer'],
-      ['g (a card)', 'Go to its terminal tab: brings the Windows Terminal tab forward, for what the page can’t relay (the trust-the-folder prompt, a picker)'],
+      ['Enter (card open)', 'The message box under the chat: Enter sends to the session at once, Shift+Enter is a new line, Esc leaves the box. A session that isn’t running (the server restarted, or it ended) is resumed by the send itself'],
+      ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts: n keeps it planning)'],
+      ['1–9  ·  Tab / Shift+Tab  ·  y (a question on the card)', 'Claude’s question form, drawn as it is in the tab: a digit picks an option (a single choice moves on to the next question; boxes toggle), the digit after the options is Type something  ·  the next / previous question, or Submit at the end  ·  submit the answers. A message from the box instead goes in as the next turn'],
+      ['g (a card)', 'Open it in a terminal: between turns, the app lets go of the session and a Windows Terminal tab resumes it (claude --resume), the card following it there. A card already in a tab: brings that tab forward'],
       ['Shift+D (a card on the board)', 'Changes full width: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
-      ['c (card open)', '+ Context: the same popup the new-card screen has, over the chat (Repos, Folders and Tickets tabs, ← → or Tab switch, / searches, Enter ticks, and a note), Ctrl+Enter adds, Esc goes back. What you add waits on the card and goes in with your next message in its tab. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
+      ['c (card open)', '+ Context: the same popup the new-card screen has, over the chat (Repos, Folders and Tickets tabs, ← → or Tab switch, / searches, Enter ticks, and a note), Ctrl+Enter adds, Esc goes back. What you add goes to Claude at once when it is between turns, or with your next message while it works. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['t (a card)', 'Try it: start its app in the card’s own folder; again stops it. With a lane stack, the Try it panel’s ticked services start, each on a port of its own. A lane with no stack yet: the stack form opens, filled from what the repos say (okteto.yml, angular.json, the proxy file), and Save and start goes on'],
       ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
@@ -56,7 +56,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket, in each repo the card changed (one block per repo in the sheet; the PRs link each other); if it stops part-way, s again ships only the repos left; on a card in Ship with every PR open, merge them. On a QA or review card: its report (Enter copies, j posts it on the Jira ticket and m moves the ticket, each after you confirm; o opens the PR, d moves the card to Done)'],
       ['d (a card in Ship)', 'Done: the PR was merged or closed by hand, or the host isn’t one Ship can follow'],
       ['Shift+X (a card)', 'Worktrees: the folders the card made, with what each still holds; on a Done card, remove them and their branch (Enter the clean ones, f all of them)'],
-      ['Delete', 'Take the card off the line (its terminal session keeps running); w there removes its worktrees too'],
+      ['Delete', 'Take the card off the line (its session stays in the session list); w there removes its worktrees too'],
     ],
   },
   {
@@ -175,7 +175,7 @@ export function expandFromLine(): void {
   const card = s.cards.find((c) => c.id === id);
   if (focusedTicket(id)) { flash(`${focusedTicket(id)} has no session yet: n starts work on it`); return; }
   if (!card) { flash('Pick a card first'); return; }
-  if (!card.sessionId) { flash(`${card.key} has no session yet: it links once its terminal tab starts`); return; }
+  if (!card.sessionId) { flash(`${card.key} has no session yet`); return; }
   openSession(card.sessionId);
 }
 
@@ -273,7 +273,7 @@ export function startWork(): void {
   startCard(draft).then(
     (id) => {
       set({ composer: null, line: { ...get().line, focus: id, drawer: id, panel: 'context' } });
-      flash('Started in a terminal tab');
+      flash(get().cardsInTerminal ? 'Started in a terminal tab' : 'Started: Claude is on it');
     },
     (e: Error) => {
       const now = get().composer;
@@ -293,7 +293,7 @@ function addToCard(c: Composer): void {
       set({ composer: null, line: { ...get().line, focus: id, drawer: id, panel: 'context' } });
       setTimeout(() => document.getElementById('added-since')?.scrollIntoView({ block: 'nearest' }), 0);
       const card = get().cards.find((x) => x.id === id);
-      flash(card?.sessionId ? `Waiting on ${key}: it goes in with your next message in its tab` : `Waiting on ${key}: it goes in when the session starts`);
+      flash(!card?.sessionId ? `Waiting on ${key}: it goes in when the session starts` : waiting(card).length ? `Waiting on ${key}: it goes in with your next message` : `Added to ${key}: Claude has it`);
     },
     (e: Error) => {
       const now = get().composer;
@@ -658,7 +658,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
     if (/^[1-9]$/.test(e.key)) { questionHooks.digit(Number(e.key)); return true; }
   }
   switch (e.key) {
-    case 'Escape': set({ line: { ...s.line, drawer: null } }); return true;
+    case 'Escape': if (!(s.line.drawer && stopCard(s.line.drawer))) set({ line: { ...s.line, drawer: null } }); return true;
     case 'ArrowLeft': case 'ArrowRight': if (s.line.drawer) openNeighbour(s.line.drawer, e.key === 'ArrowRight' ? 1 : -1); return true;
     // The dock (§81): each panel's key opens it beside the chat, or closes it.
     case 'D': togglePanel('changes'); return true;
@@ -766,24 +766,41 @@ function boardKeys(e: KeyboardEvent): boolean {
   return false;
 }
 
-/** Enter on an open card: the message box to its terminal (when it has a channel). */
+/** Enter on an open card: the message box to its session. */
 function focusSay(id: string): void {
   const card = get().cards.find((c) => c.id === id);
   if (!card?.sessionId) { flash(`${card?.key ?? 'It'} hasn’t started yet`); return; }
   focusField('card-say');
 }
 
-/** Send what's in the message box into the card's terminal session; with no channel, the session is resumed in a new tab first (§85). */
+/** Send what's in the message box to the card's session (§93); one that isn't running is resumed by the send. */
 export function saySubmit(id: string): void {
   const el = document.getElementById('card-say') as HTMLTextAreaElement | null;
   const text = el?.value.trim();
   if (!el || !text) return;
   const card = get().cards.find((c) => c.id === id);
-  if (card && !reachable(card)) flash(`Opening a new tab on ${card.key}’s session; your message goes in once it connects`);
-  sayToCard(id, text).then(() => { el.value = ''; flash(`Sent to ${card?.key ?? 'the card'}’s terminal`); }, (e: Error) => flash(e.message));
+  if (card && !reachable(card)) flash(card.runner === 'app' ? `Resuming ${card.key}’s session; your message goes in with it` : `Moving ${card.key}’s session into the app; your message goes in with it`);
+  // The box empties at once (the message shows in the chat); the text comes back if the send fails.
+  el.value = '';
+  sayToCard(id, text).catch((e: Error) => { if (!el.value) el.value = text; flash(e.message); });
 }
 
-/** y / n on an open card: answer the permission prompt its terminal relayed. */
+/** The card's session is running a turn in the app right now (§93): live, and not between turns. */
+export function cardTurnRunning(s: ReturnType<typeof get>, card: { runner?: string; sessionId?: string } | undefined): boolean {
+  if (card?.runner !== 'app' || !card.sessionId) return false;
+  const live = s.sessions.find((x) => x.id === card.sessionId);
+  return Boolean(live?.live && live.status && live.status !== 'idle' && live.status !== 'stopped');
+}
+
+/** Esc on an open card whose session the app runs, while Claude works: stop the turn, as Esc does in Claude Code. */
+export function stopCard(id: string): boolean {
+  const card = get().cards.find((c) => c.id === id);
+  if (!card?.sessionId || !cardTurnRunning(get(), card)) return false;
+  send({ type: 'session.interrupt', id: card.sessionId });
+  flash(`Stopped ${card.key}: Esc again goes back to the board`);
+  return true;
+}
+
 /** Shift+X: the card's worktrees, to remove them (with their branch) once the card is done. */
 export function openWorktrees(id: string, thenDelete = false): void {
   const card = get().cards.find((c) => c.id === id);
@@ -807,19 +824,20 @@ export function openOutput(id: string, service?: string): void {
   set({ modal: { kind: 'output', id, ...(service ? { service } : {}) } });
 }
 
-/** g: the card's Windows Terminal tab, brought to the front (the trust prompt, or anything the channel can't relay). */
+/** g: the card in a terminal. A session the app runs moves to a new Windows Terminal tab (§93); a terminal card's tab comes to the front. */
 export function goToTab(id: string): void {
   const card = get().cards.find((c) => c.id === id);
   if (!card) return;
-  if (!card.cwd) { flash(`${card.key} hasn’t opened a tab yet`); return; }
-  focusCardTab(id).then((reopened) => flash(reopened ? `${card.key}’s tab was gone: opened a new one on its session` : `Brought the tab ${card.key} forward`), (e: Error) => flash(e.message));
+  if (!card.cwd || !card.sessionId) { flash(`${card.key} hasn’t started a session yet`); return; }
+  const fromApp = card.runner === 'app';
+  focusCardTab(id).then((reopened) => flash(fromApp ? `Opened ${card.key} in a terminal tab: the card follows it there` : reopened ? `${card.key}’s tab was gone: opened a new one on its session` : `Brought the tab ${card.key} forward`), (e: Error) => flash(e.message));
 }
 
 export function answerAsk(id: string, behavior: 'allow' | 'deny'): void {
   const card = get().cards.find((c) => c.id === id);
   const ask = card && askOf(card);
   if (!ask) { flash(`${card?.key ?? 'It'} isn’t asking anything`); return; }
-  if (!ask.requestId && !ask.typed) { flash(ask.kind === 'question' ? 'Answer the question in the message box (Enter), or in its tab' : `Answer it in its terminal tab, ${card!.key}`); return; }
+  if (ask.kind === 'question') { flash('Answer in the message box (Enter)'); return; }
   answerCard(id, ask.requestId, behavior).then(() => flash(behavior === 'allow' ? (ask.kind === 'plan' ? 'Plan approved' : `Allowed ${ask.tool}`) : `Denied ${ask.tool}`), (e: Error) => flash(e.message));
 }
 

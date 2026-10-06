@@ -90,7 +90,7 @@ function notify(kind: Kind, s: SessionSummary): void {
 }
 
 /**
- * Ticket Line cards: chime and notify when one starts needing you in its terminal tab (a plan to
+ * Ticket Line cards: chime and notify when one starts needing you (a plan to
  * approve, a tool to allow, a question) or is ready to try. Skipped while you are looking at that
  * card in the drawer.
  */
@@ -108,7 +108,7 @@ export function onCardChange(prev: Card | undefined, next: Card): void {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
   if (document.visibilityState === 'visible' && document.hasFocus()) return;
   const n = new Notification(`${needs ? 'Needs you' : report ? 'Report ready' : 'Ready to try'}: ${next.key} ${next.title}`, {
-    body: needs ? `${next.live?.text ?? ''}. Answer it in its terminal tab, ${next.key}.` : report ? 's shows it; Enter copies it.' : 'Its turn finished with changes.',
+    body: needs ? `${next.live?.text ?? ''}. ${next.runner === 'app' ? 'Open the card to answer it.' : `Answer it in its terminal tab, ${next.key}.`}` : report ? 's shows it; Enter copies it.' : 'Its turn finished with changes.',
     tag: `${next.id}:${kind}`,
   });
   n.onclick = () => {

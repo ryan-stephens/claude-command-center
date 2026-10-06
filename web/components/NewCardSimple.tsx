@@ -360,7 +360,8 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
 function HowBlock({ c, keyName, focused, onFocus, pinned, user }: { c: Composer; keyName: string; focused: boolean; onFocus: () => void; pinned: string | null; user: string | null }) {
   const sp = simpleOf(c);
   const workspaces = useStore((s) => s.workspaces);
-  const trust = useStore((s) => s.settings.trustWorktrees === true);
+  // A session the app runs (§93) never stops at Claude Code's trust prompt: only a terminal tab asks.
+  const trust = useStore((s) => s.settings.trustWorktrees === true || !s.cardsInTerminal);
   const rows = howRows(c, workspaces, keyName, { pinned, user });
   const gi = Math.min(c.gi, rows.length - 1);
   const facts = howFacts(c, workspaces, keyName, { pinned, user });
@@ -395,7 +396,7 @@ function OptionRow({ c, r, i, focused, keyName, trust }: { c: Composer; r: GoRow
     ? (c.launch.branch === 'worktree' ? `Each repo gets a folder of its own next to it on the card’s branch, so other cards in the same repos are never touched.${trust ? '' : ' Claude Code asks once in the tab whether to trust the new folder.'}`
       : c.launch.branch === 'new' ? 'Switches the repo’s usual folder to the new branch; another card in the same repo would then change the files under this one.'
       : 'Stays on whatever the repo’s folder is on, and changes it there.')
-    : r.id === 'mode' ? (c.launch.mode === 'plan' ? 'Nothing changes until you approve the plan in its tab.' : c.launch.mode === 'auto' ? 'Auto isn’t offered on every model.' : 'Claude asks before each edit.')
+    : r.id === 'mode' ? (c.launch.mode === 'plan' ? 'Nothing changes until you approve the plan (y on the card).' : c.launch.mode === 'auto' ? 'Auto isn’t offered on every model.' : 'Claude asks before each edit.')
     : null;
   useEffect(() => { if (focused) document.getElementById(`how-${r.id}`)?.scrollIntoView({ block: 'nearest' }); }, [focused, r.id]);
   return (
@@ -505,7 +506,7 @@ function Picker({ c, embedded = false }: { c: Composer; embedded?: boolean }) {
           </label>
           {c.error && <div className="rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{c.error}</div>}
           <div className="flex items-end justify-between gap-4 border-t border-line pt-3">
-            <div className="text-[12.5px] text-faint">What you tick and the note wait on the card and go in with your next message in its tab; a repo gets a worktree on the card’s branch. <span className="text-sub">has it</span> marks what the card can already use.</div>
+            <div className="text-[12.5px] text-faint">What you tick and the note go to Claude at once between turns, or with your next message while it works; a repo gets a worktree on the card’s branch. <span className="text-sub">has it</span> marks what the card can already use.</div>
             <button className="btn btn-primary shrink-0 px-4 py-2" onClick={startWork} disabled={c.starting}>{c.starting ? 'Adding…' : `Add to ${addTo.key}`} <Key k="Ctrl Enter" size="sm" tone="ghost" /></button>
           </div>
         </>

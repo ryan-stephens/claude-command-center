@@ -106,6 +106,8 @@ interface State {
   cards: Card[];
   nextKey: string;
   cardModel: string | null;
+  /** The server starts cards in a terminal tab (legacy, CC_CONTROL_CARDS_IN_TERMINAL=1, §93), not in the app. */
+  cardsInTerminal: boolean;
   userModel: string | null;
   /** Tickets from Jira and Trello (and the demo set), the projects they come from, and how each source is doing. */
   tickets: Ticket[];
@@ -188,6 +190,7 @@ export const useStore = create<State>(() => ({
   cards: [],
   nextKey: 'CARD-1',
   cardModel: null,
+  cardsInTerminal: false,
   userModel: null,
   tickets: [],
   recipes: {},

@@ -1,5 +1,5 @@
 // The new-card screen: 1 add context (the repo library), 2 what Claude will know (three layers and
-// your note, or the exact text with p), 3 how it starts (terminal tab, workspace, home repo,
+// your note, or the exact text with p), 3 how it starts (in the app, §93; workspace, home repo,
 // branch, mode, opening message, and the commands it will run). Ctrl+Enter starts work.
 // With c in a card's drawer, the same screen adds to that running card instead: panel 2 is what
 // you are adding (and what it already has), panel 3 is when it reaches Claude.
@@ -125,7 +125,7 @@ function AddScreen({ c, card, ws, text }: { c: Composer; card: Card; ws: Workspa
       <div className="flex items-center gap-4 border-b border-line bg-surface px-4 py-3">
         <WsBadge ws={ws} size={30} />
         <div className="flex min-w-0 grow flex-col gap-1">
-          <div className="text-sm text-faint">Add context to a running card · {stage} · terminal tab {card.key}</div>
+          <div className="text-sm text-faint">Add context to a running card · {stage} · {card.runner === 'app' ? 'runs in the app' : `terminal tab ${card.key}`}</div>
           <div className="flex min-w-0 items-center gap-2 py-1.5 text-[19px] font-bold"><TicketKey k={card.key} source={card.ticket?.source} /><span className="truncate">{card.title}</span></div>
         </div>
         <div className="hidden items-center gap-2 whitespace-nowrap text-[13px] lg:flex" title="About 4 characters per token">
@@ -343,6 +343,8 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
   const workspaces = useStore((s) => s.workspaces);
   const model = useStore((s) => s.cardModel);
   const user = useStore((s) => s.userModel);
+  // A session the app runs (§93) never stops at Claude Code's trust prompt: only a terminal tab asks.
+  const inTerminal = useStore((s) => s.cardsInTerminal);
   const trust = useStore((s) => s.settings.trustWorktrees === true);
   const rows = goRows(c, workspaces, keyName, { pinned: model, user });
   const gi = Math.min(c.gi, rows.length - 1);
@@ -367,7 +369,7 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
                 </div>}
             {r.id === 'kind' && <div className="text-[12.5px] text-faint">{CARD_KINDS.find((k) => k.id === c.kind)!.blurb} <Key k="k" size="sm" inline /> changes it from anywhere on this screen.</div>}
             {r.id === 'branch' && c.kind === 'build' && <div className="text-[12.5px] text-faint">{c.launch.branch === 'worktree'
-              ? <>Each repo gets a folder of its own next to it ({homeOf(c.packet, c.launch) ? `${homeOf(c.packet, c.launch)!.replace(/[\\/]+$/, '')}-${keyName.toLowerCase()}` : 'repo-card-n'}) on the card’s branch, so other cards in the same repos are never touched. What that costs: a UI’s first start runs its install, and Claude Code asks once in the tab whether to trust the new folder{trust ? ' (your setting marks it trusted first)' : <> (the <Key k="?" size="sm" inline /> <Key k="B" size="sm" inline /> setting can mark it trusted first)</>}. <Key k="⇧X" size="sm" inline /> on the card removes the folders when it is done.</>
+              ? <>Each repo gets a folder of its own next to it ({homeOf(c.packet, c.launch) ? `${homeOf(c.packet, c.launch)!.replace(/[\\/]+$/, '')}-${keyName.toLowerCase()}` : 'repo-card-n'}) on the card’s branch, so other cards in the same repos are never touched. What that costs: a UI’s first start runs its install{!inTerminal ? '' : <>, and Claude Code asks once in the tab whether to trust the new folder{trust ? ' (your setting marks it trusted first)' : <> (the <Key k="?" size="sm" inline /> <Key k="B" size="sm" inline /> setting can mark it trusted first)</>}</>}. <Key k="⇧X" size="sm" inline /> on the card removes the folders when it is done.</>
               : c.launch.branch === 'new' ? 'Switches the repo’s usual folder to the new branch. Another card in the same repo would then change the files under this one: pick a worktree for that.'
               : 'Stays on whatever the repo’s folder is on, and changes it there.'}</div>}
             {r.id === 'branch' && c.kind !== 'build' && <div className="text-[12.5px] text-faint">{c.pr
@@ -375,15 +377,15 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
               : c.prLooking ? 'Looking for the ticket’s pull request…'
               : c.ticket ? <>No open pull request names {c.ticket.key}{c.prNotes?.length ? `: ${c.prNotes.join('; ')}` : '.'} {c.kind === 'review' ? 'Claude will look for its branch.' : ''}</>
               : 'Pick the ticket first: its pull request is looked up by its key.'}</div>}
-            {r.id === 'where' && <div className="text-[12.5px] text-faint">A Windows Terminal tab runs claude with this context.{c.launch.branch === 'worktree' && trust ? '' : ' The first time in a folder it asks whether to trust it: answer in the tab.'}</div>}
+            {r.id === 'where' && <div className="text-[12.5px] text-faint">{inTerminal ? <>A Windows Terminal tab runs claude with this context.{c.launch.branch === 'worktree' && trust ? '' : ' The first time in a folder it asks whether to trust it: answer in the tab.'}</> : <>Claude runs in the app with this context, your Claude Code settings, skills and MCP servers; the card’s chat is the session. <Key k="g" size="sm" inline /> opens it in a terminal any time.</>}</div>}
             {r.id === 'mode' && c.launch.mode === 'auto' && <div className="text-[12.5px] text-faint">Auto isn’t offered on every model{c.launch.model === 'haiku' ? ' (Haiku refuses it)' : ''}.</div>}
             {r.id === 'model' && <div className="text-[12.5px] text-faint">{c.launch.model ? `Starts with --model ${c.launch.model}.` : model ? `The default is ${model}, pinned by this server (CC_CONTROL_MODEL).` : user ? `The default is ${user}, from your Claude Code settings.` : 'Claude Code picks, as in a plain terminal.'} <Key k="m" size="sm" inline /> changes it from anywhere on this screen.</div>}
           </div>
         ))}
         <div className="grid gap-1.5 px-2.5 py-2">
           <div className="eyebrow">What happens</div>
-          <pre className="m-0 whitespace-pre-wrap break-all rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-relaxed">{launchLines(c, keyName, model ?? undefined).join('\n')}</pre>
-          <div className="text-[12.5px] text-faint">The hook comes from cc-control’s own settings file, passed with --settings. Nothing is added to your Claude Code settings.</div>
+          <pre className="m-0 whitespace-pre-wrap break-all rounded-lg border border-line bg-bg px-3 py-2 font-mono text-[11.5px] leading-relaxed">{launchLines(c, keyName, model ?? undefined, inTerminal).join('\n')}</pre>
+          <div className="text-[12.5px] text-faint">{inTerminal ? 'The hook comes from cc-control’s own settings file, passed with --settings. Nothing is added to your Claude Code settings.' : 'Nothing is added to your Claude Code settings: the packet and the card’s tracking live in the app.'}</div>
         </div>
       </div>
       <div className="grid gap-2 border-t border-line px-4 py-3">
@@ -391,7 +393,7 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
         <button className="btn btn-primary justify-center py-2 text-[15px]" disabled={c.starting} onClick={startWork}>
           <Key k="Ctrl Enter" size="sm" tone="ghost" />{c.starting ? 'Starting…' : 'Start work'}
         </button>
-        <span className="text-[12.5px] text-faint">{c.kind === 'qa' ? 'The card goes to Plan with its test plan; approve it in the tab, and Claude sets up the data and walks you through. The report lands on the card.'
+        <span className="text-[12.5px] text-faint">{c.kind === 'qa' ? 'The card goes to Plan with its test plan; approve it on the card (y), and Claude sets up the data and walks you through. The report lands on the card.'
           : c.kind === 'review' ? 'Claude reviews read-only. Its findings land on the card, to copy into the PR when you are ready.'
           : c.launch.mode === 'plan' ? 'The card goes to Plan. Nothing changes until you approve the plan.' : 'The card goes straight to Build.'}</span>
       </div>
@@ -436,7 +438,9 @@ function DeliverPane({ c, card }: { c: Composer; card: Card }) {
             </div>
             <div className="text-[12.5px] text-faint">
               {card.sessionId
-                ? <>Waits on the card. A UserPromptSubmit hook adds it to the next thing you type in the tab <b>{card.key}</b>. No special flags. Pushing it in at once needs the channel, a preview flag, so that comes later.</>
+                ? card.runner === 'app'
+                  ? <>Goes to Claude at once when it is between turns; while it works, it waits and goes in with your next message. A repo joins the session (it restarts in place between turns, same conversation).</>
+                  : <>Waits on the card. A UserPromptSubmit hook adds it to the next thing you type in the tab <b>{card.key}</b>.</>
                 : <>The session hasn’t linked yet, so it goes in with the rest of the context when the session starts.</>}
             </div>
           </div>

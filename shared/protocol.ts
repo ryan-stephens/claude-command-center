@@ -486,7 +486,7 @@ export type ServerMsg =
   /** A followed run's output so far (the whole log: on follow, and again when the run starts afresh), then the lines since. */
   | { type: 'run.log'; key: string; lines: LogLine[] }
   | { type: 'run.lines'; key: string; lines: LogLine[] }
-  | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string; /** The model in the user's Claude Code settings (a card's default otherwise). */ userModel?: string }
+  | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string; /** The model in the user's Claude Code settings (a card's default otherwise). */ userModel?: string; /** Cards start in a terminal tab (legacy, CC_CONTROL_CARDS_IN_TERMINAL=1, §93), not in the app. */ inTerminal?: boolean }
   | { type: 'card.started'; reqId: string; id: string }
   | { type: 'tickets'; tickets: Ticket[]; projects: TicketProject[]; sources: TicketSources }
   /** What a search found, or why it couldn't search. */

@@ -49,6 +49,16 @@ export interface DirStore {
   setSessionDirs(id: string, dirs: string[]): void;
 }
 
+/**
+ * A Ticket Line card's session, which the app runs (§93): what its CLI starts with besides the
+ * usual options (its model, the packet in its system prompt, the hooks that keep the card
+ * current), the mode it starts in, and that it is the app's own, so a resume never forks it.
+ */
+export interface CardSession {
+  options: Record<string, unknown>;
+  mode?: PermissionMode;
+}
+
 /** Activity changes on every stream event; clients get at most one update per this many ms. */
 const ACTIVITY_THROTTLE_MS = 150;
 
@@ -94,6 +104,8 @@ export class SessionManager {
   private modes = new Map<string, PermissionMode>();
   /** Every workspace; a session can use all repos of the workspaces holding its cwd. */
   private workspaces: Workspace[] = [];
+  /** The card a session belongs to, if any, as its CLI must start (every start: new, resumed, restarted). */
+  private cardSession: (id: string) => CardSession | undefined = () => undefined;
 
   constructor(events: SessionEvents, broker: PermissionBroker, dirs: DirStore) {
     this.events = events;
@@ -129,9 +141,24 @@ export class SessionManager {
     return [...out.values()].sort((a, b) => b.lastModified - a.lastModified);
   }
 
-  async create(cwd: string, prompt?: string, extraDirs: string[] = []): Promise<string> {
+  /** Cards' sessions (§93): what each starts with, looked up by session id whenever one starts. */
+  setCardSessions(lookup: (id: string) => CardSession | undefined): void {
+    this.cardSession = lookup;
+  }
+
+  /** Live and between turns: nothing running, nothing waiting on an answer. */
+  isIdle(id: string): boolean {
+    const l = this.live.get(this.forkedTo.get(id) ?? id);
+    return Boolean(l && l.status === 'idle' && !this.broker.hasPending(l.id));
+  }
+
+  isLive(id: string): boolean {
+    return this.live.has(this.forkedTo.get(id) ?? id);
+  }
+
+  /** `id`: a fixed session id (a card links to it before its first message, §93). */
+  async create(cwd: string, prompt?: string, extraDirs: string[] = [], id: string = crypto.randomUUID()): Promise<string> {
     if (!isDir(cwd)) throw new Error(`Not a directory: ${cwd}`);
-    const id = crypto.randomUUID();
     let dirs: string[] = [];
     for (const d of extraDirs) {
       if (!isDir(d)) throw new Error(`Not a directory: ${d}`);
@@ -182,7 +209,8 @@ export class SessionManager {
   private async resume(id: string): Promise<LiveSession> {
     const summary = this.summaries().find((s) => s.id === id);
     if (!summary) throw new Error(`Unknown session ${id}`);
-    const fork = Boolean(summary.activeElsewhere);
+    // A card's session is the app's own (§93): its fresh file is this server's work from before a restart, not a terminal's.
+    const fork = Boolean(summary.activeElsewhere) && !this.cardSession(id);
     const newId = fork ? crypto.randomUUID() : id;
     if (fork) this.dirs.setSessionDirs(newId, this.dirs.sessionDirs(id));
     const items = await this.transcript(id);
@@ -262,12 +290,23 @@ export class SessionManager {
     await this.changeDirs(id, removePath(this.dirs.sessionDirs(id), path));
   }
 
-  private async changeDirs(id: string, dirs: string[]): Promise<void> {
+  /** A repo added to a card (§93): a busy session takes it once it is idle, rather than refusing. */
+  async addDirWhenIdle(id: string, path: string): Promise<void> {
+    if (!isDir(path)) throw new Error(`Not a directory: ${path}`);
+    const cwd = this.cwdOf(id);
+    if (cwd && samePath(cwd, path)) return;
+    await this.changeDirs(id, addPath(this.dirs.sessionDirs(id), path), true);
+  }
+
+  private async changeDirs(id: string, dirs: string[], whenIdle = false): Promise<void> {
     const before = this.dirs.sessionDirs(id);
     if (before.length === dirs.length && before.every((d, i) => samePath(d, dirs[i]))) return;
     const l = this.live.get(id);
     if (l && (l.status !== 'idle' || backgroundRunning(l.activity))) {
-      throw new Error('Claude is still working. Add or remove repos once it has finished.');
+      if (!whenIdle) throw new Error('Claude is still working. Add or remove repos once it has finished.');
+      this.dirs.setSessionDirs(id, dirs);
+      l.dirsStale = true;
+      return;
     }
     this.dirs.setSessionDirs(id, dirs);
     if (l) { this.applyDirs(l); this.emitUpsert(id); }
@@ -424,6 +463,7 @@ export class SessionManager {
     const dirs = this.launchDirs(id, opts.cwd);
     // Approvals follow the session if the CLI moves it to a new id (/clear does).
     let self: LiveSession | undefined;
+    const card = this.cardSession(id);
     const q = query({
       prompt: input,
       options: {
@@ -431,9 +471,10 @@ export class SessionManager {
         model: MODEL,
         env: SDK_ENV,
         includePartialMessages: true,
-        permissionMode: this.modes.get(id) ?? 'default',
+        permissionMode: this.modes.get(id) ?? card?.mode ?? 'default',
         additionalDirectories: dirs,
         canUseTool: (tool, toolInput, { signal, suggestions }) => this.broker.ask(self?.id ?? id, tool, toolInput, suggestions, signal),
+        ...card?.options,
         ...opts.options,
       },
     });

@@ -211,9 +211,9 @@ function TicketTile({ t, focused, color }: { t: Ticket; focused: boolean; color:
 /** What moves a card on from each column: the key to press, or where to look. */
 const GATE: Record<Card['stage'], string> = {
   inbox: 'n starts work on a ticket',
-  plan: 'Claude plans; approve it in its tab',
+  plan: 'Claude plans; y on the card approves it',
   build: 'Watch it work',
-  needs: 'Answer in its terminal tab',
+  needs: 'Open the card to answer',
   try: 't tries it · s ships it',
   ship: 's merges the PR · o opens it',
   done: 'Merged',

@@ -17,9 +17,9 @@ It is **keyboard-first with the keys visible**: keycaps drawn on everything, a l
 The main concepts:
 - **Workspaces:** named groups of repos. Every session in a workspace can use all of its repos.
 - **A repo library** scanned from source folders; `+` on the line adds a repo from it to a workspace.
-- **The Ticket Line is the home page** (PLAN §27–§30): cards on a board (Inbox → Plan → Build → Needs you → Try it → Ship → Done), each following a Claude Code session in a terminal tab. A session opens full screen from its card (`Ctrl+Enter`); `Ctrl+K` finds any session, card or not. The old three-column Home is gone.
+- **The Ticket Line is the home page** (PLAN §27–§30): cards on a board (Inbox → Plan → Build → Needs you → Try it → Ship → Done), each with its own Claude Code session, which the app runs (§93; before that, each ran in a terminal tab). A session opens full screen from its card (`Ctrl+Enter`); `Ctrl+K` finds any session, card or not. The old three-column Home is gone.
 
-**Latest direction (2026-10-06, PLAN §92):** a card's session runs inside the app through the SDK; the terminal is the escape hatch (`g`), and the launcher and channel are being retired. The phased plan is `docs/prompts/continue-hub.md`. The earlier direction, for history:
+**Latest direction (2026-10-06, PLAN §92):** a card's session runs inside the app through the SDK; the terminal is the escape hatch (`g`), and the launcher and channel are being retired. The phased plan is `docs/prompts/continue-hub.md`; Phase A is done (§93, `walk-hub.cjs`). The earlier direction, for history:
 
 **Direction (2026-09-29):** the owner still reaches for plain Claude Code terminals over the app. They want it to *sit on top of* terminal sessions and to help people see and follow the development work, rather than replicate Claude Code features. How to get there is open; talk it through with them. `docs/PLAN.md` §26 has the reasoning. **Chosen (§27):** the *Ticket Line*, a board of tickets moving through the loop with a new-card screen for context. The spec is `docs/futures/path-line.html`; the build handoff is `docs/prompts/continue-ticket-line.md`.
 

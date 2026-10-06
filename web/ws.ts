@@ -197,23 +197,23 @@ export function followRun(key: string): () => void {
   };
 }
 
-/** Type into the card's terminal session (its channel). Rejects when it can't be reached. */
+/** A message to the card's session (§93: the app runs it; a session not running is resumed first). Rejects when it can't go in. */
 export async function sayToCard(id: string, text: string): Promise<void> {
-  // Long enough for a tab to be reopened and its session resumed first (§85).
+  // Long enough for a session to be resumed first (a terminal card's legacy tab, §85, takes longest).
   await request((reqId) => ({ type: 'card.send', reqId, id, text }), 120_000);
 }
 
-/** Answer the permission prompt the card's terminal relayed. */
+/** Answer what the card's session is asking: through the broker (§93), or a terminal card's channel or launcher. */
 export async function answerCard(id: string, requestId: string | undefined, behavior: 'allow' | 'deny'): Promise<void> {
   await request((reqId) => ({ type: 'card.answer', reqId, id, ...(requestId ? { requestId } : {}), behavior }), 30_000);
 }
 
-/** The answers to Claude's question form (§91), pressed into the tab by its launcher. */
+/** The answers to Claude's question form (§91): back with the tool call (§93), or pressed into a terminal card's tab by its launcher. */
 export async function answerQuestionCard(id: string, answers: { picks: number[]; other?: string }[]): Promise<void> {
   await request((reqId) => ({ type: 'card.answerQuestion', reqId, id, answers }), 30_000);
 }
 
-/** Bring the card's terminal tab to the front (the UI Automation walk can take a moment). True when there was no tab and a new one was opened on the session (§85). */
+/** g: the card in a terminal tab (§93: a session the app runs moves to a new one; a terminal card's comes to the front). True when a new tab was opened on the session. */
 export async function focusCardTab(id: string): Promise<boolean> {
   const reply = await request((reqId) => ({ type: 'card.focusTab', reqId, id }), 20_000);
   return reply.type === 'ok' && reply.note === 'reopened';
@@ -403,7 +403,7 @@ function receive(msg: ServerMsg): void {
       return;
     case 'cards': {
       const before = new Map(get().cards.map((c) => [c.id, c]));
-      set({ cards: msg.cards, nextKey: msg.nextKey, cardModel: msg.model ?? null, userModel: msg.userModel ?? null });
+      set({ cards: msg.cards, nextKey: msg.nextKey, cardModel: msg.model ?? null, userModel: msg.userModel ?? null, cardsInTerminal: msg.inTerminal === true });
       for (const c of msg.cards) onCardChange(before.get(c.id), c);
       return;
     }

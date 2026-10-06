@@ -20,12 +20,16 @@ test('a plan card waits on a plan, in Needs you, with a note still waiting', () 
   assert.equal(c.key, 'SHOP-155');
   assert.equal(c.stage, 'needs');
   assert.equal(c.live?.ask?.kind, 'plan');
-  assert.equal(c.relayed?.tool, 'ExitPlanMode');
+  assert.equal(c.live?.ask?.requestId, 'seed-req-id1', 'the app runs it (§93): the ask carries a request id');
+  assert.equal(c.relayed, undefined);
   assert.equal(c.cwd, 'C:/x/web-app-shop-155');
   assert.deepEqual(c.folders, [{ repo: 'C:/x/web-app', dir: 'C:/x/web-app-shop-155' }, { repo: 'C:/x/payments-api', dir: 'C:/x/payments-api-shop-155' }]);
   assert.equal(c.launch.branch, 'worktree');
   assert.equal(c.sessionId, 'seed-id1');
-  assert.equal(c.channel, true);
+  assert.equal(c.runner, 'app');
+  const tab = seedCard({ repos: ['C:/x/web-app'], channel: false }, 'id2', 1_000_000);
+  assert.equal(tab.runner, undefined, 'channel false: a terminal card whose tab is gone');
+  assert.equal(tab.relayed?.tool, 'ExitPlanMode');
   assert.equal(c.later?.length, 1);
   assert.deepEqual(c.files, []);
   assert.equal(c.todos?.filter((t) => t.status === 'completed').length, 1);

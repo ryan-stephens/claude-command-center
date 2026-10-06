@@ -16,9 +16,9 @@ import { writePrompt } from './write-prompt.ts';
 import { doneStatuses, finishesCard } from '../shared/tickets.ts';
 import { runKey, type RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
-import { CardService, cleanDraft, focusTab, userModel, writeHookSettings } from './cards.ts';
+import { CardService, CARDS_IN_TERMINAL, cleanDraft, focusTab, userModel, writeHookSettings } from './cards.ts';
 import { cleanSeed, seedAllowed, seedCard, seedTranscript } from './seed.ts';
-import { answersComplete, questionKeys, readAnswers } from '../shared/questions.ts';
+import { answersComplete, answerText, questionKeys, readAnswers } from '../shared/questions.ts';
 import { timingSafeEqual } from 'node:crypto';
 import { ChannelService } from './channel.ts';
 import { Typist } from './typist.ts';
@@ -61,19 +61,47 @@ function send(ws: WebSocket, msg: ServerMsg): void {
 }
 
 const broker = new PermissionBroker(
-  (request) => {
+  (request, toolInput) => {
     broadcast({ type: 'permission.request', request });
     manager.onPermissionChange(request.sessionId);
+    // A card's session (§93): the card asks, with the request's id.
+    cards.appAsk(request.sessionId, request.reqId, request.tool, toolInput);
   },
   (reqId, sessionId) => {
     broadcast({ type: 'permission.resolved', reqId });
     manager.onPermissionChange(sessionId);
+    cards.askResolved(sessionId, reqId);
   },
 );
 
+/**
+ * When the last message or answer went into a card's app session (§93), for the timing lines in
+ * server.log: send → first partial and first reply, y → the tool ran. Phase C makes them a budget.
+ */
+const timings = new Map<string, { key: string; at: number; what: 'send' | 'y'; tool?: string; partial?: boolean; item?: boolean }>();
+function timed(sessionId: string, what: 'partial' | 'item' | 'ran'): void {
+  const t = timings.get(sessionId);
+  if (!t) return;
+  const ms = Date.now() - t.at;
+  if (t.what === 'send' && what === 'partial' && !t.partial) { t.partial = true; console.log(`${new Date().toISOString()} send ${t.key}: first partial after ${ms} ms`); }
+  if (t.what === 'send' && what === 'item' && !t.item) { t.item = true; console.log(`${new Date().toISOString()} send ${t.key}: first reply after ${ms} ms`); }
+  if (t.what === 'y' && what === 'ran') { timings.delete(sessionId); console.log(`${new Date().toISOString()} send ${t.key}: y → ${t.tool ?? 'the tool'} ran after ${ms} ms`); }
+}
+
 const store = new Store();
 const commands = new CommandService(store);
-const cards = new CardService(store, { port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, trustWorktrees: () => store.loadSettings().trustWorktrees === true, runnable: runnableRepos, changed: () => broadcast(cardsMsg()) });
+const cards = new CardService(store, {
+  port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, trustWorktrees: () => store.loadSettings().trustWorktrees === true, runnable: runnableRepos,
+  inTerminal: CARDS_IN_TERMINAL,
+  // The card's session in the app (§93): its fixed id, its other repos, and its first message.
+  startSession: async (card, dirs) => {
+    timings.set(card.sessionId!, { key: card.key, at: Date.now(), what: 'send' });
+    await manager.create(card.cwd!, card.launch.message, dirs, card.sessionId);
+    logSend(card.id, `started in the app (${card.launch.message.length} chars)`);
+  },
+  onEvent: (card, event) => { if (event === 'PostToolUse' && card.sessionId) timed(card.sessionId, 'ran'); },
+  changed: () => broadcast(cardsMsg()),
+});
 
 const tickets = new TicketService(store, () => broadcast(ticketsMsg()));
 // A card whose ticket has moved past the work (Done, Ready for PO; CC_CONTROL_DONE_STATUSES) goes to Done on its own.
@@ -98,6 +126,23 @@ async function typeInto(id: string, text: string): Promise<'launcher' | 'channel
   if (channels.has(id)) { channels.send(id, text); return 'channel'; }
   throw new Error('This card’s terminal can’t be reached from here (its tab is gone, or it started before this): type in its tab.');
 }
+/**
+ * Context just added to a card the app runs (§93): its new repos join the session (a busy one takes
+ * them once idle; the SDK restarts it in place, same id and transcript), and on a live idle session
+ * what waits goes to Claude now, as a message of its own. A busy or stopped one keeps it for the
+ * next message, as before.
+ */
+async function deliverNow(id: string, repos: string[]): Promise<void> {
+  const card = cards.get(id);
+  if (!card?.sessionId || card.runner !== 'app') return;
+  for (const r of repos) await manager.addDirWhenIdle(card.sessionId, folderFor(card, r)).catch((e: Error) => logSend(id, `couldn’t add ${repoName(r)} to the session: ${e.message}`));
+  if (!manager.isIdle(card.sessionId)) return;
+  const text = cards.takeWaiting(id);
+  if (!text) return;
+  await manager.send(card.sessionId, text);
+  logSend(id, `added context went in at once (${text.length} chars)`);
+}
+
 /** One line in server.log per message sent to a card, so a tab that never got it can be traced. */
 function logSend(id: string, line: string): void {
   console.log(`${new Date().toISOString()} send ${cards.get(id)?.key ?? id}: ${line}`);
@@ -193,21 +238,40 @@ const seededTranscripts = new Map<string, TranscriptItem[]>();
 
 function cardsMsg(): ServerMsg {
   const mine = userModel();
-  return { type: 'cards', cards: cards.list(), nextKey: cards.peekKey(), ...(process.env.CC_CONTROL_MODEL ? { model: process.env.CC_CONTROL_MODEL } : {}), ...(mine ? { userModel: mine } : {}) };
+  return { type: 'cards', cards: cards.list(), nextKey: cards.peekKey(), ...(process.env.CC_CONTROL_MODEL ? { model: process.env.CC_CONTROL_MODEL } : {}), ...(mine ? { userModel: mine } : {}), ...(CARDS_IN_TERMINAL ? { inTerminal: true } : {}) };
 }
 
 const manager: SessionManager = new SessionManager({
   sessionsChanged: () => broadcast(snapshot()),
-  upsert: (session) => broadcast({ type: 'session.upsert', session }),
-  items: (id, items) => broadcast({ type: 'session.items', id, items }),
-  partial: (id, text) => broadcast({ type: 'session.partial', id, text }),
-  forked: (oldId, newId) => broadcast({ type: 'session.forked', oldId, newId }),
+  upsert: (session) => {
+    broadcast({ type: 'session.upsert', session });
+    // A card's turn stopped mid-way (Esc) never reports Stop: idle says it is over (§93).
+    if (session.status === 'idle') cards.sessionIdle(session.id);
+  },
+  items: (id, items) => {
+    broadcast({ type: 'session.items', id, items });
+    if (items.some((i) => i.kind === 'assistant' || i.kind === 'tool')) timed(id, 'item');
+  },
+  partial: (id, text) => {
+    broadcast({ type: 'session.partial', id, text });
+    if (text) timed(id, 'partial');
+  },
+  forked: (oldId, newId) => {
+    broadcast({ type: 'session.forked', oldId, newId });
+    // A card's session moved (/clear, §93): the card goes with it.
+    cards.followSession(oldId, newId);
+  },
   commandsChanged: () => broadcast({ type: 'commands.changed' }),
   activity: (id, activity) => broadcast({ type: 'session.activity', id, activity }),
   transcript: (id, items) => broadcast({ type: 'session.transcript', id, items }),
   todos: (id, todos) => broadcast({ type: 'session.todos', id, todos }),
   fileChanged: (id) => mirror.changed(id),
 }, broker, store);
+// A card's session starts with its model, the packet and its hooks, whenever it (re)starts (§93).
+manager.setCardSessions((id) => {
+  const card = cards.bySession(id);
+  return card && cards.sessionOptions(card);
+});
 
 // Sessions open in a terminal: whoever is looking at one sees it update live.
 const mirror = new Mirror<WebSocket>({
@@ -553,6 +617,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
           if (said) cards.update(id, (c) => ({ ...c, boot: [...c.boot, { at: Date.now(), text: said, state: 'ok' }] }));
         }
       }
+      await deliverNow(id, added.filter((x) => x.kind === 'repo').map((x) => x.id));
       send(ws, { type: 'ok', reqId: msg.reqId });
       broadcast(recipesMsg());
       return;
@@ -564,6 +629,9 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const id = String(msg.id);
       // A run from those folders would be left pointing at nothing: it stops first, with its stop: steps.
       await endSession(id, true);
+      // So does the card's session in the app (§93): Windows won't remove a folder a process works in.
+      const sid = cards.get(id)?.runner === 'app' ? cards.get(id)?.sessionId : undefined;
+      if (sid) manager.stop(sid);
       const r = await cards.removeWorktrees(id, msg.force === true, msg.thenDelete === true);
       if (msg.thenDelete === true && !r.kept.length) cards.delete(id);
       send(ws, { type: 'card.worktreesRemoved', reqId: msg.reqId, id, removed: r.removed, kept: r.kept });
@@ -624,7 +692,28 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const text = String(msg.text ?? '').slice(0, 20_000);
       if (!text.trim()) throw new Error('Nothing to send.');
       const id = String(msg.id);
-      // No way in (the tab closed, the session ended, or the card started before this): the session
+      const card = cards.get(id);
+      if (!card?.sessionId) throw new Error(`${card?.key ?? 'That card'} hasn’t started a session yet.`);
+      // The app runs the card's session (§93): the message goes straight in; one that isn't live (the
+      // server restarted, or it ended) is resumed by the send itself. A terminal card whose tab can't
+      // be reached moves into the app first.
+      const legacy = card.runner !== 'app' && (channels.has(id) || typist.alive(id)) && card.live?.phase !== 'ended';
+      if (!legacy && !CARDS_IN_TERMINAL) {
+        const sessionId = (await cards.toApp(id)).sessionId!;
+        const t0 = Date.now();
+        const live = manager.isLive(sessionId);
+        timings.set(sessionId, { key: card.key, at: t0, what: 'send' });
+        try {
+          await manager.send(sessionId, text);
+        } catch (e) {
+          logSend(id, `not sent: ${(e as Error).message}`);
+          throw e;
+        }
+        logSend(id, `${text.length} chars into the app session${live ? '' : `, resumed in ${Date.now() - t0} ms`}`);
+        send(ws, { type: 'ok', reqId: msg.reqId });
+        return;
+      }
+      // Legacy (terminal cards): no way in (the tab closed, the session ended, or the card started before this): the session
       // is resumed in a new tab and the message goes in once its channel connects or its launcher polls (§85, §87).
       if ((!channels.has(id) && !typist.alive(id)) || cards.get(id)?.live?.phase === 'ended') {
         logSend(id, `no way in (channel ${channels.has(id)}, launcher ${typist.alive(id)}, session ${cards.get(id)?.live?.phase ?? '-'}): reopening its tab`);
@@ -654,6 +743,14 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'card.focusTab': {
       const card = cards.get(String(msg.id));
       if (!card) throw new Error('That card is gone.');
+      // The app runs it (§93): g hands the session to a terminal tab (claude --resume), between turns only.
+      if (card.runner === 'app' && card.sessionId) {
+        if (manager.isLive(card.sessionId) && !manager.isIdle(card.sessionId)) throw new Error('Claude is working; Esc stops it first, then g opens it in a terminal.');
+        manager.stop(card.sessionId);
+        await cards.reopen(card.id, true);
+        send(ws, { type: 'ok', reqId: msg.reqId, note: 'reopened' });
+        return;
+      }
       try {
         await focusTab(card.key);
         send(ws, { type: 'ok', reqId: msg.reqId });
@@ -668,6 +765,21 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'card.answer': {
       const behavior = msg.behavior === 'deny' ? 'deny' : 'allow';
       const id = String(msg.id);
+      const ask = cards.get(id)?.live?.ask;
+      // The app's own session (§93): the broker holds the request, so the answer is its decision.
+      if (ask?.requestId) {
+        const sessionId = broker.sessionOf(ask.requestId);
+        if (!sessionId) throw new Error('That prompt has gone (answered, or the session stopped).');
+        const card = cards.get(id)!;
+        timings.set(sessionId, { key: card.key, at: Date.now(), what: 'y', tool: ask.tool });
+        cards.answered(id, behavior);
+        broker.respond(ask.requestId, behavior);
+        // An approved plan carries on asking before changes, as the card's other modes do.
+        if (ask.kind === 'plan' && behavior === 'allow') await manager.setMode(sessionId, 'default').catch(() => {});
+        logSend(id, `${behavior === 'allow' ? 'y' : 'n'} on ${ask.tool}`);
+        send(ws, { type: 'ok', reqId: msg.reqId });
+        return;
+      }
       if (typeof msg.requestId === 'string' && msg.requestId) {
         channels.answer(id, msg.requestId.slice(0, 80), behavior);
         cards.channelAnswered(id, msg.requestId);
@@ -686,9 +798,19 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const card = cards.get(id);
       const questions = card?.live?.ask?.kind === 'question' ? card.live.ask.questions : undefined;
       if (!questions?.length) throw new Error('No question is open on this card any more.');
-      if (!typist.alive(id)) throw new Error('This card’s tab can’t be reached from here: answer in its tab (g).');
       const answers = readAnswers(msg.answers, questions);
       if (!answersComplete(questions, answers)) throw new Error('Answer every question first.');
+      // The app's own session (§93): the answers go back with the tool call, question → the picked labels.
+      const reqId = card!.live!.ask!.requestId;
+      if (reqId) {
+        if (!broker.sessionOf(reqId)) throw new Error('That question has gone (answered, or the session stopped).');
+        cards.answered(id, 'allow');
+        broker.respond(reqId, 'allow', Object.fromEntries(questions.map((q, i) => [q.question, answerText(q, answers[i])])));
+        logSend(id, `answered ${questions.length} question(s) in the app`);
+        send(ws, { type: 'ok', reqId: msg.reqId });
+        return;
+      }
+      if (!typist.alive(id)) throw new Error('This card’s tab can’t be reached from here: answer in its tab (g).');
       await typist.send(id, { kind: 'keys', keys: questionKeys(questions, answers) });
       cards.typedAnswer(id);
       logSend(id, `answered ${questions.length} question(s) through the launcher`);
@@ -999,6 +1121,8 @@ const servers = [listen(HOST, localApp, isTrusted, () => {
   writeHookSettings();
   // No card is reachable until its channel connects again (the script in each live tab retries).
   cards.resetChannels();
+  // No card session runs in the app yet (§93): one that was working waits, and the next message resumes it.
+  cards.afterRestart();
   // A proxy file a run changed in place and never put back (the server stopped mid-run) goes back now.
   for (const f of restoreLeftovers(runsDir(DB_PATH))) console.log(`Put back ${f}, which Try it had changed.`);
 })];

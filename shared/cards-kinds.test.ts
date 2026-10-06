@@ -50,7 +50,8 @@ test('a review card: read-only, on the PR’s branch in a copy, and the diff to 
   const lines = launchLines(d, 'WSS-123');
   assert.equal(lines[0], `git -C ${UI} fetch origin feature/WSS-123-proxy develop`);
   assert.equal(lines[1], `git -C ${UI} worktree add --detach ${UI}-wss-123 origin/feature/WSS-123-proxy`);
-  assert.ok(lines.at(-1)!.includes(`-d ${UI}-wss-123 `));
+  assert.ok(lines.at(-2)!.includes(`cwd ${UI}-wss-123,`), 'Claude starts in the copy');
+  assert.ok(launchLines(d, 'WSS-123', undefined, true).at(-1)!.includes(`-d ${UI}-wss-123 `), 'so does a tab (legacy)');
   const none = packetText(draft({ kind: 'review' }), 'WSS-9');
   assert.match(none, /No pull request was found for WSS-9/);
 });

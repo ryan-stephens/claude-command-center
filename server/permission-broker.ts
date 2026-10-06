@@ -12,10 +12,11 @@ interface Pending {
 /** Holds `canUseTool` promises until the user answers Y / A / N in the UI. */
 export class PermissionBroker {
   private pending = new Map<string, Pending>();
-  private onRequest: (r: PermissionRequest) => void;
+  private onRequest: (r: PermissionRequest, toolInput: Record<string, unknown>) => void;
   private onResolved: (reqId: string, sessionId: string) => void;
 
-  constructor(onRequest: (r: PermissionRequest) => void, onResolved: (reqId: string, sessionId: string) => void) {
+  /** `onRequest` also gets the tool's whole input (a card reads it the way it reads a hook's, §93). */
+  constructor(onRequest: (r: PermissionRequest, toolInput: Record<string, unknown>) => void, onResolved: (reqId: string, sessionId: string) => void) {
     this.onRequest = onRequest;
     this.onResolved = onResolved;
   }
@@ -43,7 +44,7 @@ export class PermissionBroker {
       this.pending.set(reqId, { request, toolInput, suggestions, resolve });
       // An interrupt aborts the tool call; drop the card.
       signal.addEventListener('abort', () => this.settle(reqId, { behavior: 'deny', message: 'Interrupted.' }), { once: true });
-      this.onRequest(request);
+      this.onRequest(request, toolInput);
     });
   }
 

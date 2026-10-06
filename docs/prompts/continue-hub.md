@@ -37,6 +37,8 @@ Each phase is its own PLAN section (next is §93) and its own commit or few, pus
 
 ### Phase A. A card's session runs in the app
 
+**Done: PLAN §93** (2026-10-06; `walk-hub.cjs` passes). What differs from the plan below: the packet goes in the system prompt (in-process `SessionStart` callbacks never fire), `PermissionRequest` comes from the broker and `SessionEnd` isn't used.
+
 **Goal.** `Ctrl+Enter` on the new-card screen starts the session inside the server; the open card streams the reply word by word; `Enter` in the box sends at once; `y` / `n` answer a tool prompt, a plan or a question without any keystroke injection; every card with a session is always reachable. No Windows Terminal tab is opened, no channel, no launcher.
 
 **What to change.**

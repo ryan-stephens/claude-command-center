@@ -1,12 +1,15 @@
-// The Ticket Line's server half: a card saves its context, makes its branch and starts `claude` in
-// a Windows Terminal tab. The tab's SessionStart hook (hooks/cc-control-hook.mjs, loaded with
-// `claude --settings`, so nothing is added to the user's own settings) calls back here with the
-// card id and token, gets the packet as additionalContext, and reports the session id, which
-// links the card to the session.
+// The Ticket Line's server half: a card saves its context, makes its branch and starts its Claude
+// session. From §93 the app runs it (through the SDK, in SessionManager): the packet goes in its
+// system prompt and in-process hooks keep the card current, the same events applyEvent has always
+// read. With CC_CONTROL_CARDS_IN_TERMINAL=1 (legacy, one release) it starts `claude` in a Windows
+// Terminal tab instead, whose SessionStart hook (hooks/cc-control-hook.mjs, loaded with `claude
+// --settings`, so nothing is added to the user's own settings) calls back here with the card id
+// and token, gets the packet as additionalContext, and reports the session id.
 
+import type { HookCallbackMatcher, HookEvent } from '@anthropic-ai/claude-agent-sdk';
 import { execFile, spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +17,7 @@ import {
   BRANCH_NAME, branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, folderFor, PACKET_KINDS, homeOf, includedRepos, isClean, LAUNCH_MODES, laterText, modelFor, ownFolders, packetText, tokens, fmtK, waiting, worktreeFor, wtArg,
   type BranchChoice, type BootStep, type Card, type CardDraft, type CardFolder, type CardKind, type CardWorktree, type LaterItem, type LaunchMode, type Packet, type PacketItem, type PrTarget,
 } from '../shared/cards.ts';
-import type { Workspace } from '../shared/protocol.ts';
+import { MODES, type PermissionMode, type Workspace } from '../shared/protocol.ts';
 import { SOURCE_NAME, type Ticket } from '../shared/tickets.ts';
 import { repoName, samePath } from '../shared/workspaces.ts';
 import { applyEvent, TRACKED_EVENTS, type HookInput } from './card-events.ts';
@@ -53,6 +56,31 @@ export function tabExists(key: string): Promise<boolean> {
       resolve(!err && stdout.trim() === 'ok');
     });
   });
+}
+
+/** Legacy (§93): cards start in a Windows Terminal tab, as before, instead of in the app. For one release, so a machine can fall back. */
+export const CARDS_IN_TERMINAL = process.env.CC_CONTROL_CARDS_IN_TERMINAL === '1';
+
+/**
+ * The hook events the app's own card sessions report in-process (§93). PermissionRequest comes from
+ * the permission broker instead, which has the request id y / n answer; SessionEnd isn't one: the
+ * server decides when the session's CLI stops, and a stopped one still resumes on the next message.
+ */
+export const APP_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop'] as const satisfies readonly HookEvent[];
+
+/** The in-process hooks of a card's session: each event goes to `on` with its input, and `on`'s output (context added since, on UserPromptSubmit) goes back to Claude. */
+export function appHooks(on: (event: string, input: HookInput) => object | null): Partial<Record<HookEvent, HookCallbackMatcher[]>> {
+  const hooks: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {};
+  for (const event of APP_EVENTS) {
+    hooks[event] = [{ hooks: [async (input) => {
+      try { return on(event, input as HookInput) ?? {}; } catch (e) {
+        // A card gone (deleted while its session ran) must never stop Claude.
+        console.error(`cc-control: ${event} for a card failed: ${(e as Error).message}`);
+        return {};
+      }
+    }] }];
+  }
+  return hooks;
 }
 
 /** Cards start with a channel into their terminal (a research-preview flag); CC_CONTROL_CHANNEL=0 turns it off. */
@@ -192,6 +220,16 @@ export async function makeWorktrees(repos: string[], home: string, key: string, 
   return { folders, skipped };
 }
 
+/** Delete a folder, trying again for a few seconds while Windows still has it open. */
+async function removeFolder(dir: string, tries = 12): Promise<void> {
+  for (let i = 1; ; i++) {
+    try { rmSync(dir, { recursive: true, force: true }); return; } catch (e) {
+      if (i >= tries) throw new Error(`couldn’t delete ${dir}: ${(e as Error).message}`);
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+}
+
 /** A card's worktrees as they are now: what would be lost by removing each. */
 export async function worktreeStates(card: Pick<Card, 'folders'>): Promise<CardWorktree[]> {
   return Promise.all(ownFolders(card).map(async (f) => {
@@ -217,7 +255,15 @@ export async function removeWorktrees(card: Pick<Card, 'folders' | 'branchName' 
     if (!force && !isClean(w)) { kept.push(w); continue; }
     try {
       if (w.missing) await git(w.repo, ['worktree', 'prune']);
-      else await git(w.repo, ['worktree', 'remove', '--force', w.dir]);
+      else {
+        await git(w.repo, ['worktree', 'remove', '--force', w.dir]).catch(async (e: Error) => {
+          // Windows: a process that just stopped (the card's session, its shell) can hold the folder a
+          // moment longer. git has unregistered it by then and left the folder; it goes here.
+          if (!/failed to delete|Permission denied/i.test(e.message)) throw e;
+          await removeFolder(w.dir);
+          await git(w.repo, ['worktree', 'prune']);
+        });
+      }
       // A review's copy is detached: no branch of the card's to delete. A worktree card's branch is its own.
       if (card.launch.branch === 'worktree' && card.branchName) await git(w.repo, ['branch', '-D', card.branchName]).catch(() => {});
       removed.push(w);
@@ -292,7 +338,31 @@ interface CardOpts {
   trustWorktrees?: () => boolean;
   /** The card's repos its workspace's stack can start (Try it), for the hook's text about a repo added later. */
   runnable?: (card: Card) => string[];
+  /**
+   * Start the card's session in the app (§93): SessionManager with the card's fixed session id, its
+   * other folders and its first message. The card is saved first, so its hooks find it.
+   */
+  startSession?: (card: Card, dirs: string[]) => Promise<void>;
+  /** Start cards in a terminal tab (legacy, CC_CONTROL_CARDS_IN_TERMINAL=1). */
+  inTerminal?: boolean;
+  /** Each hook event a card's app session reports, after it is applied (the server's timing lines). */
+  onEvent?: (card: Card, event: string) => void;
   changed: () => void;
+}
+
+/**
+ * The live line of a session the app runs (§93): applyEvent's words were written for a tab ("Plan
+ * ready: approve it in the tab"); the card is where it is answered now.
+ */
+function inApp(card: Card): Card {
+  if (!card.live || !/ in the tab$/.test(card.live.text)) return card;
+  return { ...card, live: { ...card.live, text: card.live.text.replace(/:? (approve it )?in the tab$/, (_m, a: string | undefined) => (a ? ': approve it with y' : '')) } };
+}
+
+/** Plan and the like, as the card's session last reported it, else what it started with. */
+function modeOf(card: Card): PermissionMode {
+  const m = card.live?.mode;
+  return MODES.includes(m as PermissionMode) ? m as PermissionMode : card.launch.mode;
 }
 
 /** The "model" in ~/.claude/settings.json: what a plain `claude` would start with. */
@@ -351,7 +421,7 @@ export class CardService {
     card.boot.push({ at: Date.now(), text, state });
   }
 
-  /** Branch, then the terminal tab. Fails before saving anything if either can't be done, so the new-card screen can be fixed and retried. */
+  /** Branch, then the session (in the app, or a terminal tab). Fails before saving anything if either can't be done, so the new-card screen can be fixed and retried. */
   async start(draft: CardDraft, ticket?: Ticket): Promise<Card> {
     const home = homeOf(draft.packet, draft.launch)!;
     if (ticket && this.list().some((c) => c.key === ticket.key)) throw new Error(`${ticket.key} already has a card on the line.`);
@@ -399,8 +469,29 @@ export class CardService {
     this.trust(card, ownFolders(card).map((f) => f.dir));
 
     card.model = modelFor(card.launch, this.opts.model, this.opts.userModel?.());
+    // A token even for a card the app runs: g can still hand its session to a terminal tab, whose hooks prove themselves with it.
     const token = crypto.randomUUID();
     const others = this.otherFolders(card, start);
+    if (!this.opts.inTerminal && this.opts.startSession) {
+      const now = Date.now();
+      card.sessionId = crypto.randomUUID();
+      card.runner = 'app';
+      card.live = { phase: 'working', text: 'Starting Claude', at: now, mode: card.launch.mode, turnSince: now };
+      this.step(card, `Started Claude in the app in ${card.cwd}${others.length ? ` with ${others.length} more repo${others.length === 1 ? '' : 's'}` : ''}`);
+      this.step(card, `Gave Claude the packet with its system prompt (${fmtK(size)}); it stays through /clear and compacting`);
+      this.step(card, `Linked session ${card.sessionId.slice(0, 8)} to this card`);
+      this.step(card, card.launch.mode === 'plan' ? 'Claude started on a plan' : 'Claude started work');
+      // Saved before the session starts: its first hook (UserPromptSubmit) looks the card up.
+      this.store.saveCard(card, token);
+      try {
+        await this.opts.startSession(card, others);
+      } catch (e) {
+        this.store.deleteCard(card.id);
+        throw e;
+      }
+      this.opts.changed();
+      return card;
+    }
     const claudeArgs = [...this.claudeArgs(card), ...others.flatMap((r) => ['--add-dir', r])];
     await this.openTab(card, token, claudeArgs, card.launch.message);
     this.step(card, `Opened a Windows Terminal tab in ${card.cwd}${others.length ? ` with ${others.length} more repo${others.length === 1 ? '' : 's'}` : ''}`);
@@ -441,14 +532,15 @@ export class CardService {
    * last two minutes and the session hasn't ended): two tabs on one session would both write its
    * transcript; g brings that tab forward instead.
    */
-  async reopen(id: string): Promise<Card> {
+  async reopen(id: string, fromApp = false): Promise<Card> {
     const card = this.get(id);
     if (!card) throw new Error('That card is gone.');
     if (!card.sessionId) throw new Error(`${card.key} hasn’t started a session yet.`);
     if (!card.cwd || !isDir(card.cwd)) throw new Error(`${card.cwd ?? 'Its folder'} isn’t there any more, so its session can’t be resumed.`);
     const token = this.store.cardToken(id);
     if (!token) throw new Error(`${card.key} has no token, so a new tab couldn’t prove itself. Start a new card.`);
-    const spokeAt = card.live?.phase !== 'ended' ? card.live?.at ?? 0 : 0;
+    // From the app (g on a card the app runs, §93): the app has just let go of the session, so its hooks speaking a moment ago were the app's.
+    const spokeAt = card.live?.phase !== 'ended' && !fromApp ? card.live?.at ?? 0 : 0;
     if (Date.now() - spokeAt < ALIVE_MS) throw new Error(`${card.key}’s tab looks open (its session spoke ${Math.round((Date.now() - spokeAt) / 1000)} s ago) but can’t be reached: g brings the tab forward.`);
     // The tab itself, by its title: an idle one is still a tab, and a second claude on its session would write the same transcript.
     if (await tabExists(card.key)) throw new Error(`${card.key}’s tab is open but can’t be reached from here (it started before this, or its launcher is gone): g brings it forward.`);
@@ -459,7 +551,9 @@ export class CardService {
     card.boot = card.boot.filter((b) => b.state !== 'go');
     this.step(card, `Opened a new tab in ${card.cwd}, resuming session ${card.sessionId.slice(0, 8)}`);
     this.step(card, 'Waiting for the session to resume', 'go');
-    if (card.live) card.live = { ...card.live, phase: 'working', text: 'Resuming in a new tab', at: Date.now() };
+    if (card.live) card.live = { ...card.live, phase: 'working', text: 'Resuming in a new tab', at: Date.now(), ask: undefined };
+    // The tab owns the session now; its HTTP hooks keep the card current (and a send goes in through the tab's way in, or moves it back once the tab is gone).
+    card.runner = 'terminal';
     this.save(card);
     clearTimeout(this.waits.get(id));
     this.waits.set(id, setTimeout(() => this.noResume(id), HOOK_WAIT_MS));
@@ -602,7 +696,137 @@ ${laterText(card.key, later, card, this.opts.runnable?.(card))}`;
   hookEvent(id: string, token: string, event: string, input: HookInput): object | null {
     const { card, sessionId } = this.checked(id, token, input);
     if (card.sessionId !== sessionId) return null;
+    return this.applyHook(card, event, input);
+  }
+
+  /**
+   * An event from the in-process hooks of a session the app runs for the card (§93): no token (the
+   * hooks were made for this card), and the session is the card's whatever its id (a /clear moves
+   * the card with it, see followSession).
+   */
+  appEvent(id: string, event: string, input: HookInput): object | null {
+    const card = this.get(id);
+    if (!card) return null;
+    const out = this.applyHook(card, event, input);
+    const after = this.get(id);
+    if (after) this.opts.onEvent?.(after, event);
+    return out;
+  }
+
+  /** What a card's session starts with in the app (§93): its mode, model, the packet in its system prompt, the hooks. */
+  sessionOptions(card: Card): { mode: PermissionMode; options: Record<string, unknown> } {
+    const model = card.model ?? card.launch.model ?? this.opts.model;
+    return {
+      mode: modeOf(card),
+      options: {
+        ...(model ? { model } : {}),
+        // The packet, recorded with the session and re-rendered after /clear and compacting: what SessionStart's additionalContext did for a tab.
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: packetText(card, card.key, card.branchName) },
+        hooks: appHooks((event, input) => this.appEvent(card.id, event, input)),
+      },
+    };
+  }
+
+  /** The card whose app session this is (§93). */
+  bySession(sessionId: string): Card | undefined {
+    return this.list().find((c) => c.runner === 'app' && c.sessionId === sessionId);
+  }
+
+  /**
+   * The permission broker holds a request from a card's app session (§93): the card asks, with the
+   * request's id, which y / n and the question form answer. The same PermissionRequest event a tab's
+   * hook sends, so the card reads it the same way.
+   */
+  appAsk(sessionId: string, requestId: string, tool: string, toolInput: Record<string, unknown>): void {
+    const card = this.bySession(sessionId);
+    if (!card) return;
+    const next = inApp(applyEvent(card, 'PermissionRequest', { session_id: sessionId, tool_name: tool, tool_input: toolInput }, Date.now()));
+    if (next.live?.ask) next.live = { ...next.live, ask: { ...next.live.ask, requestId } };
+    this.save(next);
+  }
+
+  /**
+   * y / n answered the card's ask from here (§93): the card says so at once. An approved plan moves
+   * it to Build: the broker settles before the tool runs, so the hooks' PostToolUse no longer finds
+   * the ask that would have told applyEvent the plan was approved.
+   */
+  answered(id: string, behavior: 'allow' | 'deny'): void {
+    const card = this.get(id);
+    const ask = card?.live?.ask;
+    if (!card?.live || !ask?.requestId) return;
+    const plan = ask.kind === 'plan';
+    const locked = card.stage === 'ship' || card.stage === 'done' || card.stage === 'inbox';
+    const what = (ask.detail ?? ask.tool).replace(/^running: /, '');
+    const text = plan ? (behavior === 'allow' ? 'Plan approved: building' : 'Not yet: Claude keeps planning') : `${behavior === 'allow' ? 'Allowed' : 'Denied'} ${ask.tool}: ${what}`;
+    const stage = locked ? card.stage : plan ? (behavior === 'allow' ? 'build' : 'plan') : card.stage === 'needs' ? (card.live.mode === 'plan' ? 'plan' : 'build') : card.stage;
+    this.save({ ...card, stage, live: { ...card.live, phase: 'working', text, ask: undefined, ...(plan && behavior === 'allow' ? { mode: 'default' } : {}) } });
+  }
+
+  /** The broker's request is over (answered, interrupted, or the session stopped): its ask leaves the card. */
+  askResolved(sessionId: string, requestId: string): void {
+    const card = this.bySession(sessionId);
+    if (!card?.live?.ask || card.live.ask.requestId !== requestId) return;
+    this.save({ ...card, live: { ...card.live, phase: 'working', text: 'Answered from here', ask: undefined } });
+  }
+
+  /**
+   * The app's session went idle (§93). A turn that ends normally has said so through its Stop hook
+   * already; one stopped mid-way (Esc) never fires Stop, so the card would read "working" forever.
+   */
+  sessionIdle(sessionId: string): void {
+    const card = this.bySession(sessionId);
+    if (!card?.live || card.live.phase !== 'working') return;
+    this.save({ ...card, live: { ...card.live, phase: 'waiting', text: 'Stopped', turnSince: undefined, at: Date.now() } });
+  }
+
+  /**
+   * The session moved to a new id: /clear starts a fresh conversation that way (§93; the manager
+   * follows it). The card follows too, and what was added since goes again with the next message:
+   * the fresh conversation has only the packet.
+   */
+  followSession(oldId: string, newId: string): void {
+    const card = this.bySession(oldId);
+    if (!card) return;
+    const later = (card.later ?? []).map(({ sent: _s, ...i }) => i);
+    this.save({ ...card, sessionId: newId, later, boot: [...card.boot, { at: Date.now(), text: `Fresh start (/clear): linked session ${newId.slice(0, 8)}; the packet came with it${later.length ? ', and what was added since goes with your next message' : ''}`, state: 'ok' }] });
+  }
+
+  /**
+   * The server just started (§93): no card session is running, whatever the cards say. One that was
+   * working or asking waits instead, and says the next message resumes it.
+   */
+  afterRestart(): void {
+    for (const card of this.list()) {
+      if (card.runner !== 'app' || (card.live?.phase !== 'working' && card.live?.phase !== 'needs')) continue;
+      const text = 'The server restarted; the next message resumes the session';
+      this.store.saveCard({ ...card, live: { ...card.live, phase: 'waiting', text, ask: undefined, turnSince: undefined, at: Date.now() }, boot: [...card.boot, { at: Date.now(), text, state: 'ok' }] });
+    }
+  }
+
+  /**
+   * A terminal card (legacy) whose tab can't be reached: its session moves to the app (§93), so the
+   * message resumes it here. Refused while its tab looks alive: two writers on one transcript.
+   */
+  async toApp(id: string): Promise<Card> {
+    const card = this.get(id);
+    if (!card?.sessionId) throw new Error(`${card?.key ?? 'That card'} hasn’t started a session yet.`);
+    if (card.runner === 'app') return card;
+    if (!card.cwd || !isDir(card.cwd)) throw new Error(`${card.cwd ?? 'Its folder'} isn’t there any more, so its session can’t be resumed.`);
+    const spokeAt = card.live?.phase !== 'ended' ? card.live?.at ?? 0 : 0;
+    if (Date.now() - spokeAt < ALIVE_MS) throw new Error(`${card.key}’s tab looks open (its session spoke ${Math.round((Date.now() - spokeAt) / 1000)} s ago) but can’t be reached: g brings the tab forward.`);
+    if (await tabExists(card.key)) throw new Error(`${card.key}’s tab is open but can’t be reached from here: g brings it forward, or close it and send again.`);
+    const next: Card = { ...card, runner: 'app', channel: false, keys: false, relayed: undefined, boot: [...card.boot.filter((b) => b.state !== 'go'), { at: Date.now(), text: `Its tab is gone: the session moved into the app (${card.sessionId.slice(0, 8)})`, state: 'ok' }] };
+    this.save(next);
+    return next;
+  }
+
+  /** Apply a hook event to the card and save it; on UserPromptSubmit, return what was added since as additionalContext. */
+  private applyHook(card: Card, event: string, input: HookInput): object | null {
     let next = applyEvent(card, event, input, Date.now());
+    // The broker's request stays on the card until it is answered (askResolved): a parallel tool's PreToolUse doesn't take away what y / n answer.
+    const held = card.live?.ask?.requestId ? card.live : undefined;
+    if (held && next.live && !next.live.ask) next = { ...next, stage: card.stage, live: { ...next.live, phase: 'needs', text: held.text, ask: held.ask } };
+    if (card.runner === 'app') next = inApp(next);
     // A relayed prompt is over once its tool ran (or was refused), the turn ended, or you typed in the tab.
     if (next.relayed && ((event === 'PostToolUse' && str(input.tool_name, 80) === next.relayed.tool) || event === 'Stop' || event === 'UserPromptSubmit' || event === 'SessionEnd')) {
       const { relayed: _r, ...rest } = next;
@@ -646,12 +870,25 @@ ${laterText(card.key, later, card, this.opts.runnable?.(card))}`;
       const { folders } = await makeWorktrees(newRepos, '', card.key, card.branchName, true);
       if (folders.length) {
         next.folders = [...(card.folders ?? []), ...folders];
-        next.boot = [...card.boot, { at: now, text: `Made ${folders.length === 1 ? `a worktree ${repoName(folders[0].dir)}` : `worktrees ${folders.map((f) => repoName(f.dir)).join(', ')}`} on ${card.branchName} (added later: run /add-dir there in the tab)`, state: 'ok' }];
+        next.boot = [...card.boot, { at: now, text: `Made ${folders.length === 1 ? `a worktree ${repoName(folders[0].dir)}` : `worktrees ${folders.map((f) => repoName(f.dir)).join(', ')}`} on ${card.branchName}${card.runner === 'app' ? '' : ' (added later: run /add-dir there in the tab)'}`, state: 'ok' }];
         this.trust(next, folders.map((f) => f.dir));
       }
     }
     this.save(next);
     return add;
+  }
+
+  /**
+   * What waits on the card, as the message that hands it to Claude now (§93: an idle session the
+   * app runs takes it at once), marked sent. Null when nothing waits.
+   */
+  takeWaiting(id: string): string | null {
+    const card = this.get(id);
+    const items = card ? waiting(card) : [];
+    if (!card || !items.length) return null;
+    const now = Date.now();
+    this.save({ ...card, later: card.later!.map((i) => (i.sent ? i : { ...i, sent: now })) });
+    return laterText(card.key, items, card, this.opts.runnable?.(card));
   }
 
   /** The card's worktrees as they are now (Shift+X). */

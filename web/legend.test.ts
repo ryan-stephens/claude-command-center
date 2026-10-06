@@ -21,6 +21,9 @@ test('g goes to the card’s tab, and says so louder when the tab is waiting on 
   assert.ok(!line({}).some((x) => x.startsWith('g ')), 'no tab yet, no g');
   assert.ok(line({ hasTab: true }).includes('g Its tab'));
   assert.ok(line({ hasTab: true, needsTab: true }).includes('g Answer in its tab (attn)'));
+  assert.ok(line({ hasTab: true, needsTab: true, inApp: true }).includes('g In a terminal'), 'a session the app runs is answered on the card; g opens it in a terminal (§93)');
+  assert.ok(line({ working: true }).includes('Esc Stop Claude'), 'while its turn runs, Esc stops it');
+  assert.ok(line({}).includes('Esc Back to the board'));
   assert.ok(lineLegendFor({ view: 'board', hasFocus: true, hasTab: true, bindings: {} }).some((i) => i.keys[0] === 'g'));
 });
 

@@ -93,6 +93,9 @@ export interface LineLegendInput {
   /** The focused or open card has a terminal tab (g brings it forward); it is waiting on you there and the page can't answer. */
   hasTab?: boolean;
   needsTab?: boolean;
+  /** The focused or open card's session runs in the app (§93): g opens it in a terminal; `working`: its turn is running, so Esc on the open card stops it. */
+  inApp?: boolean;
+  working?: boolean;
   /** The focused or open card has changed files (D shows the diffs). */
   hasChanges?: boolean;
   /** Board: a half-built card was kept (c picks it up, Shift+C starts fresh). */
@@ -215,10 +218,10 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   const full: LegendItem = { keys: [k(x.bindings, 'expand')], label: 'Its session' };
   if (x.view === 'drawer') {
     return [
-      { keys: ['Esc'], label: 'Back to the board' },
+      { keys: ['Esc'], label: x.working ? 'Stop Claude' : 'Back to the board' },
       ...(x.question ? [{ keys: ['1', '9'], label: 'Pick', tone: 'attn' as const }, { keys: ['Tab'], label: 'Next question' }, { keys: ['y'], label: 'Submit answers', tone: 'attn' as const }] : x.asking ? [{ keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' as const }] : []),
-      ...(x.canSay ? [{ keys: ['Enter'], label: 'Type to it', tone: x.asking ? undefined : 'acc' as const }] : []),
-      ...(x.hasTab ? [{ keys: ['g'], label: x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab ? { tone: 'attn' as const } : {}) }] : []),
+      ...(x.canSay ? [{ keys: ['Enter'], label: x.inApp ? 'Message' : 'Type to it', tone: x.asking ? undefined : 'acc' as const }] : []),
+      ...(x.hasTab ? [{ keys: ['g'], label: x.inApp ? 'In a terminal' : x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab && !x.inApp ? { tone: 'attn' as const } : {}) }] : []),
       { keys: ['←', '→'], label: 'Previous / next card' },
       // The dock: the panel open is named, the rest are one key each.
       ...(x.panel === 'changes' ? [{ keys: ['j', 'k'], label: 'File' }, { keys: ['Space'], label: 'Fold diff' }, { keys: ['z'], label: 'Fold repo' }, { keys: ['f'], label: 'Pop out' }] : []),
@@ -238,7 +241,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   return [
     { keys: ['←', '→', '↑', '↓'], label: 'Move' },
     ...(x.onTicket ? [{ keys: ['n', 'Enter'], label: 'Start work', tone: 'acc' as const }, { keys: ['Delete'], label: 'Hide' }] : []),
-    ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open the card' }, ...tryKeys(x), ...(x.hasTab ? [{ keys: ['g'], label: x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab ? { tone: 'attn' as const } : {}) }] : []), { keys: ['e'], label: 'How it runs' }] : []),
+    ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open the card' }, ...tryKeys(x), ...(x.hasTab ? [{ keys: ['g'], label: x.inApp ? 'In a terminal' : x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab && !x.inApp ? { tone: 'attn' as const } : {}) }] : []), { keys: ['e'], label: 'How it runs' }] : []),
     ...(x.hasSession ? [full] : []),
     ...(x.hasDraft ? [{ keys: ['c'], label: 'Pick up your card', tone: 'acc' as const }, { keys: ['⇧C'], label: 'New card' }] : [{ keys: ['c'], label: 'New card', tone: 'acc' as const }]),
     { keys: ['⇧T'], label: 'Tickets' },

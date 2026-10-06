@@ -1,5 +1,5 @@
 // pnpm run doctor: is this machine ready for cc-control? Checks what it needs (Node, Claude Code,
-// Windows Terminal, git, the built page), reads the settings file, and tries each connection for
+// git, the built page; Windows Terminal is optional, for g), reads the settings file, and tries each connection for
 // real: Jira, and the pull-request host of every repo in your workspaces (gh for GitHub, the REST
 // API for Azure DevOps / TFS), and each workspace stack's programs, repos and proxy file. Prints
 // one line per check with what to do about it; exits 1 if anything needed is missing. Never prints a token.
@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CHANNEL_ON, findClaude } from '../server/cards.ts';
+import { CARDS_IN_TERMINAL, CHANNEL_ON, findClaude } from '../server/cards.ts';
 import { config, CONFIG_FILE } from '../server/config.ts';
 import { AzureDevOpsHost, GitHubHost, hostFor } from '../server/hosts.ts';
 import { parseRange } from '../server/ports.ts';
@@ -58,9 +58,11 @@ line(major >= 24 ? 'ok' : 'bad', 'Node', process.versions.node, major >= 24 ? ''
 const claude = findClaude();
 const cv = version(claude);
 line(cv ? 'ok' : 'bad', 'Claude Code', cv ? `${cv} (${claude})` : `not found (${claude})`, cv ? '' : 'Install Claude Code and sign in (claude), or set CC_CONTROL_CLAUDE to claude.exe.');
-line(CHANNEL_ON ? 'ok' : 'info', 'Channel into card terminals', CHANNEL_ON ? 'on: messages and y / n from a card go into its terminal (a Claude Code research-preview flag)' : 'off (CC_CONTROL_CHANNEL=0): answer and type in the tab', CHANNEL_ON ? 'If a card’s tab fails to start and mentions channels, set CC_CONTROL_CHANNEL=0 in config.env.' : '');
+// §93: a card's session runs in the app (through the SDK), so the chat needs no terminal, no channel and no proxy of its own.
+line('ok', 'Card sessions', CARDS_IN_TERMINAL ? 'in a Windows Terminal tab (CC_CONTROL_CARDS_IN_TERMINAL=1, the old way, for one release)' : 'run in the app: the card’s chat is the session (no tab, channel or typed keys in between)', CARDS_IN_TERMINAL ? 'Remove CC_CONTROL_CARDS_IN_TERMINAL from config.env to run them in the app.' : '');
+if (CARDS_IN_TERMINAL) line(CHANNEL_ON ? 'ok' : 'info', 'Channel into card terminals', CHANNEL_ON ? 'on: messages and y / n from a card go into its terminal (a Claude Code research-preview flag)' : 'off (CC_CONTROL_CHANNEL=0): answer and type in the tab', CHANNEL_ON ? 'If a card’s tab fails to start and mentions channels, set CC_CONTROL_CHANNEL=0 in config.env.' : '');
 const wt = process.platform === 'win32' ? onPath('wt.exe') : undefined;
-line(wt ? 'ok' : process.platform === 'win32' ? 'bad' : 'warn', 'Windows Terminal', wt ?? 'wt.exe not on PATH', wt ? '' : 'Cards open their session in a Windows Terminal tab: install Windows Terminal from the Microsoft Store.');
+line(wt ? 'ok' : CARDS_IN_TERMINAL ? 'bad' : 'info', 'Windows Terminal', wt ?? 'wt.exe not on PATH', wt ? (CARDS_IN_TERMINAL ? '' : 'Optional: g opens a card’s session in a tab of it.') : CARDS_IN_TERMINAL ? 'Cards open their session in a Windows Terminal tab: install Windows Terminal from the Microsoft Store.' : 'Optional: only g (open a card’s session in a terminal) needs it.');
 const gv = version('git');
 line(gv ? 'ok' : 'bad', 'git', gv ?? 'not found', gv ? '' : 'Install Git for Windows.');
 const page = fileURLToPath(new URL('../dist/web/index.html', import.meta.url));

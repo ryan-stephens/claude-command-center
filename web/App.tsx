@@ -11,7 +11,7 @@ import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession } from './
 import { applyHints, trimLegend } from './hints.ts';
 import { legendFor, lineLegendFor } from './legend.ts';
 import { packetRows } from './line-model.ts';
-import { goHome } from './line-keys.ts';
+import { cardTurnRunning, goHome } from './line-keys.ts';
 import { pickerList } from './simple-keys.ts';
 import { chips, simpleOf } from './simple-model.ts';
 import { SLIM } from './slim.ts';
@@ -66,12 +66,15 @@ function Legend() {
   const canDone = shown?.stage === 'ship';
   // Any card with a session can be typed to: without a channel, the session is resumed in a new tab first (§85).
   const canSay = Boolean(drawerCard?.sessionId);
-  const asking = Boolean(drawerCard && (askOf(drawerCard)?.requestId || askOf(drawerCard)?.typed));
-  // Claude's question form (§91): drawn on the card and answered through the tab's launcher.
-  const question = Boolean(drawerCard?.keys && askOf(drawerCard)?.questions?.length);
+  // y / n always go to the server (§93): the app's session answers through the broker, a terminal card through its channel or launcher.
+  const asking = Boolean(drawerCard && askOf(drawerCard) && askOf(drawerCard)!.kind !== 'question');
+  // Claude's question form (§91): drawn on the card and answered from here.
+  const question = Boolean(drawerCard && askOf(drawerCard)?.questions?.length);
   const hasTab = Boolean(shown?.cwd);
+  const inApp = shown?.runner === 'app';
+  const working = useStore((s) => cardTurnRunning(s, drawerCard));
   // Waiting on you in the tab, and the page can't answer it: g is the way.
-  const needsTab = Boolean(shown?.live?.phase === 'needs' && !asking);
+  const needsTab = Boolean(shown?.live?.phase === 'needs' && !asking && !inApp);
   const hasChanges = Boolean(shown?.cwd && (shown.files?.length || shown.ship));
   const hasDraft = useStore((s) => Boolean(s.draft));
   const hasPr = Boolean(pr ?? shown?.pr);
@@ -97,7 +100,7 @@ function Legend() {
   const simple = isSimple ? { block: spBlock, adding: spAdding, context: spContext, folders: spFolders, repos: spRepos, onSource: spOnSource, prompt: spPrompt, more: spMore, hasTicket: spTicket, details: spDetails, ticketLink: spTicketLink, ownChip: spOwn } : undefined;
   if (modal) return null;
   const items = trimLegend(screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, question, hasTab, needsTab, hasChanges, hasDraft, tab, simple, panel, hasStack, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, question, hasTab, needsTab, inApp, working, hasChanges, hasDraft, tab, simple, panel, hasStack, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings }), hints);
   if (!items) return null;
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');

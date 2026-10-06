@@ -279,10 +279,10 @@ async function ask(page, msg) {
   check('Shift+Tab goes back a question', (await form.getByRole('tab', { selected: true }).innerText()).includes('Tests'));
   await page.keyboard.press('Tab');
   await sleep(250);
-  // y submits: the seeded card has no real launcher, so the server says its tab can't be reached, next to the button.
+  // y submits: the seeded card's request is made up (no session holds it, §93), so the server says the question has gone, next to the button.
   await page.keyboard.press('y');
   await sleep(1200);
-  check('y submits (here the server says the seeded tab can’t be reached, beside the button)', /can’t be reached/.test(await form.getByRole('alert').innerText().catch(() => '')));
+  check('y submits (here the server says the seeded question has gone, beside the button)', /has gone/.test(await form.getByRole('alert').innerText().catch(() => '')));
   // The legend bar is a setting kept on the server (walk-chrome turns it off on this one): read it when it is there.
   const legendOn = (await page.locator('footer[aria-label="Keys you can press now"]').count()) > 0;
   const legendNow = legendOn ? await page.locator('footer[aria-label="Keys you can press now"]').innerText() : '';

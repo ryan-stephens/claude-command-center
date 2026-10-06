@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { askOf, type Card } from '../shared/cards.ts';
-import { CardService, cleanDraft, tabEnv } from './cards.ts';
+import { APP_EVENTS, appHooks, CardService, cleanDraft, tabEnv } from './cards.ts';
 import { Store } from './store.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'cc-cards-'));
@@ -242,17 +242,136 @@ test('a relayed permission prompt survives the hooks around it, and goes when an
   assert.equal(askOf(get())?.requestId, undefined);
 });
 
-test('a hook’s ask is typed through the launcher when no prompt was relayed, channel flag or not (§89)', () => {
-  const card = seed();
-  const base = { ...card, sessionId: 'sess-00000002', live: { phase: 'needs' as const, text: 'Wants to run pnpm test', at: 1, ask: { kind: 'tool' as const, tool: 'Bash', detail: 'pnpm test' } } };
-  // The org has channels off: the channel's MCP server still said hello (channel true) but relays nothing; the launcher is there.
-  assert.equal(askOf({ ...base, channel: true, keys: true })!.typed, true, 'the launcher types 1 / Escape');
-  assert.equal(askOf({ ...base, channel: false, keys: true })!.typed, true);
-  assert.equal(askOf({ ...base, channel: true, keys: false })!.typed, undefined, 'no launcher: answer in its tab');
-  // A relayed prompt proves the channel delivers: y / n go through it, with its id.
-  const a = askOf({ ...base, channel: true, keys: true, relayed: { requestId: 'req-9', tool: 'Bash', at: 1 } });
-  assert.equal(a!.requestId, 'req-9');
-  assert.equal(a!.typed, undefined);
-  // A question is answered by typing an answer, never by 1 / Escape.
-  assert.equal(askOf({ ...base, keys: true, live: { ...base.live, ask: { kind: 'question', tool: 'AskUserQuestion', detail: 'Which?' } } })!.typed, undefined);
+test('the app’s own session (§93): in-process hooks move the card with no token, and add what waits to the next message', async () => {
+  const card = { ...seed(), runner: 'app' as const, sessionId: 'app-00000001', live: { phase: 'working' as const, text: 'Starting Claude', at: 1 } };
+  store.saveCard(card);
+  const get = () => cards.get(card.id)!;
+  cards.appEvent(card.id, 'PreToolUse', { session_id: 'app-00000001', tool_name: 'Read', tool_input: { file_path: join(dir, 'a.ts') } });
+  assert.equal(get().live!.text, 'reading a.ts');
+  // UserPromptSubmit carries what waits on the card, once.
+  await cards.addContext(card.id, [], 'Round money down.');
+  const out = cards.appEvent(card.id, 'UserPromptSubmit', { session_id: 'app-00000001', prompt: 'go on' }) as { hookSpecificOutput: { additionalContext: string } };
+  assert.match(out.hookSpecificOutput.additionalContext, /Round money down\./);
+  assert.equal(cards.appEvent(card.id, 'UserPromptSubmit', { session_id: 'app-00000001', prompt: 'and again' }), null, 'sent once');
+  cards.appEvent(card.id, 'Stop', { session_id: 'app-00000001', last_assistant_message: 'Should the label say Size guide or Sizing?' });
+  assert.equal(get().live!.phase, 'needs', 'a turn ending on a question waits on you, as from a tab');
+  assert.equal(cards.appEvent('gone', 'Stop', {}), null, 'a card deleted while its session ran is no error');
+});
+
+test('appHooks: every tracked event but PermissionRequest and SessionEnd, each answering with what `on` returns, never throwing', async () => {
+  const seen: string[] = [];
+  const hooks = appHooks((event, input) => {
+    seen.push(`${event}:${input.tool_name ?? ''}`);
+    if (event === 'Stop') throw new Error('boom');
+    return event === 'UserPromptSubmit' ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'more' } } : null;
+  });
+  assert.deepEqual(Object.keys(hooks).sort(), [...APP_EVENTS].sort());
+  assert.ok(!('PermissionRequest' in hooks) && !('SessionEnd' in hooks));
+  const call = (event: keyof typeof hooks, input: object) => hooks[event]![0].hooks[0](input as never, undefined, { signal: new AbortController().signal });
+  assert.deepEqual(await call('UserPromptSubmit', { prompt: 'x' }), { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'more' } });
+  assert.deepEqual(await call('PreToolUse', { tool_name: 'Bash' }), {});
+  const quiet = console.error;
+  console.error = () => {};
+  try { assert.deepEqual(await call('Stop', {}), {}, 'a failure is logged, and Claude carries on'); } finally { console.error = quiet; }
+  assert.deepEqual(seen, ['UserPromptSubmit:', 'PreToolUse:Bash', 'Stop:']);
+});
+
+test('a broker request is the card’s ask until answered: a parallel tool’s PreToolUse doesn’t take it away (§93)', () => {
+  const card = { ...seed(), runner: 'app' as const, sessionId: 'app-00000002', stage: 'build' as const, live: { phase: 'working' as const, text: 'x', at: 1 } };
+  store.saveCard(card);
+  const get = () => cards.get(card.id)!;
+  cards.appEvent(card.id, 'PreToolUse', { session_id: 'app-00000002', tool_name: 'Bash', tool_input: { command: 'pnpm test' } });
+  cards.appAsk('app-00000002', 'req-1', 'Bash', { command: 'pnpm test', description: 'Run the tests' });
+  assert.deepEqual(askOf(get()), { kind: 'tool', tool: 'Bash', detail: 'running: Run the tests', requestId: 'req-1' });
+  assert.equal(get().stage, 'needs');
+  cards.appEvent(card.id, 'PreToolUse', { session_id: 'app-00000002', tool_name: 'Read', tool_input: { file_path: 'b.ts' } });
+  assert.equal(askOf(get())?.requestId, 'req-1', 'still asking');
+  assert.equal(get().live!.phase, 'needs');
+  cards.askResolved('app-00000002', 'req-other');
+  assert.equal(askOf(get())?.requestId, 'req-1', 'another request’s end changes nothing');
+  cards.askResolved('app-00000002', 'req-1');
+  assert.equal(askOf(get()), undefined);
+  assert.equal(get().live!.text, 'Answered from here');
+  // A plan, and a question form, the way the hooks would have said them.
+  cards.appAsk('app-00000002', 'req-2', 'ExitPlanMode', { plan: '1. Do it' });
+  assert.deepEqual(askOf(get()), { kind: 'plan', tool: 'ExitPlanMode', plan: '1. Do it', requestId: 'req-2' });
+  cards.askResolved('app-00000002', 'req-2');
+  cards.appAsk('app-00000002', 'req-3', 'AskUserQuestion', { questions: [{ question: 'Which?', header: 'Pick', options: [{ label: 'A' }, { label: 'B' }] }] });
+  assert.equal(askOf(get())!.questions![0].options.length, 2);
+  assert.equal(askOf(get())!.requestId, 'req-3');
+  cards.appAsk('nobody', 'req-4', 'Bash', {});
+  assert.equal(askOf(get())!.requestId, 'req-3', 'a session that is no card’s asks nothing of it');
+});
+
+test('after a server restart a working or asking app card waits, and says the next message resumes it (§93)', () => {
+  const working = { ...seed(), runner: 'app' as const, sessionId: 'app-00000003', live: { phase: 'working' as const, text: 'editing a.ts', at: 1, turnSince: 1 } };
+  const asking = { ...seed(), runner: 'app' as const, sessionId: 'app-00000004', live: { phase: 'needs' as const, text: 'x', at: 1, ask: { kind: 'tool' as const, tool: 'Bash', requestId: 'gone' } } };
+  const idle = { ...seed(), runner: 'app' as const, sessionId: 'app-00000005', live: { phase: 'waiting' as const, text: 'Replied: hi', at: 1 } };
+  const tab = { ...seed(), sessionId: 'tab-00000001', live: { phase: 'working' as const, text: 'in its tab', at: 1 } };
+  for (const c of [working, asking, idle, tab]) store.saveCard(c);
+  cards.afterRestart();
+  for (const c of [working, asking]) {
+    const after = cards.get(c.id)!;
+    assert.equal(after.live!.phase, 'waiting');
+    assert.equal(after.live!.text, 'The server restarted; the next message resumes the session');
+    assert.equal(after.live!.ask, undefined, 'the request died with the server');
+    assert.equal(after.live!.turnSince, undefined);
+    assert.equal(after.boot.at(-1)!.text, 'The server restarted; the next message resumes the session');
+  }
+  assert.equal(cards.get(idle.id)!.live!.text, 'Replied: hi', 'one between turns stays as it was');
+  assert.equal(cards.get(tab.id)!.live!.text, 'in its tab', 'a terminal card is its tab’s business');
+});
+
+test('/clear in an app session moves the card to the new id; what was added since goes again with the next message (§93)', async () => {
+  const card = { ...seed(), runner: 'app' as const, sessionId: 'app-00000006' };
+  store.saveCard(card);
+  await cards.addContext(card.id, [], 'Use the blue button.');
+  assert.ok(cards.takeWaiting(card.id)!.includes('Use the blue button.'));
+  assert.equal(cards.takeWaiting(card.id), null, 'taken once');
+  cards.followSession('app-00000006', 'app-00000007');
+  const after = cards.get(card.id)!;
+  assert.equal(after.sessionId, 'app-00000007');
+  assert.equal(cards.bySession('app-00000007')!.id, card.id);
+  assert.equal(after.later![0].sent, undefined, 'the fresh conversation hasn’t seen it');
+  assert.match(after.boot.at(-1)!.text, /Fresh start \(\/clear\): linked session app-0000/);
+  cards.followSession('not-a-card', 'x');
+});
+
+test('a card’s app session starts with its mode, its model and the packet in its system prompt', () => {
+  const card: Card = { ...seed(), runner: 'app', sessionId: 'app-00000008', model: 'haiku', live: { phase: 'working', text: '', at: 1, mode: 'acceptEdits' } };
+  const o = cards.sessionOptions(card);
+  assert.equal(o.mode, 'acceptEdits', 'the mode it last reported');
+  assert.equal(cards.sessionOptions({ ...card, live: undefined }).mode, 'plan', 'else the one it started with');
+  assert.equal(o.options.model, 'haiku');
+  const sp = o.options.systemPrompt as { type: string; preset: string; append: string };
+  assert.equal(sp.preset, 'claude_code', 'Claude Code’s own prompt, with the packet after it');
+  assert.match(sp.append, /^# Context from cc-control · CARD-9 Size guide/);
+  assert.deepEqual(Object.keys(o.options.hooks as object).sort(), [...APP_EVENTS].sort());
+});
+
+test('y / n from here say so on the card at once; an approved plan moves it to Build (§93)', () => {
+  const card = { ...seed(), runner: 'app' as const, sessionId: 'app-00000009', stage: 'plan' as const, live: { phase: 'working' as const, text: 'x', at: 1, mode: 'plan' } };
+  store.saveCard(card);
+  const get = () => cards.get(card.id)!;
+  cards.appAsk('app-00000009', 'req-1', 'ExitPlanMode', { plan: '1. Do it' });
+  assert.equal(get().live!.text, 'Plan ready: approve it with y', 'not “in the tab”');
+  cards.answered(card.id, 'allow');
+  assert.equal(get().stage, 'build');
+  assert.equal(get().live!.text, 'Plan approved: building');
+  assert.equal(get().live!.ask, undefined);
+  cards.askResolved('app-00000009', 'req-1');
+  assert.equal(get().live!.text, 'Plan approved: building', 'the broker settling after changes nothing');
+  cards.appAsk('app-00000009', 'req-2', 'Bash', { command: 'mkdir x', description: 'Make x' });
+  assert.equal(get().stage, 'needs');
+  cards.answered(card.id, 'deny');
+  assert.equal(get().live!.text, 'Denied Bash: Make x');
+  assert.equal(get().stage, 'build', 'back to work: Claude carries on without it');
+  // A turn stopped with Esc never reports Stop: the session going idle ends it on the card.
+  store.saveCard({ ...get(), live: { ...get().live!, phase: 'working', turnSince: 5 } });
+  cards.sessionIdle('app-00000009');
+  assert.equal(get().live!.phase, 'waiting');
+  assert.equal(get().live!.text, 'Stopped');
+  cards.appEvent(card.id, 'Stop', { session_id: 'app-00000009', last_assistant_message: 'All done.' });
+  cards.sessionIdle('app-00000009');
+  assert.equal(get().live!.text, 'Replied: All done.', 'a turn that ended normally keeps what Stop said');
 });

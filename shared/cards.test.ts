@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { branchFor, fmtK, folderFor, homeOf, includedRepos, isClean, kindDefaults, laterText, launchLines, memoryPct, modelFor, modelName, ownFolders, packetText, worktreeFor, wtArg, type CardDraft, type Packet } from './cards.ts';
+import { askOf, branchFor, fmtK, folderFor, homeOf, includedRepos, isClean, kindDefaults, laterText, launchLines as launch, memoryPct, reachable, modelFor, modelName, ownFolders, packetText, worktreeFor, wtArg, type CardDraft, type Packet } from './cards.ts';
 
 const repo = (id: string, on = true) => ({ kind: 'repo' as const, id, label: id.split('\\').pop()!, on });
 const packet = (over: Partial<Packet> = {}): Packet => ({
@@ -111,7 +111,8 @@ test('the model: the card’s choice, else the server’s, else the user’s set
   assert.equal(modelName(undefined), 'Claude Code’s default');
 });
 
-test('what happens: branch, then the terminal tab with the extra repos and the message', () => {
+test('what happens (legacy, cards in a terminal): branch, then the terminal tab with the extra repos and the message', () => {
+  const launchLines = (d: Parameters<typeof launch>[0], key: string, pinned?: string) => launch(d, key, pinned, true);
   const lines = launchLines(draft(), 'CARD-3', 'haiku');
   assert.equal(lines[0], 'git -C D:\\repos\\web-app switch -c card-3-add-size-guide-product');
   assert.match(lines[2], /--permission-mode plan --model haiku --add-dir D:\\repos\\design-tokens --add-dir D:\\repos\\cdn-worker -- "Plan CARD-3\."$/);
@@ -123,4 +124,34 @@ test('what happens: branch, then the terminal tab with the extra repos and the m
   assert.equal(launchLines(draft({ launch: { ...draft().launch, branch: 'current' } }), 'CARD-3').length, 2);
   assert.match(launchLines(draft({ launch: { ...draft().launch, model: 'opus' } }), 'CARD-3', 'haiku')[2], /--model opus /, 'the card’s choice wins over the server’s');
   assert.doesNotMatch(launchLines(draft(), 'CARD-3')[2], /--model/, 'no choice, no pin: Claude Code decides');
+});
+
+test('what happens (§93): branch, then Claude in the app with the extra repos, the packet and the message', () => {
+  const lines = launch(draft({ launch: { ...draft().launch, branch: 'worktree' } }), 'CARD-3', 'haiku');
+  assert.ok(!lines.some((l) => l.startsWith('wt ') || l.includes('CC_CONTROL_CARD')), 'no tab, no card variable');
+  assert.match(lines[3], /^claude in the app: cwd D:\\repos\\web-app-card-3, --permission-mode plan, --model haiku, --add-dir D:\\repos\\design-tokens-card-3, --add-dir D:\\repos\\cdn-worker-card-3$/);
+  assert.match(lines[4], /system prompt; first message: "Plan CARD-3\."$/);
+});
+
+test('askOf: a session the app runs carries the broker’s request; reachable says whether a message goes straight in (§93)', () => {
+  const live = { phase: 'needs' as const, text: 'x', at: 1, ask: { kind: 'tool' as const, tool: 'Bash', detail: 'pnpm test', requestId: 'req-1' } };
+  assert.deepEqual(askOf({ live }), live.ask, 'no channel needed');
+  assert.equal(askOf({ live: { ...live, ask: undefined } }), undefined);
+  // Legacy: an ask from the hooks alone, no id (the server types the answer when the tab's launcher is there).
+  assert.equal(askOf({ live: { ...live, ask: { kind: 'tool', tool: 'Bash' } } })!.requestId, undefined);
+  const app = { runner: 'app' as const, sessionId: 's-1' };
+  for (const phase of ['working', 'needs', 'waiting'] as const) assert.equal(reachable({ ...app, live: { phase, text: '', at: 1 } }), true, phase);
+  assert.equal(reachable({ ...app }), true, 'not running (a server restart): the send resumes it');
+  assert.equal(reachable({ ...app, live: { phase: 'ended', text: '', at: 1 } }), false, 'ended: the box says Resume and send');
+  assert.equal(reachable({ runner: 'app' }), false, 'no session yet');
+  assert.equal(reachable({ sessionId: 's-1' }), false, 'a terminal card without a way into its tab');
+  assert.equal(reachable({ sessionId: 's-1', keys: true }), true, 'a terminal card through its launcher');
+});
+
+test('laterText: a session the app runs gets the new folders itself, so no /add-dir (§93)', () => {
+  const items = [{ kind: 'repo' as const, id: 'D:\\repos\\loans-api', label: 'loans-api', on: true }];
+  const folders = [{ repo: 'D:\\repos\\loans-api', dir: 'D:\\repos\\loans-api-card-4' }];
+  assert.ok(laterText('CARD-4', items, { folders }).includes('/add-dir'));
+  assert.ok(!laterText('CARD-4', items, { folders, runner: 'app' }).includes('/add-dir'));
+  assert.ok(laterText('CARD-4', items, { folders, runner: 'app' }).includes('loans-api-card-4'));
 });

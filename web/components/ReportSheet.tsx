@@ -100,7 +100,7 @@ export function ReportSheet({ id }: { id: string }) {
   return (
     <Overlay label={what} wide>
       <DialogTitle>{what} · {card.key}{card.report?.result ? ` · ${card.report.result}` : ''}</DialogTitle>
-      {!card.report && <div className="mb-3 rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">Claude hasn’t written its {card.kind === 'qa' ? 'QA report' : 'findings'} yet. This is its last message; ask for the report in the tab {card.key}.</div>}
+      {!card.report && <div className="mb-3 rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">Claude hasn’t written its {card.kind === 'qa' ? 'QA report' : 'findings'} yet. This is its last message; ask for the report in the card’s message box.</div>}
       <div className="md max-h-[50vh] overflow-y-auto rounded-xl border border-line bg-bg px-4 py-3 text-sm"><Markdown remarkPlugins={[remarkGfm]}>{report}</Markdown></div>
       {mode.kind === 'post' && jira && (
         <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-attn/45 bg-attn-bg px-3.5 py-2.5 text-sm" role="alertdialog" aria-label="Post to Jira">

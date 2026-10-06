@@ -590,7 +590,7 @@ function DeleteCardDialog({ id }: { id: string }) {
   return (
     <Overlay label="Remove card">
       <DialogTitle>Take {card ? `${card.key} ${card.title}` : 'this card'} off the line?</DialogTitle>
-      <p className="text-sub">Only the card goes. Its terminal tab, session, branch and changes stay as they are.</p>
+      <p className="text-sub">Only the card goes. Its session (in the session list, or its terminal tab), branch and changes stay as they are.</p>
       {worktrees.length > 0 && <p className="mt-2 text-sub">Its {worktrees.length === 1 ? 'worktree' : `${worktrees.length} worktrees`} ({worktrees.map((f) => repoName(f.dir)).join(', ')}) stay too. <Key k="w" size="sm" inline /> shows what each holds and removes them with the card.</p>}
       <div className="mt-5 flex justify-end gap-2.5">
         <button className="btn" onClick={close}>Keep it<Key k="N" size="sm" /></button>

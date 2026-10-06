@@ -158,12 +158,24 @@ export interface CardLive {
   at: number;
   /** Claude Code's permission mode as the session last reported it. */
   mode?: string;
-  /** What it is asking in the tab: a tool to allow, a question, or a plan to approve (with its text). */
-  ask?: { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string; /** The question form (AskUserQuestion, §91): the page draws it and answers it. */ questions?: AskQuestion[] };
+  /** What it is asking: a tool to allow, a question, or a plan to approve (with its text). */
+  ask?: CardAsk;
   /** When the current turn began (for elapsed time). */
   turnSince?: number;
   /** Claude's last message, from the Stop hook. */
   lastMessage?: string;
+}
+
+/** What a card's session is asking, as the page answers it. */
+export interface CardAsk {
+  kind: 'tool' | 'question' | 'plan';
+  tool: string;
+  detail?: string;
+  plan?: string;
+  /** The question form (AskUserQuestion, §91): the page draws it and answers it. */
+  questions?: AskQuestion[];
+  /** The app runs the session (§93): the permission broker's request, which y / n and the form answer. */
+  requestId?: string;
 }
 
 export interface CardTodo {
@@ -218,16 +230,21 @@ export interface Card extends CardDraft {
   model?: string;
   /** Where claude runs: the home repo, or the worktree made for the card. */
   cwd?: string;
-  /** The Claude Code session the SessionStart hook reported. */
+  /** The card's Claude Code session: fixed when the app starts it (§93), or as its tab's SessionStart hook reported it. */
   sessionId?: string;
-  /** Its terminal is reachable through the channel: messages and permission answers go in from here. */
+  /**
+   * Who runs the session (§93): the app, through the SDK (the default from §93 on), or a terminal
+   * tab (cards started before, or with CC_CONTROL_CARDS_IN_TERMINAL=1). Unset is a terminal.
+   */
+  runner?: 'app' | 'terminal';
+  /** Legacy (terminal cards, retired in Phase B): its terminal is reachable through the channel. */
   channel?: boolean;
-  /** Its tab's launcher is polling (§87): what is sent from here is typed into the tab (the way in when channels aren't allowed). */
+  /** Legacy (terminal cards, retired in Phase B): its tab's launcher is polling (§87), so what is sent is typed into the tab. */
   keys?: boolean;
   /**
-   * The permission prompt the terminal relayed through the channel, until it is answered or the
-   * tool runs. Kept apart from live.ask: the hooks that describe the same prompt arrive in their own
-   * time (PreToolUse clears the ask, PermissionRequest rebuilds it) and must not lose the id.
+   * Legacy (terminal cards, retired in Phase B): the permission prompt the terminal relayed through
+   * the channel, until it is answered or the tool runs. Kept apart from live.ask: the hooks that
+   * describe the same prompt arrive in their own time and must not lose the id.
    */
   relayed?: { requestId: string; tool: string; description?: string; at: number };
   boot: BootStep[];
@@ -292,26 +309,33 @@ export function waiting(c: Pick<Card, 'later'>): LaterItem[] {
   return (c.later ?? []).filter((i) => !i.sent);
 }
 
-/** Every repo the card's session can use: what it started with and any added since, home first. */
 /**
- * What the card is asking, as the page answers it: the hook's description when it has one (fuller:
- * the plan text, the question), else the relayed prompt alone. `answerable` means y / n go through
- * the channel; a question is answered by typing instead.
+ * What the card is asking, as the page answers it. A session the app runs (§93) carries the
+ * broker's request id on the ask. A terminal card (legacy) gets the id of the prompt its channel
+ * relayed, with the hook's fuller description when it has one; without an id, the server types the
+ * answer into the tab when its launcher is there.
  */
-export function askOf(c: Pick<Card, 'live' | 'relayed' | 'channel' | 'keys'>): { kind: 'tool' | 'question' | 'plan'; tool: string; detail?: string; plan?: string; questions?: AskQuestion[]; requestId?: string; /** y / n are typed into the tab (§87): its launcher is there and no prompt was relayed (the channel is absent, or the org has channels off and it delivers nothing, §89). */ typed?: true } | undefined {
+export function askOf(c: Pick<Card, 'live' | 'relayed' | 'channel'>): CardAsk | undefined {
   const ask = c.live?.ask;
   const r = c.relayed;
+  if (ask?.requestId) return ask;
   const matches = r && (!ask || ask.tool === r.tool);
-  const typed = c.keys ? { typed: true as const } : {};
-  if (ask) return matches && c.channel ? { ...ask, requestId: r.requestId } : { ...ask, ...(ask.kind === 'question' ? {} : typed) };
+  if (ask) return matches && c.channel ? { ...ask, requestId: r.requestId } : ask;
   if (r && c.channel) return { kind: r.tool === 'ExitPlanMode' ? 'plan' : 'tool', tool: r.tool, ...(r.description ? { detail: r.description } : {}), requestId: r.requestId };
   return undefined;
 }
 
-/** Can the card be typed to from here: through its channel, or its tab's launcher (§87)? An ended session can't. */
-export function reachable(c: Pick<Card, 'channel' | 'keys' | 'live'>): boolean {
-  return Boolean(c.channel || c.keys) && c.live?.phase !== 'ended';
+/**
+ * Does a message go straight in? A session the app runs: yes, live or not (one that isn't live is
+ * resumed by the send itself), unless it ended. A terminal card (legacy): through its channel or its
+ * tab's launcher. When false the box says Resume and send, and sending resumes it in the app.
+ */
+export function reachable(c: Pick<Card, 'channel' | 'keys' | 'live' | 'runner' | 'sessionId'>): boolean {
+  if (c.live?.phase === 'ended') return false;
+  return c.runner === 'app' ? Boolean(c.sessionId) : Boolean(c.channel || c.keys);
 }
+
+/** Every repo the card's session can use: what it started with and any added since, home first. */
 
 export function cardRepos(c: Pick<Card, 'packet' | 'later'>): string[] {
   const out = includedRepos(c.packet);
@@ -323,7 +347,7 @@ export function cardRepos(c: Pick<Card, 'packet' | 'later'>): string[] {
  * Exactly what Claude gets when context is added to a running card: the hook returns this as
  * additionalContext alongside your next message.
  */
-export function laterText(key: string, items: PacketItem[], c: { folders?: CardFolder[] } = {}, runnable: string[] = []): string {
+export function laterText(key: string, items: PacketItem[], c: { folders?: CardFolder[]; runner?: Card['runner'] } = {}, runnable: string[] = []): string {
   const repos = items.filter((i) => i.kind === 'repo');
   const notes = items.filter((i) => i.kind === 'note');
   const rest = items.filter((i) => i.kind !== 'repo' && i.kind !== 'note');
@@ -339,7 +363,8 @@ export function laterText(key: string, items: PacketItem[], c: { folders?: CardF
       const runs = runnable.some((p) => samePath(p, r.id)) ? ' Try it (t on the card) starts it from there; don’t start it yourself.' : '';
       L.push(samePath(dir, r.id) ? `- ${r.label}: ${r.id}${runs}` : `- ${r.label}: ${dir} (a worktree of ${r.id} on this card’s branch; change it there, not in the usual folder)${runs}`);
     }
-    if (own.length) L.push(`Edits in ${own.length === 1 ? 'that folder' : 'those folders'} will ask until you run ${own.map(({ dir }) => `/add-dir ${dir}`).join(' and ')} in the tab: ask for that first.`);
+    // A session the app runs gets the folders added to it (§93); a terminal's needs /add-dir.
+    if (own.length && c.runner !== 'app') L.push(`Edits in ${own.length === 1 ? 'that folder' : 'those folders'} will ask until you run ${own.map(({ dir }) => `/add-dir ${dir}`).join(' and ')} in the tab: ask for that first.`);
   }
   if (rest.length) {
     L.push('', '## Also look at');
@@ -533,9 +558,10 @@ export function wtArg(s: string): string {
 
 /**
  * The steps Start work takes, as shown under "What happens" (and run by the server). `pinned` is
- * the server's CC_CONTROL_MODEL; the card's own choice wins over it.
+ * the server's CC_CONTROL_MODEL; the card's own choice wins over it. The session runs in the app
+ * (§93) unless the server starts cards in a terminal tab (`inTerminal`, legacy).
  */
-export function launchLines(d: Pick<CardDraft, 'title' | 'packet' | 'launch' | 'pr'>, key: string, pinned?: string): string[] {
+export function launchLines(d: Pick<CardDraft, 'title' | 'packet' | 'launch' | 'pr'>, key: string, pinned?: string, inTerminal = false): string[] {
   const model = d.launch.model ?? pinned;
   const home = homeOf(d.packet, d.launch) ?? '(no repo)';
   const others = includedRepos(d.packet).filter((r) => !samePath(r, home));
@@ -554,6 +580,11 @@ export function launchLines(d: Pick<CardDraft, 'title' | 'packet' | 'launch' | '
     dir = worktreeFor(home, key);
     L.push(`git -C ${home} fetch origin ${d.pr.source} ${d.pr.target}`);
     L.push(`git -C ${home} worktree add --detach ${dir} origin/${d.pr.source}`);
+  }
+  if (!inTerminal) {
+    L.push(`claude in the app: cwd ${dir}, --permission-mode ${d.launch.mode}${model ? `, --model ${model}` : ''}${add.map((r) => `, --add-dir ${r}`).join('')}`);
+    L.push(`  the packet added to its system prompt; first message: "${d.launch.message}"`);
+    return L;
   }
   L.push(`set CC_CONTROL_CARD=${key}`);
   L.push(`wt -w 0 nt --title ${key} -d ${dir} claude --settings <cc-control hook> --permission-mode ${d.launch.mode}`

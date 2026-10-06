@@ -1,5 +1,5 @@
-// One card open (PLAN §81, direction F): the chat is the page, read live from the terminal tab, with
-// the message box and what Claude is asking under it. A dock on the left edge holds the way back and
+// One card open (PLAN §81, direction F): the chat is the page, the session the app runs for the card
+// (§93) streaming as Claude writes, with the message box and what Claude is asking under it. A dock on the left edge holds the way back and
 // one key per panel (Changes, Try it, Verify, Context, More); the panel open sits between the dock
 // and the chat and stays open from card to card. Nothing else is on the page. Keys: web/line-keys.ts
 // (drawerKeys); the legend and ? list them.
@@ -64,7 +64,7 @@ export function CardView({ id }: { id: string }) {
           <Pill tone={needsYou(card) ? 'amber' : 'grey'}>{STAGE[card.stage]}</Pill>
           {card.kind && card.kind !== 'build' && <KindPill card={card} />}
           <span className="grow" />
-          {card.cwd && <button className="btn py-0.5 text-[13px]" onClick={() => goToTab(card.id)} title="Bring its Windows Terminal tab to the front"><Key k="g" size="sm" />Its tab</button>}
+          {card.cwd && card.sessionId && <button className="btn py-0.5 text-[13px]" onClick={() => goToTab(card.id)} title={card.runner === 'app' ? 'Open the session in a Windows Terminal tab (claude --resume), between turns; the card follows it there' : 'Bring its Windows Terminal tab to the front'}><Key k="g" size="sm" />{card.runner === 'app' ? 'In a terminal' : 'Its tab'}</button>}
           {place.at >= 0 && place.total > 1 && (
             <div className="ml-1 flex shrink-0 items-center gap-1.5 text-[12.5px] text-faint">
               <button className="hover:text-ink disabled:opacity-40" disabled={place.at === 0} onClick={() => openNeighbour(id, -1)} title="The previous card on the board" aria-label="The previous card"><Key k="←" size="sm" /></button>
@@ -209,6 +209,8 @@ function Chat({ card }: { card: Card }) {
   const ref = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const items = useStore((s) => (card.sessionId ? s.transcripts[card.sessionId] : undefined));
+  // What Claude is writing right now (§93), word by word, until the message lands in the items.
+  const partial = useStore((s) => (card.sessionId ? s.partials[card.sessionId] ?? '' : ''));
   const count = items?.length ?? 0;
   const [seen, setSeen] = useState(() => loadSeen()[card.id] ?? 0);
   const latest = useRef(count);
@@ -225,7 +227,7 @@ function Chat({ card }: { card: Card }) {
   useEffect(() => {
     const el = ref.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [count, card.id]);
+  }, [count, card.id, partial]);
   const act = cardActivity(card);
   const now = useNow(act.state === 'go');
   const mark = seen > 0 && seen < count;
@@ -241,7 +243,8 @@ function Chat({ card }: { card: Card }) {
             <Transcript items={items.slice(seen)} cwd={card.cwd} expand={false} />
           </>
           : <Transcript items={items} cwd={card.cwd} expand={false} />)}
-        {card.sessionId && items && !items.length && <p className="text-sm text-faint">Nothing written yet.</p>}
+        {partial && <div className="md leading-relaxed" aria-live="off" data-partial><Markdown remarkPlugins={[remarkGfm]}>{partial}</Markdown></div>}
+        {card.sessionId && items && !items.length && !partial && <p className="text-sm text-faint">Nothing written yet.</p>}
         {card.live && !askOf(card) && !booting(card) && (
           <div className={`flex items-center gap-2 text-[13px] font-semibold ${act.state === 'go' ? 'text-busy' : act.state === 'off' ? 'text-faint' : act.state === 'bad' ? 'text-attn' : 'text-ok'}`}>
             {act.state === 'go' ? <span className="spinner" /> : <span className={`h-2 w-2 rounded-full ${act.state === 'off' ? 'bg-faint' : act.state === 'bad' ? 'bg-attn' : 'bg-ok'}`} />}
@@ -270,27 +273,30 @@ function BootLines({ card }: { card: Card }) {
 }
 
 /**
- * The message box into the card's terminal session, through its channel, and above it what Claude
- * is asking with the keys that answer. Without a channel (the tab closed, the session ended, or the
- * card started before channels), the box stays: sending opens a new tab on the session first (§85).
+ * The message box into the card's session, and above it what Claude is asking with the keys that
+ * answer. The app runs the session (§93): Enter sends at once, and a session that isn't running is
+ * resumed by the send. A terminal card (legacy) is typed into through its tab; once its tab is gone,
+ * sending moves the session into the app.
  */
 function Say({ card }: { card: Card }) {
   if (!card.sessionId) return null;
   const ended = card.live?.phase === 'ended';
   const reachable = canReach(card);
+  const app = card.runner === 'app';
   const ask = askOf(card);
-  const answerable = Boolean(ask?.requestId || ask?.typed);
+  // y / n go to the server, which answers through the broker, or a terminal card's channel or launcher.
+  const answerable = Boolean(ask && (app || ask.requestId || card.keys));
   return (
     <div className="grid gap-2.5 border-t border-line bg-surface px-5 py-3">
       {ask?.kind === 'question' && ask.questions?.length ? (
         // Claude's question form (§91): the same form its tab shows, answered from here through the launcher.
         <div className="mx-auto w-full max-w-[880px] rounded-xl border border-attn/45 bg-attn-bg px-3.5 py-2.5 text-sm">
-          <QuestionForm cardId={card.id} questions={ask.questions} canAnswer={Boolean(card.keys) && !ended} />
+          <QuestionForm cardId={card.id} questions={ask.questions} canAnswer={Boolean(ask.requestId || card.keys) && !ended} />
         </div>
       ) : ask && (
         <div className="mx-auto grid w-full max-w-[880px] gap-2 rounded-xl border border-attn/45 bg-attn-bg px-3.5 py-2.5 text-sm">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="grow font-semibold text-attn">{ask.kind === 'plan' ? 'Approve the plan?' : ask.kind === 'question' ? 'Claude is asking' : <>Run <span className="font-mono font-medium">{ask.detail ?? ask.tool}</span>?</>}</span>
+            <span className="grow font-semibold text-attn">{ask.kind === 'plan' ? 'Approve the plan?' : ask.kind === 'question' ? 'Claude is asking' : <>Allow {ask.tool}: <span className="font-mono font-medium">{(ask.detail ?? ask.tool).replace(/^running: /, '')}</span>?</>}</span>
             {answerable
               ? <><button className="btn btn-primary py-0.5" onClick={() => answerAsk(card.id, 'allow')}><Key k="y" size="sm" tone="ghost" />{ask.kind === 'plan' ? 'Approve' : 'Allow'}</button>
                 <button className="btn py-0.5" onClick={() => answerAsk(card.id, 'deny')}><Key k="n" size="sm" />{ask.kind === 'plan' ? 'Not yet' : 'Deny'}</button></>
@@ -302,17 +308,17 @@ function Say({ card }: { card: Card }) {
         </div>
       )}
       <div className="mx-auto flex w-full max-w-[880px] items-end gap-2">
-        <textarea id="card-say" rows={2} placeholder={ask?.kind === 'question' && ask.questions?.length && reachable ? 'Or answer in words: this closes the form in its tab and sends what you type' : reachable ? `Type to ${card.key}’s terminal… Enter sends, Shift+Enter is a new line` : `Type to ${card.key}’s session… Enter opens a new tab on it and sends`} spellCheck={false} className="field grow resize-none text-[13.5px]" />
+        <textarea id="card-say" rows={2} placeholder={ask?.kind === 'question' && ask.questions?.length ? 'Or say something else: it goes in as your next message' : reachable ? `Message ${card.key}… Enter sends, Shift+Enter is a new line` : `Message ${card.key}… Enter resumes the session and sends`} spellCheck={false} className="field grow resize-none text-[13.5px]" />
         {card.stage !== 'done' && <button className="btn py-1.5" onClick={() => openAddComposer(card.id)} title="Add a repo, a folder, a ticket or a note: it goes in with your next message"><Key k="c" size="sm" />+ Context</button>}
-        <button className="btn btn-primary py-1.5" onClick={() => saySubmit(card.id)} title={reachable ? (card.keys ? 'Typed into its terminal tab by the launcher there, the way the keyboard would' : 'Sent into the terminal session through its channel') : 'Opens a new terminal tab on the session (claude --resume) and sends once it connects'}><Key k="Enter" size="sm" tone="ghost" />{reachable ? 'Send' : 'Resume and send'}</button>
+        <button className="btn btn-primary py-1.5" onClick={() => saySubmit(card.id)} title={app ? (reachable ? 'Sent to the session at once' : 'Resumes the session in the app and sends') : reachable ? 'Typed into its terminal tab' : 'Moves the session into the app (its tab is gone) and sends'}><Key k="Enter" size="sm" tone="ghost" />{reachable ? 'Send' : 'Resume and send'}</button>
       </div>
       {!reachable && (
         <p className="mx-auto w-full max-w-[880px] text-[12.5px] text-faint" role="note">
-          {ended ? 'Its session ended.' : 'Its tab can’t be reached (it closed, or the server restarted and nothing has reconnected yet).'} Sending opens a new tab that resumes the session, with the card following it as before.
+          {ended ? 'Its session ended.' : app ? '' : 'Its tab can’t be reached (it closed, or the server restarted).'} Sending resumes the session here, with the card following it as before.
         </p>
       )}
-      {reachable && card.keys && (
-        <p className="mx-auto w-full max-w-[880px] text-[12.5px] text-faint" role="note">Typed into its tab: the launcher in the tab types what you send, the way the keyboard would, and y / n press its prompt’s keys.</p>
+      {reachable && !app && (
+        <p className="mx-auto w-full max-w-[880px] text-[12.5px] text-faint" role="note">This card’s session runs in a terminal tab: what you send is typed into the tab. Close the tab and the next message moves it into the app.</p>
       )}
     </div>
   );
@@ -673,7 +679,7 @@ function ContextPanel({ card }: { card: Card }) {
             : <span className="text-[13px] text-faint">Nothing extra</span>}
         </div>
         <details className="text-[13px]">
-          <summary className="cursor-pointer text-faint hover:text-ink">The exact text, as the SessionStart hook returned it</summary>
+          <summary className="cursor-pointer text-faint hover:text-ink">{card.runner === 'app' ? 'The exact text, as Claude has it (added to its system prompt)' : 'The exact text, as the SessionStart hook returned it'}</summary>
           <pre className="mt-2 whitespace-pre-wrap break-words rounded-lg border border-line bg-bg px-3.5 py-3 font-mono text-[12px] leading-relaxed">{text}</pre>
         </details>
       </Sec>
@@ -694,7 +700,7 @@ function ContextPanel({ card }: { card: Card }) {
   );
 }
 
-/** Context added since the card started: what waits for the next message in its tab, and what went in. */
+/** Context added since the card started: what waits for the next message, and what went in. */
 function AddedSince({ card }: { card: Card }) {
   const later = card.later ?? [];
   const left = waiting(card);
@@ -712,7 +718,7 @@ function AddedSince({ card }: { card: Card }) {
             </li>
           ))}
         </ol>
-      ) : <p className="text-[13px] text-faint">Nothing yet. A repo, a related ticket or a note goes in with your next message in its tab.</p>}
+      ) : <p className="text-[13px] text-faint">Nothing yet. A repo, a related ticket or a note goes to Claude at once between turns, or with your next message.</p>}
       {left.length > 0 && <p className="text-[12.5px] text-faint"><Key k="x" size="sm" inline /> takes back the last one still waiting.</p>}
     </Sec>
   );
@@ -754,7 +760,9 @@ function MorePanel({ card }: { card: Card }) {
       <Sec title="Where it runs">
         <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1.5 text-[13px]">
           {card.ticket && <><dt className="text-faint">Ticket</dt><dd>{card.ticket.url ? <a className="underline hover:text-acc" href={card.ticket.url} target="_blank" rel="noreferrer">{card.ticket.key} in {SOURCE_NAME[card.ticket.source]}</a> : `${card.ticket.key}${card.ticket.demo ? ' (a demo ticket)' : ''}`} · {card.ticket.status}</dd></>}
-          <dt className="text-faint">Terminal tab</dt><dd>Titled <b>{card.key}</b> in Windows Terminal.</dd>
+          {card.runner === 'app'
+            ? <><dt className="text-faint">Session</dt><dd>Runs in the app. <Key k="g" size="sm" inline /> opens it in a Windows Terminal tab.</dd></>
+            : <><dt className="text-faint">Terminal tab</dt><dd>Titled <b>{card.key}</b> in Windows Terminal.</dd></>}
           <dt className="text-faint">Folder</dt><dd className="break-all font-mono text-[12px]">{card.cwd}</dd>
           {card.branchName && <><dt className="text-faint">Branch</dt><dd className="font-mono text-[12px]">{card.branchName}</dd></>}
           {ownFolders(card).length > 0 && <><dt className="text-faint">Worktrees</dt><dd className="break-all">
@@ -769,7 +777,7 @@ function MorePanel({ card }: { card: Card }) {
       </Sec>
       <Sec>
         <div className="flex flex-wrap gap-2">
-          {card.sessionId && <button className="btn py-1" disabled={!linked} onClick={() => openSession(card.sessionId!)} title={linked ? 'Read along in the app (Esc comes back). Typing there forks the session.' : 'The session hasn’t shown up in the session list yet'}><Key k={expand} size="sm" />Its session</button>}
+          {card.sessionId && <button className="btn py-1" disabled={!linked} onClick={() => openSession(card.sessionId!)} title={linked ? 'The session full screen (Esc comes back)' : 'The session hasn’t shown up in the session list yet'}><Key k={expand} size="sm" />Its session</button>}
           {card.stage === 'ship' && <button className="btn py-1" onClick={() => send({ type: 'card.done', id: card.id })} title="The PR was merged or closed by hand"><Key k="d" size="sm" />Done</button>}
           <button className="btn py-1" onClick={() => set({ modal: { kind: 'deleteCard', id: card.id } })}><Key k="Delete" size="sm" />Remove card</button>
         </div>

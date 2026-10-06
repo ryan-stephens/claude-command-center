@@ -2,7 +2,8 @@
 // tab per question and a Submit tab; the options numbered (a digit picks; a single choice moves
 // on to the next question, a multi choice toggles its boxes); "Type something" after the options
 // of a single choice; Submit lists the answers and sends them (y). The answers go to the server,
-// which has the tab's launcher press the form's keys (shared/questions.ts says which).
+// which hands them back with the tool call (§93), or for a terminal card has the tab's launcher
+// press the form's keys (shared/questions.ts says which).
 import { useEffect, useRef, useState } from 'react';
 import { answerText, answersComplete, type AskQuestion, type QuestionAnswer } from '../../shared/questions.ts';
 import { questionHooks } from '../line-keys.ts';
@@ -40,7 +41,7 @@ export function QuestionForm({ cardId, questions, canAnswer }: { cardId: string;
     if (b || s) return;
     if (!ok) { const first = questions.findIndex((_q, i) => !(as[i]?.picks.length || as[i]?.other)); setAt(first); setError('Answer every question first.'); return; }
     setBusy(true);
-    try { await answerQuestionCard(cardId, as); setSent(true); flash('Answers sent to its tab'); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+    try { await answerQuestionCard(cardId, as); setSent(true); flash('Answers sent'); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
   // The keys (line-keys): digits, Tab, y, and Enter in the Type something box.
@@ -120,7 +121,7 @@ export function QuestionForm({ cardId, questions, canAnswer }: { cardId: string;
           </ul>
           <div className="flex flex-wrap items-center gap-2">
             <button className="btn btn-primary py-0.5" onClick={() => void submit()} disabled={!canAnswer || busy || sent}><Key k="y" size="sm" tone="ghost" />{sent ? 'Answers sent' : busy ? 'Sending…' : 'Submit answers'}</button>
-            {!canAnswer && <span className="text-[12.5px] text-faint">Its tab can’t be reached from here: answer in its tab (g).</span>}
+            {!canAnswer && <span className="text-[12.5px] text-faint">This form can’t be answered from here: answer in its tab (g).</span>}
             {error && <span className="text-[12.5px] text-bad" role="alert">{error}</span>}
           </div>
         </div>

@@ -24,7 +24,10 @@ export interface SeedOptions {
   title?: string;
   /** plan: a plan waiting for approval · tool: a tool asking to run · working: Claude is on it · idle: it finished its turn · done: shipped and merged. */
   state?: 'plan' | 'tool' | 'working' | 'idle' | 'done' | 'question';
-  /** The channel is up, so y / n and the message box work. Default true. */
+  /**
+   * false: a terminal card (legacy, §93) whose tab can't be reached, so the box says Resume and send.
+   * Otherwise the card runs in the app (§93), its asks carrying a made-up request id.
+   */
   channel?: boolean;
   /** Files the card wrote (absolute), for the dock's badge and What changed. */
   files?: string[];
@@ -82,10 +85,16 @@ export function seedTranscript(key: string, state: NonNullable<SeedOptions['stat
 
 const name = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? p;
 
+/** An ask with the broker's request id, as a session the app runs has it (§93); made up here, so answering it says it has gone. */
+function withRequest(l: CardLive, requestId: string): CardLive {
+  return l.ask ? { ...l, ask: { ...l.ask, requestId } } : l;
+}
+
 /** The card as the store saves it. `id` and `createdAt` are the caller's so a walkthrough can find it again. */
 export function seedCard(o: SeedOptions, id: string, now: number): Card {
   const state = o.state ?? 'plan';
   const key = o.key ?? 'SHOP-155';
+  const app = o.channel !== false && !o.sessionId && !o.token;
   const repos = o.repos;
   const home = repos[0];
   const dirs = o.worktrees?.length === repos.length ? o.worktrees : repos;
@@ -99,9 +108,9 @@ export function seedCard(o: SeedOptions, id: string, now: number): Card {
     launch: { home, branch: dirs === repos ? 'current' : 'worktree', mode: 'plan', model: 'sonnet', message: `Plan ${key}.` },
     kind: 'build',
     stage: state === 'plan' || state === 'tool' || state === 'question' ? 'needs' : state === 'working' ? 'build' : state === 'idle' ? 'try' : 'done',
-    createdAt: started, branchName: branch, model: 'sonnet', cwd: dirs[0], sessionId: o.sessionId ?? `seed-${id}`, channel: o.channel ?? true,
-    // A question is answered through the tab's launcher (§91): the seeded card says one is there, so the form is live on the page.
-    ...(state === 'question' ? { keys: true } : {}),
+    createdAt: started, branchName: branch, model: 'sonnet', cwd: dirs[0], sessionId: o.sessionId ?? `seed-${id}`,
+    // The app runs it (§93), unless it stands for a terminal card: one whose tab is gone (channel false), or a real session or launcher of a legacy walkthrough.
+    ...(app ? { runner: 'app' as const } : { channel: o.channel ?? true }),
     folders: repos.map((repo, i) => ({ repo, dir: dirs[i] })),
     boot: [
       { at: started, text: 'Saved the context packet (4.1k)', state: 'ok' },
@@ -109,9 +118,9 @@ export function seedCard(o: SeedOptions, id: string, now: number): Card {
       { at: started + 2000, text: `Opened a Windows Terminal tab in ${dirs[0]}`, state: 'ok' },
       { at: started + 9000, text: 'The session started and linked to this card (seeded: no real tab)', state: 'ok' },
     ],
-    live: live(state, now - 60_000),
-    // The relayed prompt is what makes y / n answerable on the page (askOf); a real channel would have sent it.
-    ...(state === 'plan' || state === 'tool' ? { relayed: { requestId: `seed-req-${id}`, tool: state === 'plan' ? 'ExitPlanMode' : 'Bash', ...(state === 'tool' ? { description: 'pnpm vitest run src/cart' } : {}), at: now - 60_000 } } : {}),
+    live: app ? withRequest(live(state, now - 60_000), `seed-req-${id}`) : live(state, now - 60_000),
+    // A terminal card: the relayed prompt is what makes y / n answerable on the page (askOf); a real channel would have sent it.
+    ...(!app && (state === 'plan' || state === 'tool') ? { relayed: { requestId: `seed-req-${id}`, tool: state === 'plan' ? 'ExitPlanMode' : 'Bash', ...(state === 'tool' ? { description: 'pnpm vitest run src/cart' } : {}), at: now - 60_000 } } : {}),
     files: state === 'plan' ? [] : files,
     todos: todos(state),
     later,
