@@ -15,9 +15,9 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  */
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
-import type { EnvCheck, LookupResult, SetInfo, VerifyConfig, VerifyEnv } from './verify.ts';
+import type { EnvCheck, LookupResult, SetInfo, VerifyEnv, VerifyFile } from './verify.ts';
 
-export const PROTOCOL = 27;
+export const PROTOCOL = 28;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -249,8 +249,6 @@ export interface Settings {
   trustWorktrees?: boolean;
   /** The new-card screen: the one-column simple look (§59), or the full three-panel one. Unset: simple. */
   newCardLook?: NewCardLook;
-  /** Where the team's tools are on this machine, for a card's Verify panel (§105). Never in the repo. */
-  verify?: VerifyConfig;
 }
 
 export type NewCardLook = 'simple' | 'full';
@@ -488,6 +486,8 @@ export type ServerMsg =
   | { type: 'ship.plan'; reqId: string; plan: ShipPlan }
   | { type: 'card.changes'; reqId: string; changes: Changes }
   | { type: 'verify.checked'; reqId: string; envs: EnvCheck[] }
+  /** This machine's Verify file (§107): on connect, and again whenever it changes. */
+  | { type: 'verify.config'; verify: VerifyFile }
   | { type: 'verify.set'; reqId: string; env: VerifyEnv; set: SetInfo }
   | { type: 'verify.found'; reqId: string; result: LookupResult }
   | { type: 'card.worktrees'; reqId: string; id: string; worktrees: CardWorktree[] }

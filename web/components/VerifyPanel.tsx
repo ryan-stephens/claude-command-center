@@ -1,13 +1,13 @@
-// The Verify panel (PLAN §105): is a field in the set, in Dev and UAT side by side; a record's field
-// values from the record lookup; the tools' own pages. Read-only: nothing here writes to either
-// tool. Lookup values stay in this page's memory (web/verify-state.ts).
+// The Verify panel (PLAN §105, §107): is a field in the field set, in Dev and UAT side by side, with
+// a way to its add-to-set page when it isn't; a record's field values from the record lookup; the
+// tools' own pages. The tools' addresses and names come from this machine's Verify file. Read-only:
+// nothing here writes to either tool. Lookup values stay in this page's memory (web/verify-state.ts).
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import type { Card } from '../../shared/cards.ts';
-import { DEFAULT_ENV_VALUES, DEFAULT_ID_PARAM, ENV_NAME, VERIFY_AUTHS, VERIFY_ENVS, drift, splitIds, type EnvCheck, type FieldCheck, type VerifyAuth, type VerifyConfig, type VerifyEnv } from '../../shared/verify.ts';
+import { ENV_NAME, VERIFY_ENVS, drift, splitIds, type EnvCheck, type FieldCheck, type VerifyEnv, type VerifyFile } from '../../shared/verify.ts';
 import { useStore } from '../store.ts';
-import { saveVerifyConfig } from '../ws.ts';
-import { armProd, cycleEnv, openPage, refreshSets, runCheck, runLookup, setEnvs, setField, toggleAdvanced, toggleSetup, useVerify, verifyFor } from '../verify-state.ts';
+import { addToSet, armProd, cap, cycleEnv, openPage, pageUrl, refreshSets, runCheck, runLookup, setEnvs, setField, toggleAdvanced, toolName, useVerify, verifyFor } from '../verify-state.ts';
 import { Key } from './ui.tsx';
 
 function Sec({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
@@ -24,11 +24,13 @@ const small = 'flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[12.5px] te
 export function VerifyPanel({ card }: { card: Card }) {
   useEffect(() => { verifyFor(card); }, [card]);
   const v = useVerify();
-  const config = useStore((s) => s.settings.verify);
+  const file = useStore((s) => s.verify);
+  const config = file?.config;
   const envs = setEnvs();
-  const setName = config?.set?.name ?? 'Field set';
-  const lookName = config?.lookup?.name ?? 'Record lookup';
+  const setName = toolName('set');
+  const lookName = toolName('lookup');
   if (v.cardId !== card.id) return null;
+  const empty = !config?.set && !config?.lookup;
   return (
     <>
       <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-2.5" role="radiogroup" aria-label="Environment">
@@ -40,13 +42,12 @@ export function VerifyPanel({ card }: { card: Card }) {
         ))}
         <Key k="e" size="sm" /><Key k="⇧P" size="sm" />
         <span className="grow" />
-        <button className={small} onClick={() => void refreshSets()} disabled={v.refreshing || !envs.length} title="Read the current set again (it is kept ten minutes)">{v.refreshing ? <span className="spinner" /> : null}Refresh set<Key k="r" size="sm" /></button>
-        <button className={small} onClick={() => toggleSetup()} title="Where the tools are on this machine">Setup<Key k="u" size="sm" /></button>
+        <button className={small} onClick={() => void refreshSets()} disabled={v.refreshing || !envs.length} title={`Read ${setName}’s current set again (it is kept ten minutes)`}>{v.refreshing ? <span className="spinner" /> : null}Refresh<Key k="r" size="sm" /></button>
       </div>
 
-      {(v.setup || (!config?.set && !config?.lookup)) && <Setup config={config} open={v.setup} />}
+      {(empty || file?.problem) && <FileNote file={file} />}
 
-      <Sec title="Is this field in the set?" right={<span className="text-[12px] text-faint">{envs.length ? envs.map((e) => ENV_NAME[e]).join(' · ') : 'not set up'}</span>}>
+      <Sec title={`Is it in ${setName}?`} right={<span className="text-[12px] text-faint">{envs.length ? envs.map((e) => ENV_NAME[e]).join(' · ') : 'no addresses'}</span>}>
         <label className="grid gap-1 text-[12px] text-faint">
           <span>Field ids, one per line{v.prefilled ? ` (${v.prefilled} from the card)` : ''} <Key k="i" size="sm" inline /></span>
           <textarea id="verify-ids" rows={3} spellCheck={false} value={v.ids} onChange={(e) => setField({ ids: e.target.value })} placeholder={'1000\nCX.SAMPLE.ONE'} className="field font-mono text-[12.5px]" />
@@ -58,10 +59,11 @@ export function VerifyPanel({ card }: { card: Card }) {
           <span className="text-[12px] text-faint">{splitIds(v.ids).length} ids</span>
         </div>
         {v.checkError && <p role="alert" className="text-[12.5px] text-bad">{v.checkError}</p>}
-        {v.check && <CheckTable check={v.check} />}
+        {v.check && <CheckTable check={v.check} setName={setName} />}
       </Sec>
 
-      <Sec title={`Look up a record · ${ENV_NAME[v.env]}`} right={<span className="text-[12px] text-faint">{lookName}</span>}>
+      <Sec title={`Look up in ${lookName} · ${ENV_NAME[v.env]}`}>
+        {config?.lookup && !config.lookup.recordField && <p className="text-[12.5px] text-attn">{cap(lookName)} needs <span className="font-mono">"recordField"</span> in <span className="font-mono">{file?.file}</span>: the form’s name for the record id box.</p>}
         <div className="flex items-end gap-2">
           <label className="grid grow gap-1 text-[12px] text-faint">
             <span>Record id <Key k="l" size="sm" inline /></span>
@@ -87,9 +89,9 @@ export function VerifyPanel({ card }: { card: Card }) {
 
       <Sec title="Open the tools">
         <div className="flex flex-wrap gap-1.5">
-          <button className={small} onClick={() => openPage('set')}>{setName} · {ENV_NAME[v.env]}<Key k="o" size="sm" /></button>
-          <button className={small} onClick={() => openPage('add')} title="Opens the page only; adding to the set is done there, by you">Add to set<Key k="⇧O" size="sm" /></button>
-          <button className={small} onClick={() => openPage('lookup')}>{lookName}<Key k="⇧L" size="sm" /></button>
+          <button className={small} onClick={() => openPage('set')}>{cap(setName)} · {ENV_NAME[v.env]}<Key k="o" size="sm" /></button>
+          <button className={small} onClick={() => openPage('add')} title="Opens the page, with the ids not in the set copied to paste there; adding is done there, by you">Add to {setName} · {ENV_NAME[v.env]}<Key k="⇧O" size="sm" /></button>
+          <button className={small} onClick={() => openPage('lookup')}>{cap(lookName)}<Key k="⇧L" size="sm" /></button>
         </div>
         <p className="text-[12px] text-faint">In the browser. Nothing is written to either tool from here.</p>
       </Sec>
@@ -97,18 +99,31 @@ export function VerifyPanel({ card }: { card: Card }) {
   );
 }
 
-function Mark({ f }: { f: FieldCheck | undefined }) {
+/** No addresses yet, or a file that can't be read: where the file is and what goes in it (never the repo). */
+function FileNote({ file }: { file: VerifyFile | null }) {
+  return (
+    <Sec title="Where the tools are">
+      {file?.problem
+        ? <p role="alert" className="text-[13px] text-bad">{file.problem}</p>
+        : <p className="text-[13px] text-sub">Verify reads where the team’s tools are, and what they’re called, from a file on this machine: <span className="font-mono">{file?.file ?? '~/.cc-control/verify.json'}</span>. It isn’t there yet. README’s Verify row shows what goes in it; a change to it shows here at once, no restart.</p>}
+    </Sec>
+  );
+}
+
+function Mark({ f, env, setName }: { f: FieldCheck | undefined; env: VerifyEnv; setName: string }) {
   if (!f) return <span className="text-faint">–</span>;
   if (!f.known) return <span className="font-semibold text-bad" title={f.message}>unknown</span>;
+  const canAdd = !f.inSet && Boolean(pageUrl('add', env).url);
   return (
     <span className="grid gap-0.5">
       <span className={`font-semibold ${f.inSet ? 'text-ok' : 'text-attn'}`}>{f.inSet ? 'in set' : 'not in set'}{f.exists === false ? ' · no field' : ''}</span>
       {(f.format || f.options?.length) && <span className="text-[11.5px] text-faint" title={f.options?.join(', ')}>{f.format}{f.options?.length ? ` · ${f.options.length} options` : ''}</span>}
+      {canAdd && <button className="justify-self-start text-[11.5px] font-semibold text-acc underline decoration-dotted underline-offset-2 hover:decoration-solid" onClick={() => addToSet(env, [f.id])} title={`Copies ${f.id} and opens ${setName}’s add-to-set page for ${ENV_NAME[env]}`}>Add in {ENV_NAME[env]} ↗</button>}
     </span>
   );
 }
 
-function CheckTable({ check }: { check: EnvCheck[] }) {
+function CheckTable({ check, setName }: { check: EnvCheck[]; setName: string }) {
   const ids = [...new Set(check.flatMap((c) => (c.rows ?? []).map((r) => r.id)))];
   const at = (c: EnvCheck, id: string) => c.rows?.find((r) => r.id === id);
   return (
@@ -122,7 +137,7 @@ function CheckTable({ check }: { check: EnvCheck[] }) {
             return (
               <tr key={id} className={`border-t border-line align-top ${differs ? 'bg-attn-bg' : ''}`}>
                 <td className="py-1.5 pr-2"><span className="font-mono">{id}</span>{name && <span className="block text-[11.5px] text-faint">{name}</span>}{differs && <span className="block text-[11.5px] font-semibold text-attn">differs: {differs}</span>}</td>
-                {check.map((c) => <td key={c.env} className="py-1.5 pr-2"><Mark f={at(c, id)} /></td>)}
+                {check.map((c) => <td key={c.env} className="py-1.5 pr-2"><Mark f={at(c, id)} env={c.env} setName={setName} /></td>)}
               </tr>
             );
           })}
@@ -157,63 +172,4 @@ function FoundTable({ found }: { found: NonNullable<ReturnType<typeof useVerify.
 function ago(t: number): string {
   const s = Math.round((Date.now() - t) / 1000);
   return s < 60 ? 'just now' : `${Math.round(s / 60)} min ago`;
-}
-
-/** Where the tools are on this machine: saved in its settings (never the repo). Ctrl+Enter saves, Esc closes. */
-function Setup({ config, open }: { config: VerifyConfig | undefined; open: boolean }) {
-  const [f, setF] = useState<VerifyConfig>(() => structuredClone(config ?? {}));
-  if (!open) {
-    return (
-      <Sec title="Set up Verify">
-        <p className="text-[13px] text-sub">Verify reads two of the team’s tools: the field set (is a field in it, per environment) and the record lookup (a record’s field values). Where they are is set per machine, here: <Key k="u" size="sm" inline /> opens the form.</p>
-      </Sec>
-    );
-  }
-  const seturl = (e: VerifyEnv, url: string) => setF((x) => ({ ...x, set: { ...x.set, urls: { ...x.set?.urls, [e]: url } } }));
-  const setS = (p: Partial<NonNullable<VerifyConfig['set']>>) => setF((x) => ({ ...x, set: { ...x.set, ...p } }));
-  const setL = (p: Partial<NonNullable<VerifyConfig['lookup']>>) => setF((x) => ({ ...x, lookup: { ...x.lookup, ...p } }));
-  const row = 'grid gap-1 text-[12px] text-faint';
-  const input = 'field py-1 font-mono text-[12.5px]';
-  return (
-    <form id="verify-setup" className="grid gap-3 border-b border-line bg-raise/40 px-4 py-3.5" onSubmit={(e) => { e.preventDefault(); saveSetup(f); }}>
-      <h4 className="text-[13px] font-bold">Where the tools are (this machine)</h4>
-      <fieldset className="grid gap-2">
-        <legend className="mb-1 text-[12.5px] font-semibold text-sub">Field set: a host per environment</legend>
-        {VERIFY_ENVS.map((e) => (
-          <label key={e} className={row}><span>{ENV_NAME[e]} address{e === 'prod' ? ' (if there is one)' : ''}</span>
-            <input id={`verify-cfg-set-${e}`} className={input} value={f.set?.urls?.[e] ?? ''} onChange={(x) => seturl(e, x.target.value)} placeholder={`https://set-${e}.example.invalid`} />
-          </label>
-        ))}
-        <label className={row}><span>Add-to-set page, from the address (opened only)</span><input id="verify-cfg-add" className={input} value={f.set?.addPage ?? ''} onChange={(x) => setS({ addPage: x.target.value })} placeholder="Home/AddToSet" /></label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className={row}><span>Id parameter</span><input className={input} value={f.set?.idParam ?? ''} onChange={(x) => setS({ idParam: x.target.value })} placeholder={DEFAULT_ID_PARAM} /></label>
-          <label className={row}><span>Id key in the set (found when empty)</span><input className={input} value={f.set?.idKey ?? ''} onChange={(x) => setS({ idKey: x.target.value })} /></label>
-        </div>
-      </fieldset>
-      <fieldset className="grid gap-2">
-        <legend className="mb-1 text-[12.5px] font-semibold text-sub">Record lookup: one host for every environment</legend>
-        <label className={row}><span>The form’s address (where it posts)</span><input id="verify-cfg-lookup" className={input} value={f.lookup?.url ?? ''} onChange={(x) => setL({ url: x.target.value })} placeholder="https://lookup.example.invalid/Lookup" /></label>
-        <label className={row}><span>Record id field (the form’s name for it)</span><input id="verify-cfg-record" className={input} value={f.lookup?.recordField ?? ''} onChange={(x) => setL({ recordField: x.target.value })} placeholder="RecordId" /></label>
-        <div className="grid grid-cols-3 gap-2">
-          {VERIFY_ENVS.map((e) => <label key={e} className={row}><span>{ENV_NAME[e]} is called</span><input className={input} value={f.lookup?.envValues?.[e] ?? ''} onChange={(x) => setL({ envValues: { ...f.lookup?.envValues, [e]: x.target.value } })} placeholder={DEFAULT_ENV_VALUES[e]} /></label>)}
-        </div>
-        <label className={row}><span>Sign-in</span>
-          <select className="field py-1 text-[12.5px]" value={f.lookup?.auth ?? 'auto'} onChange={(x) => setL({ auth: x.target.value as VerifyAuth })}>
-            {VERIFY_AUTHS.map((a) => <option key={a} value={a}>{a === 'auto' ? 'Auto: without, then as you (Windows) when asked' : a === 'windows' ? 'As you (Windows sign-in)' : 'None'}</option>)}
-          </select>
-        </label>
-      </fieldset>
-      <div className="flex items-center gap-2">
-        <button type="submit" className="flex items-center gap-1.5 rounded-lg border border-acc/60 bg-acc-soft px-2.5 py-1 text-[12.5px] font-semibold text-acc">Save<Key k="Ctrl Enter" size="sm" /></button>
-        <button type="button" className={small} onClick={() => toggleSetup(false)}>Close<Key k="Esc" size="sm" /></button>
-        <span className="text-[12px] text-faint">Saved on this machine only, never in the repo.</span>
-      </div>
-    </form>
-  );
-}
-
-/** Ctrl+Enter in the form, or Save. */
-export function saveSetup(f: VerifyConfig): void {
-  saveVerifyConfig(f);
-  toggleSetup(false);
 }

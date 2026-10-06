@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { guard, LookupTool, parseLookup, readSet, readValidate, Requester, SET_TTL_MS, SetTool, unwrap, htmlText, type Transport, type VerifyRequest } from './verify.ts';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { guard, LookupTool, parseLookup, readSet, readValidate, readVerifyFile, Requester, SET_TTL_MS, SetTool, unwrap, htmlText, VerifyFileWatch, type Transport, type VerifyRequest } from './verify.ts';
 import type { VerifyConfig } from '../shared/verify.ts';
 
 // Made-up tools: nothing here is a real host, field or value.
@@ -35,6 +38,32 @@ const PAGE = (rows: string) => `<html><body><form method="post"><select name="En
 const FOUND = `<tr><td>1000</td><td>12.50</td><td><input type="hidden" name="Fields[1000].Value" value="12.50" /><input type="hidden" name="Fields[1000].Exists" value="True" /><input type="hidden" name="Fields[1000].ReadOnly" value="False" /><input type="checkbox" name="Fields[1000].Update" /><input name="Fields[1000].NewValue" /></td></tr>
 <tr><td>CX.SAMPLE.ONE</td><td>Tom &amp; Jerry</td><td><input value="Tom &amp; Jerry" type="hidden" name="Fields[CX.SAMPLE.ONE].Value"><input type="hidden" name="Fields[CX.SAMPLE.ONE].ReadOnly" value="True"></td></tr>
 <tr style="background-color: salmon"><td>CX.MADE.UP</td><td>(Field does not exist)</td><td></td></tr>`;
+
+test('the machine’s Verify file: missing says nothing, a BOM is fine, junk is cleaned out, bad JSON and UTF-16 say why', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cc-verify-'));
+  const f = join(dir, 'verify.json');
+  assert.deepEqual(readVerifyFile(f), { file: f, config: {} });
+  writeFileSync(f, '\uFEFF' + JSON.stringify({ set: { name: 'Sample set', urls: { dev: 'https://set-dev.example.invalid/', qa: 'https://x.example.invalid' }, addPage: '/addtoset' }, lookup: { name: 'Sample lookup', url: 'ftp://no', recordField: 'RecordId' }, extra: 1 }));
+  assert.deepEqual(readVerifyFile(f).config, { set: { name: 'Sample set', urls: { dev: 'https://set-dev.example.invalid' }, addPage: 'addtoset' }, lookup: { name: 'Sample lookup', recordField: 'RecordId' } });
+  writeFileSync(f, '{ not json');
+  assert.match(readVerifyFile(f).problem ?? '', /isn’t JSON/);
+  writeFileSync(f, Buffer.from('{}', 'utf16le'));
+  assert.match(readVerifyFile(f).problem ?? '', /UTF-16/);
+});
+
+test('the file is read again only when it changes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cc-verify-'));
+  const f = join(dir, 'verify.json');
+  const w = new VerifyFileWatch(f);
+  assert.equal(w.now().changed, false, 'no file, and still none');
+  writeFileSync(f, JSON.stringify({ set: { name: 'A' } }));
+  const a = w.now();
+  assert.equal(a.changed, true);
+  assert.equal(a.config.set?.name, 'A');
+  assert.equal(w.now().changed, false);
+  writeFileSync(f, JSON.stringify({ set: { name: 'Bee' } }));
+  assert.equal(w.now().config.set?.name, 'Bee');
+});
 
 test('unwrap: the payload when Successful, what the tool said when not, and non-JSON', () => {
   assert.deepEqual(unwrap(ok({ a: 1 })), { ok: true, payload: { a: 1 } });
@@ -112,7 +141,8 @@ test('lookup: one POST of the form fields, CRLF between ids, Advanced off by def
   assert.equal((await none.lookup.fetch('dev', '9', ['1000'])).found, false);
   await assert.rejects(tools(() => ({ status: 302, body: '' })).lookup.fetch('dev', '9', ['1']), /redirect/);
   await assert.rejects(t.lookup.fetch('dev', 'x y', ['1']), /doesn’t look like/);
-  await assert.rejects(new LookupTool(() => ({}), new Requester(() => ({}))).fetch('dev', '1', ['1']), /isn’t set up/);
+  await assert.rejects(new LookupTool(() => ({}), new Requester(() => ({}))).fetch('dev', '1', ['1']), /has no address/);
+  await assert.rejects(new LookupTool(() => ({ lookup: { name: 'Sample lookup', url: 'https://l.example.invalid/F' } }), new Requester(() => ({}))).fetch('dev', '1', ['1']), /Sample lookup needs "recordField"/, 'named in the error');
 });
 
 test('a Windows sign-in (401 Negotiate) is answered as you through the other transport, when auth allows', async () => {

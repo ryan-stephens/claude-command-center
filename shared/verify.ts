@@ -44,6 +44,14 @@ export const VERIFY_AUTHS: VerifyAuth[] = ['auto', 'windows', 'none'];
 export const DEFAULT_ID_PARAM = 'encompassId';
 export const DEFAULT_ENV_VALUES: Record<VerifyEnv, string> = { dev: 'Dev', uat: 'Uat', prod: 'Prod' };
 
+/** This machine's Verify file, as the server read it (§107). */
+export interface VerifyFile {
+  file: string;
+  config: VerifyConfig;
+  /** Why it couldn't be read (not JSON, UTF-16). A missing file isn't a problem: it says nothing yet. */
+  problem?: string;
+}
+
 /** The set tool has hosts for dev and uat (prod when given); the lookup serves every environment from one host. */
 export const SET_ENVS: VerifyEnv[] = ['dev', 'uat'];
 

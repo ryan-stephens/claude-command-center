@@ -1,10 +1,12 @@
-// The Verify panel (PLAN §105) on an isolated server (PORT, default 7805) against the stand-in tools
-// (standins/verify-tools.cjs on 18900 to 18902, logging to STANDIN_LOG): set up where the tools are,
-// check ids in Dev and UAT side by side, refresh the set, look a record up (found, missing field, no
-// record, Advanced), open the tools' pages, Prod behind a second press, paste into the boxes; and
-// that the server sent the tools nothing but the two reads and the lookup form, and logged no value.
+// The Verify panel (PLAN §105, §107) on an isolated server (PORT, default 7805) against the stand-in
+// tools (standins/verify-tools.cjs on 18900 to 18902, logging to STANDIN_LOG): the machine's Verify
+// file written while the panel is open (it shows at once, the tools by name), ids checked in Dev and
+// UAT side by side, Add on a field a set lacks, the set refreshed, a record looked up (found, missing
+// field, no record, Advanced), the tools' pages, Prod behind a second press, paste into the boxes;
+// and that the server sent the tools nothing but the two reads and the lookup form, and logged no value.
 // Start the stand-ins first: node standins/verify-tools.cjs 18900 %TEMP%\verify-standin.log
-// SERVER_LOG: the isolated server's log, checked for values. DARK=1 for dark mode.
+// The server runs with CC_CONTROL_VERIFY_FILE=VERIFY_FILE (default %TEMP%/cc-verify-walk.json; the
+// walk deletes and writes it). SERVER_LOG: the server's log, checked for values. DARK=1 for dark mode.
 const { chromium } = require('C:/Users/ryans/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -13,6 +15,7 @@ const dark = process.env.DARK === '1';
 const TMP = (process.env.TEMP || process.env.TMP).replace(/\\/g, '/');
 const STANDIN_LOG = process.env.STANDIN_LOG || `${TMP}/verify-standin.log`;
 const SERVER_LOG = process.env.SERVER_LOG || `${TMP}/cc-test-105.log`;
+const VERIFY_FILE = process.env.VERIFY_FILE || `${TMP}/cc-verify-walk.json`;
 const OUT = path.join(__dirname, dark ? 'shots-verify-dark' : 'shots-verify');
 fs.mkdirSync(OUT, { recursive: true });
 const DEMO = `${TMP}/cc-demo`;
@@ -36,6 +39,7 @@ async function ask(page, msg) {
 
 (async () => {
   if (fs.existsSync(STANDIN_LOG)) fs.writeFileSync(STANDIN_LOG, '');
+  fs.rmSync(VERIFY_FILE, { force: true });
   const browser = await chromium.launch({ executablePath: 'C:/Users/ryans/AppData/Local/ms-playwright/chromium-1223/chrome-win64/chrome.exe' });
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, colorScheme: dark ? 'dark' : 'light' });
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `http://127.0.0.1:${PORT}` });
@@ -46,7 +50,6 @@ async function ask(page, msg) {
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.evaluate((dark) => { localStorage.setItem('cc-control.welcomed.v2', '1'); if (dark) localStorage.setItem('cc-control.theme', 'dark'); }, dark);
   // A clean slate: no tools set up yet.
-  await page.evaluate(() => new Promise((resolve) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => { ws.send(JSON.stringify({ type: 'settings.set', settings: { verify: {} } })); setTimeout(() => { ws.close(); resolve(); }, 300); }; }));
   await page.evaluate(({ DEMO }) => new Promise((resolve) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => { ws.send(JSON.stringify({ type: 'workspace.save', workspace: { id: 'ws-demo-verify', name: 'Demo', color: 'teal', repos: [`${DEMO}/web-app`], notes: '' } })); setTimeout(() => { ws.close(); resolve(); }, 400); }; }), { DEMO });
   const card = await ask(page, { type: 'cards.seed', options: { repos: [`${DEMO}/web-app`], workspaceId: 'ws-demo-verify', key: 'LOAN-77', state: 'idle', title: 'Map CX.SAMPLE.ONE and field 1000 onto the summary' } });
   await page.reload();
@@ -56,29 +59,23 @@ async function ask(page, msg) {
   const view = page.locator('section[aria-label^="LOAN-77"]').first();
   check('the card opens', await view.isVisible());
 
-  // v: the panel; nothing set up yet, so it says how.
+  // v: the panel; no Verify file on this machine yet, so it says where the file goes.
   await page.keyboard.press('v');
   await sleep(400);
-  check('v opens Verify, which says how to set it up', await view.getByText('Set up Verify').isVisible());
+  check('v opens Verify, which says where the machine’s file goes', await view.getByText(/from a file on this machine/).isVisible() && await view.getByText(VERIFY_FILE.split('/').pop(), { exact: false }).first().isVisible());
+  check('no setup form', (await page.locator('#verify-setup').count()) === 0);
   check('the ids box starts with the ids the card names', (await page.locator('#verify-ids').inputValue()) === 'CX.SAMPLE.ONE\n1000', JSON.stringify(await page.locator('#verify-ids').inputValue()));
   await page.keyboard.press('Enter');
-  check('Enter with nothing set up says so', await until(async () => /isn’t set up on this machine/.test(await view.innerText())));
-  await shot(page, 'not-set-up');
+  check('Enter with no file says so', await until(async () => /has no address in this machine’s Verify file/.test(await view.innerText())));
+  await shot(page, 'no-file');
 
-  // u: the form; the first field takes the cursor; Ctrl+Enter saves.
-  await page.keyboard.press('u');
-  check('u opens the form with the cursor in it', await until(async () => (await page.evaluate(() => document.activeElement?.id)) === 'verify-cfg-set-dev'));
-  await page.keyboard.type(DEV);
-  check('the form starts empty after the addresses were cleared', (await page.locator('#verify-cfg-set-dev').inputValue()) === DEV);
-  await page.locator('#verify-cfg-set-uat').fill(UAT);
-  await page.locator('#verify-cfg-add').fill('Home/AddToSet');
-  await page.locator('#verify-cfg-lookup').fill(LOOKUP);
-  await page.locator('#verify-cfg-record').fill('RecordId');
-  await shot(page, 'setup');
-  await page.locator('#verify-cfg-record').press('Control+Enter');
-  check('Ctrl+Enter saves and closes the form', await until(async () => (await page.locator('#verify-setup').count()) === 0));
-  const saved = await page.evaluate(() => new Promise((resolve) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === 'settings') { ws.close(); resolve(m.settings.verify); } }; }));
-  check('the addresses are saved in the machine’s settings', saved?.set?.urls?.dev === DEV && saved?.set?.urls?.uat === UAT && saved?.lookup?.url === LOOKUP && saved?.lookup?.recordField === 'RecordId', JSON.stringify(saved));
+  // The file, written while the panel is open: the tools show by name, no restart, no form.
+  fs.writeFileSync(VERIFY_FILE, JSON.stringify({
+    set: { name: 'Sample set', urls: { dev: DEV, uat: UAT }, addPage: 'Home/AddToSet' },
+    lookup: { name: 'Sample lookup', url: LOOKUP, recordField: 'RecordId' },
+  }, null, 2));
+  check('the file shows within seconds: the tools by name', await until(async () => /Is it in Sample set\?/.test(await view.innerText()) && /Look up in Sample lookup/.test(await view.innerText()), 10000));
+  check('the note about the file goes', !(await view.getByText(/from a file on this machine/).count()));
 
   // i, a made-up id typed in, Esc, Enter: Dev and UAT side by side.
   await page.keyboard.press('i');
@@ -150,6 +147,15 @@ async function ask(page, msg) {
     if (tab) await tab.close();
   }
   check('o opens the set tool for UAT, Shift+O its add-to-set page, Shift+L the lookup', opens[0] === `${UAT}/` && opens[1] === `${UAT}/Home/AddToSet` && opens[2] === LOOKUP, opens.join(' | '));
+  check('Shift+O copied the ids UAT’s set lacks, to paste there', (await page.evaluate(() => navigator.clipboard.readText())) === 'CX.SAMPLE.ONE', await page.evaluate(() => navigator.clipboard.readText()));
+
+  // Add on a field a set lacks: that environment's add-to-set page, the id copied.
+  await page.evaluate(() => navigator.clipboard.writeText(''));
+  const addLink = view.getByRole('button', { name: 'Add in UAT ↗' });
+  check('a field not in UAT’s set offers Add in UAT (and only there)', (await addLink.count()) === 1 && !(await view.getByRole('button', { name: 'Add in Dev ↗' }).count()));
+  const [addTab] = await Promise.all([context.waitForEvent('page', { timeout: 5000 }).catch(() => null), addLink.click()]);
+  check('Add opens UAT’s add-to-set page with the id copied', addTab?.url() === `${UAT}/Home/AddToSet` && (await page.evaluate(() => navigator.clipboard.readText())) === 'CX.SAMPLE.ONE', addTab?.url() ?? 'none');
+  if (addTab) await addTab.close();
 
   // Paste into the ids box and into the message box (Ctrl+V reaches both).
   await page.evaluate(() => navigator.clipboard.writeText('PASTED.ID'));
@@ -173,7 +179,7 @@ async function ask(page, msg) {
   // The ? overlay has the panel's rows.
   await page.keyboard.press('Shift+Slash');
   await sleep(400);
-  check('the ? overlay has the Verify rows', (await page.getByText(/Verify panel: Where the tools are on this machine/).count()) > 0);
+  check('the ? overlay has the Verify rows', (await page.getByText(/Verify panel: The field set tool’s page/).count()) > 0);
   await page.keyboard.press('Escape');
 
   // What the app's server sent the tools: only the reads and the lookup form, never a Save or update.

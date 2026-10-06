@@ -6,7 +6,7 @@ import type { TicketTransition } from '../shared/tickets.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type RepoInfo, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import type { PromptContext } from '../shared/prompts.ts';
-import type { EnvCheck, LookupResult, SetInfo, VerifyConfig, VerifyEnv } from '../shared/verify.ts';
+import type { EnvCheck, LookupResult, SetInfo, VerifyEnv } from '../shared/verify.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
 import { haveOf, mergeTranscript } from './transcript-merge.ts';
 import { activeSession, flash, get, groupKeyOf, set, setFilter } from './store.ts';
@@ -239,11 +239,6 @@ export async function verifyRefresh(env: VerifyEnv): Promise<SetInfo> {
 /** A record's fields from the record lookup. The values stay in this page's memory. */
 export async function verifyLookup(env: VerifyEnv, recordId: string, ids: string[], advanced: boolean): Promise<LookupResult> {
   return (await request((reqId) => ({ type: 'verify.lookup', reqId, env, recordId, ids, advanced }), 120_000) as Extract<ServerMsg, { type: 'verify.found' }>).result;
-}
-
-/** Where the team's tools are on this machine (Settings.verify). */
-export function saveVerifyConfig(verify: VerifyConfig): void {
-  send({ type: 'settings.set', settings: { ...get().settings, verify } });
 }
 
 /** Stop the card's run (every service and the session), or one service alone. */
@@ -524,6 +519,9 @@ function receive(msg: ServerMsg): void {
     case 'verify.set':
     case 'verify.found':
       return; // answered to the screen that asked, which waits on it
+    case 'verify.config':
+      set({ verify: msg.verify });
+      return;
     case 'workspace.file':
       pendingWorkspaceFiles.get(msg.reqId)?.(msg.file);
       pendingWorkspaceFiles.delete(msg.reqId);

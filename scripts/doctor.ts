@@ -19,6 +19,8 @@ import { parseStep } from '../shared/recipes.ts';
 import { needsUiPort, stackWarnings } from '../shared/stack.ts';
 import { envNamesIn } from '../shared/stack-detect.ts';
 import { DB_PATH, Store } from '../server/store.ts';
+import { readVerifyFile } from '../server/verify.ts';
+import { VERIFY_ENVS, setUrl } from '../shared/verify.ts';
 import { findQaField, jiraConfig, jiraProblem } from '../server/tickets.ts';
 import { repoName } from '../shared/workspaces.ts';
 
@@ -73,6 +75,16 @@ if (config.file) line('ok', 'Settings file', `${config.file}${config.set.length 
 else line('info', 'Settings file', `none at ${CONFIG_FILE}`, `Optional, for Jira / Azure DevOps tokens: copy docs\\config.env.example to "${CONFIG_FILE}" and fill in the lines you need (one NAME=value per line, saved as UTF-8).`);
 line(config.systemCerts ? 'ok' : 'info', 'Certificates', config.systemCerts ? `${config.systemCerts} from Windows${config.caFile ? ` and ${config.caFile}` : ''} trusted as well as Node's own` : 'only Node’s own', config.problem ?? '');
 line('info', 'Database', DB_PATH);
+// Verify (§107): where the team's tools are, and their names; a file on this machine, never the repo.
+const vf = readVerifyFile();
+const vc = vf.config;
+if (vf.problem) line('bad', 'Verify file', vf.problem, 'Fix it, or delete it; the Verify panel shows the change at once.');
+else if (!vc.set && !vc.lookup) line('info', 'Verify file', `none at ${vf.file}`, 'Optional, for the Verify panel: README’s Verify row shows what goes in it.');
+else {
+  const envs = VERIFY_ENVS.filter((e) => setUrl(vc, e));
+  line('ok', 'Verify file', `${vf.file}: ${[vc.set ? `${vc.set.name ?? 'the set tool'} (${envs.join(', ') || 'no addresses'})` : '', vc.lookup ? `${vc.lookup.name ?? 'the record lookup'}` : ''].filter(Boolean).join(', ')}`);
+  if (vc.lookup && !vc.lookup.recordField) line('warn', `${vc.lookup.name ?? 'Record lookup'}`, 'no "recordField"', 'Add the form’s name for the record id box (its <input name="…">) to the Verify file.');
+}
 
 section('Tickets');
 const jira = jiraConfig(process.env);

@@ -10,12 +10,60 @@
 // reached from here. Redirects aren't followed (a followed POST becomes a GET elsewhere).
 //
 // Values a lookup returns are a record's data: never logged, never kept here.
+//
+// Where the tools are, and what they're called, is a file on each machine (§107), never the repo:
+// ~/.cc-control/verify.json, or the file CC_CONTROL_VERIFY_FILE names. Read again when it changes.
 
 import { spawn } from 'node:child_process';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import {
-  DEFAULT_ENV_VALUES, DEFAULT_ID_PARAM, MAX_IDS, cleanUrl, setUrl,
+  DEFAULT_ENV_VALUES, DEFAULT_ID_PARAM, MAX_IDS, cleanUrl, cleanVerify, setUrl, type VerifyFile,
   type FieldCheck, type LookupField, type LookupResult, type SetInfo, type VerifyConfig, type VerifyEnv,
 } from '../shared/verify.ts';
+
+// ---- The machine's file -----------------------------------------------------
+
+export const VERIFY_FILE = process.env.CC_CONTROL_VERIFY_FILE || join(homedir(), '.cc-control', 'verify.json');
+
+/** The file read and cleaned (`cleanVerify`): what it says, or why it says nothing. Never throws. */
+export function readVerifyFile(file = VERIFY_FILE): VerifyFile {
+  if (!existsSync(file)) return { file, config: {} };
+  try {
+    const text = readFileSync(file, 'utf8');
+    if (text.includes('\u0000')) return { file, config: {}, problem: `${file} is saved as UTF-16; save it as UTF-8.` };
+    return { file, config: cleanVerify(JSON.parse(text.replace(/^\uFEFF/, ''))) ?? {} };
+  } catch (e) {
+    return { file, config: {}, problem: `${file} isn’t JSON: ${(e as Error).message.slice(0, 200)}` };
+  }
+}
+
+/** The file, read again only when it changed (its size and time). */
+export class VerifyFileWatch {
+  private file: string;
+  private seen: string;
+  private last: VerifyFile;
+
+  constructor(file = VERIFY_FILE) {
+    this.file = file;
+    this.seen = this.stamp();
+    this.last = readVerifyFile(file);
+  }
+
+  private stamp(): string {
+    try { const s = statSync(this.file); return `${s.size}:${s.mtimeMs}`; } catch { return 'none'; }
+  }
+
+  /** What the file says now; `changed` when it was read again since the last call. */
+  now(): VerifyFile & { changed: boolean } {
+    const stamp = this.stamp();
+    if (stamp === this.seen) return { ...this.last, changed: false };
+    this.seen = stamp;
+    this.last = readVerifyFile(this.file);
+    return { ...this.last, changed: true };
+  }
+}
 
 // ---- Requests ---------------------------------------------------------------
 
@@ -219,7 +267,7 @@ export class SetTool {
 
   private base(env: VerifyEnv): string {
     const b = setUrl(this.cfg(), env);
-    if (!b) throw new Error(`The set tool has no ${env} address on this machine: u in the Verify panel sets it.`);
+    if (!b) throw new Error(`${this.cfg().set?.name ?? 'The set tool'} has no ${env} address in this machine’s Verify file.`);
     return b;
   }
 
@@ -338,7 +386,8 @@ export class LookupTool {
     const cfg = this.cfg();
     const url = cleanUrl(cfg.lookup?.url);
     const field = cfg.lookup?.recordField?.trim();
-    if (!url || !field) throw new Error('The record lookup isn’t set up on this machine: u in the Verify panel sets its address and record field.');
+    if (!url) throw new Error('The record lookup has no address in this machine’s Verify file.');
+    if (!field) throw new Error(`${cfg.lookup?.name ?? 'The record lookup'} needs "recordField" in this machine’s Verify file: the form’s name for the record id box.`);
     const rid = recordId.trim();
     if (!/^[\w.{}-]{1,80}$/.test(rid)) throw new Error('That record id doesn’t look like one.');
     const list = ids.slice(0, MAX_IDS);
@@ -348,7 +397,7 @@ export class LookupTool {
       method: 'POST', url,
       form: [['Environment', envValue], [field, rid], ['AdvancedFetch', advanced ? 'true' : 'false'], ['FieldsToFetch', list.join('\r\n')]],
     }, cfg.lookup?.auth ?? 'auto');
-    if (res.status === 401) throw new Error('The record lookup wants a sign-in: in the Verify panel’s setup (u), set how it signs in to Windows.');
+    if (res.status === 401) throw new Error(`${cfg.lookup?.name ?? 'The record lookup'} wants a sign-in: set "auth": "windows" for it in this machine’s Verify file.`);
     if (res.status >= 300 && res.status < 400) throw new Error(`The record lookup answered with a redirect (${res.status}): is its address the form’s?`);
     if (res.status >= 400) throw new Error(`The record lookup answered ${res.status}.`);
     return { env, recordId: rid, ...parseLookup(res.body) };

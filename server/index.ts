@@ -7,8 +7,8 @@ import { existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { cleanVerify, MAX_IDS, VERIFY_ENVS, setUrl, type EnvCheck, type FieldCheck, type VerifyEnv } from '../shared/verify.ts';
-import { explain, LookupTool, Requester, SetTool } from './verify.ts';
+import { MAX_IDS, VERIFY_ENVS, setUrl, type EnvCheck, type FieldCheck, type VerifyEnv, type VerifyFile } from '../shared/verify.ts';
+import { explain, LookupTool, Requester, SetTool, VerifyFileWatch } from './verify.ts';
 import { KEY_HINTS, NEW_CARD_LOOKS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
@@ -314,20 +314,29 @@ function cleanSettings(raw: unknown): Settings {
   if ((raw as Settings)?.trustWorktrees === true) out.trustWorktrees = true;
   const look = (raw as Settings)?.newCardLook;
   if (look && NEW_CARD_LOOKS.includes(look)) out.newCardLook = look;
-  // Settings are saved key by key (an absent key keeps its old value), so a cleared form is saved as {}.
-  if (raw && typeof raw === 'object' && 'verify' in raw) out.verify = cleanVerify((raw as Settings).verify) ?? {};
   return out;
 }
 
-// Verify (§105): the team's tools, read-only, where this machine's settings say they are.
-const verifyConfig = () => store.loadSettings().verify ?? {};
+// Verify (§105): the team's tools, read-only, where this machine's Verify file says they are and
+// by the names it gives them (§107). A change to the file reaches every page, no restart.
+const verifyFile = new VerifyFileWatch();
+function verifyNow(): VerifyFile {
+  const v = verifyFile.now();
+  if (v.changed) {
+    setTool.clear();
+    broadcast({ type: 'verify.config', verify: { file: v.file, config: v.config, ...(v.problem ? { problem: v.problem } : {}) } });
+  }
+  return v;
+}
+const verifyConfig = () => verifyNow().config;
+setInterval(verifyNow, 3000).unref();
 const verifyRequests = new Requester(verifyConfig);
 const setTool = new SetTool(verifyConfig, verifyRequests);
 const lookupTool = new LookupTool(verifyConfig, verifyRequests);
 
 /** One environment's answer: each id through ValidateField (four at a time), with the cached set's version beside it. */
 async function checkEnv(env: VerifyEnv, ids: string[]): Promise<EnvCheck> {
-  if (!setUrl(verifyConfig(), env)) return { env, error: `The set tool has no ${env} address on this machine: u sets it.` };
+  if (!setUrl(verifyConfig(), env)) return { env, error: `${verifyConfig().set?.name ?? 'The set tool'} has no ${env} address in this machine’s Verify file.` };
   const validate = async (): Promise<FieldCheck[]> => {
     const rows: FieldCheck[] = [];
     for (let i = 0; i < ids.length; i += 4) rows.push(...await Promise.all(ids.slice(i, i + 4).map((id) => setTool.validate(env, id))));
@@ -336,8 +345,8 @@ async function checkEnv(env: VerifyEnv, ids: string[]): Promise<EnvCheck> {
   const [rows, set] = await Promise.allSettled([validate(), setTool.set(env)]);
   return {
     env,
-    ...(rows.status === 'fulfilled' ? { rows: rows.value } : { error: explain(rows.reason, `The ${env} set tool`) }),
-    ...(set.status === 'fulfilled' ? { set: set.value.info } : { setError: explain(set.reason, `The ${env} set`) }),
+    ...(rows.status === 'fulfilled' ? { rows: rows.value } : { error: explain(rows.reason, `${verifyConfig().set?.name ?? 'The set tool'} (${env})`) }),
+    ...(set.status === 'fulfilled' ? { set: set.value.info } : { setError: explain(set.reason, `${verifyConfig().set?.name ?? 'The set tool'}’s ${env} set`) }),
   };
 }
 
@@ -555,7 +564,6 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     case 'settings.set':
       store.saveSettings(cleanSettings(msg.settings));
-      setTool.clear();
       broadcast({ type: 'settings', settings: store.loadSettings() });
       return;
     case 'prompt.save':
@@ -923,14 +931,14 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     }
     case 'verify.refresh': {
       const env = VERIFY_ENVS.includes(msg.env) ? msg.env : 'dev';
-      try { send(ws, { type: 'verify.set', reqId: msg.reqId, env, set: (await setTool.set(env, true)).info }); } catch (e) { throw new Error(explain(e, `The ${env} set`)); }
+      try { send(ws, { type: 'verify.set', reqId: msg.reqId, env, set: (await setTool.set(env, true)).info }); } catch (e) { throw new Error(explain(e, `${verifyConfig().set?.name ?? 'The set tool'} (${env})`)); }
       return;
     }
     case 'verify.lookup': {
       const env = VERIFY_ENVS.includes(msg.env) ? msg.env : 'dev';
       const ids = (Array.isArray(msg.ids) ? msg.ids : []).map(String).filter((x) => /^[\w.#-]{1,64}$/.test(x)).slice(0, MAX_IDS);
       // The values are a record's data: they go to this page only, and nothing here logs them.
-      try { send(ws, { type: 'verify.found', reqId: msg.reqId, result: await lookupTool.fetch(env, String(msg.recordId ?? ''), ids, msg.advanced === true) }); } catch (e) { throw new Error(explain(e, 'The record lookup')); }
+      try { send(ws, { type: 'verify.found', reqId: msg.reqId, result: await lookupTool.fetch(env, String(msg.recordId ?? ''), ids, msg.advanced === true) }); } catch (e) { throw new Error(explain(e, verifyConfig().lookup?.name ?? 'The record lookup')); }
       return;
     }
     case 'card.changes': {
@@ -1162,6 +1170,7 @@ wss.on('connection', (ws) => {
     });
   });
   send(ws, { type: 'hello', protocol: PROTOCOL });
+  { const v = verifyNow(); send(ws, { type: 'verify.config', verify: { file: v.file, config: v.config, ...(v.problem ? { problem: v.problem } : {}) } }); }
   send(ws, snapshot());
   send(ws, { type: 'settings', settings: store.loadSettings() });
   send(ws, { type: 'prompts', prompts: store.loadPrompts() });

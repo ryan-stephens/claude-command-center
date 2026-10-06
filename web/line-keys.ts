@@ -19,7 +19,7 @@ import {
 } from './line-model.ts';
 import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
 import { withSimple } from './simple-model.ts';
-import { armProd, cycleEnv, openPage, refreshSets, runCheck, runLookup, runVerify, submitSetup, toggleAdvanced, toggleSetup, useVerify } from './verify-state.ts';
+import { armProd, cycleEnv, openPage, refreshSets, runCheck, runLookup, runVerify, toggleAdvanced } from './verify-state.ts';
 import { addCardContext, answerCard, focusCardTab, sayToCard, send, startCard, stopRun, tryCard } from './ws.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
@@ -43,8 +43,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['e  ·  Shift+P (Verify panel)', 'Dev ↔ UAT for the lookup and the tools’ pages  ·  Prod for the lookup, after a second press (it reads production; nothing is written). The field check always shows Dev and UAT side by side, and where they differ'],
       ['i  ·  l  ·  Enter (Verify panel)', 'The field ids box (filled from ids the ticket and your notes name; Ctrl+Enter checks from there)  ·  the record id box (Enter looks it up)  ·  check the ids in every environment, and look the record up when one is named'],
       ['r  ·  a (Verify panel)', 'Read the current field set again (kept ten minutes otherwise)  ·  Advanced fetch on the lookup, slower (off by default)'],
-      ['o  ·  Shift+O  ·  Shift+L (Verify panel)', 'The field set tool’s page for the environment  ·  its add-to-set page  ·  the record lookup’s page, in the browser. Only opened: nothing is written to either tool from the app'],
-      ['u (Verify panel)', 'Where the tools are on this machine: each environment’s address, the lookup’s form and record field, how it signs in. Ctrl+Enter saves, Esc closes. Kept in this machine’s settings, never the repo'],
+      ['o  ·  Shift+O  ·  Shift+L (Verify panel)', 'The field set tool’s page for the environment  ·  its add-to-set page, to add a field there yourself  ·  the record lookup’s page, in the browser. Only opened: nothing is written to either tool from the app. Where the tools are, and their names, come from this machine’s Verify file (~/.cc-control/verify.json), never the repo'],
       ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
       ['Esc (card open)', 'While Claude is working: stop it, as Esc does in Claude Code. Otherwise back to the board, the card still focused; on the board, clear the filter'],
@@ -822,19 +821,15 @@ function verifyKeys(e: KeyboardEvent): boolean {
     case 'o': openPage('set'); return true;
     case 'O': openPage('add'); return true;
     case 'L': openPage('lookup'); return true;
-    case 'u': toggleSetup(); return true;
-    case 'Escape': if (useVerify.getState().setup) { toggleSetup(false); return true; } return false;
   }
   return false;
 }
 
-/** Typing in the Verify panel: Esc leaves a box (or closes the setup form), Enter in the record box looks it up, Ctrl+Enter checks, looks up or saves. */
+/** Typing in the Verify panel: Esc leaves a box, Enter in the record box looks it up, Ctrl+Enter checks or looks up. */
 function verifyFieldKeys(e: KeyboardEvent, el: HTMLElement): boolean {
-  const inSetup = Boolean(el.closest('#verify-setup'));
-  if (e.key === 'Escape') { el.blur(); if (inSetup) toggleSetup(false); return true; }
+  if (e.key === 'Escape') { el.blur(); return true; }
   if (e.key === 'Enter' && e.ctrlKey) {
-    if (inSetup) submitSetup();
-    else if (el.id === 'verify-ids') void runCheck();
+    if (el.id === 'verify-ids') void runCheck();
     else void runLookup();
     return true;
   }
@@ -935,7 +930,7 @@ function sayKeys(e: KeyboardEvent): boolean {
 function searchKeys(e: KeyboardEvent): boolean {
   const el = e.target as HTMLElement;
   if (el.id === 'card-say') return sayKeys(e);
-  if (el.id.startsWith('verify-') || el.closest('#verify-setup')) return verifyFieldKeys(e, el);
+  if (el.id.startsWith('verify-')) return verifyFieldKeys(e, el);
   // The question form's "Type something" box (§91): Enter is done with it, Esc leaves it; the rest types.
   if (el.id.startsWith('q-other-')) {
     if (e.key === 'Escape') { el.blur(); return true; }

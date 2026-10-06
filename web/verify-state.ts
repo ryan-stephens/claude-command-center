@@ -29,13 +29,11 @@ export interface VerifyState {
   found?: LookupResult;
   lookError?: string;
   refreshing: boolean;
-  /** The form for where the tools are (u). */
-  setup: boolean;
 }
 
 const PROD_CONFIRM_MS = 4000;
 
-const fresh = (): VerifyState => ({ cardId: null, ids: '', prefilled: 0, record: '', fields: '', env: 'dev', prodArmed: 0, advanced: false, checking: false, looking: false, refreshing: false, setup: false });
+const fresh = (): VerifyState => ({ cardId: null, ids: '', prefilled: 0, record: '', fields: '', env: 'dev', prodArmed: 0, advanced: false, checking: false, looking: false, refreshing: false });
 
 export const useVerify = create<VerifyState>(() => fresh());
 const put = (p: Partial<VerifyState>) => useVerify.setState(p);
@@ -51,12 +49,12 @@ export function cardText(card: Card): string {
 export function verifyFor(card: Card): void {
   if (useVerify.getState().cardId === card.id) return;
   const ids = idsInText(cardText(card));
-  // The environment and the setup form carry over; results and values don't.
-  const { env, setup } = useVerify.getState();
-  useVerify.setState({ ...fresh(), env: env === 'prod' ? 'dev' : env, setup, cardId: card.id, ids: ids.join('\n'), prefilled: ids.length });
+  // The environment carries over; results and values don't.
+  const { env } = useVerify.getState();
+  useVerify.setState({ ...fresh(), env: env === 'prod' ? 'dev' : env, cardId: card.id, ids: ids.join('\n'), prefilled: ids.length });
 }
 
-const cfg = () => get().settings.verify ?? {};
+const cfg = () => get().verify?.config ?? {};
 
 /** The set tool's environments this machine has addresses for (dev and uat side by side; prod when given). */
 export function setEnvs(): VerifyEnv[] {
@@ -91,7 +89,7 @@ export async function runCheck(): Promise<void> {
   const ids = splitIds(useVerify.getState().ids);
   if (!ids.length) { flash('Paste a field id or two first (i)'); return; }
   const envs = setEnvs();
-  if (!envs.length) { put({ checkError: 'The set tool isn’t set up on this machine: u sets where it is.', check: undefined }); return; }
+  if (!envs.length) { put({ checkError: `${cap(toolName('set'))} has no address in this machine’s Verify file.`, check: undefined }); return; }
   const card = useVerify.getState().cardId;
   put({ checking: true, checkError: undefined });
   try {
@@ -124,7 +122,7 @@ export async function runLookup(): Promise<void> {
 /** r: read each environment's set again; the check's version line follows. */
 export async function refreshSets(): Promise<void> {
   const envs = setEnvs();
-  if (!envs.length) { flash('The set tool isn’t set up: u sets where it is'); return; }
+  if (!envs.length) { flash(`${cap(toolName('set'))} has no address in this machine’s Verify file`); return; }
   put({ refreshing: true });
   const done = await Promise.allSettled(envs.map(async (env) => [env, await verifyRefresh(env)] as const));
   put({ refreshing: false });
@@ -141,31 +139,48 @@ export function toggleAdvanced(): void {
   flash(advanced ? 'Advanced fetch on: slower, reads more' : 'Advanced fetch off');
 }
 
-/** u: the form for where the tools are; opening it puts the cursor in its first field. */
-export function toggleSetup(open?: boolean): void {
-  const setup = open ?? !useVerify.getState().setup;
-  put({ setup });
-  if (setup) setTimeout(() => document.getElementById('verify-cfg-set-dev')?.focus(), 0);
-}
+/** A tool's name, as this machine's Verify file gives it, or a plain description (lower case, for mid-sentence). */
+/** The same, to start a sentence with. */
+export const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** Ctrl+Enter in the form: it submits itself (its values live in the form's own state). */
-export function submitSetup(): void {
-  (document.getElementById('verify-setup') as HTMLFormElement | null)?.requestSubmit();
+export function toolName(which: 'set' | 'lookup'): string {
+  return (which === 'set' ? cfg().set?.name : cfg().lookup?.name) ?? (which === 'set' ? 'the field set' : 'the record lookup');
 }
 
 /** The page o, O or L opens, for the environment chosen; undefined with why not. */
 export function pageUrl(which: 'set' | 'add' | 'lookup', env = useVerify.getState().env): { url?: string; why?: string } {
   const c = cfg();
-  if (which === 'lookup') return c.lookup?.url ? { url: c.lookup.url } : { why: 'The record lookup has no address yet: u sets it' };
+  if (which === 'lookup') return c.lookup?.url ? { url: c.lookup.url } : { why: `${cap(toolName('lookup'))} has no address in this machine’s Verify file` };
   const base = setUrl(c, env);
-  if (!base) return { why: `The set tool has no ${ENV_NAME[env]} address: u sets it` };
+  if (!base) return { why: `${cap(toolName('set'))} has no ${ENV_NAME[env]} address in this machine’s Verify file` };
   if (which === 'set') return { url: base };
-  return c.set?.addPage ? { url: `${base}/${c.set.addPage}` } : { why: 'The add-to-set page isn’t set: u sets it' };
+  return c.set?.addPage ? { url: `${base}/${c.set.addPage}` } : { why: `${cap(toolName('set'))}’s add-to-set page isn’t in this machine’s Verify file` };
 }
 
 /** o, O, L: the tool's own page in the browser. The add-to-set page is only opened: nothing is submitted from here. */
 export function openPage(which: 'set' | 'add' | 'lookup'): void {
+  if (which === 'add') { addToSet(useVerify.getState().env); return; }
   const p = pageUrl(which);
   if (!p.url) { flash(p.why ?? 'Not set up'); return; }
   window.open(p.url, '_blank', 'noopener');
+}
+
+/** The ids the last check found known but not in the environment's set: what there is to add. */
+export function missingIn(env: VerifyEnv): string[] {
+  return (useVerify.getState().check?.find((c) => c.env === env)?.rows ?? []).filter((r) => r.known && !r.inSet).map((r) => r.id);
+}
+
+/**
+ * Shift+O, or Add on a field the set lacks: the set tool's add-to-set page for the environment, with
+ * the ids to add copied to paste there. Only opened; adding is done on that page, by you.
+ */
+export function addToSet(env: VerifyEnv, ids = missingIn(env)): void {
+  const p = pageUrl('add', env);
+  if (!p.url) { flash(p.why ?? 'Not set up'); return; }
+  window.open(p.url, '_blank', 'noopener');
+  if (!ids.length) return;
+  navigator.clipboard?.writeText(ids.join('\n')).then(
+    () => flash(`Copied ${ids.join(', ')}: paste it in ${toolName('set')}’s add-to-set page (${ENV_NAME[env]})`),
+    () => flash(`Opened ${toolName('set')}’s add-to-set page (${ENV_NAME[env]}); add ${ids.join(', ')} there`),
+  );
 }
