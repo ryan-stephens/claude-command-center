@@ -2376,3 +2376,14 @@ At 4× one number stays over: a key while the open card streams, 17 ms against 1
 Not changed: what Jira sends. The default JQL (*assigned to you, not in the done category*) still leaves out done-category tickets, so the Done column shows those only when your own `CC_CONTROL_JIRA_JQL` includes them.
 
 **Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (354: the split by name and category, a ticket with a card left out, an overridden list; the Done column's tickets before its cards and reached by the arrows). On an isolated server with the demo tickets: the Inbox keeps the open ones, Done shows PAY-71 (*Ready for PO*) and SHOP-98 (*Done*), → along the row lands on PAY-71; no page errors; screenshot looked at. `walk-card.cjs` 59/59.
+
+## 101. Changes, popped out: repos as headers that fold
+
+2026-10-06. The owner, on the Changes sheet (`f` from the panel, `Shift+D` on the board): the repos blend in with their files, so it's hard to see they are the parent of the changes under them; let them be collapsed and expanded.
+
+**What changed** (`web/components/ChangesSheet.tsx`).
+- Each repo's row is a header: ▾ / ▸, a folder icon, the repo's name in bold, a file count, its + / − totals, and what it is compared against on a line under it. The files under it are indented. The headers stay at the top of the list as it scrolls.
+- **Folding**, as in the Changes panel (§90): a click on a header folds or unfolds that repo's files; `z` folds the chosen file's repo, `Z` folds every repo or, when any is folded, unfolds them all. A repo folded under the chosen file hands the choice to the nearest file still shown, and `↑ ↓` / `j k` walk only the files shown. The sheet's key row lists `z` and `Z` when the card has several repos; the `?` row for `z · Z` now says the panel and the sheet.
+- The change-kind column is wide enough for *CHANGED*, so the file names line up.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (354). On an isolated server, a seeded card on three demo repos (two with changes, one without) opened with `Shift+D`: three headers; a click folds a repo (7 → 3 files) and a second unfolds it; `Z` folds all and `Z` again unfolds; `z` folds the chosen file's repo and the choice moves to a shown file; `j` past the end stays on shown files; no page errors. Screenshots light and dark, looked at. `walk-card.cjs` 59/59.
