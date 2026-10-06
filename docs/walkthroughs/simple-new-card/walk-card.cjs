@@ -104,13 +104,15 @@ async function ask(page, msg) {
   // Every repo of the card is listed, written in or not (§90): payments-api has its own header.
   const apiHeader = changes.locator('section[aria-label="payments-api"] > button').first();
   check('Changes lists every repo of the card (payments-api too, with nothing written there)', await apiHeader.isVisible().catch(() => false));
-  // Folding (§90): Space folds the chosen file's diff and unfolds it; z folds its repo (the files go, the header keeps a count); Z unfolds all; a header click folds with the mouse.
+  // Diffs (§103): several can be open; j moved the choice and left the first file's diff open. Space opens the chosen file's
+  // diff beside it and closes it again. Folding (§90): z folds its repo (the files go, the header keeps a count); Z unfolds all; a header click folds with the mouse.
+  const openBefore = await changes.locator('pre').count();
   await page.keyboard.press(' ');
   await sleep(200);
-  check('Space folds the chosen file’s diff', (await changes.locator('pre').count()) === 0 && (await changes.locator('button[aria-pressed="true"]').getAttribute('aria-expanded')) === 'false');
+  check('Space opens the chosen file’s diff, the first one staying open', (await changes.locator('pre').count()) === openBefore + 1 && (await changes.locator('button[aria-pressed="true"]').getAttribute('aria-expanded')) === 'true', `${openBefore} → ${await changes.locator('pre').count()}`);
   await page.keyboard.press(' ');
   await sleep(200);
-  check('Space again unfolds it', (await changes.locator('pre').count()) >= 1);
+  check('Space again closes it', (await changes.locator('pre').count()) === openBefore && (await changes.locator('button[aria-pressed="true"]').getAttribute('aria-expanded')) === 'false');
   const webHeader = changes.locator('section[aria-label="web-app"] > button').first();
   const filesBefore = await changes.locator('button[aria-pressed]').count();
   await page.keyboard.press('z');
@@ -126,12 +128,13 @@ async function ask(page, msg) {
   check('a header click folds that repo with the mouse', (await apiHeader.getAttribute('aria-expanded')) === 'false');
   await apiHeader.click();
   await sleep(200);
+  const openNow = await changes.locator('pre').count();
   await changes.locator('button[aria-pressed="true"]').click();
   await sleep(200);
-  check('a second click on the chosen file folds its diff', (await changes.locator('pre').count()) === 0);
+  check('a click on a file opens its diff (§103)', (await changes.locator('pre').count()) === openNow + 1);
   await changes.locator('button[aria-pressed="true"]').click();
   await sleep(200);
-  check('and a third opens it again', (await changes.locator('pre').count()) >= 1);
+  check('and a second click closes it', (await changes.locator('pre').count()) === openNow);
   // The panel's width (a wide window only: narrower, the panel lies over the chat): ] widens by 40px, the edge drags, and the width is remembered.
   if (Number(process.env.W || 1440) >= 1024) {
   const w0 = (await changes.boundingBox()).width;
