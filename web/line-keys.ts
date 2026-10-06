@@ -51,6 +51,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['c (card open)', '+ Context: the same popup the new-card screen has, over the chat (Repos, Folders and Tickets tabs, ← → or Tab switch, / searches, Enter ticks, and a note), Ctrl+Enter adds, Esc goes back. What you add goes to Claude at once when it is between turns, or with your next message while it works. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['t (a card)', 'Try it: start its app in the card’s own folder; again stops it. With a lane stack, the Try it panel’s ticked services start, each on a port of its own. A lane with no stack yet: the stack form opens, filled from what the repos say (okteto.yml, angular.json, the proxy file), and Save and start goes on'],
+      ['Shift+R (a card)', 'Restart its app: the run, or every service of its stack with the same pick, stopped and started again. With nothing running it starts it, as t does. On the board the tile has these as buttons (Start or Open, Stop and Restart) on cards in Try it or Ship, the chosen card, and any card whose app runs or failed; they start the app without opening the card'],
       ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
       ['e (a card)', 'How it runs. A lane of several repos: its stack as a form (the environments, the UI, the APIs to tick with their names and routes, and how an API starts on the dev environment in three answers; ports, folders, health paths, the proxy rule and the lines behind Advanced). A single repo: what starts it, an install step, where it serves, what runs on stop; Ctrl+Enter saves either'],
       ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket, in each repo the card changed (one block per repo in the sheet; the PRs link each other); if it stops part-way, s again ships only the repos left; on a card in Ship with every PR open, merge them. On a QA or review card: its report (Enter copies, j posts it on the Jira ticket and m moves the ticket, each after you confirm; o opens the PR, d moves the card to Done)'],
@@ -325,14 +326,15 @@ export function running(id: string): boolean {
  * t: run the card's recipe, or stop it when it runs. With a stack (§82): start every service the
  * Try it panel has ticked, in the environment it shows, or stop them all; the panel opens either way.
  */
-export function tryIt(id: string): void {
+export function tryIt(id: string, stay = false): void {
   const s = get();
   const card = s.cards.find((c) => c.id === id);
   if (!card) return;
   if (running(id)) { stopRun(id); flash(`Stopping ${card.key}’s app`); return; }
   const home = cardRepos(card)[0];
-  set({ line: { ...s.line, focus: id, drawer: id, panel: 'try' } });
   const recipe = cardRecipe(s.recipes, card.workspaceId, home);
+  // A tile's Start (§104) stays on the board when the app can start as it is; otherwise the panel says what is missing.
+  if (!stay || !recipe || (recipe.stack && !lastPick(id))) set({ line: { ...s.line, focus: id, drawer: id, panel: 'try' } });
   // A lane of several repos with no stack yet: the stack form, filled from what the repos say, with Save and start (§86).
   const wsRepos = s.workspaces.find((w) => w.id === card.workspaceId)?.repos.length ?? 0;
   if (card.workspaceId && !s.recipes[wsRecipeKey(card.workspaceId)] && wsRepos > 1) { set({ modal: { kind: 'stackSetup', workspaceId: card.workspaceId, then: id } }); return; }
@@ -344,8 +346,29 @@ export function tryIt(id: string): void {
     return;
   }
   tryCard(id).then(() => {
-    setTimeout(() => document.getElementById('try-it')?.scrollIntoView({ block: 'nearest' }), 0);
+    if (stay) flash(`Starting ${card.key}’s app`);
+    else setTimeout(() => document.getElementById('try-it')?.scrollIntoView({ block: 'nearest' }), 0);
   }, (e: Error) => flash(e.message));
+}
+
+/**
+ * R: start the card's app again (§104): a single recipe's run, or every service of its stack with the
+ * last pick (the server stops what runs first). With nothing running, it is t.
+ */
+export function restartApp(id: string, stay = false): void {
+  const s = get();
+  const card = s.cards.find((c) => c.id === id);
+  if (!card) return;
+  if (!running(id)) { tryIt(id, stay); return; }
+  const stacked = runsOf(s.runs, id).some((r) => r.service);
+  if (stacked) {
+    const pick = lastPick(id);
+    if (!pick) { flash('Tick the services to run in the Try it panel, then t'); return; }
+    rememberPick(id, pick);
+    tryCard(id, pick).then(() => flash(`Restarting ${card.key}’s stack`), (e: Error) => flash(e.message));
+    return;
+  }
+  tryCard(id).then(() => flash(`Restarting ${card.key}’s app`), (e: Error) => flash(e.message));
 }
 
 /** Start a card's stack with what was picked (every picked service at once), and remember the pick for next time. */
@@ -704,6 +727,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
     case 'c': if (s.line.drawer) openAddComposer(s.line.drawer); return true;
     case 'x': if (s.line.drawer) withdrawLast(s.line.drawer); return true;
     case 't': if (s.line.drawer) tryIt(s.line.drawer); return true;
+    case 'R': if (s.line.drawer) restartApp(s.line.drawer); return true;
     case 'o': if (s.line.drawer) openApp(s.line.drawer); return true;
     case 'e': if (s.line.drawer) editRecipe(s.line.drawer); return true;
     case 's': if (s.line.drawer) shipKey(s.line.drawer); return true;
@@ -761,6 +785,7 @@ function boardKeys(e: KeyboardEvent): boolean {
   switch (e.key) {
     case 'Enter': if (focused) openCard(focused); return true;
     case 't': if (focused) tryIt(focused); else flash('Pick a card first'); return true;
+    case 'R': if (focused) restartApp(focused); else flash('Pick a card first'); return true;
     case 'o': if (focused) openApp(focused); return true;
     case 'g': if (focused) goToTab(focused); else flash('Pick a card first'); return true;
     case 'D': if (focused) openChanges(focused); else flash('Pick a card first'); return true;

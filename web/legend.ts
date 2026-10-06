@@ -184,7 +184,7 @@ const WORKSPACE_KEYS: LegendItem[] = [
 function tryKeys(x: LineLegendInput): LegendItem[] {
   return [
     // On the open card the dock's Try it is the panel (⇧T), so t reads as what it does: start the app.
-    ...(x.appRunning ? [{ keys: ['t'], label: x.hasStack ? 'Stop all' : 'Stop the app' }] : x.canTry ? [{ keys: ['t'], label: x.view === 'drawer' ? (x.hasStack ? 'Start all ticked' : 'Start the app') : 'Try it', tone: 'acc' as const }] : []),
+    ...(x.appRunning ? [{ keys: ['t'], label: x.hasStack ? 'Stop all' : 'Stop the app' }, { keys: ['⇧R'], label: 'Restart' }] : x.canTry ? [{ keys: ['t'], label: x.view === 'drawer' ? (x.hasStack ? 'Start all ticked' : 'Start the app') : 'Try it', tone: 'acc' as const }] : []),
     ...(x.appUp ? [{ keys: ['o'], label: 'Open the app' }] : x.hasPr ? [{ keys: ['o'], label: 'Open the PR' }] : []),
     ...(x.hasChanges ? [{ keys: ['⇧D'], label: 'Changes' }] : []),
     ...(x.ship ? [{ keys: ['s'], label: x.ship === 'merge' ? 'Merge' : x.ship === 'rest' ? 'Ship the rest' : x.ship === 'report' ? 'Report' : 'Ship' }] : []),

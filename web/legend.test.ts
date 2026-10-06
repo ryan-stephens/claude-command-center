@@ -70,7 +70,8 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Worktrees'));
   assert.ok(labels({ view: 'board', hasFocus: true, hasWorktrees: true, bindings: {} }).includes('Worktrees'));
   assert.deepEqual(labels({ view: 'drawer', canTry: true, bindings: {} }).slice(7, 9), ['Start the app', 'How it runs'], 'open card: t starts the app (Try it is the dock panel)');
-  assert.deepEqual(labels({ view: 'drawer', canTry: true, appRunning: true, appUp: true, bindings: {} }).slice(7, 9), ['Stop the app', 'Open the app']);
+  assert.deepEqual(labels({ view: 'drawer', canTry: true, appRunning: true, appUp: true, bindings: {} }).slice(7, 10), ['Stop the app', 'Restart', 'Open the app'], 'a running app: ⇧R restarts it (§104)');
+  assert.ok(!labels({ view: 'board', hasFocus: true, canTry: true, bindings: {} }).includes('Restart'), 'nothing running: no restart');
   assert.ok(labels({ view: 'board', hasFocus: true, canTry: true, bindings: {} }).includes('Try it'));
   assert.ok(labels({ view: 'board', hasFocus: true, ship: 'ship', bindings: {} }).includes('Ship'));
   assert.ok(labels({ view: 'drawer', ship: 'merge', bindings: {} }).includes('Merge'));

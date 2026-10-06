@@ -3,7 +3,7 @@
 // new-card screen over the whole board. Cards run in terminal tabs
 // and follow their session through its hooks (server/card-events.ts).
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type MouseEvent, type ReactNode } from 'react';
 import { cardRepos, kindName, waiting, type Card } from '../../shared/cards.ts';
 import { homeRepo, repoName, samePath } from '../../shared/workspaces.ts';
 import { bindingsFor, displayCombo } from '../bindings.ts';
@@ -11,8 +11,8 @@ import { importWorkspace } from '../commands.ts';
 import { INBOX_VIEWS, inView, qaLine, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, ticketFocus } from '../line-model.ts';
-import { mainRun } from '../../shared/recipes.ts';
-import { boardOf, openCard, openComposer, switchInbox, workspaceKey } from '../line-keys.ts';
+import { anyLive, cardRecipe, mainRun } from '../../shared/recipes.ts';
+import { boardOf, openApp, openCard, openComposer, restartApp, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
 import { allMerged, prsLine, prsOf } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
 import { CardView } from './CardView.tsx';
@@ -252,46 +252,82 @@ function CardTile({ card, focused, color }: { card: Card; focused: boolean; colo
   const prog = progress(card);
   const now = useNow(true);
   return (
-    <button
-      id={`card-${card.id}`}
-      onClick={() => openCard(card.id)}
-      className={`flex flex-col gap-1.5 rounded-xl border border-l-4 px-2.5 py-2 text-left text-[13px] ${needs ? 'bg-attn-bg' : 'bg-surface'} ${focused ? 'is-focus' : `${needs ? 'border-attn/45' : 'border-line'} hover:bg-raise`}`}
+    <div
+      className={`flex flex-col rounded-xl border border-l-4 text-[13px] ${needs ? 'bg-attn-bg' : 'bg-surface'} ${focused ? 'is-focus' : `${needs ? 'border-attn/45' : 'border-line'} hover:bg-raise`}`}
       style={{ borderLeftColor: color }}
     >
-      <span className="flex items-center gap-1.5">
-        <TicketKey k={card.key} source={card.ticket?.source} />
-        {card.kind && card.kind !== 'build' && <KindPill card={card} />}
-        <span className="grow" />
-        <Pill tone="grey">terminal</Pill>
-      </span>
-      <span className="text-[14px] font-semibold leading-snug">{card.title}</span>
-      <ActLine card={card} />
-      {card.report && (
-        <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold ${/fail|change|block/i.test(card.report.result ?? '') ? 'text-bad' : 'text-ok'}`}>
-          <span className="rounded border border-current px-1 font-mono text-[10px]">{card.kind === 'qa' ? 'QA' : 'CR'}</span><span className="truncate">{card.kind === 'qa' ? 'Report' : 'Findings'}{card.report.result ? `: ${card.report.result}` : ' ready'}</span>
+      <button
+        id={`card-${card.id}`}
+        onClick={() => openCard(card.id)}
+        className="flex flex-col gap-1.5 rounded-xl px-2.5 py-2 text-left"
+      >
+        <span className="flex items-center gap-1.5">
+          <TicketKey k={card.key} source={card.ticket?.source} />
+          {card.kind && card.kind !== 'build' && <KindPill card={card} />}
+          <span className="grow" />
+          <Pill tone="grey">terminal</Pill>
         </span>
-      )}
-      <RunLine id={card.id} />
-      {prsOf(card.ship).length > 0 && (
-        <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold ${allMerged(prsOf(card.ship)) ? 'text-ok' : prsOf(card.ship).some((p) => p.checks === 'fail') ? 'text-bad' : 'text-busy'}`}>
-          <span className="rounded border border-current px-1 font-mono text-[10px]">PR</span><span className="truncate">{prsLine(prsOf(card.ship))}</span>
+        <span className="text-[14px] font-semibold leading-snug">{card.title}</span>
+        <ActLine card={card} />
+        {card.report && (
+          <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold ${/fail|change|block/i.test(card.report.result ?? '') ? 'text-bad' : 'text-ok'}`}>
+            <span className="rounded border border-current px-1 font-mono text-[10px]">{card.kind === 'qa' ? 'QA' : 'CR'}</span><span className="truncate">{card.kind === 'qa' ? 'Report' : 'Findings'}{card.report.result ? `: ${card.report.result}` : ' ready'}</span>
+          </span>
+        )}
+        <RunLine id={card.id} />
+        {prsOf(card.ship).length > 0 && (
+          <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold ${allMerged(prsOf(card.ship)) ? 'text-ok' : prsOf(card.ship).some((p) => p.checks === 'fail') ? 'text-bad' : 'text-busy'}`}>
+            <span className="rounded border border-current px-1 font-mono text-[10px]">PR</span><span className="truncate">{prsLine(prsOf(card.ship))}</span>
+          </span>
+        )}
+        {prog && (
+          <span className="flex items-center gap-1.5 font-mono text-[11px] font-semibold tabular-nums text-faint">
+            <span className="h-[5px] flex-1 overflow-hidden rounded-full bg-raise"><i className="block h-full bg-ok transition-[width]" style={{ width: `${(100 * prog.done) / prog.total}%` }} /></span>
+            {prog.done}/{prog.total}
+          </span>
+        )}
+        <span className="flex flex-wrap items-center gap-x-2 text-xs tabular-nums text-faint">
+          <span>{card.files?.length ?? 0} files</span><span>·</span><span>{elapsed(card.createdAt, now)}</span>
+          {(card.round ?? 1) > 1 && <><span>·</span><span>round {card.round}</span></>}
+          {waiting(card).length > 0 && <><span>·</span><span className="font-semibold text-attn">{waiting(card).length} waiting for your next message</span></>}
         </span>
-      )}
-      {prog && (
-        <span className="flex items-center gap-1.5 font-mono text-[11px] font-semibold tabular-nums text-faint">
-          <span className="h-[5px] flex-1 overflow-hidden rounded-full bg-raise"><i className="block h-full bg-ok transition-[width]" style={{ width: `${(100 * prog.done) / prog.total}%` }} /></span>
-          {prog.done}/{prog.total}
+        <span className="flex flex-wrap gap-1">
+          {cardRepos(card).map((r) => <span key={r} className="rounded-md border border-line bg-raise px-1.5 font-mono text-[11.5px] text-sub">{repoName(r)}</span>)}
         </span>
+      </button>
+      <TryButtons card={card} focused={focused} />
+    </div>
+  );
+}
+
+/**
+ * Try it from the board (§104): Start, or Stop, Restart and Open, under a tile. Shown where it is
+ * wanted without opening the card: cards in Try it or Ship, the chosen card, and any card whose app
+ * runs or failed; only on cards that can run (a recipe, or a lane that has or can have a stack).
+ */
+function TryButtons({ card, focused }: { card: Card; focused: boolean }) {
+  const run = useStore((s) => mainRun(s.runs, card.id));
+  const live = useStore((s) => anyLive(s.runs, card.id));
+  const canTry = useStore((s) => Boolean(cardRecipe(s.recipes, card.workspaceId, cardRepos(card)[0]) || card.workspaceId));
+  const shown = live || run?.state === 'failed' || ((card.stage === 'try' || card.stage === 'ship' || focused) && card.stage !== 'done');
+  if (!canTry || !shown) return null;
+  const up = run?.state === 'up' && Boolean(run.url);
+  // The tile's own button opens the card: these act and leave the board as it is.
+  const act = (e: MouseEvent, f: (id: string, stay: boolean) => void) => { e.stopPropagation(); set({ line: { ...get().line, focus: card.id } }); f(card.id, true); };
+  const btn = 'flex shrink-0 items-center gap-1 rounded-md px-1 py-0.5 text-[12px] font-semibold hover:bg-surface disabled:opacity-50';
+  return (
+    <div role="group" aria-label={`${card.key}’s app`} className="flex items-center gap-0.5 border-t border-line/70 px-1.5 py-1">
+      {live ? (
+        <>
+          <button className={`${btn} text-acc`} disabled={!up} onClick={(e) => act(e, (id) => openApp(id))} title={up ? `Open ${run?.url} in a new tab` : 'The app is still starting'}><Icon name="popout" size={13} />Open<Key k="o" size="sm" /></button>
+          <span className="grow" />
+          <button className={`${btn} text-sub hover:text-ink`} aria-label="Stop" onClick={(e) => act(e, tryIt)} title="Stop the app (every service of the stack)"><Icon name="stop" size={13} /><Key k="t" size="sm" /></button>
+          <button className={`${btn} text-sub hover:text-ink`} aria-label="Restart" onClick={(e) => act(e, restartApp)} title="Restart: stop it and start it again"><Icon name="restart" size={13} /><Key k="⇧R" size="sm" /></button>
+        </>
+      ) : (
+        <button className={`${btn} text-acc`} onClick={(e) => act(e, tryIt)} title="Start the app the way the card’s repo or lane says"><Icon name="play" size={13} />{run?.state === 'failed' ? 'Start again' : 'Start'}<Key k="t" size="sm" /></button>
       )}
-      <span className="flex flex-wrap items-center gap-x-2 text-xs tabular-nums text-faint">
-        <span>{card.files?.length ?? 0} files</span><span>·</span><span>{elapsed(card.createdAt, now)}</span>
-        {(card.round ?? 1) > 1 && <><span>·</span><span>round {card.round}</span></>}
-        {waiting(card).length > 0 && <><span>·</span><span className="font-semibold text-attn">{waiting(card).length} waiting for your next message</span></>}
-      </span>
-      <span className="flex flex-wrap gap-1">
-        {cardRepos(card).map((r) => <span key={r} className="rounded-md border border-line bg-raise px-1.5 font-mono text-[11.5px] text-sub">{repoName(r)}</span>)}
-      </span>
-    </button>
+    </div>
   );
 }
 
