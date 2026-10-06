@@ -650,3 +650,9 @@ export function draftOf(c: Composer): CardDraft | string {
     ...(c.kind !== 'build' ? { kind: c.kind } : {}), ...(c.kind !== 'build' && c.pr ? { pr: c.pr } : {}),
   };
 }
+
+/** A key a text box needs for itself (§106): cut, copy, paste, undo, redo, select all, deleting by word. Ctrl+arrows stay the app's. */
+export function editingKey(e: { key: string; ctrlKey: boolean; altKey: boolean; metaKey: boolean }): boolean {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return false;
+  return /^[acvxyz]$/i.test(e.key) || e.key === 'Backspace' || e.key === 'Delete';
+}

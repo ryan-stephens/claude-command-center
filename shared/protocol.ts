@@ -15,8 +15,9 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  */
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
+import type { EnvCheck, LookupResult, SetInfo, VerifyConfig, VerifyEnv } from './verify.ts';
 
-export const PROTOCOL = 26;
+export const PROTOCOL = 27;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -248,6 +249,8 @@ export interface Settings {
   trustWorktrees?: boolean;
   /** The new-card screen: the one-column simple look (§59), or the full three-panel one. Unset: simple. */
   newCardLook?: NewCardLook;
+  /** Where the team's tools are on this machine, for a card's Verify panel (§105). Never in the repo. */
+  verify?: VerifyConfig;
 }
 
 export type NewCardLook = 'simple' | 'full';
@@ -377,6 +380,12 @@ export type ClientMsg =
   | { type: 'card.send'; reqId: string; id: string; text: string }
   /** What the card changed in every repo it works in, each file with its patch (Shift+D). Answered with card.changes. */
   | { type: 'card.changes'; reqId: string; id: string }
+  /** Verify (§105): each id in each environment, from the set tool; answered with verify.checked. */
+  | { type: 'verify.check'; reqId: string; envs: VerifyEnv[]; ids: string[] }
+  /** Read the environment's current set again; answered with verify.set. */
+  | { type: 'verify.refresh'; reqId: string; env: VerifyEnv }
+  /** A record's fields from the record lookup (one POST of its form); answered with verify.found. Values never logged or kept. */
+  | { type: 'verify.lookup'; reqId: string; env: VerifyEnv; recordId: string; ids: string[]; advanced: boolean }
   /** Bring the card's Windows Terminal tab to the front (g). Answered with ok or an error. */
   | { type: 'card.focusTab'; reqId: string; id: string }
   /** Answer the permission prompt the terminal relayed (card.live.ask.requestId). Answered with ok or an error. */
@@ -478,6 +487,9 @@ export type ServerMsg =
   /** Every card on the Ticket Line, on connect and whenever one changes. */
   | { type: 'ship.plan'; reqId: string; plan: ShipPlan }
   | { type: 'card.changes'; reqId: string; changes: Changes }
+  | { type: 'verify.checked'; reqId: string; envs: EnvCheck[] }
+  | { type: 'verify.set'; reqId: string; env: VerifyEnv; set: SetInfo }
+  | { type: 'verify.found'; reqId: string; result: LookupResult }
   | { type: 'card.worktrees'; reqId: string; id: string; worktrees: CardWorktree[] }
   | { type: 'card.worktreesRemoved'; reqId: string; id: string; removed: CardWorktree[]; kept: CardWorktree[] }
   /** The picker's rows for a card's stack, and the APIs to tick when nothing was picked before. */

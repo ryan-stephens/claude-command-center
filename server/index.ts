@@ -7,6 +7,8 @@ import { existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { cleanVerify, MAX_IDS, VERIFY_ENVS, setUrl, type EnvCheck, type FieldCheck, type VerifyEnv } from '../shared/verify.ts';
+import { explain, LookupTool, Requester, SetTool } from './verify.ts';
 import { KEY_HINTS, NEW_CARD_LOOKS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
@@ -312,7 +314,31 @@ function cleanSettings(raw: unknown): Settings {
   if ((raw as Settings)?.trustWorktrees === true) out.trustWorktrees = true;
   const look = (raw as Settings)?.newCardLook;
   if (look && NEW_CARD_LOOKS.includes(look)) out.newCardLook = look;
+  // Settings are saved key by key (an absent key keeps its old value), so a cleared form is saved as {}.
+  if (raw && typeof raw === 'object' && 'verify' in raw) out.verify = cleanVerify((raw as Settings).verify) ?? {};
   return out;
+}
+
+// Verify (§105): the team's tools, read-only, where this machine's settings say they are.
+const verifyConfig = () => store.loadSettings().verify ?? {};
+const verifyRequests = new Requester(verifyConfig);
+const setTool = new SetTool(verifyConfig, verifyRequests);
+const lookupTool = new LookupTool(verifyConfig, verifyRequests);
+
+/** One environment's answer: each id through ValidateField (four at a time), with the cached set's version beside it. */
+async function checkEnv(env: VerifyEnv, ids: string[]): Promise<EnvCheck> {
+  if (!setUrl(verifyConfig(), env)) return { env, error: `The set tool has no ${env} address on this machine: u sets it.` };
+  const validate = async (): Promise<FieldCheck[]> => {
+    const rows: FieldCheck[] = [];
+    for (let i = 0; i < ids.length; i += 4) rows.push(...await Promise.all(ids.slice(i, i + 4).map((id) => setTool.validate(env, id))));
+    return rows;
+  };
+  const [rows, set] = await Promise.allSettled([validate(), setTool.set(env)]);
+  return {
+    env,
+    ...(rows.status === 'fulfilled' ? { rows: rows.value } : { error: explain(rows.reason, `The ${env} set tool`) }),
+    ...(set.status === 'fulfilled' ? { set: set.value.info } : { setError: explain(set.reason, `The ${env} set`) }),
+  };
 }
 
 /** An untrusted prompt from a client: a name, a body with room for a real prompt, a known kind or none; the id is kept when it is one. */
@@ -529,6 +555,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       return;
     case 'settings.set':
       store.saveSettings(cleanSettings(msg.settings));
+      setTool.clear();
       broadcast({ type: 'settings', settings: store.loadSettings() });
       return;
     case 'prompt.save':
@@ -885,6 +912,25 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       // The new stack reaches the page before the ok, so what waits on the save (t after Save and start, §86) finds it.
       broadcast(recipesMsg());
       send(ws, { type: 'ok', reqId: msg.reqId });
+      return;
+    }
+    case 'verify.check': {
+      const envs = (Array.isArray(msg.envs) ? msg.envs : []).filter((e): e is VerifyEnv => VERIFY_ENVS.includes(e)).slice(0, 3);
+      const ids = (Array.isArray(msg.ids) ? msg.ids : []).map(String).filter((x) => /^[\w.#-]{1,64}$/.test(x)).slice(0, MAX_IDS);
+      if (!ids.length) throw new Error('Paste a field id or two first.');
+      send(ws, { type: 'verify.checked', reqId: msg.reqId, envs: await Promise.all(envs.map((env) => checkEnv(env, ids))) });
+      return;
+    }
+    case 'verify.refresh': {
+      const env = VERIFY_ENVS.includes(msg.env) ? msg.env : 'dev';
+      try { send(ws, { type: 'verify.set', reqId: msg.reqId, env, set: (await setTool.set(env, true)).info }); } catch (e) { throw new Error(explain(e, `The ${env} set`)); }
+      return;
+    }
+    case 'verify.lookup': {
+      const env = VERIFY_ENVS.includes(msg.env) ? msg.env : 'dev';
+      const ids = (Array.isArray(msg.ids) ? msg.ids : []).map(String).filter((x) => /^[\w.#-]{1,64}$/.test(x)).slice(0, MAX_IDS);
+      // The values are a record's data: they go to this page only, and nothing here logs them.
+      try { send(ws, { type: 'verify.found', reqId: msg.reqId, result: await lookupTool.fetch(env, String(msg.recordId ?? ''), ids, msg.advanced === true) }); } catch (e) { throw new Error(explain(e, 'The record lookup')); }
       return;
     }
     case 'card.changes': {

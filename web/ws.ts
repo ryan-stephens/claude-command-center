@@ -6,6 +6,7 @@ import type { TicketTransition } from '../shared/tickets.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type RepoInfo, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import type { PromptContext } from '../shared/prompts.ts';
+import type { EnvCheck, LookupResult, SetInfo, VerifyConfig, VerifyEnv } from '../shared/verify.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
 import { haveOf, mergeTranscript } from './transcript-merge.ts';
 import { activeSession, flash, get, groupKeyOf, set, setFilter } from './store.ts';
@@ -223,6 +224,26 @@ export async function removeCardWorktrees(id: string, force: boolean, thenDelete
 /** Try it: the card's recipe; with a stack, `choice` starts a session of every picked service, `service` starts (again) one service of the session that is up (§82). */
 export async function tryCard(id: string, choice?: StackChoice, service?: string): Promise<void> {
   await request((reqId) => ({ type: 'card.try', reqId, id, ...(choice ? { choice } : {}), ...(service ? { service } : {}) }), 60_000);
+}
+
+/** Verify (§105): each id in each environment, from the set tool (ValidateField, with the cached set's version). */
+export async function verifyCheck(envs: VerifyEnv[], ids: string[]): Promise<EnvCheck[]> {
+  return (await request((reqId) => ({ type: 'verify.check', reqId, envs, ids }), 90_000) as Extract<ServerMsg, { type: 'verify.checked' }>).envs;
+}
+
+/** Read an environment's current set again (it is cached for ten minutes otherwise). */
+export async function verifyRefresh(env: VerifyEnv): Promise<SetInfo> {
+  return (await request((reqId) => ({ type: 'verify.refresh', reqId, env }), 90_000) as Extract<ServerMsg, { type: 'verify.set' }>).set;
+}
+
+/** A record's fields from the record lookup. The values stay in this page's memory. */
+export async function verifyLookup(env: VerifyEnv, recordId: string, ids: string[], advanced: boolean): Promise<LookupResult> {
+  return (await request((reqId) => ({ type: 'verify.lookup', reqId, env, recordId, ids, advanced }), 120_000) as Extract<ServerMsg, { type: 'verify.found' }>).result;
+}
+
+/** Where the team's tools are on this machine (Settings.verify). */
+export function saveVerifyConfig(verify: VerifyConfig): void {
+  send({ type: 'settings.set', settings: { ...get().settings, verify } });
 }
 
 /** Stop the card's run (every service and the session), or one service alone. */
@@ -499,6 +520,9 @@ function receive(msg: ServerMsg): void {
     case 'tickets.transitions':
     case 'stack.plan':
     case 'stack.detected':
+    case 'verify.checked':
+    case 'verify.set':
+    case 'verify.found':
       return; // answered to the screen that asked, which waits on it
     case 'workspace.file':
       pendingWorkspaceFiles.get(msg.reqId)?.(msg.file);

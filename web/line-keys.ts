@@ -14,11 +14,12 @@ import { openSession } from './keys.ts';
 import { closeComposer, currentWorkspace, flash, get, set, setFilter, setInboxView, setPanelW, takeDraft, type WorkspaceAction } from './store.ts';
 import {
   addComposer, additionOf, cardFolders, type CardPanel, stepCard, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
-  sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource,
+  sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource, editingKey,
   type Composer,
 } from './line-model.ts';
 import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
 import { withSimple } from './simple-model.ts';
+import { armProd, cycleEnv, openPage, refreshSets, runCheck, runLookup, runVerify, submitSetup, toggleAdvanced, toggleSetup, useVerify } from './verify-state.ts';
 import { addCardContext, answerCard, focusCardTab, sayToCard, send, startCard, stopRun, tryCard } from './ws.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
@@ -35,10 +36,15 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['c', 'New card: build its context and start work; Claude runs in the app. A card you left half-built (Esc, Alt+L) is picked up again; Shift+C starts a fresh one'],
       ['1–9  /  0', 'Show one lane’s cards / all of them'],
       ['/', 'Filter the cards by words'],
-      ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, or its services, with their output), Verify (the team’s apps, later), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
+      ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, or its services, with their output), Verify (is a field in the set, in Dev and UAT; a record’s values; the team’s tools), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
       ['j / k  ·  Space  ·  f (Changes panel)', 'The next / previous file  ·  open or close its diff under it (several can be open; a click on a file does the same)  ·  pop every repo’s changes out full width, on the chosen file (Pop out in the panel’s title)'],
       ['z  ·  Z (Changes panel, and popped out)', 'Fold or unfold the chosen file’s repo (its files go under the header, which keeps the count)  ·  fold every repo, or unfold them all. A header click does the same with the mouse; a second click on the chosen file folds its diff'],
       ['j / k  ·  Space  ·  r  ·  q (Try it panel, a lane with a stack)', 'The environment row and each service  ·  change the environment, or tick a service to run  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
+      ['e  ·  Shift+P (Verify panel)', 'Dev ↔ UAT for the lookup and the tools’ pages  ·  Prod for the lookup, after a second press (it reads production; nothing is written). The field check always shows Dev and UAT side by side, and where they differ'],
+      ['i  ·  l  ·  Enter (Verify panel)', 'The field ids box (filled from ids the ticket and your notes name; Ctrl+Enter checks from there)  ·  the record id box (Enter looks it up)  ·  check the ids in every environment, and look the record up when one is named'],
+      ['r  ·  a (Verify panel)', 'Read the current field set again (kept ten minutes otherwise)  ·  Advanced fetch on the lookup, slower (off by default)'],
+      ['o  ·  Shift+O  ·  Shift+L (Verify panel)', 'The field set tool’s page for the environment  ·  its add-to-set page  ·  the record lookup’s page, in the browser. Only opened: nothing is written to either tool from the app'],
+      ['u (Verify panel)', 'Where the tools are on this machine: each environment’s address, the lookup’s form and record field, how it signs in. Ctrl+Enter saves, Esc closes. Kept in this machine’s settings, never the repo'],
       ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
       ['Esc (card open)', 'While Claude is working: stop it, as Esc does in Claude Code. Otherwise back to the board, the card still focused; on the board, clear the filter'],
@@ -685,6 +691,7 @@ function started(s: ReturnType<typeof get>): Set<string> {
 function drawerKeys(e: KeyboardEvent): boolean {
   const s = get();
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
+  if (s.line.panel === 'verify' && verifyKeys(e)) return true;
   // Claude's question form (§91) takes digits, Tab and y first while it is up.
   if (questionHooks.on) {
     if (e.key === 'Tab') { if (e.shiftKey) questionHooks.prev(); else questionHooks.next(); return true; }
@@ -802,6 +809,40 @@ function boardKeys(e: KeyboardEvent): boolean {
   return false;
 }
 
+/** The Verify panel's keys (§105), ahead of the card's own while it is open. */
+function verifyKeys(e: KeyboardEvent): boolean {
+  switch (e.key) {
+    case 'e': cycleEnv(); return true;
+    case 'P': armProd(); return true;
+    case 'i': focusField('verify-ids'); return true;
+    case 'l': focusField('verify-record'); return true;
+    case 'Enter': runVerify(); return true;
+    case 'r': void refreshSets(); return true;
+    case 'a': toggleAdvanced(); return true;
+    case 'o': openPage('set'); return true;
+    case 'O': openPage('add'); return true;
+    case 'L': openPage('lookup'); return true;
+    case 'u': toggleSetup(); return true;
+    case 'Escape': if (useVerify.getState().setup) { toggleSetup(false); return true; } return false;
+  }
+  return false;
+}
+
+/** Typing in the Verify panel: Esc leaves a box (or closes the setup form), Enter in the record box looks it up, Ctrl+Enter checks, looks up or saves. */
+function verifyFieldKeys(e: KeyboardEvent, el: HTMLElement): boolean {
+  const inSetup = Boolean(el.closest('#verify-setup'));
+  if (e.key === 'Escape') { el.blur(); if (inSetup) toggleSetup(false); return true; }
+  if (e.key === 'Enter' && e.ctrlKey) {
+    if (inSetup) submitSetup();
+    else if (el.id === 'verify-ids') void runCheck();
+    else void runLookup();
+    return true;
+  }
+  if (e.key === 'Enter' && el.id === 'verify-record') { el.blur(); void runLookup(); return true; }
+  // The rest types; Ctrl+V and the other editing keys must reach the box (ids are pasted here).
+  return false;
+}
+
 /** Enter on an open card: the message box to its session. */
 function focusSay(id: string): void {
   const card = get().cards.find((c) => c.id === id);
@@ -884,6 +925,8 @@ function sayKeys(e: KeyboardEvent): boolean {
   const id = get().line.drawer;
   if (e.key === 'Escape') { el.blur(); return true; }
   if (e.key === 'Enter' && !e.shiftKey) { if (id) saySubmit(id); return true; }
+  // The editing keys go to the box (§106): Ctrl+V pastes, Ctrl+Z undoes, Ctrl+Backspace deletes a word.
+  if (editingKey(e)) return false;
   // The session keys that work while typing (Ctrl+Enter, Alt+arrows) must not fire from here.
   return e.ctrlKey || e.altKey;
 }
@@ -892,6 +935,7 @@ function sayKeys(e: KeyboardEvent): boolean {
 function searchKeys(e: KeyboardEvent): boolean {
   const el = e.target as HTMLElement;
   if (el.id === 'card-say') return sayKeys(e);
+  if (el.id.startsWith('verify-') || el.closest('#verify-setup')) return verifyFieldKeys(e, el);
   // The question form's "Type something" box (§91): Enter is done with it, Esc leaves it; the rest types.
   if (el.id.startsWith('q-other-')) {
     if (e.key === 'Escape') { el.blur(); return true; }

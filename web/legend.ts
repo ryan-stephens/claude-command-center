@@ -217,10 +217,13 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   }
   const full: LegendItem = { keys: [k(x.bindings, 'expand')], label: 'Its session' };
   if (x.view === 'drawer') {
+    // The Verify panel (§105) takes Enter, e, o, r, a and its own keys while it is open.
+    const verify = x.panel === 'verify';
     return [
       { keys: ['Esc'], label: x.working ? 'Stop Claude' : 'Back to the board' },
       ...(x.question ? [{ keys: ['1', '9'], label: 'Pick', tone: 'attn' as const }, { keys: ['Tab'], label: 'Next question' }, { keys: ['y'], label: 'Submit answers', tone: 'attn' as const }] : x.asking ? [{ keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' as const }] : []),
-      ...(x.canSay ? [{ keys: ['Enter'], label: x.inApp ? 'Message' : 'Type to it', tone: x.asking ? undefined : 'acc' as const }] : []),
+      ...(verify ? [{ keys: ['Enter'], label: 'Check', tone: 'acc' as const }, { keys: ['i', 'l'], label: 'Ids / record' }, { keys: ['e'], label: 'Dev / UAT' }, { keys: ['⇧P'], label: 'Prod' }, { keys: ['r'], label: 'Refresh set' }, { keys: ['a'], label: 'Advanced' }, { keys: ['o', '⇧O', '⇧L'], label: 'Open a tool' }, { keys: ['u'], label: 'Setup' }]
+        : x.canSay ? [{ keys: ['Enter'], label: x.inApp ? 'Message' : 'Type to it', tone: x.asking ? undefined : 'acc' as const }] : []),
       ...(x.hasTab ? [{ keys: ['g'], label: x.inApp ? 'In a terminal' : x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab && !x.inApp ? { tone: 'attn' as const } : {}) }] : []),
       { keys: ['←', '→'], label: 'Previous / next card' },
       // The dock: the panel open is named, the rest are one key each.
@@ -229,8 +232,8 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       ...(x.panel === 'try' && (x.appRunning || x.canTry) ? [{ keys: ['f'], label: 'Output' }] : []),
       ...CARD_PANELS.map((p) => ({ keys: [p.key], label: x.panel === p.id ? `Close ${p.name}` : p.name })),
       ...(x.panel ? [{ keys: ['[', ']'], label: 'Panel width' }] : []),
-      ...tryKeys(x).filter((i) => i.keys[0] !== '⇧D'),
-      { keys: ['e'], label: 'How it runs' },
+      ...tryKeys(x).filter((i) => i.keys[0] !== '⇧D' && !(verify && i.keys[0] === 'o')),
+      ...(verify ? [] : [{ keys: ['e'], label: 'How it runs' }]),
       ...(x.canAdd ? [{ keys: ['c'], label: 'Add context', tone: 'acc' as const }] : []),
       ...(x.hasWaiting ? [{ keys: ['x'], label: 'Take back' }] : []),
       ...(x.hasSession ? [{ ...full, label: 'Its session' }] : []),

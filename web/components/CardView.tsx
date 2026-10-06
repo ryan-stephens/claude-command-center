@@ -25,6 +25,7 @@ import { useNow } from './ActivityBar.tsx';
 import { RunLog } from './RunLog.tsx';
 import { KindPill, useExpandKey } from './TicketLine.tsx';
 import { Streaming, Transcript } from './Transcript.tsx';
+import { VerifyPanel } from './VerifyPanel.tsx';
 import { Icon, Key, Pill, TicketKey, type IconName } from './ui.tsx';
 
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
@@ -110,7 +111,7 @@ function Dock({ card, panel }: { card: Card; panel: CardPanel | null }) {
   };
   const icons: Record<CardPanel, IconName> = { changes: 'diff', try: 'window', verify: 'clipboard', context: 'book', more: 'dots' };
   const titles: Record<CardPanel, string> = {
-    changes: 'What it changed, by repo, with the diffs', try: 'Its app, or its services: start them, open them, read their output', verify: 'Check it in the team’s apps (later)',
+    changes: 'What it changed, by repo, with the diffs', try: 'Its app, or its services: start them, open them, read their output', verify: 'Is a field in the set, in Dev and UAT; a record’s field values; the tools’ own pages',
     context: 'How it started, what Claude was given, what was added since', more: 'Steps, where it runs, the pull request, the report, worktrees',
   };
   return (
@@ -168,7 +169,7 @@ function Panel({ card, panel }: { card: Card; panel: CardPanel }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {panel === 'changes' ? <ChangesPanel card={card} />
           : panel === 'try' ? <TryIt card={card} />
-          : panel === 'verify' ? <VerifyPanel />
+          : panel === 'verify' ? <VerifyPanel card={card} />
           : panel === 'context' ? <ContextPanel card={card} />
           : <MorePanel card={card} />}
       </div>
@@ -647,17 +648,6 @@ function RecipeTry({ card }: { card: Card }) {
         <Output card={card} run={run} />
       </Sec>
     </>
-  );
-}
-
-// ---- Verify ----
-
-function VerifyPanel() {
-  return (
-    <Sec title="Check it in the team’s apps">
-      <p className="text-[13px] text-sub">Coming later: look up a record, add fields to it, and create test data from this card’s context, without leaving the card.</p>
-      <p className="text-[13px] text-faint">For now: start the app under Try it, open it, and tell Claude what you saw in the chat.</p>
-    </Sec>
   );
 }
 

@@ -7,7 +7,7 @@ import {
   addComposer, additionOf, cardActivity, composerKey, ticketSources, cycleModel, draftOf, dropTicket, pickTicket, ticketFocus, elapsed, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin,
   setWorkspace, sources, stepOption, togglePacketRow, toggleSource,
   hasWork, asDraft, type Composer,
-  addSource, cardFolders, looksLikePath, removeSource, sourceOf, sourceRows, type RepoSource,
+  addSource, cardFolders, looksLikePath, removeSource, sourceOf, sourceRows, type RepoSource, editingKey,
 } from './line-model.ts';
 
 const W1: Workspace = { id: 'w1', name: 'Storefront', color: 'blue', repos: ['D:\\r\\web-app', 'D:\\r\\tokens'], home: 'D:\\r\\tokens' };
@@ -303,4 +303,13 @@ test('tickets past the work sit in the Done column, before its cards; the arrows
   assert.deepEqual(cols.find((l) => l.stage === 'done')!.tickets.map((t) => t.key), ['SHOP-9']);
   assert.equal(moveFocus(cols, ticketFocus('SHOP-1'), 1, 0), ticketFocus('SHOP-9'));
   assert.equal(moveFocus(cols, ticketFocus('SHOP-9'), 0, 1), 'd');
+});
+
+test('editingKey: the box keeps paste, copy, undo and word delete; the app keeps Ctrl+Enter, Ctrl+arrows and Alt', () => {
+  const k = (key: string, m: Partial<{ ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {}) => editingKey({ key, ctrlKey: false, altKey: false, metaKey: false, ...m });
+  for (const key of ['v', 'c', 'x', 'a', 'z', 'y', 'V', 'Backspace', 'Delete']) assert.ok(k(key, { ctrlKey: true }), key);
+  assert.ok(k('v', { metaKey: true }));
+  for (const key of ['Enter', 'ArrowLeft', 'ArrowUp', 'k']) assert.ok(!k(key, { ctrlKey: true }), key);
+  assert.ok(!k('v'), 'no modifier: typing');
+  assert.ok(!k('v', { ctrlKey: true, altKey: true }), 'Ctrl+Alt is AltGr on some layouts, or the app');
 });
