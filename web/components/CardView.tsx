@@ -54,7 +54,7 @@ export function CardView({ id }: { id: string }) {
   const place = stepCard(boardOf(get()), id, 0);
   if (!card) return null;
   return (
-    <section className="absolute inset-0 z-20 flex bg-bg" aria-label={`${card.key} ${card.title}`}>
+    <section data-card className="absolute inset-0 z-20 flex bg-bg" aria-label={`${card.key} ${card.title}`}>
       <Dock card={card} panel={panel} />
       {panel && <Panel card={card} panel={panel} />}
       <div className="relative flex min-w-0 flex-1 flex-col bg-surface">
@@ -232,7 +232,7 @@ function Chat({ card }: { card: Card }) {
   const now = useNow(act.state === 'go');
   const mark = seen > 0 && seen < count;
   return (
-    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-5 py-4" onScroll={(e) => { const el = e.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
+    <div ref={ref} data-chat className="min-h-0 flex-1 overflow-y-auto px-5 py-4" onScroll={(e) => { const el = e.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
       <div className="mx-auto grid max-w-[880px] gap-3">
         {booting(card) && <BootLines card={card} />}
         {!card.sessionId && !booting(card) && <p className="text-sm text-faint">The chat shows once the session has started and linked to this card.</p>}

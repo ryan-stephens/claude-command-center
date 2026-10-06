@@ -18,6 +18,7 @@ import { runKey, type RunRecipe } from '../shared/recipes.ts';
 import type { ShipRequest } from '../shared/ship.ts';
 import { CardService, CARDS_IN_TERMINAL, cleanDraft, focusTab, userModel, writeHookSettings } from './cards.ts';
 import { cleanSeed, seedAllowed, seedCard, seedTranscript } from './seed.ts';
+import { fakeTurns } from './perf-stream.ts';
 import { answersComplete, answerText, questionKeys, readAnswers } from '../shared/questions.ts';
 import { timingSafeEqual } from 'node:crypto';
 import { ChannelService } from './channel.ts';
@@ -429,7 +430,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     }
     case 'session.open': {
       const seeded = seededTranscripts.get(msg.id);
-      if (seeded) { send(ws, { type: 'session.transcript', id: msg.id, items: seeded }); return; }
+      if (seeded && !manager.isLive(msg.id)) { send(ws, { type: 'session.transcript', id: msg.id, items: seeded }); return; }
       mirror.watch(ws, msg.id);
       send(ws, { type: 'session.transcript', id: msg.id, items: await manager.transcript(msg.id) });
       return;
@@ -709,7 +710,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
           logSend(id, `not sent: ${(e as Error).message}`);
           throw e;
         }
-        logSend(id, `${text.length} chars into the app session${live ? '' : `, resumed in ${Date.now() - t0} ms`}`);
+        logSend(id, `${text.length} chars into the app session${live ? ` in ${Date.now() - t0} ms` : `, resumed in ${Date.now() - t0} ms`}`);
         send(ws, { type: 'ok', reqId: msg.reqId });
         return;
       }
@@ -971,10 +972,28 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const id = crypto.randomUUID();
       const card = seedCard(o, id, Date.now());
       // On a real session (walk-resume) the chat shows the session's own transcript, not a made-up one.
-      if (!o.sessionId) seededTranscripts.set(card.sessionId!, seedTranscript(card.key, o.state ?? 'plan'));
+      if (!o.sessionId) seededTranscripts.set(card.sessionId!, seedTranscript(card.key, o.state ?? 'plan', o.size));
       // A token (test servers only): a launcher or hook started by hand can prove itself to the card (§87's walkthrough).
       if (o.token) cards.putWithToken(card, o.token); else cards.put(card);
       send(ws, { type: 'card.started', reqId: msg.reqId, id });
+      return;
+    }
+    case 'perf.stream': {
+      // walk-perf (§95): seeded cards' sessions stream made-up turns through the real path, hooks and all.
+      if (!seedAllowed(PORT)) throw new Error('perf.stream only works on a test server.');
+      const ids: string[] = [];
+      for (const sid of msg.sessionIds) {
+        const card = cards.bySession(sid);
+        if (!card?.cwd) continue;
+        manager.phantom(sid, card.cwd, seededTranscripts.get(sid) ?? []);
+        ids.push(sid);
+      }
+      fakeTurns({
+        ids, seconds: Math.min(120, Number(msg.seconds) || 10), ...(msg.deltaMs ? { deltaMs: Number(msg.deltaMs) } : {}),
+        feed: (id, m) => manager.feed(id, m),
+        hook: (id, event, input) => { const card = cards.bySession(id); if (card) cards.appEvent(card.id, event, input); },
+      });
+      send(ws, { type: 'ok', reqId: msg.reqId });
       return;
     }
     case 'workspace.import': {

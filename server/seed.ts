@@ -35,6 +35,8 @@ export interface SeedOptions {
   token?: string;
   /** A real session's id (test servers only): the card then resumes that session when it is sent to (§85), so the way in can be tried for real. */
   sessionId?: string;
+  /** How many transcript items the seeded session shows (walk-perf, §95): earlier turns are made up to reach it. */
+  size?: number;
 }
 
 const PLAN = ['1. Persist the guest cart to localStorage with a 30-day stamp.', '2. On sign-in, merge it into the account cart without duplicating lines (key on sku + options).', '3. Keep gift cards attached through the merge; a test for each path.'].join('\n');
@@ -60,8 +62,31 @@ function todos(state: NonNullable<SeedOptions['state']>): CardTodo[] {
   return names.map((content, i) => ({ id: `t${i + 1}`, content, status: i < done ? 'completed' : i === done ? 'in_progress' : 'pending', ...(i === done ? { activeForm: content.replace(/^(\w+)/, (w) => `${w}ing`.replace(/eing$/, 'ing')) } : {}) }));
 }
 
-/** The transcript the seeded session shows, as the page draws it. */
-export function seedTranscript(key: string, state: NonNullable<SeedOptions['state']>): TranscriptItem[] {
+/** Earlier turns, made up, so a seeded transcript can be as long as a real day's work (walk-perf, §95). */
+function filler(key: string, count: number): TranscriptItem[] {
+  const out: TranscriptItem[] = [];
+  for (let t = 0; out.length < count; t++) {
+    const u = (n: number) => `seed-${key}-f${t}-${n}`;
+    const file = `src/feature-${t % 17}/part-${t}.ts`;
+    out.push(
+      { kind: 'user', uuid: u(1), text: `Turn ${t + 1}: tidy ${file} and keep the tests green.` },
+      { kind: 'tool', uuid: u(2), toolUseId: `f${t}-r`, name: 'Read', input: JSON.stringify({ file_path: file }), fields: { filePath: file } },
+      { kind: 'tool_result', uuid: u(3), toolUseId: `f${t}-r`, text: `export function part${t}() {\n  return ${t};\n}`, isError: false },
+      { kind: 'tool', uuid: u(4), toolUseId: `f${t}-e`, name: 'Edit', input: JSON.stringify({ file_path: file }), fields: { filePath: file, edit: { before: `return ${t};`, after: `return ${t} + 1;` } } },
+      { kind: 'tool_result', uuid: u(5), toolUseId: `f${t}-e`, text: 'ok', isError: false },
+      { kind: 'assistant', uuid: u(6), text: `Done with **${file}**:\n\n- renamed the helper and kept its callers\n- one test added for the edge case\n\n\`\`\`ts\nexport function part${t}() {\n  return ${t} + 1;\n}\n\`\`\`\n\nThe suite passes (${40 + t} tests).` },
+    );
+  }
+  return out.slice(0, count);
+}
+
+/** The transcript the seeded session shows, as the page draws it; `size` makes it that long with earlier turns. */
+export function seedTranscript(key: string, state: NonNullable<SeedOptions['state']>, size = 0): TranscriptItem[] {
+  const own = seedOwn(key, state);
+  return size > own.length ? [...filler(key, size - own.length), ...own] : own;
+}
+
+function seedOwn(key: string, state: NonNullable<SeedOptions['state']>): TranscriptItem[] {
   const u = (n: number) => `seed-${key}-${n}`;
   const items: TranscriptItem[] = [
     { kind: 'user', uuid: u(1), text: `Please review ${key} and take it into context. You’ll likely need web-app and payments-api. Start in web-app.` },
@@ -148,5 +173,6 @@ export function cleanSeed(raw: unknown): SeedOptions {
     ...(Array.isArray(r.files) ? { files: strs(r.files, 50) } : {}),
     ...(typeof r.token === 'string' && /^[\w-]{8,80}$/.test(r.token) ? { token: r.token } : {}),
     ...(typeof r.sessionId === 'string' && /^[0-9a-f-]{36}$/.test(r.sessionId) ? { sessionId: r.sessionId } : {}),
+    ...(typeof r.size === 'number' && r.size > 0 ? { size: Math.min(2000, Math.floor(r.size)) } : {}),
   };
 }

@@ -424,6 +424,8 @@ export type ClientMsg =
   | { type: 'card.done'; id: string }
   /** Tests only: a card that looks started, with no terminal tab or session. Refused on the default port. Answered with card.started. */
   | { type: 'cards.seed'; reqId: string; options: unknown }
+  /** Test servers only (walk-perf, §95): seeded cards' sessions stream made-up turns for `seconds`. */
+  | { type: 'perf.stream'; reqId: string; sessionIds: string[]; seconds: number; deltaMs?: number }
   /** The card's worktrees as they are now (Shift+X). */
   | { type: 'card.worktrees'; reqId: string; id: string }
   /** Remove them (and their branch): only the clean ones unless `force`; `thenDelete` takes the card off the line after. */

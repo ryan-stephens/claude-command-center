@@ -56,3 +56,13 @@ test('the transcript grows with the state and keeps unique uuids', () => {
   assert.equal(new Set(idle.map((i) => i.uuid)).size, idle.length);
   assert.equal(idle.at(-1)?.kind, 'assistant');
 });
+
+test('a sized transcript is that long, ends as the unsized one does, and keeps unique uuids (walk-perf)', () => {
+  const big = seedTranscript('PERF-1', 'idle', 300);
+  const own = seedTranscript('PERF-1', 'idle');
+  assert.equal(big.length, 300);
+  assert.deepEqual(big.slice(-own.length), own);
+  assert.equal(new Set(big.map((i) => i.uuid)).size, 300);
+  assert.equal(cleanSeed({ repos: ['C:/x'], size: 99999 }).size, 2000);
+  assert.equal(cleanSeed({ repos: ['C:/x'], size: -1 }).size, undefined);
+});

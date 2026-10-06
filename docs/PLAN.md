@@ -2217,3 +2217,40 @@ Not planned: Claude Code feature parity for its own sake; any public deployment.
 ## 94. Direction: speed first; the other hub phases are tabled
 
 2026-10-06. The owner, after trying §93: the app has to be "fast as fuck" and never leave anyone wanting to switch back to a Claude Code terminal; switching between sessions (implementation, smoke testing, QA, code review, shipping, a session starting with its context) has to be effortless. **Phases B, D, E and F of `docs/prompts/continue-hub.md` are tabled.** The work now is performance and smoothness only, against a measured budget (key to paint, card switch, send to first text, y to tool, new card to first text, a busy board), enforced by a walkthrough. Leads, the budget and how to work are in `docs/prompts/continue-speed.md`; each change gets its own section from §95.
+
+## 95. The speed budget, measured: `walk-perf.cjs` and the before numbers
+
+2026-10-06. The first step of §94: measure everything before changing anything. `docs/walkthroughs/simple-new-card/walk-perf.cjs` starts its own isolated server (:7791, a fresh DB, Haiku), seeds 20 cards with 300-item transcripts in a Demo lane, and measures in the page, against the budget in `docs/prompts/continue-speed.md`. It prints each number with its budget and fails when one is over (`--report` never fails; `--no-real` skips the real card).
+
+**How it measures.**
+- **In the page** (an init script): every keydown's timestamp to the frame after the one that paints the result (`requestAnimationFrame`, then a task); a `PerformanceObserver` for long tasks; frame gaps; the bytes and messages the app's WebSocket receives, by message type; main-thread busy time from the DevTools metrics (`TaskDuration`); the JS heap.
+- **Three sessions streaming, repeatably, with no API cost:** `perf.stream` (test servers only, like `cards.seed`) turns seeded cards' sessions into phantom live sessions (`SessionManager.phantom`, no CLI under them) and feeds them made-up turns (`server/perf-stream.ts`): a text delta every 25 ms, a tool's `PreToolUse` / `PostToolUse` through `cards.appEvent` every ~3 s, a message landing every ~10 s. The messages go through `SessionManager.feed` → `handle`, the path a real CLI's take, so what the server sends and the page does is the real thing.
+- **One real Haiku card** made on the new-card screen: Ctrl+Enter → the card open; first streamed text; y → the tool ran (server log); Enter → the message in the chat; send → first text, with our share split from the model's (the page's time less the server's *first partial* less its *into the CLI* time, a new figure on the `send` log line); Ctrl+K → its session on screen; a server restart → the next message's first text. Plus the eight most recent history sessions opened cold (the server reads their files).
+- `cards.seed` takes `size` (made-up earlier turns: reads, edits with diffs, markdown with code blocks). The open card's root and its chat carry `data-card` and `data-chat` for the walk.
+
+**Before** (this laptop, headless Chromium, Haiku; three runs, ranges):
+
+| Interaction | Budget | Before |
+|---|---|---|
+| A key in the message box → painted, nothing streaming (p95) | 16 | 5 ms |
+| … while 3 other cards stream (p95) | 16 | 9 to 10 ms |
+| … while the open card streams (p95) | 16 | **18 to 26 ms** (max 34 to 62); main thread **56 to 59 % busy** |
+| Enter / → to a card, cold, 300 items (median) | 300 | 38 to 43 ms |
+| ← to a card, warm (median) | 100 | 28 to 35 ms |
+| Ctrl+K → a session → on screen (warm) | 150 | 13 to 16 ms |
+| Enter (send) → your message in the chat | 50 | 11 to 14 ms |
+| Send → first text: our overhead | 100 | 8 to 10 ms (the model's own: 3.7 to 6.9 s on Haiku today) |
+| y → the tool ran (plan approval) | 100 | 26 to 32 ms |
+| Ctrl+Enter on the new-card screen → the card open | 300 | 239 to 241 ms (git worktree included) |
+| New card → first streamed text | — | 6.3 s |
+| Board, 20 cards, 3 streaming: long tasks over 50 ms | 0 | 0; frames p95 7 ms; main thread 8 to 9 % busy |
+| Server restart → next message's first text | 2500 | 1.6 to **2.6 s** (resume 14 ms; the rest is the CLI starting and the model) |
+| A history session opened cold (491 items, 505 KB) | — | 34 ms on the server |
+
+**What the bytes say.** On the board with 3 sessions streaming the page receives **159 KB/s** (98 messages/s): `session.partial` resends the whole reply so far on every delta (514 KB in 5 s, growing with the reply's length: O(n²)), and every hook event broadcasts **all 20 cards** (38 KB each). With the open card streaming, 200 KB/s. A page load is 87 KB (the sessions list 46 KB, the cards 39 KB).
+
+**What it means.** On this machine every interaction but one is inside the budget already; the exception is the one that matters most while working: **typing while the open card streams**. The chat re-renders its whole 300-item transcript (react-markdown for each message) on every token, so the main thread is busy more than half the time and a key waits for it. On a slower laptop (the VU one) the same work is two to four times longer, so the margins elsewhere are thinner than they look here. The traffic grows with reply length and card count, which this run's short replies and 20 cards understate.
+
+**Found on the way** (not speed, recorded for later): when the app stops a card's session (`q.close()`, a worktree removal, a restart), the CLI's MCP servers (started through `npx` / `cmd`) outlive it on Windows. They keep the card's worktree as their working folder, so the folder can't be deleted (*EPERM*), and they pile up: the machine had dozens of orphaned `mcp-server-trello` processes going back to 9/28. The walk stops its card's session before restarting the server and retries the removal; it doesn't fix the cause.
+
+**Verified:** `pnpm typecheck`; `walk-perf.cjs` end to end three times (22 checks pass; the numbers above; it fails on the open-card typing budget, as it should until that is fixed).

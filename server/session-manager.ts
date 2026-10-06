@@ -457,6 +457,26 @@ export class SessionManager {
     for (const id of [...this.live.keys()]) this.stop(id);
   }
 
+  /**
+   * Test servers only (walk-perf, §95): a live session with no CLI under it. `feed` hands it SDK
+   * messages, which take the same path a real CLI's do, so the app's own cost can be measured
+   * without the API's.
+   */
+  phantom(id: string, cwd: string, items: TranscriptItem[]): void {
+    if (this.live.has(id)) return;
+    const q = { close() {}, async interrupt() {}, async setPermissionMode() {}, async getContextUsage() { return { percentage: 12 }; } } as unknown as Query;
+    this.live.set(id, {
+      id, cwd, title: 'Phantom', input: new InputQueue(), q,
+      status: 'idle', items: [...items], partial: '', lastModified: Date.now(), activity: idleActivity(Date.now()), dirs: [], todos: NO_TODOS,
+    });
+    this.emitUpsert(id);
+  }
+
+  feed(id: string, msg: SDKMessage): void {
+    const l = this.live.get(id);
+    if (l) this.handle(l, msg);
+  }
+
   private start(opts: { id: string; cwd: string; title: string; items?: TranscriptItem[]; options: Record<string, unknown> }): LiveSession {
     const input = new InputQueue();
     const id = opts.id;
