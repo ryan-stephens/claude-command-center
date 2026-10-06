@@ -31,6 +31,21 @@ Measure all of it first, then make each number true, and keep it true with a wal
 
 Report each as measured before and after, in the PLAN section. Numbers you can't reach: say why (the API, git, Windows) rather than paper over them.
 
+## Where it stands (end of 2026-10-06)
+
+`docs/walkthroughs/simple-new-card/walk-perf.cjs` measures the whole budget and fails above it (`--no-real` skips the real Haiku card, `--cpu=4` slows the page 4× for a slower laptop, `--report` never fails). PLAN §95 has the before numbers; §96 to §99 the fixes, each with before and after. On this laptop every number is inside the budget; at `--cpu=4` one is 1 ms over (a key while the open card streams: 17 ms p95).
+
+Done: the chat no longer redraws per token (§96); streaming text goes as deltas only to the page showing it, one card per change, cards in memory, warm opens send nothing (§97); a card's session resumes when the card is opened, worktrees in parallel, no history refresh for running sessions, prewarm spiked and dropped (§98); markdown parsed once, long chats open in two steps, off-screen blocks skip layout, typing comes first (§99).
+
+Left, measured but not done:
+- **The sessions list** (`sessions`, ~100 KB here and growing with history) still goes whole to every page on each history refresh, which a terminal session's writes trigger every 1.5 s. Send what changed (`session.upsert` per changed summary, a removal message) instead.
+- **The mirror** re-reads a terminal session's whole transcript on each change (the escape hatch, `g`); send the tail.
+- **New card → first text** is the model (the CLI is ready at ~0.8 s; Haiku planning with the packet takes 4 to 6 s). Nothing of ours left there but the packet's size.
+- **The owner's server** at :7777 runs code from before §97 (`PROTOCOL` 25): it needs a restart (ask first) and then `pnpm build`.
+- Orphaned MCP servers (§95, corrected in §98) come from killing the server's process tree; a graceful shutdown (stop each session's query, then exit) on the server's own stop would avoid them.
+
+The leads below were the starting point; §95 to §99 say which held.
+
 ## Where the time probably goes (check each; these are leads, not facts)
 
 **Server → page traffic**
