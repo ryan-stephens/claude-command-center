@@ -64,8 +64,11 @@ export interface Ticket {
 
 export const SOURCE_NAME: Record<TicketSource, string> = { jira: 'Jira', trello: 'Trello' };
 
-/** Statuses that finish a card without a word from you: the ticket has moved past the work. CC_CONTROL_DONE_STATUSES changes the list. */
-export const DONE_STATUSES = ['Done', 'Ready for PO'];
+/**
+ * Statuses past the work: a card goes to Done without a word from you, and a ticket without a card
+ * shows in the Done column, not the Inbox (§100). CC_CONTROL_DONE_STATUSES changes the list.
+ */
+export const DONE_STATUSES = ['Done', 'Ready for PO', 'Ready for Prod'];
 
 /** The list from CC_CONTROL_DONE_STATUSES (comma-separated), else the default. */
 export function doneStatuses(value?: string): string[] {
@@ -175,8 +178,18 @@ export function qaLine(t: Pick<Ticket, 'qaReviewer'>): string {
  * The Inbox: open tickets that no card has started yet, in the workspace shown (tickets whose
  * project isn't mapped show only under All), newest first.
  */
-export function inbox(tickets: Ticket[], started: Set<string>, filter: 'all' | string, view: InboxView = 'mine'): Ticket[] {
+export function inbox(tickets: Ticket[], started: Set<string>, filter: 'all' | string, view: InboxView = 'mine', doneNames: string[] = DONE_STATUSES): Ticket[] {
+  return shown(tickets, started, filter, view).filter((t) => !finishesCard(t, doneNames));
+}
+
+/** Tickets without a card whose status is past the work (Done, Ready for PO, Ready for Prod): the Done column shows them (§100). */
+export function finishedTickets(tickets: Ticket[], started: Set<string>, filter: 'all' | string, view: InboxView = 'mine', doneNames: string[] = DONE_STATUSES): Ticket[] {
+  return shown(tickets, started, filter, view).filter((t) => finishesCard(t, doneNames));
+}
+
+/** The view's tickets on the board: not hidden, not a search result, no card yet, in the lane shown; newest first. */
+function shown(tickets: Ticket[], started: Set<string>, filter: 'all' | string, view: InboxView): Ticket[] {
   return tickets
-    .filter((t) => !t.done && !t.hidden && !t.found && inView(t, view) && !started.has(t.key) && (filter === 'all' || t.workspaceId === filter))
+    .filter((t) => !t.hidden && !t.found && inView(t, view) && !started.has(t.key) && (filter === 'all' || t.workspaceId === filter))
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }

@@ -471,7 +471,7 @@ function receive(msg: ServerMsg): void {
       return;
     }
     case 'tickets':
-      set({ tickets: msg.tickets, ticketProjects: msg.projects, ticketSources: msg.sources });
+      set({ tickets: msg.tickets, ticketProjects: msg.projects, ticketSources: msg.sources, ...(msg.doneStatuses ? { doneStatuses: msg.doneStatuses } : {}) });
       return;
     case 'recipes':
       set({ recipes: { ...msg.recipes, ...Object.fromEntries(Object.entries(msg.workspaceRecipes ?? {}).map(([id, r]) => [wsRecipeKey(id), r])) } });

@@ -296,3 +296,11 @@ test('the workspace layer carries the home repo’s run recipe, and Claude is to
   assert.doesNotMatch(packetText({ ...off, title: 'x' }, 'CARD-3'), /Running the app/, 'Space leaves it out');
   assert.equal(setWorkspace(c, W2, recipes).packet.workspace.some((i) => i.kind === 'recipe'), false, 'Payments has no recipe');
 });
+
+test('tickets past the work sit in the Done column, before its cards; the arrows reach them (§100)', () => {
+  const cols = lanes([card('d', 'done')], 'all', '', [ticket('SHOP-1')], [ticket('SHOP-9', { status: 'Ready for Prod' })]);
+  assert.deepEqual(cols.find((l) => l.stage === 'inbox')!.tickets.map((t) => t.key), ['SHOP-1']);
+  assert.deepEqual(cols.find((l) => l.stage === 'done')!.tickets.map((t) => t.key), ['SHOP-9']);
+  assert.equal(moveFocus(cols, ticketFocus('SHOP-1'), 1, 0), ticketFocus('SHOP-9'));
+  assert.equal(moveFocus(cols, ticketFocus('SHOP-9'), 0, 1), 'd');
+});

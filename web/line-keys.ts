@@ -8,7 +8,7 @@ import { anyLive, cardRecipe, runKey, runsOf, wsRecipeKey } from '../shared/reci
 import { allMerged, openPrs, prsOf } from '../shared/ship.ts';
 import type { StackChoice } from '../shared/stack.ts';
 import { repoName } from '../shared/workspaces.ts';
-import { inbox, INBOX_VIEWS, type Ticket } from '../shared/tickets.ts';
+import { finishedTickets, inbox, INBOX_VIEWS, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
 import { openSession } from './keys.ts';
 import { closeComposer, currentWorkspace, flash, get, set, setFilter, setInboxView, setPanelW, takeDraft, type WorkspaceAction } from './store.ts';
@@ -122,7 +122,12 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
 
 /** The Inbox: tickets no card has started, in the workspace shown. */
 export function inboxOf(s: ReturnType<typeof get>): Ticket[] {
-  return inbox(s.tickets, new Set(s.cards.map((c) => c.key)), s.line.filter, s.line.view);
+  return inbox(s.tickets, new Set(s.cards.map((c) => c.key)), s.line.filter, s.line.view, s.doneStatuses);
+}
+
+/** Tickets without a card that are past the work: in the Done column (§100). */
+export function doneTicketsOf(s: ReturnType<typeof get>): Ticket[] {
+  return finishedTickets(s.tickets, new Set(s.cards.map((c) => c.key)), s.line.filter, s.line.view, s.doneStatuses);
 }
 
 /** v: the Inbox's other view. The focus moves to the first card or ticket it shows. */
@@ -137,7 +142,7 @@ export function switchInbox(): void {
 
 /** The board's columns, with the Inbox's tickets. */
 export function boardOf(s: ReturnType<typeof get>) {
-  return lanes(s.cards, s.line.filter, s.line.q, inboxOf(s));
+  return lanes(s.cards, s.line.filter, s.line.q, inboxOf(s), doneTicketsOf(s));
 }
 
 export function openLine(): void {
@@ -900,6 +905,6 @@ export function openNeighbour(id: string, delta: number): void {
 export function deleteCard(id: string): void {
   send({ type: 'card.delete', id });
   const s = get();
-  const cols = lanes(s.cards.filter((c) => c.id !== id), s.line.filter, s.line.q, inboxOf(s));
+  const cols = lanes(s.cards.filter((c) => c.id !== id), s.line.filter, s.line.q, inboxOf(s), doneTicketsOf(s));
   set({ line: { ...s.line, drawer: s.line.drawer === id ? null : s.line.drawer, focus: s.line.focus === id ? moveFocus(cols, null, 1, 0) : s.line.focus } });
 }

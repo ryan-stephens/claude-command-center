@@ -117,7 +117,7 @@ const cards = new CardService(store, {
 });
 
 const tickets = new TicketService(store, () => broadcast(ticketsMsg()));
-// A card whose ticket has moved past the work (Done, Ready for PO; CC_CONTROL_DONE_STATUSES) goes to Done on its own.
+// A card whose ticket has moved past the work (Done, Ready for PO, Ready for Prod; CC_CONTROL_DONE_STATUSES) goes to Done on its own.
 const doneNames = doneStatuses(process.env.CC_CONTROL_DONE_STATUSES);
 tickets.followCards({
   keys: () => cards.list().filter((c) => c.ticket && c.stage !== 'done').map((c) => c.ticket!.key),
@@ -174,7 +174,7 @@ const channels = new ChannelService({
 
 function ticketsMsg(): ServerMsg {
   const ids = store.loadWorkspaces().map((w) => w.id);
-  return { type: 'tickets', tickets: tickets.list(ids), projects: tickets.projects(ids), sources: tickets.sources() };
+  return { type: 'tickets', tickets: tickets.list(ids), projects: tickets.projects(ids), sources: tickets.sources(), doneStatuses: doneNames };
 }
 
 /** Which runs' output each connection follows (§84): the Output view on the page asks for the keys it shows. */

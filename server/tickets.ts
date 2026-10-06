@@ -441,6 +441,9 @@ export function demoTickets(now = Date.now()): Ticket[] {
     t({ project: 'DOCS', projectName: 'Docs & site', key: 'DOCS-19', title: 'Document the refunds endpoint', status: 'In Progress', updatedAt: now - 4 * 3600_000,
       description: 'The refunds endpoint has no reference page. Partners keep asking support how partial refunds work.',
       acceptance: ['A reference page with every field', 'A partial refund example', 'Linked from the API index'] }),
+    // Past the work: in the Done column, not the Inbox (§100).
+    t({ ...pay, key: 'PAY-71', title: 'Receipts show the tax line', status: 'Ready for PO', updatedAt: now - DAY,
+      description: 'Receipts left the tax out of the breakdown.', acceptance: ['The receipt lists tax on its own line'] }),
     t({ ...shop, key: 'SHOP-98', title: 'Guest checkout', status: 'Done', done: true, updatedAt: now - 90 * DAY,
       description: 'Let people check out without an account.', acceptance: ['Guests can pay without signing up'] }),
     t({ source: 'trello', project: 'demo-trello-web', projectName: 'Web board', key: 'WB-12', title: 'Footer links 404 on /about', status: 'Doing', updatedAt: now - 6 * 3600_000,

@@ -2362,3 +2362,17 @@ Everything else held: key → paint 5 / 9 / 10 ms (p95: idle, others streaming, 
 At 4× one number stays over: a key while the open card streams, 17 ms against 16. Even with nothing streaming a key costs 7 to 9 ms there (the field's own paint), so the margin left is small. At 1× it is 9 ms.
 
 **Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (352). `walk-perf.cjs` 25/25 at 1×; at 4× everything but that one key number. `walk-card.cjs` 59/59 light and dark. `walk-hub.cjs` 29/29; one earlier run failed *the plan streamed in first* because Haiku went straight to the plan tool without writing any text (the server log has no first partial for that turn), the next run passed.
+
+## 100. Tickets past the work show in Done, not the Inbox
+
+2026-10-06. The owner: Jira tickets in *Ready for PO*, *Ready for Prod* or *Done* belong in the Done column, not the Inbox.
+
+**What changed.**
+- `DONE_STATUSES` gains *Ready for Prod* (now *Done, Ready for PO, Ready for Prod*; `CC_CONTROL_DONE_STATUSES` still replaces the list). The same list already moved a card to Done when its ticket reached one of them; a card whose ticket reaches *Ready for Prod* now does too.
+- A ticket without a card whose status is in the list, or in the tracker's done category, leaves the Inbox and shows in the Done column, above its cards (`finishedTickets`, `lanes(…, done)`). Before, such a ticket stayed in the Inbox when its status wasn't in Jira's done category (*Ready for PO* usually isn't), and one in the done category didn't show at all. The arrows reach it, and `n` / Enter on it still starts a card, as in the Inbox. The same lane filter, search and Inbox view (*Mine* / *Ready for QA*) apply.
+- The server sends its list with the tickets (`doneStatuses` on `tickets`), so an override applies on the board as well; a page on an older server uses the default.
+- The Done column's note: *Merged, or its ticket is past the work*. A demo ticket in *Ready for PO* (PAY-71) shows the case; the demo's SHOP-98 (*Done*) now shows there too. README's `CC_CONTROL_DONE_STATUSES` row says both.
+
+Not changed: what Jira sends. The default JQL (*assigned to you, not in the done category*) still leaves out done-category tickets, so the Done column shows those only when your own `CC_CONTROL_JIRA_JQL` includes them.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (354: the split by name and category, a ticket with a card left out, an overridden list; the Done column's tickets before its cards and reached by the arrows). On an isolated server with the demo tickets: the Inbox keeps the open ones, Done shows PAY-71 (*Ready for PO*) and SHOP-98 (*Done*), → along the row lands on PAY-71; no page errors; screenshot looked at. `walk-card.cjs` 59/59.

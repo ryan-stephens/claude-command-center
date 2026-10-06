@@ -495,7 +495,8 @@ export type ServerMsg =
   | { type: 'card.upsert'; card: Card; nextKey: string }
   | { type: 'cards'; cards: Card[]; /** What the next card will be called, for the preview. */ nextKey: string; /** The model card sessions start with, when the server pins one. */ model?: string; /** The model in the user's Claude Code settings (a card's default otherwise). */ userModel?: string; /** Cards start in a terminal tab (legacy, CC_CONTROL_CARDS_IN_TERMINAL=1, §93), not in the app. */ inTerminal?: boolean }
   | { type: 'card.started'; reqId: string; id: string }
-  | { type: 'tickets'; tickets: Ticket[]; projects: TicketProject[]; sources: TicketSources }
+  /** `doneStatuses` (§100): statuses past the work; such tickets show in the Done column. */
+  | { type: 'tickets'; tickets: Ticket[]; projects: TicketProject[]; sources: TicketSources; doneStatuses?: string[] }
   /** What a search found, or why it couldn't search. */
   | { type: 'tickets.found'; reqId: string; q: string; tickets: Ticket[]; problem?: string }
   /** The ticket's pull request, or why none was found (a line per repo). */

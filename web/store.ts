@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Card } from '../shared/cards.ts';
 import type { CardRun, LogLine, RunRecipe } from '../shared/recipes.ts';
-import type { InboxView, Ticket, TicketProject, TicketSources } from '../shared/tickets.ts';
+import { DONE_STATUSES, type InboxView, type Ticket, type TicketProject, type TicketSources } from '../shared/tickets.ts';
 import type { Command, CommandGroup, ModelChoice, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, Todo, TranscriptItem, Workspace } from '../shared/protocol.ts';
 import type { SavedPrompt } from '../shared/prompts.ts';
 import { loadFolds, saveFolds, toggled, type FoldKey, type Folds } from './folds.ts';
@@ -118,6 +118,8 @@ interface State {
   logs: Record<string, LogLine[]>;
   ticketProjects: TicketProject[];
   ticketSources: TicketSources | null;
+  /** Statuses past the work (the server's CC_CONTROL_DONE_STATUSES): such tickets show in Done, not the Inbox (§100). */
+  doneStatuses: string[];
   /**
    * The board: the focused card, the card open in the drawer and its tab, the workspace shown, and
    * the text filter (/).
@@ -198,6 +200,7 @@ export const useStore = create<State>(() => ({
   logs: {},
   ticketProjects: [],
   ticketSources: null,
+  doneStatuses: DONE_STATUSES,
   line: { focus: null, drawer: null, panel: null, at: 0, panelW: loadPanelW(), filter: loadFilter(), q: '', searching: false, view: loadView() },
   found: NO_FOUND,
   composer: null,

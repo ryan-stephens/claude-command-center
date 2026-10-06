@@ -33,12 +33,13 @@ export function matches(q: string, hay: string): boolean {
 /** A column of the board: its cards, and for the Inbox, the tickets no card has started yet. */
 export interface Lane { stage: Stage; name: string; cards: Card[]; tickets: Ticket[] }
 
-export function lanes(cards: Card[], filter: LineFilter, q = '', inbox: Ticket[] = []): Lane[] {
+/** `done`: tickets without a card whose status is past the work, shown in the Done column (§100). */
+export function lanes(cards: Card[], filter: LineFilter, q = '', inbox: Ticket[] = [], done: Ticket[] = []): Lane[] {
   return STAGES.map((s) => ({
     stage: s.id,
     name: s.name,
     cards: cards.filter((c) => c.stage === s.id && (filter === 'all' || c.workspaceId === filter) && matches(q, `${c.key} ${c.title} ${c.branchName ?? ''}`)),
-    tickets: s.id === 'inbox' ? inbox.filter((t) => matches(q, `${t.key} ${t.title}`)) : [],
+    tickets: (s.id === 'inbox' ? inbox : s.id === 'done' ? done : []).filter((t) => matches(q, `${t.key} ${t.title}`)),
   }));
 }
 

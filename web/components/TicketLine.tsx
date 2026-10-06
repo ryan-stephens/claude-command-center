@@ -216,7 +216,7 @@ const GATE: Record<Card['stage'], string> = {
   needs: 'Open the card to answer',
   try: 't tries it · s ships it',
   ship: 's merges the PR · o opens it',
-  done: 'Merged',
+  done: 'Merged, or its ticket is past the work',
 };
 const EMPTY: Record<Card['stage'], ReactNode> = {
   inbox: <>No tickets here. <Key k="⇧T" size="sm" inline /> connects Jira or Trello (or shows demo tickets); <Key k="c" size="sm" inline /> starts a card without one.</>,
