@@ -36,7 +36,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['1–9  /  0', 'Show one lane’s cards / all of them'],
       ['/', 'Filter the cards by words'],
       ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, or its services, with their output), Verify (the team’s apps, later), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
-      ['j / k  ·  Space  ·  f (Changes panel)', 'The next / previous file, its diff under it  ·  fold or unfold that diff  ·  pop the diff out full width, on the same file'],
+      ['j / k  ·  Space  ·  f (Changes panel)', 'The next / previous file  ·  open or close its diff under it (several can be open; a click on a file does the same)  ·  pop every repo’s changes out full width, on the chosen file (Pop out in the panel’s title)'],
       ['z  ·  Z (Changes panel, and popped out)', 'Fold or unfold the chosen file’s repo (its files go under the header, which keeps the count)  ·  fold every repo, or unfold them all. A header click does the same with the mouse; a second click on the chosen file folds its diff'],
       ['j / k  ·  Space  ·  r  ·  q (Try it panel, a lane with a stack)', 'The environment row and each service  ·  change the environment, or tick a service to run  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
       ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
@@ -502,6 +502,12 @@ export const questionHooks = { on: false, digit: (_d: number): void => {}, next:
 
 /** How many files the Changes panel shows right now (it keeps the count here for j / k). */
 export let changeCount = 0;
+/** f, or Pop out on the Changes panel (§103): every repo's changes full width, on the file chosen in the panel. */
+export function popOutChanges(id: string): void {
+  const at = get().line.at;
+  openChanges(id, changeIndex[Math.min(at, changeIndex.length - 1)] ?? at);
+}
+
 /** The panel's shown files, each as its index in the full list (a folded repo's files are left out, §90): f pops the sheet out on the right one. */
 export let changeIndex: number[] = [];
 /** What Space, z and Z do in the Changes panel: the panel sets these while it is up (§90). */
@@ -687,7 +693,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
     case 'r': { const sv = s.line.panel === 'try' ? tryRowService() : undefined; if (sv && s.line.drawer) { tryService(s.line.drawer, sv); return true; } return false; }
     case 'q': { const sv = s.line.panel === 'try' ? tryRowService() : undefined; if (sv && s.line.drawer) { stopService(s.line.drawer, sv); return true; } return false; }
     case 'f':
-      if (s.line.panel === 'changes' && s.line.drawer) { openChanges(s.line.drawer, changeIndex[Math.min(s.line.at, changeIndex.length - 1)] ?? s.line.at); return true; }
+      if (s.line.panel === 'changes' && s.line.drawer) { popOutChanges(s.line.drawer); return true; }
       if (s.line.panel === 'try' && s.line.drawer) { openOutput(s.line.drawer, tryRowService()); return true; }
       return false;
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;

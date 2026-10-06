@@ -2397,3 +2397,14 @@ Not changed: what Jira sends. The default JQL (*assigned to you, not in the done
 **Fix.** `appToOpen` (`shared/recipes.ts`, pure): the run that stands for the card, as the tile and the legend already pick it (`mainRun`: the single recipe's, else the UI's, else the first service's), its URL once up, *starting* while it comes up. `openApp` uses it; a PR still opens when nothing runs, as before.
 
 **Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (355: a stack's UI opens over its API, a single recipe's run, starting, stopped, another card's). Not run here: a real stack (it needs the VU repos and their dev environment). **To check at VU:** `git pull`, `pnpm build`, reload (a page-only change: no restart); start the stack, then Open (or `o`) on the UI opens it in a new tab.
+
+## 103. The Changes panel: several diffs open at once; Pop out in its title
+
+2026-10-06. The owner: the *Pop out* link under each open diff opens the whole change set anyway, so it belongs once, in the panel's title; and more than one file's diff should be open at a time (only the chosen file's could be).
+
+**What changed** (`ChangesPanel` in `web/components/CardView.tsx`).
+- **Pop out (`f`)** is in the Changes panel's title bar, beside its key and close button, and no longer under each diff. It opens the full sheet on the file chosen in the panel, as `f` did (`popOutChanges`).
+- **Several diffs open at once:** a click on a file opens or closes its diff (and chooses it); `Space` does the same for the chosen file; `j` / `k` move the choice without closing anything. Each file's row shows ▾ / ▸ for its own diff. As before, the first file's diff is open when the panel opens; another card starts afresh.
+- The `?` row and the legend say it (`Space`: *Open / close diff*).
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (355, the legend's Changes labels). On an isolated server with a seeded card on two demo repos: the panel opens with one diff; no Pop out under it; Pop out in the title; two clicks open two more (three open), a click closes one; `Space` opens and closes the chosen file's diff, the others staying; Pop out and `f` open the full sheet on the chosen file; no page errors. Screenshots light and dark, looked at. `walk-card.cjs` 59/59.

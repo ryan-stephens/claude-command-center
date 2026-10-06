@@ -17,7 +17,7 @@ import { repoName } from '../../shared/workspaces.ts';
 import { CARD_PANELS, type CardPanel } from '../line-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard } from '../line-model.ts';
 import { QuestionForm } from './QuestionForm.tsx';
-import { answerAsk, boardOf, changeHooks, editRecipe, goToTab, lastPick, openAddComposer, openApp, openChanges, openNeighbour, openOutput, openWorktrees, rememberPick, saySubmit, setChangeCount, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
+import { answerAsk, boardOf, changeHooks, editRecipe, goToTab, lastPick, openAddComposer, openApp, openNeighbour, openOutput, openWorktrees, popOutChanges, rememberPick, saySubmit, setChangeCount, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
 import { openSession } from '../keys.ts';
 import { get, set, setPanelW, useStore } from '../store.ts';
 import { cardChanges, openTranscript, send, stackPlan } from '../ws.ts';
@@ -152,6 +152,12 @@ function Panel({ card, panel }: { card: Card; panel: CardPanel }) {
         <h3 className="text-[14px] font-bold">{meta.name}</h3>
         <PanelNote card={card} panel={panel} />
         <span className="grow" />
+        {/* The whole change set full width, on the file chosen here (§103): one place for it, not under every diff. */}
+        {panel === 'changes' && card.cwd && (
+          <button className="flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[12.5px] text-sub hover:bg-raise hover:text-ink" onClick={() => popOutChanges(card.id)} title="Every repo’s changes full width, in their own window, on the file chosen here">
+            <Icon name="popout" size={14} />Pop out<Key k="f" size="sm" />
+          </button>
+        )}
         <span className="flex items-center gap-1.5">
           <Key k={meta.key} size="sm" />
           <button type="button" onClick={() => togglePanel(panel)} aria-label={`Close ${meta.name}`} title={`Close ${meta.name}`} className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-raise hover:text-ink">
@@ -336,12 +342,12 @@ function Say({ card }: { card: Card }) {
 function ChangesPanel({ card }: { card: Card }) {
   const [changes, setChanges] = useState<Changes | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Folded repos (by root) and whether the chosen file's diff is open (§90); both start afresh on another card.
+  // Folded repos (by root) and the files whose diffs are open, several at once (§90, §103); both start afresh on another card.
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
-  const [diffOpen, setDiffOpen] = useState(true);
+  const [openDiffs, setOpenDiffs] = useState<ReadonlySet<string> | null>(null);
   const at = useStore((s) => s.line.at);
   const stamp = `${card.files?.length ?? 0}:${card.ship?.steps.length ?? 0}:${card.live?.at ?? 0}`;
-  useEffect(() => { setFolded(new Set()); setDiffOpen(true); }, [card.id]);
+  useEffect(() => { setFolded(new Set()); setOpenDiffs(null); }, [card.id]);
   useEffect(() => {
     if (!card.cwd) return;
     let on = true;
@@ -356,14 +362,22 @@ function ChangesPanel({ card }: { card: Card }) {
   useEffect(() => { setChangeCount(shown.map((r) => r.index)); return () => setChangeCount([]); }, [shownKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const chosenPos = Math.min(at, shown.length - 1);
   const chosen = chosenPos >= 0 ? shown[chosenPos] : undefined;
+  const fileKey = (x: { repo: { root: string }; file: { path: string } }) => `${x.repo.root}\n${x.file.path}`;
+  // Until something is opened or closed, the first file's diff shows, as before.
+  const isOpen = (x: Extract<ChangeRow, { kind: 'file' }>) => (openDiffs ? openDiffs.has(fileKey(x)) : x === shown[0]);
+  const toggleDiff = (x: Extract<ChangeRow, { kind: 'file' }>) => {
+    const next = new Set(openDiffs ?? (shown[0] ? [fileKey(shown[0])] : []));
+    if (next.has(fileKey(x))) next.delete(fileKey(x)); else next.add(fileKey(x));
+    setOpenDiffs(next);
+  };
   const toggleFold = (root: string) => setFolded((prev) => { const next = new Set(prev); if (next.has(root)) next.delete(root); else next.add(root); return next; });
   useEffect(() => {
-    changeHooks.toggleDiff = () => setDiffOpen((v) => !v);
+    changeHooks.toggleDiff = () => { if (chosen) toggleDiff(chosen); };
     changeHooks.foldRepo = () => { if (chosen) toggleFold(chosen.repo.root); };
     // Z: unfold everything when any repo is folded (the way back after z), else fold every repo.
     changeHooks.foldAll = () => setFolded((prev) => (prev.size > 0 ? new Set() : new Set(changes?.repos.map((r) => r.root) ?? [])));
     return () => { changeHooks.toggleDiff = () => {}; changeHooks.foldRepo = () => {}; changeHooks.foldAll = () => {}; };
-  }, [chosen?.repo.root, changes]);
+  }, [chosen, changes, openDiffs]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { document.getElementById(`pchg-${chosenPos}`)?.scrollIntoView({ block: 'nearest' }); }, [chosenPos]);
   if (!card.cwd) return <p className="px-4 py-3 text-sm text-faint">Nothing yet: the card hasn’t started.</p>;
   if (error) return <p className="px-4 py-3 text-sm text-bad" role="alert">{error}</p>;
@@ -390,18 +404,19 @@ function ChangesPanel({ card }: { card: Card }) {
             {!isFolded && shown.filter((x) => x.repo.root === r.root).map((x) => {
               const pos = shown.indexOf(x);
               const isChosen = pos === chosenPos;
+              const open = isOpen(x);
               return (
                 <div key={x.file.path} id={`pchg-${pos}`} className="border-t border-line/60 first:border-t-0">
-                  {/* A click chooses the file; a second click on the chosen one folds its diff (Space). */}
-                  <button onClick={() => { if (isChosen) setDiffOpen((v) => !v); else { set({ line: { ...get().line, at: pos } }); setDiffOpen(true); } }} aria-pressed={isChosen} aria-expanded={isChosen ? diffOpen : undefined}
+                  {/* A click chooses the file and opens or closes its diff (Space on the chosen one); several can be open (§103). */}
+                  <button onClick={() => { set({ line: { ...get().line, at: pos } }); toggleDiff(x); }} aria-pressed={isChosen} aria-expanded={open}
                     className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] ${isChosen ? 'bg-raise' : 'hover:bg-raise/60'}`}>
-                    <span className="w-3 shrink-0 text-center text-[11px] text-faint" aria-hidden>{isChosen ? (diffOpen ? '▾' : '▸') : ''}</span>
+                    <span className="w-3 shrink-0 text-center text-[11px] text-faint" aria-hidden>{open ? '▾' : '▸'}</span>
                     <span className={`w-[52px] shrink-0 text-[10.5px] font-bold uppercase ${x.file.kind === 'deleted' ? 'text-bad' : x.file.kind === 'modified' ? 'text-faint' : 'text-ok'}`}>{{ added: 'added', modified: 'changed', deleted: 'deleted', renamed: 'renamed', new: 'new' }[x.file.kind]}</span>
                     <span className="min-w-0 grow truncate font-mono" title={x.file.path}>{x.file.path}</span>
                     {x.file.mine && <span className="shrink-0 rounded-full bg-ok-bg px-1.5 text-[10.5px] font-semibold text-ok" title="Written by this card’s session">card</span>}
                     <span className="shrink-0 font-mono text-[11px] tabular-nums"><span className="text-ok">+{x.file.added}</span> <span className="text-bad">−{x.file.removed}</span></span>
                   </button>
-                  {isChosen && diffOpen && (
+                  {open && (
                     <>
                       {x.file.binary
                         ? <p className="px-3 py-1.5 text-[12px] text-faint">A binary file: nothing to show.</p>
@@ -410,12 +425,6 @@ function ChangesPanel({ card }: { card: Card }) {
                             <div key={i} className={`whitespace-pre px-3 ${l.kind === 'add' ? 'bg-ok-bg text-ok' : l.kind === 'del' ? 'bg-bad-bg text-bad' : l.kind === 'hunk' ? 'bg-raise text-busy' : 'text-sub'}`}>{l.text || ' '}</div>
                           ))}
                         </pre>}
-                      {/* The same file, full width: the sheet opens on it. */}
-                      <div className="flex justify-end border-t border-line/60 px-3 py-1">
-                        <button className="flex items-center gap-1.5 text-[12px] text-acc underline decoration-dotted underline-offset-2 hover:decoration-solid" onClick={() => openChanges(card.id, x.index)} title="This diff full width, in its own window">
-                          <Icon name="popout" size={13} />Pop out<Key k="f" size="sm" />
-                        </button>
-                      </div>
                     </>)}
                 </div>
               );
