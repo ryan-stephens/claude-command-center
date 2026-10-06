@@ -2251,7 +2251,7 @@ Not planned: Claude Code feature parity for its own sake; any public deployment.
 
 **What it means.** On this machine every interaction but one is inside the budget already; the exception is the one that matters most while working: **typing while the open card streams**. The chat re-renders its whole 300-item transcript (react-markdown for each message) on every token, so the main thread is busy more than half the time and a key waits for it. On a slower laptop (the VU one) the same work is two to four times longer, so the margins elsewhere are thinner than they look here. The traffic grows with reply length and card count, which this run's short replies and 20 cards understate.
 
-**Found on the way** (not speed, recorded for later): when the app stops a card's session (`q.close()`, a worktree removal, a restart), the CLI's MCP servers (started through `npx` / `cmd`) outlive it on Windows. They keep the card's worktree as their working folder, so the folder can't be deleted (*EPERM*), and they pile up: the machine had dozens of orphaned `mcp-server-trello` processes going back to 9/28. The walk stops its card's session before restarting the server and retries the removal; it doesn't fix the cause.
+**Found on the way** (not speed, recorded for later; §98 corrects the cause): when the app stops a card's session (`q.close()`, a worktree removal, a restart), the CLI's MCP servers (started through `npx` / `cmd`) outlive it on Windows. They keep the card's worktree as their working folder, so the folder can't be deleted (*EPERM*), and they pile up: the machine had dozens of orphaned `mcp-server-trello` processes going back to 9/28. The walk stops its card's session before restarting the server and retries the removal; it doesn't fix the cause.
 
 **Verified:** `pnpm typecheck`; `walk-perf.cjs` end to end three times (22 checks pass; the numbers above; it fails on the open-card typing budget, as it should until that is fixed).
 
@@ -2308,3 +2308,30 @@ Everything else held: key → paint 5 / 9 / 10 ms (p95: idle, others streaming, 
 **Still open, measured:** the history index (`HistoryIndex`) refreshes 1.5 s after any `.jsonl` write, the app's own streaming sessions included: `listSessions(300)` takes ~120 ms here (mostly async; the event loop stalls 11 to 13 ms), and then every page gets the whole sessions list (46 KB). That is one per 1.5 s while anything streams. Next.
 
 **Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (351: the fan-out's windows, clears, mid-reply opens, a page moving between sessions, renames; the store's write-through cache; the transcript merge's tails, races and uuid reuse). `walk-perf.cjs` (24, all within budget), `walk-card.cjs` 59/59 light and dark, `walk-hub.cjs` 29/29 (real Haiku: the plan and replies streamed, y, the question form, Esc, reopen, restart and resume).
+
+## 98. Starting sessions: the CLI starts while you type, worktrees in parallel, no history refresh while a session streams; prewarm tried and dropped
+
+2026-10-06. The third step of the speed push (§94): the numbers left over after §96 and §97 are the starts (new card → first text 5 to 7 s, restart → first text 1.6 to 2.6 s) and one hot path §97 found (the history index refreshing while a session streams).
+
+**What changed.**
+- **A card opened while its session isn't running starts it** (`SessionManager.warm`, from `session.open`): after a server restart, or once a session has ended, opening the card resumes its session in the background, so the CLI's start (0.5 to 0.8 s) happens while you type and Enter goes straight in. Only for cards the app runs, not done, with their folder there; never for other sessions (opening a terminal's session must not resume it). A send joins a start in progress. At most two such sessions with no message yet run at once (`WARM_MAX`): opening a third stops the oldest, if it has been up 30 s (`WARM_SETTLE_MS`, so its MCP servers have finished starting). Measured in `walk-hub`: after the restart the message went in "in 0 ms" (not "resumed") and the first text came 0.7 s later.
+- **Worktrees are made in parallel** (`makeWorktrees`): each repo's `git worktree add` at once; if one fails, the ones made are taken back as before. Ctrl+Enter → the card open: 222 to 241 ms → **137 to 145 ms** for two repos.
+- **No history refresh for the app's own sessions while they run** (`HistoryIndex`, `ownerOfFile`): every `.jsonl` write scheduled `listSessions(300)` (~120 ms here) and then sent every page the whole sessions list (46 KB), once per 1.5 s for as long as anything streamed, the app's own sessions included. Writes to a session the app runs now (its own file, or its subagents') don't refresh; it already knows their state, and retiring a session refreshes once. Writes from terminals still do.
+- **Server log:** `send KEY: CLI ready after N ms` (the CLI's first `init`; *started when the card was opened* when the card started it), so a start splits into the CLI's share and the model's.
+
+**Tried and dropped: prewarm.** The SDK's alpha `prewarm()` / `claim()` (0.3.283) parks a started CLI to claim later. A spike against cold `query()` on Haiku in a demo repo, two runs each: init 737 to 763 ms claimed vs 708 to 798 ms cold, first text 1.5 to 1.6 s either way. The claim still waits for the per-folder start (CLAUDE.md, git context, session registration, the user's MCP servers), which is most of it. It also can't resume (no `resume` in a claim, so no help after a restart), can't take a fixed session id (cards link theirs up front), and fixes hooks and `canUseTool` at prewarm. Not worth building on.
+
+**Where the start time goes now.** New card → first text: worktrees ~140 ms, the CLI ready at ~0.8 s, then the model planning with the packet (4 to 6 s on Haiku today). Restart → first text: 1.1 to 2.0 s in the walk, which types its message at once; a person typing for a second or two finds the CLI ready, and waits only for the model.
+
+**Correction to §95.** Stopping a session through the SDK (`q.close()`) normally takes its MCP servers with it: a spike stopped a session both ways (`close()`, and ending its input) and none of its 8 MCP processes outlived it. The orphans come from killing the server's process tree (`taskkill /F`, `Stop-Process`: the walks' restarts, and the way the owner's server has been restarted), and once after a removal soon after a resume. `walk-perf` now stops what its sessions left running (MCP processes it started whose parent is gone) before removing the worktree.
+
+**After** (`walk-perf.cjs`, two runs):
+
+| | Before (§95) | After |
+|---|---|---|
+| Ctrl+Enter → the card open (2 repos) | 239 to 241 ms | **137 to 145 ms** |
+| Server restart → next message's first text | 1.6 to 2.6 s | **1.1 to 2.0 s** (resume 1 ms; the CLI already starting) |
+| A real reply's traffic | 12 KB/s incl. a 46 KB `sessions` list | **4.4 KB/s**, no `sessions` list |
+| New card → first text | 6.3 s | 5.3 to 6.9 s (the model; the CLI ready at 0.8 s) |
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (352: `ownerOfFile`; the worktree tests in parallel, the rollback included). `walk-perf.cjs` 24/24 within budget; `walk-card.cjs` 59/59 light and dark; `walk-hub.cjs` 29/29 (the restart, then the card opened and its session resumed before the message).

@@ -192,32 +192,32 @@ function git(cwd: string, args: string[]): Promise<string> {
  * can't be made, the ones already made are removed with their branches, so nothing is left half done.
  */
 export async function makeWorktrees(repos: string[], home: string, key: string, branch: string, onExisting = false): Promise<{ folders: CardFolder[]; skipped: string[] }> {
-  const folders: CardFolder[] = [];
-  const made: string[] = [];
-  const skipped: string[] = [];
-  try {
-    for (const repo of repos) {
-      const top = await git(repo, ['rev-parse', '--show-toplevel']).catch(() => '');
-      if (!top || !samePath(top, repo)) {
-        if (samePath(repo, home)) throw new Error(`${repoName(repo)} isn’t a git repo, so it can’t have a worktree.`);
-        skipped.push(repo);
-        continue;
-      }
-      const dir = worktreeFor(repo, key);
-      if (existsSync(dir)) throw new Error(`${dir} already exists, so the worktree for ${repoName(repo)} can’t go there.`);
-      const has = onExisting && Boolean(await git(repo, ['branch', '--list', branch]).catch(() => ''));
-      await git(repo, ['worktree', 'add', dir, ...(has ? [branch] : ['-b', branch])]).catch((e: Error) => { throw new Error(`Couldn't make a worktree for ${repoName(repo)}: ${e.message}`); });
-      folders.push({ repo, dir });
-      if (!has) made.push(repo);
+  // Every repo at once (§98): they are separate git repos, so nothing is shared but the wait.
+  const one = async (repo: string): Promise<{ repo: string; dir?: string; made?: boolean }> => {
+    const top = await git(repo, ['rev-parse', '--show-toplevel']).catch(() => '');
+    if (!top || !samePath(top, repo)) {
+      if (samePath(repo, home)) throw new Error(`${repoName(repo)} isn’t a git repo, so it can’t have a worktree.`);
+      return { repo };
     }
-  } catch (e) {
-    for (const f of folders) {
+    const dir = worktreeFor(repo, key);
+    if (existsSync(dir)) throw new Error(`${dir} already exists, so the worktree for ${repoName(repo)} can’t go there.`);
+    const has = onExisting && Boolean(await git(repo, ['branch', '--list', branch]).catch(() => ''));
+    await git(repo, ['worktree', 'add', dir, ...(has ? [branch] : ['-b', branch])]).catch((e: Error) => { throw new Error(`Couldn't make a worktree for ${repoName(repo)}: ${e.message}`); });
+    return { repo, dir, made: !has };
+  };
+  const results = await Promise.allSettled(repos.map(one));
+  const done = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+  const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+  if (failed) {
+    // One failed: undo the others, and say the first failure in the repos' order.
+    for (const f of done) {
+      if (!f.dir) continue;
       await git(f.repo, ['worktree', 'remove', '--force', f.dir]).catch(() => {});
-      if (made.includes(f.repo)) await git(f.repo, ['branch', '-D', branch]).catch(() => {});
+      if (f.made) await git(f.repo, ['branch', '-D', branch]).catch(() => {});
     }
-    throw e;
+    throw failed.reason;
   }
-  return { folders, skipped };
+  return { folders: done.flatMap((f) => (f.dir ? [{ repo: f.repo, dir: f.dir }] : [])), skipped: done.filter((f) => !f.dir).map((f) => f.repo) };
 }
 
 /** Delete a folder, trying again for a few seconds while Windows still has it open. */

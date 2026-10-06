@@ -69,6 +69,16 @@ function stopServer() {
   server = null;
 }
 const logText = () => { try { return fs.readFileSync(LOG, 'utf8'); } catch { return ''; } };
+/**
+ * MCP servers this walk's sessions started and left behind (their parent gone): a killed server tree
+ * leaves them, and they hold the card's worktree open so it can't be deleted (§95, §98).
+ */
+const WALK_START = new Date();
+function killOrphans() {
+  const ps = `$ids = (Get-CimInstance Win32_Process).ProcessId; Get-CimInstance Win32_Process | Where-Object { $_.CreationDate -gt [datetime]'${WALK_START.toISOString()}' -and $_.CommandLine -match 'mcp' -and -not ($ids -contains $_.ParentProcessId) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }`;
+  const out = spawnSync('powershell', ['-NoProfile', '-Command', ps], { encoding: 'utf8', windowsHide: true }).stdout.trim();
+  if (out) console.log(`     (stopped MCP servers left running by the walk's sessions: ${out.split(/\s+/).join(' ')})`);
+}
 
 // ---- In the page: byte counts, long tasks, frames, and key → on-screen timers ----
 const INSTRUMENT = () => {
@@ -322,7 +332,9 @@ async function wsWindow(page, fn) {
     await sleep(500);
     await page.locator('#cp-title').fill('Perf walk: a note');
     await page.locator('#cp-note').fill('This is a quick test. Plan: create NOTE.md containing the one line "Fast." Present that plan with ExitPlanMode straight away, without reading anything first. Once approved, only write the file: run no commands, and don’t commit.');
-    await page.locator('#cp-msg').fill('Plan CARD-1.');
+    // A first message no other session has, so Ctrl+K finds this one (walk-hub's cards are all "Plan CARD-1.").
+    const RUN = `perf${Date.now().toString(36)}`;
+    await page.locator('#cp-msg').fill(`Plan CARD-1 (${RUN}).`);
     await page.locator('#cp-title').focus();
     await page.screenshot({ path: path.join(OUT, '04-new-card.png') });
     await page.evaluate(() => { window.__partialAt = undefined; window.__t0 = undefined; const on = (e) => { if (e.key === 'Enter' && e.ctrlKey) { window.__t0 = e.timeStamp; window.removeEventListener('keydown', on, true); } }; window.addEventListener('keydown', on, true); clearInterval(window.__pw); window.__pw = setInterval(() => { if (window.__partialAt === undefined && document.querySelector('[data-partial]')) window.__partialAt = performance.now(); }, 10); });
@@ -331,7 +343,8 @@ async function wsWindow(page, fn) {
     await page.screenshot({ path: path.join(OUT, '05-new-card-open.png') });
     const firstText = await until(() => page.evaluate(() => window.__partialAt !== undefined), 120000, 100);
     const newFirst = firstText ? await page.evaluate(() => window.__partialAt - window.__t0) : null;
-    info('new card → first streamed text', newFirst === null ? '—' : `${Math.round(newFirst)} ms`, '(API-bound; the server log has the CLI start)');
+    const newReady = /send CARD-1: CLI ready after (\d+) ms/.exec(logText())?.[1];
+    info('new card → first streamed text', newFirst === null ? '—' : `${Math.round(newFirst)} ms`, `(the CLI was ready after ${newReady ?? '?'} ms; the rest is the model planning)`);
     const real = await cardByKey(page, 'CARD-1');
     const sid = real?.sessionId;
     const planUp = await until(async () => (await cardByKey(page, 'CARD-1'))?.live?.ask?.kind === 'plan', 180000, 1000);
@@ -389,10 +402,12 @@ async function wsWindow(page, fn) {
     await sleep(200);
     await page.keyboard.press('Control+k');
     await sleep(300);
-    await page.keyboard.type('Plan CARD-1');
+    await page.keyboard.type(RUN);
     await sleep(300);
+    const rows = await page.evaluate(() => [...document.querySelectorAll('[role="listbox"] [role="option"]')].slice(0, 4).map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
     const tPal = await timedKey(page, 'Enter', `() => { const box = document.querySelector('textarea[aria-label="Message to Claude"]'); return Boolean(box && document.body.textContent.includes('PERFWORD')); }`);
     measure('Ctrl+K → a session picked → on screen (warm)', tPal, BUDGET.palette);
+    if (tPal < 0) console.log(`     the palette's first rows: ${rows.join(' || ')}`);
     await page.screenshot({ path: path.join(OUT, '06-palette-pick.png') });
     await page.keyboard.press('Escape');
     await sleep(300);
@@ -403,6 +418,7 @@ async function wsWindow(page, fn) {
     await sleep(2000);
     stopServer();
     await sleep(800);
+    killOrphans();
     check('the server restarts', await startServer());
     await page.waitForFunction(() => document.body.textContent.includes('CARD-1'), null, { timeout: 15000 }).catch(() => {});
     await sleep(1500);
@@ -410,8 +426,10 @@ async function wsWindow(page, fn) {
     for (let i = 0; i < 3; i++) { await page.keyboard.press('Escape'); await sleep(150); }
     await openByKey(page, 'CARD-1');
     check('CARD-1 is open after the restart', /^CARD-1 /.test(await openLabel(page) ?? ''), await openLabel(page) ?? '');
+    const logAt = logText().length;
     const s2 = await sendOnce('Reply with exactly the word: again', 'again');
-    measure('server restart → the next message’s first text', Math.round(s2.partial), BUDGET.restartFirst, `(resume ${s2.into} ms, server first partial ${s2.serverPartial} ms)`);
+    const warmLine = [...logText().slice(logAt - 3000).matchAll(/send CARD-1: CLI ready after (\d+) ms(.*)/g)].at(-1);
+    measure('server restart → the next message’s first text', Math.round(s2.partial), BUDGET.restartFirst, `(resume ${s2.into} ms, server first partial ${s2.serverPartial} ms; CLI ready ${warmLine ? `${warmLine[1]} ms${warmLine[2]}` : '?'})`);
     check('the session is the same after the restart', (await cardByKey(page, 'CARD-1'))?.sessionId === sid);
 
     // A real session from this machine's history, opened cold (the server reads its transcript file): the slowest open there is.
@@ -443,7 +461,7 @@ async function wsWindow(page, fn) {
   fs.writeFileSync(path.join(OUT, 'numbers.json'), JSON.stringify(numbers, null, 2));
   await browser.close();
   stopServer();
-  if (!SKIP_REAL) cleanCard();
+  if (!SKIP_REAL) { await sleep(1000); killOrphans(); await sleep(500); cleanCard(); }
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length} passed, ${failed.length} failed`);
   process.exit(failed.length ? 1 : 0);

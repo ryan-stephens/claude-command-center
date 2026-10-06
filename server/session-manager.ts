@@ -38,6 +38,8 @@ interface LiveSession {
   untitled?: boolean;
   /** Claude's to-do list, as it keeps it. */
   todos: TodoState;
+  /** Its CLI has said init once (it says it again every turn). */
+  ready?: boolean;
   /** As its CLI reports them (init, and status on a mode change). */
   mode?: PermissionMode;
   model?: string;
@@ -59,6 +61,11 @@ export interface CardSession {
   mode?: PermissionMode;
 }
 
+/** Sessions started by opening their card (warm) that no message has reached yet: at most this many run at once. */
+const WARM_MAX = 2;
+/** A warmed session younger than this isn't stopped to make room: its MCP servers may still be starting, and stopping a CLI then can leave them running. */
+const WARM_SETTLE_MS = 30_000;
+
 /** Activity changes on every stream event; clients get at most one update per this many ms. */
 const ACTIVITY_THROTTLE_MS = 150;
 
@@ -78,6 +85,8 @@ export interface SessionEvents {
   todos(id: string, todos: Todo[]): void;
   /** A session's transcript file changed on disk (a terminal, or us). */
   fileChanged(id: string): void;
+  /** A session's CLI said it is ready (its init): for the timing lines (§98). */
+  ready(id: string): void;
 }
 
 export class SessionManager {
@@ -94,6 +103,8 @@ export class SessionManager {
   private models?: ModelInfo[];
   /** A CLI started only to ask for the command list (at most one at a time). */
   private probing = false;
+  /** Started by warm() and not yet sent to, oldest first (each holds a CLI and its MCP servers). */
+  private warmed: { id: string; at: number }[] = [];
   /** Resumes in flight: a second send while the transcript loads must join it, not start another CLI. */
   private starting = new Map<string, Promise<LiveSession>>();
   /** History id → the fork it became, so late sends to the old id follow the fork. */
@@ -111,7 +122,7 @@ export class SessionManager {
     this.events = events;
     this.broker = broker;
     this.dirs = dirs;
-    this.history = new HistoryIndex(() => events.sessionsChanged(), (id) => events.fileChanged(id));
+    this.history = new HistoryIndex(() => events.sessionsChanged(), (id) => events.fileChanged(id), (id) => this.live.has(id));
   }
 
   /** This app runs the session (or just did): its updates stream, and its file writes are ours. */
@@ -180,12 +191,36 @@ export class SessionManager {
   }
 
   /**
+   * Start a session that isn't running, with no message (§98): a card opened after a restart resumes
+   * while you type, so Enter doesn't wait for its CLI to start. A send joins the start in progress.
+   */
+  warm(id: string): void {
+    const target = this.forkedTo.get(id) ?? id;
+    if (this.live.has(target) || this.starting.has(target)) return;
+    const pending = this.resume(target).finally(() => this.starting.delete(target));
+    this.starting.set(target, pending);
+    pending.catch((e: Error) => { this.unwarm(target); console.warn(`warm ${target.slice(0, 8)}: ${e.message}`); });
+    // Opening card after card mustn't leave a CLI running for each: the oldest unused one stops.
+    this.warmed.push({ id: target, at: Date.now() });
+    for (const old of this.warmed.slice(0, -WARM_MAX)) {
+      if (!this.isIdle(old.id) || Date.now() - old.at < WARM_SETTLE_MS) continue; // still starting, or it has work after all
+      this.unwarm(old.id);
+      this.stop(old.id);
+    }
+  }
+
+  private unwarm(id: string): void {
+    this.warmed = this.warmed.filter((w) => w.id !== id);
+  }
+
+  /**
    * Send a turn. A history session is resumed on first send; if a terminal seems to
    * own it, it is forked instead so two writers never share one transcript.
    * Returns the id the turn went to.
    */
   async send(id: string, text: string, images: ImageAttachment[] = []): Promise<string> {
     const target = this.forkedTo.get(id) ?? id;
+    this.unwarm(target); // in use now: never stopped for being idle
     let l = this.live.get(target);
     if (!l) {
       let pending = this.starting.get(target);
@@ -535,6 +570,7 @@ export class SessionManager {
     }
     if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id && msg.session_id !== l.id) this.follow(l, msg.session_id);
     if (msg.type === 'system' && msg.subtype === 'init') {
+      if (!l.ready) { l.ready = true; this.events.ready(l.id); }
       l.mode = msg.permissionMode;
       l.model = msg.model;
       this.emitUpsert(l.id);
@@ -631,6 +667,7 @@ export class SessionManager {
 
   private retire(l: LiveSession): void {
     this.live.delete(l.id);
+    this.unwarm(l.id);
     clearTimeout(l.activityTimer);
     this.events.activity(l.id, idleActivity(Date.now()));
     // A CLI that died mid-approval leaves cards nobody can answer; clear them.

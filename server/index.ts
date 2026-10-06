@@ -88,11 +88,13 @@ const broker = new PermissionBroker(
  * When the last message or answer went into a card's app session (§93), for the timing lines in
  * server.log: send → first partial and first reply, y → the tool ran. Phase C makes them a budget.
  */
-const timings = new Map<string, { key: string; at: number; what: 'send' | 'y'; tool?: string; partial?: boolean; item?: boolean }>();
-function timed(sessionId: string, what: 'partial' | 'item' | 'ran'): void {
+const timings = new Map<string, { key: string; at: number; what: 'send' | 'y' | 'warm'; tool?: string; partial?: boolean; item?: boolean; ready?: boolean }>();
+function timed(sessionId: string, what: 'partial' | 'item' | 'ran' | 'ready'): void {
   const t = timings.get(sessionId);
   if (!t) return;
   const ms = Date.now() - t.at;
+  // The CLI's own start (§98), from the message that started it, or from the card being opened.
+  if (what === 'ready' && t.what !== 'y' && !t.ready) { t.ready = true; console.log(`${new Date().toISOString()} send ${t.key}: CLI ready after ${ms} ms${t.what === 'warm' ? ' (started when the card was opened)' : ''}`); }
   if (t.what === 'send' && what === 'partial' && !t.partial) { t.partial = true; console.log(`${new Date().toISOString()} send ${t.key}: first partial after ${ms} ms`); }
   if (t.what === 'send' && what === 'item' && !t.item) { t.item = true; console.log(`${new Date().toISOString()} send ${t.key}: first reply after ${ms} ms`); }
   if (t.what === 'y' && what === 'ran') { timings.delete(sessionId); console.log(`${new Date().toISOString()} send ${t.key}: y → ${t.tool ?? 'the tool'} ran after ${ms} ms`); }
@@ -278,6 +280,7 @@ const manager: SessionManager = new SessionManager({
   transcript: (id, items) => broadcast({ type: 'session.transcript', id, items }),
   todos: (id, todos) => broadcast({ type: 'session.todos', id, todos }),
   fileChanged: (id) => mirror.changed(id),
+  ready: (id) => timed(id, 'ready'),
 }, broker, store);
 // A card's session starts with its model, the packet and its hooks, whenever it (re)starts (§93).
 manager.setCardSessions((id) => {
@@ -443,6 +446,13 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const seeded = seededTranscripts.get(msg.id);
       if (seeded && !manager.isLive(msg.id)) { send(ws, transcriptFor(msg.id, seeded, msg.have)); partials.watch(ws, msg.id); return; }
       mirror.watch(ws, msg.id);
+      // A card the app runs, opened while its session isn't running (a restart, or it ended): start it
+      // now, so the message you are about to type doesn't wait for the CLI (§98). Not a done card.
+      const card = cards.bySession(msg.id);
+      if (card?.runner === 'app' && card.stage !== 'done' && !CARDS_IN_TERMINAL && !manager.isLive(msg.id) && card.cwd && existsSync(card.cwd)) {
+        timings.set(msg.id, { key: card.key, at: Date.now(), what: 'warm' });
+        manager.warm(msg.id);
+      }
       send(ws, transcriptFor(msg.id, await manager.transcript(msg.id), msg.have));
       // From now on what Claude writes in it comes to this page (and only the session it shows).
       partials.watch(ws, msg.id);

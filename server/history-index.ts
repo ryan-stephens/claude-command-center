@@ -10,6 +10,13 @@ const REFRESH_DEBOUNCE_MS = 1500;
 /** A transcript written this recently by a process we don't own is probably open in a terminal. */
 export const ACTIVE_ELSEWHERE_MS = 2 * 60_000;
 
+/** The session a transcript file under `~/.claude/projects` belongs to: its own (`<project>/<id>.jsonl`) or one of its subagents' (`<project>/<id>/subagents/…`). */
+export function ownerOfFile(file: string): string | null {
+  const parts = file.split(/[\\/]/);
+  const m = /^([0-9a-f-]{36})(\.jsonl)?$/i.exec(parts[1] ?? '');
+  return m && (m[2] ? parts.length === 2 : parts.length > 2) ? m[1] : null;
+}
+
 /** Every Claude Code session on the machine, refreshed when `~/.claude/projects` changes. */
 export class HistoryIndex {
   sessions: SDKSessionInfo[] = [];
@@ -18,11 +25,17 @@ export class HistoryIndex {
   private timer: NodeJS.Timeout | null = null;
   private onChange: () => void;
   private onFile: (sessionId: string) => void;
+  private running: (sessionId: string) => boolean;
 
-  /** `onFile`: a session's own transcript file was written (by us or by a terminal). */
-  constructor(onChange: () => void, onFile: (sessionId: string) => void = () => {}) {
+  /**
+   * `onFile`: a session's own transcript file was written (by us or by a terminal). `running`: the
+   * app runs that session now, so it knows its state already: its writes (every message while it
+   * streams) don't refresh the list (§98). Retiring it refreshes once.
+   */
+  constructor(onChange: () => void, onFile: (sessionId: string) => void = () => {}, running: (sessionId: string) => boolean = () => false) {
     this.onChange = onChange;
     this.onFile = onFile;
+    this.running = running;
   }
 
   async start(): Promise<void> {
@@ -30,9 +43,10 @@ export class HistoryIndex {
     try {
       this.watcher = watch(PROJECTS_DIR, { recursive: true }, (_event, file) => {
         if (!file || !String(file).endsWith('.jsonl')) return;
-        this.scheduleRefresh();
         const id = sessionOfFile(String(file));
         if (id) this.onFile(id);
+        const owner = ownerOfFile(String(file));
+        if (!owner || !this.running(owner)) this.scheduleRefresh();
       });
     } catch (e) {
       console.warn(`history: cannot watch ${PROJECTS_DIR}: ${(e as Error).message}`);
