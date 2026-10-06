@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useState } from 'react';
+import { memo, startTransition, useEffect, useLayoutEffect, useMemo, useState, type ReactElement } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { TranscriptItem } from '../../shared/protocol.ts';
@@ -32,6 +32,29 @@ export function toBlocks(items: TranscriptItem[]): Block[] {
 const STEP_ICON: Record<StepIcon, IconName> = { read: 'read', edit: 'edit', run: 'run', search: 'search', web: 'web', agent: 'agent', plan: 'plan', tool: 'tool' };
 /** Long runs show the last few steps; the rest fold away. */
 const SHOW_LAST = 4;
+/** Blocks drawn at once when a transcript shows; the rest follow in a transition (§99), so a long chat opens in a frame. */
+const FIRST_BLOCKS = 40;
+/** Parsed messages kept (§99), the least recently drawn going first. */
+const MD_KEEP = 600;
+const parsed = new Map<string, ReactElement>();
+
+/**
+ * A message's markdown, parsed once (§99): react-markdown's `Markdown` is a pure function of its
+ * text, so its output is kept by text, and a card opened again (or a chat drawn again) doesn't parse
+ * its messages again. On a slow laptop parsing 300 items' messages was most of a card switch.
+ */
+export function md(text: string): ReactElement {
+  let el = parsed.get(text);
+  if (el) {
+    parsed.delete(text);
+    parsed.set(text, el);
+    return el;
+  }
+  el = Markdown({ children: text, remarkPlugins: [remarkGfm] });
+  parsed.set(text, el);
+  if (parsed.size > MD_KEEP) parsed.delete(parsed.keys().next().value!);
+  return el;
+}
 
 /**
  * The conversation. Memoised (§96): it renders again only when its items change, and each message
@@ -45,18 +68,23 @@ export const Transcript = memo(function Transcript({ items, cwd, expand }: { ite
     return m;
   }, [items]);
   const blocks = useMemo(() => toBlocks(items), [items]);
+  // The newest blocks first; the older ones in a transition that yields to keys (§99). The chat sits at
+  // the bottom, so what arrives a moment later is above the view and the scroll keeps its place.
+  const [whole, setWhole] = useState(false);
+  useEffect(() => { if (!whole && blocks.length > FIRST_BLOCKS) startTransition(() => setWhole(true)); }, [whole, blocks.length]);
+  const shown = whole || blocks.length <= FIRST_BLOCKS ? blocks : blocks.slice(-FIRST_BLOCKS);
   return (
     <>
-      {blocks.map((b) => (b.kind === 'steps'
+      {shown.map((b) => (b.kind === 'steps'
         ? <Steps key={b.key} tools={b.tools} results={results} cwd={cwd} expand={expand} />
         : <Item key={b.item.uuid} it={b.item} />))}
     </>
   );
 });
 
-/** One finished block of a streaming reply: parsed once. */
-const StreamBlock = memo(function StreamBlock({ text }: { text: string }) {
-  return <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>;
+/** One block of a streaming reply: a finished one is parsed once (and kept); the last, still growing, each time. */
+const StreamBlock = memo(function StreamBlock({ text, done }: { text: string; done: boolean }) {
+  return done ? md(text) : <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>;
 });
 
 /**
@@ -69,7 +97,7 @@ export function Streaming({ id, onGrow }: { id: string; onGrow?: () => void }) {
   const blocks = useMemo(() => streamBlocks(text), [text]);
   useLayoutEffect(() => { onGrow?.(); }, [text, onGrow]);
   if (!text) return null;
-  return <div className="md leading-relaxed" aria-live="off" data-partial>{blocks.map((b, i) => <StreamBlock key={i} text={b} />)}</div>;
+  return <div className="md leading-relaxed" aria-live="off" data-partial>{blocks.map((b, i) => <StreamBlock key={i} text={b} done={i < blocks.length - 1} />)}</div>;
 }
 
 const Item = memo(function Item({ it }: { it: Exclude<TranscriptItem, Tool | Result> }) {
@@ -77,7 +105,7 @@ const Item = memo(function Item({ it }: { it: Exclude<TranscriptItem, Tool | Res
     case 'user':
       return <div className="ml-auto max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-acc-soft px-4 py-2.5">{it.text}</div>;
     case 'assistant':
-      return <div className="md leading-relaxed"><Markdown remarkPlugins={[remarkGfm]}>{it.text}</Markdown></div>;
+      return <div className="md leading-relaxed">{md(it.text)}</div>;
     case 'result': {
       const ok = it.subtype === 'success';
       const text = ok ? 'Finished' : it.subtype === 'error_during_execution' ? 'Stopped' : `Ended: ${it.subtype.replaceAll('_', ' ')}`;

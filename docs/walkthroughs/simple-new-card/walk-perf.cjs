@@ -17,6 +17,8 @@ const fs = require('node:fs');
 const PORT = process.env.PORT || '7791';
 const REPORT_ONLY = process.argv.includes('--report');
 const SKIP_REAL = process.argv.includes('--no-real');
+/** --cpu=4: the page's CPU slowed 4× (DevTools throttling), for a slower laptop than this one. */
+const CPU = Number(process.argv.find((a) => a.startsWith('--cpu='))?.slice(6) ?? 1);
 const OUT = path.join(__dirname, 'shots-perf');
 fs.mkdirSync(OUT, { recursive: true });
 const REPO = 'D:/repos/cc-control';
@@ -216,6 +218,7 @@ async function wsWindow(page, fn) {
   const page = await ctx.newPage();
   cdp = await ctx.newCDPSession(page);
   await cdp.send('Performance.enable');
+  if (CPU > 1) { await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU }); console.log(`     (the page's CPU slowed ${CPU}×)`); }
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error' && !/WebSocket|ERR_CONNECTION_REFUSED/.test(m.text())) errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -409,6 +412,16 @@ async function wsWindow(page, fn) {
     measure('Ctrl+K → a session picked → on screen (warm)', tPal, BUDGET.palette);
     if (tPal < 0) console.log(`     the palette's first rows: ${rows.join(' || ')}`);
     await page.screenshot({ path: path.join(OUT, '06-palette-pick.png') });
+    // Typing in the full-screen session's box (a controlled field: each key renders the view).
+    await page.evaluate(() => { window.__typing = []; });
+    const box = page.locator('textarea[aria-label="Message to Claude"]');
+    await box.focus();
+    await page.keyboard.type('the quick brown fox jumps over the lazy dog', { delay: 45 });
+    await sleep(200);
+    const sv = await page.evaluate(() => window.__typing);
+    await box.fill('');
+    await box.blur();
+    measure('a key in the full-screen session’s box → painted, p95', r1(pct(sv, 0.95)), BUDGET.keyPaint, `(median ${r1(median(sv))}, max ${r1(max(sv))}, ${sv.length} keys)`);
     await page.keyboard.press('Escape');
     await sleep(300);
 

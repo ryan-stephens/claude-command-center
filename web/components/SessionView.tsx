@@ -93,7 +93,7 @@ export function SessionView() {
           >
             <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-5 md:px-6">
               {items.length === 0 && !writing && <p className="text-faint">{loaded ? 'No messages yet. Tell Claude what you want below.' : 'Loading the conversation…'}</p>}
-              <Transcript items={items} cwd={session?.cwd} expand={expandTools} />
+              <Transcript key={id} items={items} cwd={session?.cwd} expand={expandTools} />
               <Streaming id={id} onGrow={toBottom} />
               {permission && <ApprovalCard p={permission} cwd={session?.cwd} />}
             </div>

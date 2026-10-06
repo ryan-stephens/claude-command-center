@@ -145,3 +145,8 @@ button:disabled, [role="option"][aria-disabled="true"] { cursor: default; }
 .md th, .md td { border: 1px solid var(--c-line); padding: 0.25rem 0.55rem; }
 .md blockquote { border-left: 3px solid var(--c-line); padding-left: 0.8rem; color: var(--c-sub); }
 }
+
+/* A long chat (§99): the blocks off screen skip layout and paint, so the text being written doesn't
+   relayout 300 messages each frame. Each keeps the size it last had (auto) once drawn. */
+[data-chat] > div > *, #transcript > div > * { content-visibility: auto; contain-intrinsic-size: auto 72px; }
+[data-chat] > div > [data-partial], #transcript > div > [data-partial] { content-visibility: visible; }

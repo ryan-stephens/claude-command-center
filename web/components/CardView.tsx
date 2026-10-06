@@ -244,11 +244,11 @@ function Chat({ card }: { card: Card }) {
         {!card.sessionId && !booting(card) && <p className="text-sm text-faint">The chat shows once the session has started and linked to this card.</p>}
         {items && (mark
           ? <>
-            <Transcript items={before!} cwd={card.cwd} expand={false} />
+            <Transcript key={`${card.id}-a`} items={before!} cwd={card.cwd} expand={false} />
             <div className="flex items-center gap-3 py-1 text-[12.5px] text-faint" role="separator" aria-label="New since you last looked"><span className="grow border-t border-line" />new since you last looked<span className="grow border-t border-line" /></div>
-            <Transcript items={since!} cwd={card.cwd} expand={false} />
+            <Transcript key={`${card.id}-b`} items={since!} cwd={card.cwd} expand={false} />
           </>
-          : <Transcript items={items} cwd={card.cwd} expand={false} />)}
+          : <Transcript key={card.id} items={items} cwd={card.cwd} expand={false} />)}
         {card.sessionId && <Streaming id={card.sessionId} onGrow={toBottom} />}
         {card.sessionId && items && !items.length && !writing && <p className="text-sm text-faint">Nothing written yet.</p>}
         {card.live && !askOf(card) && !booting(card) && (

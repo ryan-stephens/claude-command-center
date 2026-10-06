@@ -29,6 +29,15 @@ let greeted = false;
  */
 const pendingPartials = new Map<string, string>();
 let partialTimer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * While a key was pressed this recently, streaming text waits longer between draws (§99): the frames
+ * go to what you type, and the text catches up when you pause. On a slow laptop drawing the text
+ * every frame made a key wait for it.
+ */
+const TYPING_MS = 200;
+const TYPING_DRAW_MS = 120;
+let lastKeyAt = -Infinity;
+if (typeof window !== 'undefined') window.addEventListener('keydown', () => { lastKeyAt = performance.now(); }, true);
 function flushPartials(): void {
   partialTimer = undefined;
   if (!pendingPartials.size) return;
@@ -48,11 +57,11 @@ function queuePartial(id: string, text: string, from?: number): void {
     return;
   }
   pendingPartials.set(id, text);
-  // The next frame; a hidden tab gets no frames, so a timer stands in.
-  if (partialTimer === undefined) {
-    partialTimer = setTimeout(flushPartials, 50);
-    requestAnimationFrame(() => { if (partialTimer !== undefined) { clearTimeout(partialTimer); flushPartials(); } });
-  }
+  if (partialTimer !== undefined) return;
+  // Typing: a few draws a second. Otherwise the next frame; a hidden tab gets no frames, so a timer stands in.
+  if (performance.now() - lastKeyAt < TYPING_MS) { partialTimer = setTimeout(flushPartials, TYPING_DRAW_MS); return; }
+  partialTimer = setTimeout(flushPartials, 50);
+  requestAnimationFrame(() => { if (partialTimer !== undefined) { clearTimeout(partialTimer); flushPartials(); } });
 }
 
 /** Open a session's transcript, saying how much of it the page holds, so only the rest comes (§97). */

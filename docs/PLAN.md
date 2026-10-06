@@ -2335,3 +2335,30 @@ Everything else held: key → paint 5 / 9 / 10 ms (p95: idle, others streaming, 
 | New card → first text | 6.3 s | 5.3 to 6.9 s (the model; the CLI ready at 0.8 s) |
 
 **Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (352: `ownerOfFile`; the worktree tests in parallel, the rollback included). `walk-perf.cjs` 24/24 within budget; `walk-card.cjs` 59/59 light and dark; `walk-hub.cjs` 29/29 (the restart, then the card opened and its session resumed before the message).
+
+## 99. A slower laptop: the chat opens in pieces, parses each message once, skips what is off screen, and gives frames to typing
+
+2026-10-06. After §96 to §98 every budget held on this laptop, but the VU laptop is slower. `walk-perf.cjs --cpu=4` (DevTools CPU throttling, the page 4× slower) showed what would break there: a warm card switch 193 ms (budget 100), a key while the open card streams 22 to 25 ms (16), the main thread 68 to 70 % busy while it streams.
+
+**What changed.**
+- **Each message's markdown is parsed once** (`md()` in `Transcript.tsx`): react-markdown's `Markdown` is a pure function of its text, so its output is kept by text (the 600 most recently drawn). A card opened again, or a chat drawn again, no longer parses its messages again; finished blocks of a streaming reply use it too.
+- **A long chat opens in two steps:** the newest 40 blocks at once, the rest in a React transition (`startTransition`), which yields to keys. The chat sits at the bottom, so the older part arrives above the view and the scroll keeps its place. Each card's transcript is keyed by card (and the full-screen one by session), so a switch starts afresh.
+- **Blocks off screen skip layout and paint** (`content-visibility: auto` with a remembered size on the chat's blocks, `web/styles.css`): the text being written no longer relays out 300 messages per frame.
+- **Typing comes first** (`web/ws.ts`): within 200 ms of a key, streaming text is drawn every 120 ms instead of every frame; it catches up when you pause. Tried and dropped: `useDeferredValue` on the streaming text (each update rendered twice: the main thread went from 68 to 81 %).
+- `walk-perf.cjs`: `--cpu=N`; a key in the full-screen session's box (a controlled field, so each key renders the view) is measured too; its real card's first message is unique per run, so Ctrl+K can't pick an older session with the same title.
+
+**After:**
+
+| | 1× before | 1× after | 4× before | 4× after |
+|---|---|---|---|---|
+| Cold card switch, 300 items (median) | 41 ms | **22 ms** | 222 ms | **63 ms** |
+| Warm card switch (median) | 34 ms | **10 ms** | 193 ms | **41 to 48 ms** |
+| Longest task while switching | none | none | 270 ms | **105 ms** (the first, cold) |
+| A key → painted, the open card streaming (p95) | 9 to 10 ms | 9 ms | 22 to 25 ms | **17 ms** |
+| Main thread, the open card streaming | 18 to 20 % | **12 %** | 68 to 70 % | **41 %** |
+| A key → painted, nothing streaming / others streaming (p95) | 5 / 9 ms | 5 / 9 ms | 12 to 17 / 13 to 14 ms | 9 / 13 ms |
+| A key in the full-screen session's box (p95) | — | 4 ms | — | — |
+
+At 4× one number stays over: a key while the open card streams, 17 ms against 16. Even with nothing streaming a key costs 7 to 9 ms there (the field's own paint), so the margin left is small. At 1× it is 9 ms.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (352). `walk-perf.cjs` 25/25 at 1×; at 4× everything but that one key number. `walk-card.cjs` 59/59 light and dark. `walk-hub.cjs` 29/29; one earlier run failed *the plan streamed in first* because Haiku went straight to the plan tool without writing any text (the server log has no first partial for that turn), the next run passed.
