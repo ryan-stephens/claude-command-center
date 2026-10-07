@@ -2615,3 +2615,38 @@ Also: `walk-card.cjs` 59/59 light and dark, `walk-board-try.cjs` 19/19, `walk-hu
 **To check at VU:** `git pull`, restart (ask first; this is server code, and Try it runs the script from the repo). Then Try it on the same card. The first step should say it removed the half-made copy (or, if both services needed the packages, one clones and the other waits), then the UI should start. If Nx still names `node_modules.cc-control-tmp`, its daemon kept the old file list: run `npx nx reset` in that worktree once, then Try it again.
 
 **Open:** the clone of the real UI took 162 s (about 630 files a second; here it is 3,000 to 7,000). That is likely the laptop's antivirus checking each new link. It happens in the background when a card is made, so it is mostly hidden; a card made by hand, or before §111, pays it at Try it. A parallel clone (async links, several at a time) might help, but it needs measuring at VU first. An API service whose steps run in the UI worktree also waits for the UI's clone, though it probably doesn't need the packages.
+
+## 113. Try it on a stack: the UI heads the services as the one that always starts; a compiling dev server is up when its build is done
+
+2026-10-07. The owner, from the VU laptop: on the Try it panel, a repo that always starts and can't be ticked or unticked (the UI, the card's home repo) should be shown at the top, with why its box is checked and can't be changed. And the UI showed as up before its server had started: it didn't wait for the *compiled successfully* message.
+
+**Cause of the early "up".** A step with no `wait:` was taken to be up when it printed a localhost URL, when its port opened, or after 20 s of quiet (`server/recipes.ts`). A webpack or Nx dev server does the first two at once, then compiles for a minute or more: the app showed as up, with Open, while it still served nothing useful.
+
+**What changed.**
+- **The UI comes first** in the Try it panel's services (`StackTry` in `web/components/CardView.tsx`), above the APIs. Its box is a greyed tick, marked for screen readers as checked and not changeable (`aria-disabled`), not the old `●` that looked like a disabled radio button. Under its name: *Always starts: the UI is the app you try. Tick the APIs below to run them here too; the rest are the shared ‹env› ones.* An API whose repo isn't in the card or its lane says so under its name, so a box that can't be ticked has a reason too. `Space` on the UI row flashes why, where it used to do nothing; the `?` row says the UI comes first and always starts.
+- **A compiling dev server is up when its build is done** (`compiles`, `buildLine` in `server/recipes.ts`):
+  - A step is held until its build finishes when its command is `nx run …:serve`, `nx serve`, `ng serve`, `webpack serve`, `webpack-dev-server`, `react-scripts start` or `vue-cli-service serve`, or when an app-like step's output says a build started (`[webpack-dev-server]`, *Compiling*, *Building*, *Generating browser application bundles*, *Starting module federation*).
+  - Its printed address, its open port and going quiet don't make it up. It is up on a done line: *compiled successfully*, *compiled with warnings*, *bundle generation complete*, *webpack compiled*, *server ready at*, *all remotes started*. The address it printed earlier is the app's.
+  - A failed build (*Failed to compile*, *compiled with N errors*, *ERROR in*, *Build failed*) shows on the service as *didn't compile*, in red, and stays starting: a saved fix builds again and the done line makes it up.
+  - One that never prints a done line is taken to be up after 15 minutes, and says so. An explicit `wait:` still decides on its own.
+  - Output lines are read before their URL (`capture`), so a line that both starts a build and prints the address holds the step.
+- **The page shows it:** while it builds, the service says *compiling*, and the step row says *compiling…*, with no Open. README's Try it row says so.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (389). New tests:
+- `compiles` on the owner's real line (`node_modules\.bin\nx.cmd run shell:serve:development --proxyConfig=…`) and the others, but not `vite`, `npm run dev`, `nx run app:build` or `dotnet run`.
+- `buildLine` on webpack, Angular, esbuild and Nx module-federation lines.
+- A stand-in that serves and prints its address at once, fails, then compiles: it isn't up at its address and open port, it shows *compiling…* and then *didn't compile*, and it is up on the compiled line at the address it printed.
+- One known only by its `[webpack-dev-server]` line waits too.
+- One that never says it compiled is up after the cap, with its note.
+
+**New `walk-try-compile.cjs` (15, light and dark)** on an isolated server, with a stand-in stack whose UI is `standins/ui-compile.cjs` (it serves at once, says *Failed to compile.* at 3 s and *compiled successfully* at 6 s):
+- The UI row is first, says *Always starts* and why, names the shared environment, and has a checked box that can't be changed.
+- `Space` on it flashes why and changes nothing.
+- After `t`, the UI serves and has printed its address but is still starting, and the panel says *compiling*, with no Open; then *didn't compile*; then up with Open, about 6 s in.
+- `t` stops it, the `?` row is there, and there are no page errors.
+
+Screenshots looked at: the first layout put an *always starts* pill beside the name, which pushed the status out of the narrow panel; it is now the caption's first words. `walk-card.cjs` 59/59 light and dark, `walk-board-try.cjs` 19/19 light and dark, `walk-deps.cjs` 20/20, `walk-hub.cjs` 29/29, `walk-perf.cjs` 25/25.
+
+**To check at VU:** `git pull`, restart (ask first; this is server code), then Try it on the card. The UI's row should be first and say *Always starts*. Its status should say *compiling* until Nx prints its done line, and only then be up with Open. If it never becomes up, paste the last lines Nx prints once the app is ready: its wording may need adding to `buildLine`, or set `wait:"<that text>"` on the UI's step in the stack setup (`e`).
+
+**Open:** the done and failed lines are a list of known wordings; a dev server that says something else waits out the 15-minute cap (or takes a `wait:`). A rebuild after the app is up (a save) doesn't take it back to *compiling*.

@@ -39,7 +39,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, or its services, with their output), Verify (is a field in the set, in Dev and UAT; a record’s values; the team’s tools), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
       ['j / k  ·  Space  ·  f (Changes panel)', 'The next / previous file  ·  open or close its diff under it (several can be open; a click on a file does the same)  ·  pop every repo’s changes out full width, on the chosen file (Pop out in the panel’s title)'],
       ['z  ·  Z (Changes panel, and popped out)', 'Fold or unfold the chosen file’s repo (its files go under the header, which keeps the count)  ·  fold every repo, or unfold them all. A header click does the same with the mouse; a second click on the chosen file folds its diff'],
-      ['j / k  ·  Space  ·  r  ·  q (Try it panel, a lane with a stack)', 'The environment row and each service  ·  change the environment, or tick a service to run  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
+      ['j / k  ·  Space  ·  r  ·  q (Try it panel, a lane with a stack)', 'The environment row and each service (the UI first: it always starts)  ·  change the environment, or tick an API to run here too  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
       ['e  ·  Shift+P (Verify panel)', 'Dev ↔ UAT for the lookup and the tools’ pages  ·  Prod for the lookup, after a second press (it reads production; nothing is written). The field check always shows Dev and UAT side by side, and where they differ'],
       ['i  ·  l  ·  Enter (Verify panel)', 'The field ids box (filled from ids the ticket and your notes name; Ctrl+Enter checks from there)  ·  the record id box (Enter looks it up)  ·  check the ids in every environment, and look the record up when one is named'],
       ['r  ·  a (Verify panel)', 'Read the current field set again (kept ten minutes otherwise)  ·  Advanced fetch on the lookup, slower (off by default)'],
@@ -421,7 +421,8 @@ export function toggleTryRow(id: string): void {
     return;
   }
   const sv = tryRows.services[at - tryRows.choose.length];
-  if (!sv || sv.fixed) return;
+  if (!sv) return;
+  if (sv.fixed) { flash('The UI always starts: it is the app you try. Space ticks the APIs under it'); return; }
   if (!sv.found) { flash(`${sv.id} isn’t in this card or its lane`); return; }
   const apis = pick.apis.includes(sv.id) ? pick.apis.filter((a) => a !== sv.id) : [...pick.apis, sv.id];
   rememberPick(id, { ...pick, apis });

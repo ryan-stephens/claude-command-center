@@ -151,6 +151,26 @@ export function appLike(cmd: string, last: boolean): boolean {
   return last || (/\b(dev|start|serve|preview)\b|\bup\b|^node\s+\S+\.m?js\b/.test(cmd) && !/\bup\s+-d\b|--detach/.test(cmd));
 }
 
+/**
+ * §113: a dev server that compiles before it serves (Nx, Angular, webpack, Create React App, Vue
+ * CLI). It prints its address and opens its port long before the app is built, so the step is up
+ * only when the build says it is done.
+ */
+export function compiles(cmd: string): boolean {
+  return /\bnx(\.cmd)?\s+(run\s+\S+:serve\b|serve\b)|\bng(\.cmd)?\s+serve\b|\bwebpack(\.cmd)?\s+(serve|s)\b|\bwebpack-dev-server\b|\breact-scripts(\.cmd)?\s+start\b|\bvue-cli-service(\.cmd)?\s+serve\b/i.test(cmd);
+}
+
+/** What a dev server's line says about its build: started, done, or failed (a later save builds again). */
+export function buildLine(line: string): 'start' | 'done' | 'failed' | undefined {
+  if (/failed to compile|compiled with \d+ errors?|with \d+ errors? in\b|\bbuild failed\b|bundle generation failed|^\s*ERROR in /i.test(line)) return 'failed';
+  if (/compiled successfully|compiled with (\d+ )?warnings?|bundle generation complete|\bwebpack compiled\b|all remotes started|server ready at/i.test(line)) return 'done';
+  if (/\bcompiling\b|\bbuilding\b|generating browser application bundles|starting module federation|\[webpack-dev-server\]/i.test(line)) return 'start';
+  return undefined;
+}
+
+/** A compiling dev server that never says its build is done is taken to be up after this long. */
+const BUILD_WAIT_MS = 15 * 60_000;
+
 /** How long a wait:http: step may go without an answer below 500 before the run fails. */
 const HTTP_WAIT_MS = 10 * 60_000;
 
@@ -279,16 +299,18 @@ export class RunService {
   private lines?: (key: string, lines: LogLine[], reset: boolean) => void;
   private env: NodeJS.ProcessEnv;
   private httpWaitMs: number;
+  private buildWaitMs: number;
 
   /**
    * `httpWaitMs`: how long a wait:http: step may wait (tests shorten it). `lines`: the run's output as
    * it comes, for whoever follows it on the page (§84): `reset` says the run started afresh, so the
    * lines are the whole log; otherwise they are the ones since the last call.
    */
-  constructor(changed: () => void, env: NodeJS.ProcessEnv, opts: { httpWaitMs?: number; lines?: (key: string, lines: LogLine[], reset: boolean) => void } = {}) {
+  constructor(changed: () => void, env: NodeJS.ProcessEnv, opts: { httpWaitMs?: number; buildWaitMs?: number; lines?: (key: string, lines: LogLine[], reset: boolean) => void } = {}) {
     this.changed = changed;
     this.lines = opts.lines;
     this.httpWaitMs = opts.httpWaitMs ?? HTTP_WAIT_MS;
+    this.buildWaitMs = opts.buildWaitMs ?? BUILD_WAIT_MS;
     // Plain output, no dev server opening a browser of its own (o opens it), and no tokens from the settings file.
     this.env = { ...withoutSecrets(env), FORCE_COLOR: '0', NO_COLOR: '1', BROWSER: 'none', PYTHONUNBUFFERED: '1' };
   }
@@ -417,8 +439,22 @@ export class RunService {
     live.procs.push(child);
     let moved = false;
     const next = () => { if (!moved) { moved = true; this.step(live, i + 1); } };
+    // §113: a compiling dev server is up when its build is done, not when it first prints its address.
+    let building = !spec.wait && compiles(spec.cmd);
+    let built = false;
+    let builtUrl: string | undefined;
+    let cap: NodeJS.Timeout | null = null;
+    const startBuild = () => {
+      building = true;
+      if (!cap) cap = setTimeout(() => { if (built || moved || step.state !== 'go') return; built = true; step.waitNote = 'no build-finished line seen; taken to be up'; up(builtUrl); }, this.buildWaitMs);
+      if (!step.waitNote) { step.waitNote = 'compiling…'; this.soon(); }
+    };
+    if (building) startBuild();
     const up = (url?: string) => {
       if (moved || step.state !== 'go') return;
+      if (building && !built) { builtUrl = url ?? builtUrl; return; }
+      if (cap) clearTimeout(cap);
+      if (step.waitNote === 'compiling…') delete step.waitNote;
       settle();
       step.state = 'up';
       // Only the last step is the app you open: an API before it prints its own address. What the
@@ -471,10 +507,16 @@ export class RunService {
     const quiet = !wait && appLike(spec.cmd, last) ? setTimeout(() => up(), QUIET_UP_MS) : null;
     const settle = () => { if (poll) clearInterval(poll); if (quiet) clearTimeout(quiet); if (ask) clearTimeout(ask); };
     const text = wait && 'text' in wait ? wait.text.toLowerCase() : undefined;
-    this.capture(live, i, child, (url) => { if (step.state === 'go' && !wait) { settle(); up(url); } }, (line) => {
+    this.capture(live, i, child, (url) => { if (step.state === 'go' && !wait) { if (!building || built) settle(); up(url); } }, (line) => {
       if (text && step.state === 'go' && line.toLowerCase().includes(text)) { settle(); up(findUrl(line)); }
+      if (wait || step.state !== 'go' || built) return;
+      const b = buildLine(line);
+      if (b === 'start' && appLike(spec.cmd, last)) startBuild();
+      else if (b === 'failed' && building) { step.waitNote = 'didn’t compile (a saved fix builds again)'; this.soon(); }
+      else if (b === 'done' && building) { built = true; delete step.waitNote; up(builtUrl ?? findUrl(line)); }
     });
     child.on('exit', (code) => {
+      if (cap) clearTimeout(cap);
       settle();
       step.code = code;
       if (live.stopped) { step.state = 'off'; this.soon(); return; }
@@ -512,9 +554,10 @@ export class RunService {
       if (lines.length > KEEP) lines.splice(0, lines.length - KEEP);
       step.tail = lines.slice(-SHOW);
       this.logLine(live, i, line);
+      // The line first: a dev server's "[webpack-dev-server] … at http://…" starts a build (§113) before its URL counts.
+      onLine?.(line);
       const url = findUrl(line);
       if (url) onUrl(url);
-      onLine?.(line);
     };
     const reader = () => {
       let rest = '';

@@ -6,7 +6,7 @@ import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { cardRecipe, findUrl, parseStep, parseSteps, portOf, recipeLabel, recipeText, stepLabel, waitLabel, wsRecipeKey } from '../shared/recipes.ts';
-import { appLike, cardRecipeOf, detectRecipe, expandVars, forwarded, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, urlFromScript, workspaceRecipeOf } from './recipes.ts';
+import { appLike, buildLine, cardRecipeOf, compiles, detectRecipe, expandVars, forwarded, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, urlFromScript, workspaceRecipeOf } from './recipes.ts';
 import { Store } from './store.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'cc-recipes-'));
@@ -351,4 +351,61 @@ test('a wait: step is ready only when its text shows, and its URL isn’t the ap
 test('step variables fill in %NAME% from the environment, any case, and leave unknown ones', () => {
   assert.deepEqual(expandVars({ KUBECONFIG: '%USERPROFILE%/.kube/dev.yaml', X: '%NOPE%', Y: 'plain' }, { UserProfile: 'C:/Users/me' }),
     { KUBECONFIG: 'C:/Users/me/.kube/dev.yaml', X: '%NOPE%', Y: 'plain' });
+});
+
+test('§113: which steps compile before they serve, and what a build line says', () => {
+  for (const c of ['node_modules\\.bin\\nx.cmd run shell:serve:development --proxyConfig=x.json', 'npx nx serve shell', 'ng serve', 'npx webpack serve', 'webpack-dev-server --hot', 'react-scripts start', 'vue-cli-service serve']) assert.ok(compiles(c), c);
+  for (const c of ['npm run dev', 'vite', 'nx run app:build', 'dotnet run', 'node app.js']) assert.ok(!compiles(c), c);
+  assert.equal(buildLine('webpack 5.98.0 compiled successfully in 41234 ms'), 'done');
+  assert.equal(buildLine('✔ Compiled successfully.'), 'done');
+  assert.equal(buildLine('Application bundle generation complete. [12.3 seconds]'), 'done');
+  assert.equal(buildLine('webpack compiled with 3 warnings'), 'done');
+  assert.equal(buildLine('NX All remotes started, server ready at http://localhost:4200'), 'done');
+  assert.equal(buildLine('Failed to compile.'), 'failed');
+  assert.equal(buildLine('webpack 5.98.0 compiled with 2 errors in 3000 ms'), 'failed');
+  assert.equal(buildLine('ERROR in ./src/app.ts'), 'failed');
+  assert.equal(buildLine('<i> [webpack-dev-server] Project is running at: http://localhost:4200/'), 'start');
+  assert.equal(buildLine('Local: http://localhost:4200/'), undefined);
+});
+
+test('§113: a compiling dev server is up when its build is done, not when it prints its address or opens its port', async () => {
+  const cwd = repo('compile', {
+    'dev.js': "const s=require('http').createServer((q,r)=>r.end('ok')).listen(0,()=>{console.log('NX Web Development Server is listening at http://localhost:'+s.address().port+'/');setTimeout(()=>console.log('Failed to compile.'),700);setTimeout(()=>console.log('webpack 5.98.0 compiled successfully in 1200 ms'),1400);})",
+  });
+  const runs = new RunService(() => {}, process.env);
+  try {
+    await runs.start('c1', { repo: cwd, source: '', steps: ['node dev.js nx run app:serve:development'] }, cwd);
+    const step = () => runs.get('c1')!.steps[0];
+    await until(() => step().tail.some((l) => /listening at/.test(l)));
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(step().state, 'go', 'its address and open port don’t make it up');
+    assert.equal(step().waitNote, 'compiling…');
+    await until(() => /didn’t compile/.test(step().waitNote ?? ''));
+    assert.equal(runs.get('c1')!.state, 'running');
+    await until(() => runs.get('c1')?.state === 'up');
+    assert.equal(step().waitNote, undefined);
+    assert.match(runs.get('c1')!.url!, /^http:\/\/localhost:\d+/, 'the address it printed while compiling');
+  } finally {
+    runs.stopAll();
+  }
+});
+
+test('§113: a dev server known only by its output waits for its build too; one that never says is up after the cap', async () => {
+  const cwd = repo('compile2', {
+    'wds.js': "const s=require('http').createServer((q,r)=>r.end('ok')).listen(0,()=>{console.log('<i> [webpack-dev-server] Project is running at: http://localhost:'+s.address().port+'/');setTimeout(()=>console.log('compiled successfully'),900);})",
+    'quiet.js': "const s=require('http').createServer((q,r)=>r.end('ok')).listen(0,()=>console.log('Local: http://localhost:'+s.address().port+'/'))",
+  });
+  const runs = new RunService(() => {}, process.env, { buildWaitMs: 800 });
+  try {
+    await runs.start('c2', { repo: cwd, source: '', steps: ['node wds.js'] }, cwd);
+    await until(() => runs.get('c2')!.steps[0].tail.length > 0);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(runs.get('c2')!.steps[0].state, 'go');
+    await until(() => runs.get('c2')?.state === 'up');
+    await runs.start('c3', { repo: cwd, source: '', steps: ['node quiet.js ng serve'] }, cwd);
+    await until(() => runs.get('c3')?.state === 'up', 5000);
+    assert.match(runs.get('c3')!.steps[0].waitNote ?? '', /no build-finished line/);
+  } finally {
+    runs.stopAll();
+  }
 });

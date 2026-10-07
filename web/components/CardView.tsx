@@ -460,6 +460,7 @@ function StepRow({ s }: { s: RunStep }) {
           {s.env?.length ? <span className="shrink-0 text-[11px] text-faint" title="Variables this step sets (values hidden)">{s.env.join(' ')}</span> : null}
           <span className="min-w-0 grow truncate" title={s.cmd}>{s.cmd}</span>
           {s.waitFor && s.state === 'go' && <span className="shrink-0 font-sans text-[11px] text-busy">waiting for {s.waitFor}{s.waitNote ? ` · ${s.waitNote}` : ''}</span>}
+          {!s.waitFor && s.state === 'go' && s.waitNote && <span title={s.waitNote} className={`max-w-[45%] shrink-0 truncate font-sans text-[11px] ${/didn’t compile/.test(s.waitNote) ? 'text-bad' : 'text-busy'}`}>{s.waitNote}</span>}
         </>}
       {s.state === 'bad' && <span className="shrink-0 text-bad">{s.waitNote ?? (s.code === undefined ? 'can’t run' : `exit ${s.code}`)}</span>}
       {s.state === 'up' && <span className="shrink-0 text-ok">serving</span>}
@@ -479,7 +480,12 @@ function TryIt({ card }: { card: Card }) {
 function runState(run: CardRun | undefined): { text: string; tone: string; dot: string } {
   if (!run) return { text: 'not started', tone: 'text-faint', dot: 'border border-line' };
   switch (run.state) {
-    case 'running': return { text: 'starting', tone: 'text-busy', dot: 'bg-busy' };
+    case 'running': {
+      // §113: a dev server compiling isn't up yet; say so, and say when its build failed.
+      const note = run.steps.find((s) => s.state === 'go' && !s.waitFor)?.waitNote;
+      if (note && /didn’t compile/.test(note)) return { text: 'didn’t compile', tone: 'text-bad', dot: 'bg-bad' };
+      return { text: note === 'compiling…' ? 'compiling' : 'starting', tone: 'text-busy', dot: 'bg-busy' };
+    }
     case 'up': return { text: 'up', tone: 'text-ok', dot: 'bg-ok' };
     case 'done': return { text: 'finished', tone: 'text-sub', dot: 'bg-faint' };
     case 'failed': return { text: run.text, tone: 'text-bad', dot: 'bg-bad' };
@@ -513,7 +519,9 @@ function StackTry({ card, stack, source }: { card: Card; stack: Stack; source: s
     return () => { on = false; };
   }, [card.id]);
   const pick = lastPick(card.id) ?? { values: {}, apis: [] };
-  const services = [...(rows ?? stack.apis.map((a) => ({ repo: a.repo, found: true, changed: false, named: false, why: '' }))).map((r) => ({ id: r.repo, found: r.found, fixed: false, why: r.why, changed: r.changed })), ...(stack.ui ? [{ id: 'ui', found: true, fixed: true, why: stack.ui.repo, changed: false }] : [])];
+  // The UI first: it always starts (it is what you try), so it heads the list with why; the APIs under it are the choice (§113).
+  const services = [...(stack.ui ? [{ id: 'ui', found: true, fixed: true, why: '', changed: false }] : []), ...(rows ?? stack.apis.map((a) => ({ repo: a.repo, found: true, changed: false, named: false, why: '' }))).map((r) => ({ id: r.repo, found: r.found, fixed: false, why: r.why, changed: r.changed }))];
+  const env = pick.values.env ?? choose.find(([k]) => k === 'env')?.[1][0];
   useEffect(() => { setTryRows({ choose, services: services.map(({ id, found, fixed }) => ({ id, found, fixed })) }); return () => setTryRows({ choose: [], services: [] }); }, [JSON.stringify(choose), services.map((x) => `${x.id}:${x.found}`).join(',')]);
   useEffect(() => { document.getElementById(`try-${at}`)?.scrollIntoView({ block: 'nearest' }); }, [at]);
   const highlighted = services[at - choose.length];
@@ -546,12 +554,12 @@ function StackTry({ card, stack, source }: { card: Card; stack: Stack; source: s
               <li key={sv.id} id={`try-${i}`} role="option" aria-selected={at === i} onClick={() => set({ line: { ...get().line, at: i } })}
                 className={`grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 rounded-lg border-l-[3px] py-1.5 pl-2 pr-2 ${at === i ? 'border-l-acc bg-acc-soft' : 'border-l-transparent hover:bg-raise/60'} ${sv.found ? '' : 'opacity-55'}`}>
                 {sv.fixed
-                  ? <span className="grid h-4 w-4 place-items-center rounded border border-line text-[10px] text-faint" title="The UI always runs">●</span>
+                  ? <span role="checkbox" aria-checked="true" aria-disabled="true" aria-label={`${stack.ui?.repo ?? 'The UI'} always starts`} className="grid h-4 w-4 place-items-center rounded border border-line bg-raise text-[11px] font-bold text-faint" title="Always starts: it is the app you try">✓</span>
                   : <button role="checkbox" aria-checked={ticked(sv.id)} aria-label={`Run ${sv.id}`} disabled={!sv.found} onClick={(e) => { e.stopPropagation(); set({ line: { ...get().line, at: i } }); toggleTryRow(card.id); }}
                     className={`grid h-4 w-4 place-items-center rounded border text-[11px] font-bold ${ticked(sv.id) ? 'border-ring bg-ring text-bg' : 'border-line bg-surface'}`}>{ticked(sv.id) ? '✓' : ''}</button>}
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="shrink-0 font-mono text-[13px] font-semibold">{sv.id === 'ui' ? `${stack.ui?.repo ?? 'UI'}` : sv.id}</span>
-                  <span className={`flex min-w-0 items-center gap-1.5 text-[12px] ${st.tone}`} title={r?.text}><span className={`h-2 w-2 shrink-0 rounded-full ${st.dot}`} />{r?.state === 'running' && <span className="spinner" />}<span className="truncate">{st.text}</span></span>
+                  <span className={`flex min-w-0 items-center gap-1.5 text-[12px] ${st.tone}`} title={r?.text}><span className={`h-2 w-2 shrink-0 rounded-full ${st.dot}`} />{r?.state === 'running' && st.tone !== 'text-bad' && <span className="spinner" />}<span className="truncate">{st.text}</span></span>
                 </span>
                 <span className="flex items-center gap-1">
                   {sv.id === 'ui' && r?.state === 'up' && r.url && <button className="btn py-0 text-[12px]" onClick={(e) => { e.stopPropagation(); openApp(card.id); }}><Key k="o" size="sm" />Open</button>}
@@ -560,7 +568,8 @@ function StackTry({ card, stack, source }: { card: Card; stack: Stack; source: s
                     : (live || r) && ticked(sv.id) && <button className="btn py-0 text-[12px]" onClick={(e) => { e.stopPropagation(); tryService(card.id, sv.id); }} title="Start this one on its own"><Key k="r" size="sm" />{r ? 'Again' : 'Start'}</button>}
                   {on && <button className="btn py-0 text-[12px]" onClick={(e) => { e.stopPropagation(); tryService(card.id, sv.id); }} title="Stop it and start it again, the others keep running"><Key k="r" size="sm" />Again</button>}
                 </span>
-                {!sv.fixed && sv.why && <span className={`col-start-2 text-[11.5px] ${sv.changed ? 'text-attn' : 'text-faint'}`}>{sv.why}</span>}
+                {sv.fixed && <span className="col-start-2 text-[11.5px] text-faint"><b className="font-semibold text-sub">Always starts:</b> the UI is the app you try. Tick the APIs below to run them here too{env ? `; the rest are the shared ${env} ones` : ''}.</span>}
+                {!sv.fixed && (sv.why || !sv.found) && <span className={`col-start-2 text-[11.5px] ${sv.changed ? 'text-attn' : 'text-faint'}`}>{sv.why || 'Can’t tick: this repo isn’t in this card or its lane'}</span>}
               </li>
             );
           })}
