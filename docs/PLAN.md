@@ -2753,3 +2753,33 @@ Screenshot looked at. `walk-card.cjs` 59/59 light and dark, `walk-board-try.cjs`
 **To check at VU:** `git pull`, restart (ask first; this is server code, and the page needs the new protocol). On a card, paste a screenshot into the message box, or press `Shift+I` and pick one, then send it with a question about it.
 
 **Open:** the chat shows a sent image as *[image]* in your message, not as a picture: the transcript keeps the text only. Showing the picture would mean keeping it.
+
+## 117. The card's Claude can read its running services' logs
+
+2026-10-07. The owner: while a card's services run, its chat should have their logs as context, to look through while debugging.
+
+**What changed.**
+- **Every run of a card's app or of a stack's service writes its output to disk** (`server/run-logs.ts`, `RunLogFile`):
+  - The folder is `<data folder>/runs/logs/<card key>/` (`cardLogsDir`); the file is `<service>.log`, with an API by its repo name, the UI as `ui.log` and a single app as `app.log`.
+  - Each line has the time and the step's number, a step starts with `$ <command>`, and the file ends with how the run ended.
+  - The run before is kept as `<service>.prev.log`, and a file past 10 MB rolls over to it.
+  - It is written in quarter-second batches; the last batch is written at once when the run ends.
+  - `RunService` gets the folder by card id (`logDir`); a run that isn't a card's writes nothing.
+- **The card's session in the app can read that folder**: it is one of its directories (`CardSession.dirs` into `additionalDirectories`), so `Read` and `Grep` there need no permission.
+- **Its system prompt says so** (`logsText`, after the packet): where the files are and how they're named, to look there rather than ask for the output, to use `Read` or `Grep`, and never `tail -f` (the files keep growing while the app runs).
+  - Found by the walkthrough: without that last line, Haiku reached for `tail -f` through Bash, which waited on approval and never ended.
+  - The card keeps `logsDir`, so the Context panel's *exact text* includes this part for a card the app runs.
+- Nothing is copied into the chat on its own: a busy log would fill the context window. Claude reads what it needs when it needs it.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (397). New tests cover:
+- the folder and file names, and the prompt text;
+- a run's file: the header, timed and numbered lines, the run before kept as `.prev`, and the roll-over past the cap;
+- a card's real run writing its output and how it ended, and a run that isn't a card's writing nothing.
+
+One full run of the suite had a failure that wasn't captured, before the last write was made synchronous; seven runs after it were clean.
+
+**`walk-hub.cjs` (37)** on a real Haiku card: a recipe whose app prints a random `LOGMARK-nnnn`, started with `t`, writes it to `runs/logs/CARD-1/app.log`. Asked only what the LOGMARK in the card's Try it logs is, Claude answers with it, without asking for any permission. This passed on two runs in a row; the run before the `tail -f` line was added failed as described above. **`walk-two-cards.cjs` (17, light and dark)**: each card's folder has its API's and UI's output, and each card's API log names its own port. `walk-card.cjs` 59/59 light and dark, `walk-board-try.cjs` 19/19, `walk-deps.cjs` 20/20, `walk-try-compile.cjs` 15/15. `walk-perf.cjs` 25/25; the run before it had *Ctrl+K → a session* unmeasured (-1 ms), the known open item from §105.
+
+**To check at VU:** `git pull`, restart (ask first; this is server code). Sessions pick it up when they next start (a restart starts them again). Try it on a card, use the app until something fails, then ask the card's chat what the API's log says about it. The files are in `%USERPROFILE%\.cc-control\runs\logs\<card key>\`.
+
+**Open:** a card's session started before this has no logs folder among its directories until it starts again; logs hold whatever the services print, so a service that logs secrets puts them there too (the folder is on this machine only, outside every repo).

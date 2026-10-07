@@ -45,6 +45,7 @@ import { cleanSources, peekSource, scanSources } from './repo-library.ts';
 import { workspaceFromFile, workspaceToFile } from './workspace-file.ts';
 import { SessionManager } from './session-manager.ts';
 import { DB_PATH, Store } from './store.ts';
+import { cardLogsDir } from './run-logs.ts';
 
 // Local-only by design: this is effectively a remote shell. Never bind anything but loopback.
 const HOST = '127.0.0.1';
@@ -107,6 +108,8 @@ const commands = new CommandService(store);
 const cards = new CardService(store, {
   port: PORT, model: process.env.CC_CONTROL_MODEL || undefined, userModel, trustWorktrees: () => store.loadSettings().trustWorktrees === true, runnable: runnableRepos,
   inTerminal: CARDS_IN_TERMINAL,
+  // §117: where Try it writes a card's output, which its session can read.
+  logsDir: (card) => cardLogsDir(runsDir(DB_PATH), card.key),
   // The card's session in the app (§93): its fixed id, its other repos, and its first message.
   startSession: async (card, dirs) => {
     timings.set(card.sessionId!, { key: card.key, at: Date.now(), what: 'send' });
@@ -186,6 +189,8 @@ const follows = new Map<WebSocket, Set<string>>();
 const ports = new PortPool(parseRange(process.env.CC_CONTROL_PORTS));
 const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env, {
   pool: ports,
+  // §117: a card's runs write their output to its logs folder, for its Claude to read.
+  logDir: (cardId) => { const c = cards.get(cardId); return c ? cardLogsDir(runsDir(DB_PATH), c.key) : undefined; },
   lines: (key, lines, reset) => {
     for (const [ws, keys] of follows) if (keys.has(key) && ws.readyState === ws.OPEN) send(ws, reset ? { type: 'run.log', key, lines: runs.log(key) } : { type: 'run.lines', key, lines });
   },

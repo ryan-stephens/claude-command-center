@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { askOf, cardRepos, fmtK, itemTokens, memoryPct, modelName, ownFolders, packetText, reachable as canReach, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
+import { askOf, cardRepos, fmtK, itemTokens, logsText, memoryPct, modelName, ownFolders, packetText, reachable as canReach, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
 import { againstText, changeRows, changeTotals, patchLines, type ChangeRow, type Changes } from '../../shared/changes.ts';
 import { cardRecipe, mainRun, runKey, runsOf, specsOf, type CardRun, type RunStep } from '../../shared/recipes.ts';
 import type { Stack, StackApiRow } from '../../shared/stack.ts';
@@ -699,7 +699,8 @@ function Chips({ items }: { items: PacketItem[] }) {
 /** How it started, what Claude was given, and what was added since. */
 function ContextPanel({ card }: { card: Card }) {
   const wsName = useStore((s) => s.workspaces.find((w) => w.id === card.workspaceId)?.name);
-  const text = packetText(card, card.key, card.branchName);
+  // §117: an app session was also told where Try it's logs are, so the exact text says so too.
+  const text = packetText(card, card.key, card.branchName) + (card.runner === 'app' && card.logsDir ? logsText(card.logsDir) : '');
   const size = tokens(text);
   return (
     <>

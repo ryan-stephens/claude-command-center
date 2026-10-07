@@ -207,6 +207,28 @@ const idle = async (page) => { const c = await cardNow(page); return c?.live?.ph
   check('Claude sees the image: it answers red', sawRed, await lastAssistant(page, sid));
   await until(() => idle(page), 30000);
 
+  // ---- §117: Try it's output is the card's Claude's to read ----
+  const mark = `LOGMARK-${Math.floor(1000 + Math.random() * 9000)}`;
+  const app = path.join(OUT, 'logmark-app.cjs');
+  fs.writeFileSync(app, `require('http').createServer((q,r)=>r.end('ok')).listen(18997,()=>{console.log('Local: http://localhost:18997/');console.log('${mark} the app is up');});`);
+  await ask(page, { type: 'recipe.save', repo: HOME_REPO, steps: [`node "${app.replace(/\\/g, '/')}"`], url: 'http://localhost:18997' });
+  await page.locator('#card-say').blur().catch(() => {});
+  await page.keyboard.press('t');
+  const logFile = path.join(DB, '..', 'runs', 'logs', 'CARD-1', 'app.log');
+  const logged = await until(async () => fs.existsSync(logFile) && fs.readFileSync(logFile, 'utf8').includes(mark), 30000, 300);
+  check('Try it writes the app’s output to the card’s logs folder', logged, logFile);
+  await say(page, 'Look in this card’s Try it logs: what LOGMARK value does the app’s log show? Reply with just that value.');
+  let askedLogs = false;
+  const readIt = await until(async () => {
+    const c = await cardNow(page);
+    if (c?.live?.ask && !askedLogs) { askedLogs = true; await page.keyboard.press('y'); }
+    return (await lastAssistant(page, sid)).includes(mark);
+  }, 90000, 400);
+  check('Claude reads the log without being given it, and without asking first', readIt && !askedLogs, `${await lastAssistant(page, sid)}${askedLogs ? ' (it asked to read)' : ''}`);
+  await until(() => idle(page), 30000);
+  await page.keyboard.press('t');
+  await until(() => new Promise((r) => { require('node:http').get('http://127.0.0.1:18997/', () => r(false)).on('error', () => r(true)); }), 15000, 300);
+
   // ---- A tool prompt, y ----
   await say(page, 'Run this exact shell command with the Bash tool: mkdir hub-walk-dir');
   const toolUp = await until(async () => { const c = await cardNow(page); return c?.live?.ask?.kind === 'tool' && Boolean(c.live.ask.requestId); }, 90000, 300);

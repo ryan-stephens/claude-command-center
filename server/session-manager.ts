@@ -68,6 +68,8 @@ export interface DirStore {
 export interface CardSession {
   options: Record<string, unknown>;
   mode?: PermissionMode;
+  /** §117: folders the card's session can read besides its repos (Try it's logs). */
+  dirs?: string[];
 }
 
 /** Sessions started by opening their card (warm) that no message has reached yet: at most this many run at once. */
@@ -540,7 +542,7 @@ export class SessionManager {
         pathToClaudeCodeExecutable: sdkClaude(),
         includePartialMessages: true,
         permissionMode: this.modes.get(id) ?? card?.mode ?? 'default',
-        additionalDirectories: dirs,
+        additionalDirectories: card?.dirs?.length ? [...dirs, ...card.dirs.filter((d) => !dirs.some((x) => samePath(x, d)))] : dirs,
         canUseTool: (tool, toolInput, { signal, suggestions }) => this.broker.ask(self?.id ?? id, tool, toolInput, suggestions, signal),
         ...card?.options,
         ...opts.options,

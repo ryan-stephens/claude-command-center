@@ -230,6 +230,8 @@ export interface Card extends CardDraft {
   model?: string;
   /** Where claude runs: the home repo, or the worktree made for the card. */
   cwd?: string;
+  /** §117: where Try it writes this card's app and services' output, for its session (in the app) to read. */
+  logsDir?: string;
   /** The card's Claude Code session: fixed when the app starts it (§93), or as its tab's SessionStart hook reported it. */
   sessionId?: string;
   /**
@@ -469,6 +471,18 @@ export function jobText(kind: CardKind | undefined, key: string, pr?: PrTarget, 
  * Exactly what Claude receives: the SessionStart hook returns this as additionalContext.
  * `key` and `branch` are known once the card exists; the preview passes what they will be.
  */
+/**
+ * §117: what a card's session in the app is told about Try it's logs, after its packet: where they
+ * are and that it can read them. They exist only once something has run.
+ */
+export function logsText(dir: string): string {
+  return [
+    '', '## Try it logs',
+    `When this card's app or its services run (Try it), each one's output is written as it comes to ${dir}: <service>.log (an API by its repo name, the UI as ui.log, a single app as app.log), and the run before it as <service>.prev.log. Each line has the time and the step's number; a step starts with "$ <command>".`,
+    'While debugging something that happens at runtime, look in those files rather than asking for the output: use the Read tool (with an offset to see the end of a long one) or Grep, which need no permission there. Not Bash, and never tail -f: the files keep growing while the app runs, so a follow never ends. They are outside the repo and never committed. Nothing there means nothing has run yet.',
+  ].join('\n');
+}
+
 export function packetText(d: Pick<CardDraft, 'title' | 'packet' | 'launch' | 'kind' | 'pr'> & { ticket?: Pick<Ticket, 'key' | 'source'> | null; folders?: CardFolder[] }, key: string, branch?: string): string {
   const L: string[] = [];
   const title = d.title.trim() || 'New card';

@@ -101,7 +101,7 @@ const tails = (rs) => rs.map((r) => `${r.service}:${r.state} ${r.steps.map((s) =
     ui: { repo: 'two-ui', proxyFile: 'proxy.conf.json', steps: ['nx serve app --proxyConfig={{proxy}}'], url: 'http://localhost:4216' },
   } });
   const cards = {};
-  for (const c of ['a', 'b']) cards[c] = await ask(page, { type: 'cards.seed', options: { repos: [API, UI], worktrees: [`${API}-${c}`, `${UI}-${c}`], workspaceId: 'ws-demo-two', key: `TWO-${c.toUpperCase()}`, state: 'idle', title: `Card ${c.toUpperCase()}` } });
+  for (const c of ['a', 'b']) cards[c] = await ask(page, { type: 'cards.seed', options: { repos: [API, UI], worktrees: [`${API}-${c}`, `${UI}-${c}`], workspaceId: 'ws-demo-two', key: `TWO-${c === 'a' ? 1 : 2}`, state: 'idle', title: `Card ${c.toUpperCase()}` } });
   await page.evaluate((ids) => localStorage.setItem('cc-control.stackPick', JSON.stringify(Object.fromEntries(ids.map((id) => [id, { values: { env: 'dev' }, apis: ['two-api'] }])))), [cards.a.id, cards.b.id]);
   await page.reload();
   await sleep(1000);
@@ -152,6 +152,16 @@ const tails = (rs) => rs.map((r) => `${r.service}:${r.state} ${r.steps.map((s) =
   check('both stop', await until(async () => (await runsOf(page, cards.a.id)).concat(await runsOf(page, cards.b.id)).every((r) => r.state !== 'up' && r.state !== 'running')));
   await sleep(800);
   check('their APIs and UIs no longer answer', !(await get(apiA)) && !(await get(uiB)));
+  // §117: each card's services wrote their output to the card's own logs folder, for its Claude to read.
+  const keys = await page.evaluate((ids) => new Promise((resolve) => {
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === 'cards') { ws.close(); resolve(ids.map((id) => m.cards.find((c) => c.id === id)?.key)); } };
+    setTimeout(() => { ws.close(); resolve([]); }, 2000);
+  }), [cards.a.id, cards.b.id]);
+  const logsOf = (k) => path.join(path.dirname(DB), 'runs', 'logs', k);
+  const read = (k, f) => { try { return fs.readFileSync(path.join(logsOf(k), f), 'utf8'); } catch { return ''; } };
+  check('each card’s logs folder has its API’s and UI’s output', keys.length === 2 && keys.every((k) => /Now listening on/.test(read(k, 'two-api.log')) && /compiled successfully/.test(read(k, 'ui.log'))), keys.map(logsOf).join(' | '));
+  check('…its own: card A’s API log names card A’s port, B’s names B’s', read(keys[0], 'two-api.log').includes(`:${apiA}`) && !read(keys[1], 'two-api.log').includes(`:${apiA}`));
   check('the manifest copies go with the runs', !fs.existsSync(`${API}-a/okteto.cc-control.yml`) && !fs.existsSync(`${API}-b/okteto.cc-control.yml`));
   check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   await browser.close();

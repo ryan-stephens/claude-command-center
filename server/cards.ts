@@ -9,12 +9,12 @@
 import type { HookCallbackMatcher, HookEvent } from '@anthropic-ai/claude-agent-sdk';
 import { execFile, spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  BRANCH_NAME, branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, folderFor, PACKET_KINDS, homeOf, includedRepos, isClean, LAUNCH_MODES, laterText, modelFor, ownFolders, packetText, tokens, fmtK, waiting, worktreeFor, wtArg,
+  BRANCH_NAME, branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, folderFor, PACKET_KINDS, homeOf, includedRepos, isClean, LAUNCH_MODES, laterText, logsText, modelFor, ownFolders, packetText, tokens, fmtK, waiting, worktreeFor, wtArg,
   type BranchChoice, type BootStep, type Card, type CardDraft, type CardFolder, type CardKind, type CardWorktree, type LaterItem, type LaunchMode, type Packet, type PacketItem, type PrTarget,
 } from '../shared/cards.ts';
 import { MODES, type PermissionMode, type Workspace } from '../shared/protocol.ts';
@@ -369,6 +369,8 @@ interface CardOpts {
   startSession?: (card: Card, dirs: string[]) => Promise<void>;
   /** Start cards in a terminal tab (legacy, CC_CONTROL_CARDS_IN_TERMINAL=1). */
   inTerminal?: boolean;
+  /** §117: the folder Try it writes a card's logs to, which its session in the app can read. */
+  logsDir?: (card: Card) => string;
   /** Each hook event a card's app session reports, after it is applied (the server's timing lines). */
   onEvent?: (card: Card, event: string) => void;
   /** A card changed (it, when one did: the page gets just that card), or several, or one was deleted (all of them). */
@@ -765,14 +767,22 @@ ${laterText(card.key, later, card, this.opts.runnable?.(card))}`;
   }
 
   /** What a card's session starts with in the app (§93): its mode, model, the packet in its system prompt, the hooks. */
-  sessionOptions(card: Card): { mode: PermissionMode; options: Record<string, unknown> } {
+  sessionOptions(card: Card): { mode: PermissionMode; options: Record<string, unknown>; dirs?: string[] } {
     const model = card.model ?? card.launch.model ?? this.opts.model;
+    // §117: Try it's logs for this card, a folder the session can read, and said in its system prompt.
+    // Kept on the card, so the Context panel's exact text shows what the session was told.
+    const logs = this.opts.logsDir?.(card);
+    if (logs) {
+      try { mkdirSync(logs, { recursive: true }); } catch { /* the session still starts */ }
+      if (card.logsDir !== logs) this.save({ ...card, logsDir: logs });
+    }
     return {
       mode: modeOf(card),
+      ...(logs ? { dirs: [logs] } : {}),
       options: {
         ...(model ? { model } : {}),
         // The packet, recorded with the session and re-rendered after /clear and compacting: what SessionStart's additionalContext did for a tab.
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: packetText(card, card.key, card.branchName) },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: packetText(card, card.key, card.branchName) + (logs ? logsText(logs) : '') },
         hooks: appHooks((event, input) => this.appEvent(card.id, event, input)),
       },
     };

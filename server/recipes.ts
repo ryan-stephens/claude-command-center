@@ -11,6 +11,7 @@ import { get as httpGet } from 'node:http';
 import { isAbsolute, join } from 'node:path';
 import { FORWARD_MANIFEST, otherForwards, rewriteForward } from '../shared/okteto.ts';
 import type { PortPool } from './ports.ts';
+import { RunLogFile } from './run-logs.ts';
 import { findUrl, LOG_KEEP, MAX_STEPS, portOf, specsOf, stepLabel, waitLabel, type CardRun, type LogLine, type RunRecipe, type StepSpec } from '../shared/recipes.ts';
 import { repoName } from '../shared/workspaces.ts';
 import { withoutSecrets } from './config.ts';
@@ -278,6 +279,8 @@ interface Live {
   log: LogLine[];
   /** Lines since the last flush to the page's followers. */
   fresh: LogLine[];
+  /** §117: the run's log file in the card's logs folder, for the card's Claude to read. */
+  file?: RunLogFile;
   /** The number the next line gets. */
   seq: number;
   /** Files written for steps (forward: manifest copies), removed when the run stops. */
@@ -314,18 +317,21 @@ export class RunService {
   private buildWaitMs: number;
   /** The stack's port pool (§114): a forward: step takes ports from it for its manifest's other forwards. */
   private pool?: PortPool;
+  /** §117: the card's logs folder, by card id; a run with none writes no file. */
+  private logDir?: (cardId: string) => string | undefined;
 
   /**
    * `httpWaitMs`: how long a wait:http: step may wait (tests shorten it). `lines`: the run's output as
    * it comes, for whoever follows it on the page (§84): `reset` says the run started afresh, so the
    * lines are the whole log; otherwise they are the ones since the last call.
    */
-  constructor(changed: () => void, env: NodeJS.ProcessEnv, opts: { httpWaitMs?: number; buildWaitMs?: number; pool?: PortPool; lines?: (key: string, lines: LogLine[], reset: boolean) => void } = {}) {
+  constructor(changed: () => void, env: NodeJS.ProcessEnv, opts: { httpWaitMs?: number; buildWaitMs?: number; pool?: PortPool; logDir?: (cardId: string) => string | undefined; lines?: (key: string, lines: LogLine[], reset: boolean) => void } = {}) {
     this.changed = changed;
     this.lines = opts.lines;
     this.httpWaitMs = opts.httpWaitMs ?? HTTP_WAIT_MS;
     this.buildWaitMs = opts.buildWaitMs ?? BUILD_WAIT_MS;
     this.pool = opts.pool;
+    this.logDir = opts.logDir;
     // Plain output, no dev server opening a browser of its own (o opens it), and no tokens from the settings file.
     this.env = { ...withoutSecrets(env), FORCE_COLOR: '0', NO_COLOR: '1', BROWSER: 'none', PYTHONUNBUFFERED: '1' };
   }
@@ -364,6 +370,7 @@ export class RunService {
     const line: LogLine = { n: live.seq++, t: Date.now(), step, text, ...(mark ? { mark } : {}) };
     live.log.push(line);
     if (live.log.length > LOG_KEEP) live.log.splice(0, live.log.length - LOG_KEEP);
+    live.file?.line(line.t, step, text);
     if (!this.lines) return;
     live.fresh.push(line);
     if (this.logTimer) return;
@@ -397,6 +404,11 @@ export class RunService {
       ...(opts.choice ? { choice: opts.choice } : {}),
     };
     const live: Live = { run, specs, places: at, procs: [], lines: specs.map(() => []), log: [], fresh: [], seq: 1, made: [], spare: [], stopped: false, ...(opts.cleanup ? { cleanup: opts.cleanup } : {}) };
+    // §117: a card's run writes its output to the card's logs folder too, where its Claude can read it.
+    const dir = this.logDir?.(run.cardId);
+    if (dir) {
+      try { live.file = new RunLogFile(dir, opts.service, `cc-control Try it · ${opts.service ?? 'app'}${opts.choice ? ` · ${opts.choice}` : ''}`); } catch { /* the run still runs; only the file is missing */ }
+    }
     this.live.set(key, live);
     // A fresh log: whoever follows this key starts over (the service was started again).
     this.lines?.(key, [], true);
@@ -681,6 +693,7 @@ export class RunService {
   private cleanup(live: Live): void {
     for (const f of live.made.splice(0)) rmSync(f, { force: true });
     this.pool?.free(live.spare.splice(0));
+    live.file?.flush(true);
     const c = live.cleanup;
     live.cleanup = undefined;
     try { c?.(); } catch (e) { live.run.text = `Stopped, but couldn’t undo a change: ${(e as Error).message}`; }
