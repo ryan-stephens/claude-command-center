@@ -2783,3 +2783,28 @@ One full run of the suite had a failure that wasn't captured, before the last wr
 **To check at VU:** `git pull`, restart (ask first; this is server code). Sessions pick it up when they next start (a restart starts them again). Try it on a card, use the app until something fails, then ask the card's chat what the API's log says about it. The files are in `%USERPROFILE%\.cc-control\runs\logs\<card key>\`.
 
 **Open:** a card's session started before this has no logs folder among its directories until it starts again; logs hold whatever the services print, so a service that logs secrets puts them there too (the folder is on this machine only, outside every repo).
+
+## 118. The card chat's message box can be made taller
+
+2026-10-07. The owner: the card chat's message box stays really small (two rows, fixed); it should be resizable.
+
+**What changed** (`web/say-size.ts`, `Say` in `web/components/CardView.tsx`).
+- **It grows with what you type**, up to 60% of the window (`fitHeight`), and is back to its size when emptied (after a send too).
+- **Its smallest size is yours to set:**
+  - Drag the edge above it (a grip, with the keys on hover); double-click the edge for the usual size.
+  - `Ctrl+Shift+↑ / ↓` makes it two lines taller or shorter, in the box or anywhere on the open card.
+  - The size is kept in this browser (`localStorage`, a per-viewer convenience) and never goes under one line or past 60% of the window (`clampSay`).
+- **Keys:** a `?` row (*Ctrl+Shift+↑ / ↓ (card open)*) and *Ctrl⇧↑ ↓ Box size* in the legend beside *Message*. The edge has `role="separator"` with a label that names the keys.
+- **Also fixed:** §117's README line had its path's backslashes doubled. §117's test of a card's run log now waits for both of the app's lines before stopping it: under the full suite's load the second line could come after the stop (seen once, 2026-10-07; five full runs since are clean).
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (398: `clampSay` and `fitHeight`), five full runs clean. **`walk-card.cjs` (66, light and dark)**, on the idle card:
+- `Ctrl+Shift+↑` twice: 60 → 156 px; `↓` shorter again;
+- dragging the edge up 200 px: 315 px; a double-click: back to 60;
+- twelve typed lines grow it, but not past 60% of the window; emptied, it is back to its size;
+- the size given with `Ctrl+Shift+↑` out of the box is the same after a reload.
+
+Screenshot looked at. `walk-board-try.cjs` 19/19, `walk-deps.cjs` 20/20, `walk-try-compile.cjs` 15/15, `walk-two-cards.cjs` 17/17, `walk-hub.cjs` 37/37. `walk-perf.cjs` 25/25. A run before it had *Ctrl+K → a session* unmeasured (-1 ms) and printed no total, as in one run for §117. It is §105's open item (the palette doesn't see a brand-new card session for a while), and it now shows up in about half the runs.
+
+**To check at VU:** a page change. `git pull`, `pnpm build` and a reload are enough, unless the server is behind (§114 to §117 need a restart anyway). Drag the edge above a card's message box, or press `Ctrl+Shift+↑`.
+
+**Open:** the full-screen session's box already grows with its text (to 8 lines) but can't be dragged; *Ctrl+K → a session* in `walk-perf` (above).

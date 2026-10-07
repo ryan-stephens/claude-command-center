@@ -54,6 +54,8 @@ test('§117: a card’s run writes its output to the card’s logs folder; a run
     await runs.start('card-1#ui', { repo: cwd, source: '', steps: ['node app.js'] }, cwd, { cardId: 'card-1', service: 'ui' });
     await runs.start('other', { repo: cwd, source: '', steps: ['node app.js'] }, cwd);
     await until(() => runs.get('card-1#ui')?.state === 'up');
+    // Both lines read from the app before it is stopped (under load the second can come a moment later).
+    await until(() => runs.log('card-1#ui').some((l) => l.text.includes('GET /health 200')));
     await runs.stop('card-1#ui');
     await until(() => existsSync(join(logs, 'ui.log')) && /\(stopped\)/.test(readFileSync(join(logs, 'ui.log'), 'utf8')));
     assert.match(readFileSync(join(logs, 'ui.log'), 'utf8'), /GET \/health 200/);

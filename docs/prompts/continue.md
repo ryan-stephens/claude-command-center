@@ -31,6 +31,8 @@ The main concepts:
 - §115: the card chat's header (and the full-screen session) shows the session's branch, the context used (tokens of the window and the percentage) and its cost so far.
 - §116: the card chat takes pictures: `Ctrl+V`, drop, or `Shift+I` (the file picker); they go with the next message (PROTOCOL 29).
 - §117: Try it writes each card's app and services' output to `runs/logs/<card key>/<service>.log`; the card's session can read that folder and its system prompt says where it is.
+- §118: the card chat's message box grows with its text and can be made taller (drag its top edge, `Ctrl+Shift+↑ / ↓`), kept in the browser.
+- Open: `walk-perf`'s *Ctrl+K → a session* is unmeasured (-1 ms) in about half the runs (§105's item: the palette misses a brand-new card session); it is worth fixing next.
 
 The earlier direction, for history:
 
@@ -72,9 +74,9 @@ The earlier direction, for history:
 
 ## State
 - **Push finished work to `main`** (owner, 2026-09-30): once a change is verified and committed, push it without asking. The owner now works and tests mainly on their Veterans United laptop, from a clone they `git pull`; that is where the real Jira Cloud, TFS and Okteto are. Restarting a running server, writing to Jira or TFS, and opening real PRs still need asking.
-- Checks: `pnpm typecheck`, `pnpm test` (397 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
+- Checks: `pnpm typecheck`, `pnpm test` (398 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
 - **Walkthroughs** in `docs/walkthroughs/simple-new-card/`:
-  - `walk-card` (59, light and dark), `walk-hub` (37, a real Haiku card, `PORT=7794`) and `walk-perf` (the speed budget) must pass before a commit.
+  - `walk-card` (66, light and dark), `walk-hub` (37, a real Haiku card, `PORT=7794`) and `walk-perf` (the speed budget) must pass before a commit.
   - Feature walks: `walk-board-try` (19), `walk-verify` (38, stand-in tools in `standins/verify-tools.cjs`) `walk-deps` (20, with a stack of two services on one bare worktree) `walk-try-compile` (15, light and dark: the UI row, and a compiling stand-in UI) and `walk-two-cards` (17, light and dark: its own server with stand-in okteto and nx; two cards on one API and UI at once).
   - **`walk-perf`'s key-to-paint numbers have been 14 to 28 ms against 16 since the afternoon of 2026-10-06, on page code that measured 9 ms that morning.** An A/B against the §104 page showed the same scatter, so it's the machine. Look into it before trusting a perf result.
 - **Stopping a test server with `Stop-Process` orphans its sessions' MCP servers** (§95, §98). Check for `npx … mcp-server-*` processes whose parent is gone, and stop only those trees.

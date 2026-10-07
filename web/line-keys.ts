@@ -22,6 +22,7 @@ import { withSimple } from './simple-model.ts';
 import { armProd, cycleEnv, openPage, refreshSets, runCheck, runLookup, runVerify, toggleAdvanced } from './verify-state.ts';
 import { addCardContext, answerCard, focusCardTab, sayToCard, send, startCard, stopRun, tryCard } from './ws.ts';
 import { IMAGE_ONLY_TEXT, MAX_IMAGES, pickImages, readImage, type Pasted } from './say-images.ts';
+import { fitSay, nudgeSay } from './say-size.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
@@ -56,6 +57,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Shift+D (a card on the board)', 'Changes full width: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
       ['c (card open)', '+ Context: the same popup the new-card screen has, over the chat (Repos, Folders and Tickets tabs, ← → or Tab switch, / searches, Enter ticks, and a note), Ctrl+Enter adds, Esc goes back. What you add goes to Claude at once when it is between turns, or with your next message while it works. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
+      ['Ctrl+Shift+↑ / ↓ (card open)', 'The message box taller / shorter (or drag its top edge; double-click it for the usual size). It also grows with what you type, up to most of the window. Kept in this browser'],
       ['Shift+I  ·  Ctrl+V  ·  drop (card open)', 'Images in your next message: pick image files from disk  ·  paste one in the message box (a screenshot)  ·  drop files on it. Up to 5, 5 MB each (PNG, JPEG, GIF, WebP), shown over the box; × or Backspace in an empty box takes one out. Enter sends them with the text (or alone)'],
       ['t (a card)', 'Try it: start its app in the card’s own folder; again stops it. With a lane stack, the Try it panel’s ticked services start, each on a port of its own. A lane with no stack yet: the stack form opens, filled from what the repos say (okteto.yml, angular.json, the proxy file), and Save and start goes on'],
       ['Shift+R (a card)', 'Restart its app: the run, or every service of its stack with the same pick, stopped and started again. With nothing running it starts it, as t does. On the board the tile has these as buttons (Start or Open, Stop and Restart) on cards in Try it or Ship, the chosen card, and any card whose app runs or failed; they start the app without opening the card'],
@@ -692,6 +694,8 @@ function started(s: ReturnType<typeof get>): Set<string> {
 
 function drawerKeys(e: KeyboardEvent): boolean {
   const s = get();
+  // §118: Ctrl+Shift+↑ / ↓ make the message box taller or shorter, in it or not.
+  if (e.ctrlKey && e.shiftKey && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { nudgeSay(e.key === 'ArrowUp' ? 1 : -1); return true; }
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
   if (s.line.panel === 'verify' && verifyKeys(e)) return true;
   // Claude's question form (§91) takes digits, Tab and y first while it is up.
@@ -861,9 +865,10 @@ export function saySubmit(id: string): void {
   if (card && !reachable(card)) flash(card.runner === 'app' ? `Resuming ${card.key}’s session; your message goes in with it` : `Moving ${card.key}’s session into the app; your message goes in with it`);
   // The box empties at once (the message shows in the chat); the text and images come back if the send fails.
   el.value = '';
+  fitSay();
   setSayImages(id, []);
   sayToCard(id, text, images.map(({ mediaType, data }) => ({ mediaType, data }))).catch((e: Error) => {
-    if (!el.value && typed) el.value = typed;
+    if (!el.value && typed) { el.value = typed; fitSay(); }
     if (images.length && !(get().sayImages[id] ?? []).length) setSayImages(id, images);
     flash(e.message);
   });
@@ -957,6 +962,7 @@ function sayKeys(e: KeyboardEvent): boolean {
   const id = get().line.drawer;
   if (e.key === 'Escape') { el.blur(); return true; }
   if (e.key === 'Enter' && !e.shiftKey) { if (id) saySubmit(id); return true; }
+  if (e.ctrlKey && e.shiftKey && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { nudgeSay(e.key === 'ArrowUp' ? 1 : -1); return true; }
   // §116: Backspace in an empty box takes the last image back out.
   if (e.key === 'Backspace' && id && !(el as HTMLTextAreaElement).value && (get().sayImages[id] ?? []).length) { setSayImages(id, (get().sayImages[id] ?? []).slice(0, -1)); return true; }
   // The editing keys go to the box (§106): Ctrl+V pastes, Ctrl+Z undoes, Ctrl+Backspace deletes a word.

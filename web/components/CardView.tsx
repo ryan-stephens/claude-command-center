@@ -19,6 +19,7 @@ import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard
 import { QuestionForm } from './QuestionForm.tsx';
 import { answerAsk, attachToSay, boardOf, changeHooks, editRecipe, goToTab, lastPick, openAddComposer, openApp, openNeighbour, openOutput, openWorktrees, pickSayImage, popOutChanges, rememberPick, saySubmit, setChangeCount, setSayImages, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
 import { IMAGE_TYPES, type Pasted } from '../say-images.ts';
+import { fitSay, SAY_DEFAULT, setSayHeight, useSayHeight } from '../say-size.ts';
 
 const NO_IMAGES: Pasted[] = [];
 import { openSession } from '../keys.ts';
@@ -300,6 +301,9 @@ function BootLines({ card }: { card: Card }) {
  */
 function Say({ card }: { card: Card }) {
   const images = useStore((s) => s.sayImages[card.id] ?? NO_IMAGES);
+  // §118: the box's chosen height (drag its top edge, Ctrl+Shift+↑ / ↓); it grows with its text past it.
+  const chosen = useSayHeight();
+  useLayoutEffect(fitSay, [chosen, card.id, card.sessionId]);
   if (!card.sessionId) return null;
   const ended = card.live?.phase === 'ended';
   const reachable = canReach(card);
@@ -339,11 +343,26 @@ function Say({ card }: { card: Card }) {
           ))}
         </div>
       )}
+      <div className="group mx-auto -mb-1.5 -mt-2 flex w-full max-w-[880px] cursor-ns-resize items-center justify-center gap-1.5 py-0.5 text-[11px] text-faint" role="separator" aria-orientation="horizontal" aria-label="Message box height: drag, or Ctrl+Shift+↑ / ↓"
+        title="Drag to make the message box taller or shorter (Ctrl+Shift+↑ / ↓ too); double-click for the usual size"
+        onDoubleClick={() => setSayHeight(SAY_DEFAULT)}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          const startY = e.clientY;
+          const start = (document.getElementById('card-say') as HTMLElement | null)?.offsetHeight ?? chosen;
+          const move = (m: PointerEvent) => setSayHeight(start + (startY - m.clientY));
+          const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', up);
+        }}>
+        <span className="h-1 w-10 rounded-full bg-line group-hover:bg-ring" />
+        <span className="hidden group-hover:inline"><Key k="Ctrl ⇧ ↑↓" size="sm" /></span>
+      </div>
       <div className="mx-auto flex w-full max-w-[880px] items-end gap-2"
         onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
         onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); void attachToSay(card.id, [...e.dataTransfer.files]); } }}>
         <input id="card-say-file" type="file" accept={IMAGE_TYPES.join(',')} multiple hidden onChange={(e) => { const f = [...(e.currentTarget.files ?? [])]; e.currentTarget.value = ''; if (f.length) void attachToSay(card.id, f).then(() => document.getElementById('card-say')?.focus()); }} />
-        <textarea id="card-say" rows={2}
+        <textarea id="card-say" rows={2} style={{ height: chosen }} onInput={fitSay}
           onPaste={(e) => { const f = [...e.clipboardData.files]; if (f.some((x) => IMAGE_TYPES.includes(x.type))) { e.preventDefault(); void attachToSay(card.id, f); } }} placeholder={ask?.kind === 'question' && ask.questions?.length ? 'Or say something else: it goes in as your next message' : reachable ? `Message ${card.key}… Enter sends, Shift+Enter is a new line` : `Message ${card.key}… Enter resumes the session and sends`} spellCheck={false} className="field grow resize-none text-[13.5px]" />
         {app && <button className="btn py-1.5" onClick={() => pickSayImage(card.id)} title="Images go with your next message: pick files, paste one in the box (Ctrl+V) or drop them on it. Up to 5, 5 MB each"><Key k="⇧I" size="sm" />Image</button>}
         {card.stage !== 'done' && <button className="btn py-1.5" onClick={() => openAddComposer(card.id)} title="Add a repo, a folder, a ticket or a note: it goes in with your next message"><Key k="c" size="sm" />+ Context</button>}
