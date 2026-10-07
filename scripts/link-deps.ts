@@ -13,9 +13,11 @@
 // - A file that can't be linked (NTFS allows 1023 names per file; another drive) is copied.
 // - Links inside node_modules (npm workspaces, pnpm) are made again pointing inside the worktree;
 //   one pointing outside the main checkout is cloned the same way rather than linked to.
-// - Built under node_modules.cc-control-tmp and renamed when whole, so half a clone never passes
-//   for a finished one. One clone per folder at a time (a lock outside the repo): Try it waits for
-//   the clone the card started in the background, saying so.
+// - Built in the repo's git folder (where no tool walks: an Nx daemon, an editor, Claude's
+//   searches) and renamed into place when whole, so half a clone never passes for a finished one
+//   and nothing half made is ever in the worktree (§112). One clone per folder at a time (a lock
+//   outside the repo, renamed into place with its pid in it): Try it, and each service of a stack
+//   started together, wait for the clone going, saying so.
 // - When the worktree's lockfile differs from the main checkout's, it says so: the packages are
 //   the main checkout's, and nothing is installed.
 // - The main checkout has no node_modules: it says to install there once, and fails.
@@ -24,17 +26,20 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   appendFileSync, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync,
-  realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
+  realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, parse, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** This script, for a Try it step or a background run to call. */
 export const LINK_DEPS = fileURLToPath(import.meta.url);
 
 const LOCKFILES = ['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock'];
+/** Where clones were built before §112, beside node_modules; one left behind is removed. */
 const TMP_NAME = 'node_modules.cc-control-tmp';
+/** A lock this new without its pid counts as held: a script from before §112 writing it. */
+const LOCK_GRACE_MS = 30_000;
 
 /** A package.json that names packages (one with none never gets a node_modules, so it isn't missing one). */
 export function hasPackages(dir: string): boolean {
@@ -46,11 +51,29 @@ export function hasPackages(dir: string): boolean {
 
 /** The repo's main checkout (the folder its .git is in), when `dir` is another worktree of it. */
 export function mainCheckout(dir: string): string | undefined {
+  const common = gitCommonDir(dir);
+  if (!common) return undefined;
+  const main = resolve(dirname(common));
+  return main.toLowerCase() === resolve(dir).toLowerCase() ? undefined : main;
+}
+
+/** The repo's git folder (shared by its worktrees). */
+function gitCommonDir(dir: string): string | undefined {
   const r = spawnSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
   if (r.status !== 0) return undefined;
   const common = r.stdout.trim();
-  const main = resolve(dirname(isAbsolute(common) ? common : resolve(dir, common)));
-  return main.toLowerCase() === resolve(dir).toLowerCase() ? undefined : main;
+  return isAbsolute(common) ? common : resolve(dir, common);
+}
+
+/**
+ * Where the clone is built before it is renamed to node_modules: in the git folder, which no tool
+ * walks (§112: Nx read a half-made folder in the worktree as projects). On the worktree's drive, so
+ * the rename is a rename; beside node_modules when the git folder is on another drive.
+ */
+function buildDir(dir: string): string {
+  const common = gitCommonDir(dir);
+  if (!common || parse(resolve(common)).root.toLowerCase() !== parse(resolve(dir)).root.toLowerCase()) return join(dir, TMP_NAME);
+  return join(common, 'cc-control-deps', lockKey(dir));
 }
 
 /** Is this path a link (a junction or a symlink) rather than a real folder? */
@@ -60,31 +83,61 @@ export function isLink(p: string): boolean {
 
 /** Where the folder's clone lock lives: outside the repo, one per folder. */
 export function lockFor(dir: string, base = tmpdir()): string {
-  const key = createHash('sha1').update(resolve(dir).toLowerCase()).digest('hex').slice(0, 16);
-  return join(base, 'cc-control-deps', key);
+  return join(base, 'cc-control-deps', lockKey(dir));
 }
 
+const lockKey = (dir: string) => createHash('sha1').update(resolve(dir).toLowerCase()).digest('hex').slice(0, 16);
+const lockPid = (lock: string) => { try { return Number(readFileSync(join(lock, 'pid'), 'utf8')) || undefined; } catch { return undefined; } };
+
+/** Its holder still runs; a lock without a pid is a holder from before §112 writing it, while new. */
 function alive(lock: string): boolean {
-  try { process.kill(Number(readFileSync(join(lock, 'pid'), 'utf8')), 0); return true; } catch { return false; }
+  const pid = lockPid(lock);
+  if (pid === undefined) { try { return Date.now() - statSync(lock).mtimeMs < LOCK_GRACE_MS; } catch { return false; } }
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+/**
+ * Take the lock: made whole (its pid in it) under another name and renamed into place, so no one
+ * ever sees it without its pid. Before §112 the pid was written after the folder was made, and a
+ * script that looked in between took the lock for a dead one and cloned too (a stack's services
+ * start together), leaving a half-made folder in the worktree.
+ */
+function takeLock(lock: string): boolean {
+  const stage = `${lock}.${process.pid}`;
+  rmSync(stage, { recursive: true, force: true });
+  mkdirSync(stage);
+  writeFileSync(join(stage, 'pid'), String(process.pid));
+  try { renameSync(stage, lock); return true; } catch { rmSync(stage, { recursive: true, force: true }); return false; }
+}
+
+/** A dead holder's lock taken away: moved aside first, so only one waiter does it, and put back if it turns out to be live. */
+function clearDeadLock(lock: string): void {
+  const aside = `${lock}.dead.${process.pid}`;
+  try { renameSync(lock, aside); } catch { return; }
+  if (alive(aside)) { try { renameSync(aside, lock); return; } catch { /* another took the lock meanwhile */ } }
+  rmSync(aside, { recursive: true, force: true });
 }
 
 export type DepsState =
   | { state: 'none' }
   | { state: 'busy' }
+  | { state: 'tidy' }
   | { state: 'clone'; main: string }
   | { state: 'missing'; main?: string };
 
 /**
  * What the folder needs: nothing, the main checkout's packages cloned in, a wait for the clone
  * going, or an install there first. A node_modules that is a link (§110's junction) needs the clone
- * too: it is what a removal could follow into the main checkout. `ownLock`: the caller holds the lock.
+ * too: it is what a removal could follow into the main checkout. `tidy`: node_modules is there, but
+ * a half-made folder from before §112 is beside it, which tools such as Nx read as projects.
+ * `ownLock`: the caller holds the lock.
  */
 export function depsState(dir: string, main = mainCheckout(dir), base = tmpdir(), ownLock = false): DepsState {
   if (!hasPackages(dir)) return { state: 'none' };
   const lock = lockFor(dir, base);
   if (!ownLock && existsSync(lock) && alive(lock)) return { state: 'busy' };
   const nm = join(dir, 'node_modules');
-  if (existsSync(nm) && !isLink(nm)) return { state: 'none' };
+  if (existsSync(nm) && !isLink(nm)) return existsSync(join(dir, TMP_NAME)) ? { state: 'tidy' } : { state: 'none' };
   if (main && existsSync(join(main, 'node_modules'))) return { state: 'clone', main };
   return { state: 'missing', ...(main ? { main } : {}) };
 }
@@ -101,10 +154,9 @@ export function lockDiffers(dir: string, main: string): string | undefined {
 
 /** Keep names out of `git status` without touching the repo's .gitignore. */
 function exclude(dir: string, names: string[]): void {
-  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
-  if (r.status !== 0) return;
-  const common = r.stdout.trim();
-  const file = join(isAbsolute(common) ? common : resolve(dir, common), 'info', 'exclude');
+  const common = gitCommonDir(dir);
+  if (!common) return;
+  const file = join(common, 'info', 'exclude');
   try {
     let have = existsSync(file) ? readFileSync(file, 'utf8') : '';
     for (const n of names) {
@@ -164,18 +216,19 @@ export interface LinkResult { ok: boolean; did: 'none' | 'cloned' | 'waited' | '
 export async function linkDeps(dir: string, base = tmpdir(), log: (s: string) => void = () => {}): Promise<LinkResult> {
   const lock = lockFor(dir, base);
   mkdirSync(dirname(lock), { recursive: true });
-  for (let waited = 0; ; waited++) {
-    try { mkdirSync(lock); break; } catch {
-      if (!alive(lock)) { rmSync(lock, { recursive: true, force: true }); continue; }
-      if (waited % 15 === 0) log(waited ? `Still copying the packages in (${waited} s)…` : 'The card is still putting the packages in: waiting for it.');
-      await new Promise((r) => setTimeout(r, 1000));
-      if (!existsSync(lock) && existsSync(join(dir, 'node_modules'))) return { ok: true, did: 'waited', text: 'The packages are here.' };
-    }
+  for (let waited = 0; !takeLock(lock); waited++) {
+    if (!alive(lock)) { clearDeadLock(lock); continue; }
+    if (waited % 15 === 0) log(waited ? `Still copying the packages in (${waited} s)…` : 'The packages are being put in (by the card, or another service of this run): waiting for it.');
+    await new Promise((r) => setTimeout(r, 1000));
+    if (!existsSync(lock) && existsSync(join(dir, 'node_modules'))) return { ok: true, did: 'waited', text: 'The packages are here.' };
   }
-  writeFileSync(join(lock, 'pid'), String(process.pid));
   try {
+    // A half-made folder beside node_modules, from before §112: tools such as Nx read it as projects.
+    const old = join(dir, TMP_NAME);
+    const tidied = existsSync(old);
+    if (tidied) rmSync(old, { recursive: true, force: true });
     const s = depsState(dir, undefined, base, true);
-    if (s.state === 'none' || s.state === 'busy') return { ok: true, did: 'none', text: 'The packages are here.' };
+    if (s.state !== 'clone' && s.state !== 'missing') return { ok: true, did: 'none', text: tidied ? 'Removed a half-made copy of the packages an earlier run left beside node_modules (node_modules.cc-control-tmp). The packages are here.' : 'The packages are here.' };
     // §110's junction: unlinked first (a link a removal could follow), then the clone takes its place.
     if (unlinkDeps(dir)) log('Took away the old node_modules link to the main checkout; a copy of hard links takes its place.');
     if (s.state === 'missing') {
@@ -183,9 +236,10 @@ export async function linkDeps(dir: string, base = tmpdir(), log: (s: string) =>
         ? `No node_modules here or in the main checkout (${s.main}): install the packages there once (npm ci), then try again.`
         : 'No node_modules here, and this folder isn’t a worktree of a checkout that has them: install the packages here once.' };
     }
-    const tmp = join(dir, TMP_NAME);
+    const tmp = buildDir(dir);
     exclude(dir, ['/node_modules', `/${TMP_NAME}`]);
     rmSync(tmp, { recursive: true, force: true });
+    mkdirSync(dirname(tmp), { recursive: true });
     const srcModules = realpathSync(join(s.main, 'node_modules'));
     const t = Date.now();
     log(`Putting the main checkout’s packages in (hard links, nothing downloaded): ${srcModules}`);
@@ -198,7 +252,7 @@ export async function linkDeps(dir: string, base = tmpdir(), log: (s: string) =>
       ...(lockfile ? { lock: lockfile } : {}),
     };
   } finally {
-    rmSync(lock, { recursive: true, force: true });
+    if (lockPid(lock) === process.pid) rmSync(lock, { recursive: true, force: true });
   }
 }
 

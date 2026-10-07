@@ -18,7 +18,7 @@ const TMP = (process.env.TEMP || process.env.TMP).replace(/\\/g, '/');
 const OUT = path.join(__dirname, 'shots-deps');
 fs.mkdirSync(OUT, { recursive: true });
 const REPO = `${TMP}/cc-demo/deps-ui`;
-const UI_PORT = 18990, UI_PORT_2 = 18991;
+const UI_PORT = 18990, UI_PORT_2 = 18991, UI_PORT_3 = 18992;
 let n = 0; const results = [];
 const check = (name, ok, extra = '') => { results.push([ok ? 'PASS' : 'FAIL', name, extra]); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${extra}`); };
 const shot = async (page, name) => { n += 1; await page.screenshot({ path: path.join(OUT, `${String(n).padStart(2, '0')}-${name}.png`) }); };
@@ -133,6 +133,38 @@ const runOf = async (page, id) => (await latest(page, 'runs'))?.runs.find((r) =>
   page.evaluate((id) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => ws.send(JSON.stringify({ type: 'card.stopRun', id })); }, seeded.id);
   await sleep(1500);
 
+  // 2b (§112). A stack whose API and UI both run in the card's bare worktree: its services start together,
+  // so each run has a packages step for the same folder. One clones, the other waits; nothing half made is left.
+  const wt4 = `${TMP}/cc-demo/deps-ui-stack`;
+  git(REPO, 'worktree', 'add', '-q', wt4, '-b', 'deps-stack');
+  await page.evaluate((REPO) => new Promise((resolve) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => { ws.send(JSON.stringify({ type: 'workspace.save', workspace: { id: 'ws-demo-deps-stack', name: 'Deps stack', color: 'blue', repos: [REPO], notes: '' } })); setTimeout(() => { ws.close(); resolve(); }, 400); }; }), REPO);
+  await ask(page, { type: 'stack.save', workspaceId: 'ws-demo-deps-stack', stack: {
+    choose: { env: ['dev'] },
+    api: { steps: ['wait:port:{{port}} node_modules\\.bin\\standin-ui.cmd {{port}}'] },
+    apis: [{ repo: 'deps-ui', values: {} }],
+    ui: { repo: 'deps-ui', steps: [`wait:port:${UI_PORT_3} node_modules\\.bin\\standin-ui.cmd ${UI_PORT_3}`], url: `http://localhost:${UI_PORT_3}` },
+  } });
+  const stacked = await ask(page, { type: 'cards.seed', options: { repos: [REPO], worktrees: [wt4], workspaceId: 'ws-demo-deps-stack', key: 'DEPS-3', state: 'idle', title: 'Stack on a bare worktree' } });
+  await ask(page, { type: 'card.try', id: stacked.id, choice: { values: { env: 'dev' }, apis: ['deps-ui'] } }, 30000);
+  const runsOf = async (cid) => ((await latest(page, 'runs'))?.runs ?? []).filter((r) => r.cardId === cid);
+  const bothUp = await until(async () => { const r = await runsOf(stacked.id); return r.length === 2 && r.every((x) => x.state === 'up'); }, 120000);
+  const sruns = await runsOf(stacked.id);
+  const firsts = sruns.map((r) => (r.steps?.[0]?.tail ?? []).join(' '));
+  check('a stack’s two services on one bare worktree: both have the packages step, both come up', bothUp && sruns.every((r) => /link-deps\.ts/.test(r.steps?.[0]?.cmd ?? '')), sruns.map((r) => `${r.service}:${r.state}`).join(' '));
+  check('one of them puts the packages in; the other waits for it or finds them', firsts.filter((t) => /Put the main checkout’s packages in/.test(t)).length === 1 && firsts.some((t) => /waiting for it|The packages are here/.test(t)), firsts.join(' || '));
+  check('nothing half made beside node_modules, nothing left in the git folder', !fs.existsSync(`${wt4}/node_modules.cc-control-tmp`) && (!fs.existsSync(`${REPO}/.git/cc-control-deps`) || fs.readdirSync(`${REPO}/.git/cc-control-deps`).length === 0));
+  await page.evaluate((id) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => ws.send(JSON.stringify({ type: 'card.stopRun', id })); }, stacked.id);
+  await until(async () => (await runsOf(stacked.id)).every((x) => x.state !== 'up' && x.state !== 'running'), 20000);
+
+  // A half-made folder an earlier version left beside node_modules (Nx reads it as projects): Try it's step removes it.
+  fs.mkdirSync(`${wt4}/node_modules.cc-control-tmp/call-bind`, { recursive: true });
+  await ask(page, { type: 'card.try', id: stacked.id, choice: { values: { env: 'dev' }, apis: ['deps-ui'] } }, 30000);
+  await until(async () => { const r = await runsOf(stacked.id); return r.length === 2 && r.every((x) => x.state === 'up'); }, 60000);
+  const tidied = (await runsOf(stacked.id)).map((r) => (r.steps?.[0]?.tail ?? []).join(' '));
+  check('a leftover node_modules.cc-control-tmp is removed by the next Try it', !fs.existsSync(`${wt4}/node_modules.cc-control-tmp`) && tidied.some((t) => /Removed a half-made copy/.test(t)), tidied.join(' || '));
+  await page.evaluate((id) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => ws.send(JSON.stringify({ type: 'card.stopRun', id })); }, stacked.id);
+  await until(async () => (await runsOf(stacked.id)).every((x) => x.state !== 'up' && x.state !== 'running'), 20000);
+
   // 3. A worktree with the packages in, removed by hand with git (no unlink, --force): the main checkout keeps them.
   const wt3 = `${TMP}/cc-demo/deps-ui-byhand`;
   git(REPO, 'worktree', 'add', '-q', wt3, '-b', 'deps-byhand');
@@ -142,8 +174,8 @@ const runOf = async (page, id) => (await latest(page, 'runs'))?.runs.find((r) =>
   check('git worktree remove by hand leaves the main checkout’s node_modules whole', !fs.existsSync(wt3) && fs.existsSync(MAIN_BIN) && fs.existsSync(`${REPO}/node_modules/standin-ui/serve.js`));
 
   // Remove the cards' worktrees through the app: the main checkout is as it was.
-  for (const cid of [id, seeded.id]) await ask(page, { type: 'card.removeWorktrees', id: cid, force: true, thenDelete: true }, 120000).catch((e) => console.log('remove:', e.message));
-  check('the worktrees are gone', await until(async () => !fs.existsSync(wt) && !fs.existsSync(wt2), 30000), `${fs.existsSync(wt)} ${fs.existsSync(wt2)}`);
+  for (const cid of [id, seeded.id, stacked.id]) await ask(page, { type: 'card.removeWorktrees', id: cid, force: true, thenDelete: true }, 120000).catch((e) => console.log('remove:', e.message));
+  check('the worktrees are gone', await until(async () => !fs.existsSync(wt) && !fs.existsSync(wt2) && !fs.existsSync(wt4), 30000), `${fs.existsSync(wt)} ${fs.existsSync(wt2)} ${fs.existsSync(wt4)}`);
   check('the main checkout is as it was, its node_modules whole', git(REPO, 'status', '--porcelain') === '' && fs.existsSync(MAIN_BIN) && fs.existsSync(`${REPO}/node_modules/standin-ui/package.json`));
 
   check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));

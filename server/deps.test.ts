@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { depsState, hasPackages, isLink, linkDeps, lockDiffers, mainCheckout, unlinkDeps, LINK_DEPS } from '../scripts/link-deps.ts';
+import { depsState, hasPackages, isLink, linkDeps, lockDiffers, lockFor, mainCheckout, unlinkDeps, LINK_DEPS } from '../scripts/link-deps.ts';
 import { withDeps } from './deps.ts';
 import { parseStep, type StepSpec } from '../shared/recipes.ts';
 
@@ -147,6 +147,44 @@ test('the script: two at once on one folder make one clone (the second waits or 
   assert.equal(no.code, 1);
   assert.match(no.out, /install the packages there once/);
   assert.match(readFileSync(join(r.main, '.git', 'info', 'exclude'), 'utf8'), /^\/node_modules\.cc-control-tmp$/m);
+});
+
+test('§112: eight scripts at once on one folder (a stack’s services started together) make one clone, and none fails', async () => {
+  const r = repoWithWorktree();
+  const all = await Promise.all(Array.from({ length: 8 }, () => run(r.wt)));
+  for (const x of all) assert.equal(x.code, 0, x.out);
+  assert.equal(all.filter((x) => /Putting the main checkout’s packages in/.test(x.out)).length, 1, all.map((x) => x.out).join('\n---\n'));
+  assert.ok(existsSync(join(r.wt, 'node_modules', 'left-pad', 'index.js')));
+  assert.ok(!existsSync(join(r.wt, 'node_modules.cc-control-tmp')), 'nothing half made in the worktree');
+});
+
+test('§112: the clone is built where no tool walks (the git folder), never as a folder in the worktree beside node_modules', async () => {
+  const r = repoWithWorktree();
+  let during: string[] = [];
+  await linkDeps(r.wt, base(), (line) => { if (/^Putting/.test(line)) during = readdirSync(r.wt); });
+  assert.ok(during.length && !during.some((n) => n.startsWith('node_modules')), `the worktree while cloning: ${during.join(', ')}`);
+  assert.equal(readdirSync(join(r.main, '.git', 'cc-control-deps')).length, 0, 'nothing left in the git folder');
+});
+
+test('§112: a half-made folder an earlier run left beside node_modules is removed, even when node_modules is there', async () => {
+  const r = repoWithWorktree();
+  await linkDeps(r.wt, base());
+  mkdirSync(join(r.wt, 'node_modules.cc-control-tmp', 'call-bind'), { recursive: true });
+  const b = base();
+  assert.equal(depsState(r.wt, undefined, b).state, 'tidy');
+  assert.equal(withDeps([parseStep('echo hi')!] as StepSpec[], () => r.wt, (d) => depsState(d, undefined, b).state).length, 2, 'Try it gets the step that tidies');
+  const out = await linkDeps(r.wt, b);
+  assert.equal(out.did, 'none');
+  assert.match(out.text, /half-made/);
+  assert.ok(!existsSync(join(r.wt, 'node_modules.cc-control-tmp')));
+  assert.equal(depsState(r.wt, undefined, b).state, 'none');
+});
+
+test('§112: a lock whose holder hasn’t written its pid yet (a script from before §112) counts as held while it is new', () => {
+  const r = repoWithWorktree();
+  const b = base();
+  mkdirSync(lockFor(r.wt, b), { recursive: true });
+  assert.equal(depsState(r.wt, undefined, b).state, 'busy');
 });
 
 test('withDeps: a packages step first for each folder that needs one, once per folder, never for stop: or ! steps', () => {
