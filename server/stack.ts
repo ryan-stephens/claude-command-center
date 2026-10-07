@@ -6,11 +6,11 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, pickedServices, readLooseJson, runLabel, serviceSteps, stackRules, stackSteps, uiPortFor, uiProject, uiUrlFor, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo, type StackRunContext } from '../shared/stack.ts';
+import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, pickedServices, readLooseJson, runLabel, serviceSteps, stackRules, stackSteps, uiHomePort, uiPortFor, uiProject, uiUrlFor, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo, type StackRunContext } from '../shared/stack.ts';
 import { uiApp } from '../shared/stack-detect.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import { run } from './hosts.ts';
-import { PortPool } from './ports.ts';
+import { PortPool, type UiPortPick } from './ports.ts';
 import type { RunOptions, RunPlaces } from './recipes.ts';
 import { repoFiles } from './repo-files.ts';
 import type { Store } from './store.ts';
@@ -104,13 +104,13 @@ export { readLooseJson } from '../shared/stack.ts';
  * what's wrong (an API or UI repo the card doesn't have, a proxy file that isn't there or isn't
  * JSON, no port left), having taken nothing.
  */
-export async function prepareStackRun(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string, pool = new PortPool()): Promise<{ recipe: RunRecipe; opts: RunOptions }> {
-  const session = await prepareStackSession(stack, choice, places, cardId, dir, pool);
+export async function prepareStackRun(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string, pool = new PortPool(), who = cardId): Promise<{ recipe: RunRecipe; opts: RunOptions }> {
+  const session = await prepareStackSession(stack, choice, places, cardId, dir, pool, who);
   const steps = stackSteps(stack, session.choice, session.ctx);
   const url = uiUrlFor(stack, session.choice, session.ctx);
   return {
     recipe: { repo: '', workspaceId: stack.workspaceId, steps, ...(url ? { url } : {}), source: stack.source },
-    opts: { choice: session.label, cleanup: session.end },
+    opts: { choice: session.label, cleanup: session.end, ...(session.uiNote ? { note: session.uiNote } : {}) },
   };
 }
 
@@ -128,6 +128,8 @@ export interface StackSession {
   /** The services in start order: each API, then the UI. */
   services: string[];
   label: string;
+  /** What the UI's run should say about its port (§122): off its own port, and why. */
+  uiNote?: string;
   end: () => void;
 }
 
@@ -137,7 +139,7 @@ export interface StackSession {
  * one), and the proxy copy written with the picked APIs' rules. The steps come per service from
  * serviceRecipe.
  */
-export async function prepareStackSession(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string, pool = new PortPool()): Promise<StackSession> {
+export async function prepareStackSession(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string, pool = new PortPool(), who = cardId): Promise<StackSession> {
   const values = choiceValues(stack, choice.values);
   const apis = pickedApis(stack, choice.apis);
   const pick = { values, apis: apis.map((a) => a.repo) };
@@ -150,14 +152,22 @@ export async function prepareStackSession(stack: StackInfo, choice: StackChoice,
   for (const a of apis) branches[a.repo.toLowerCase()] = await branchOf(where(a.repo, 'The API'));
   const uiDir = stack.ui ? where(stack.ui.repo, 'The UI') : undefined;
   if (stack.ui && uiDir) branches[stack.ui.repo.toLowerCase()] = await branchOf(uiDir);
-  // One port per API, and one for the UI when it takes one: given back when the session ends.
-  const wantUi = needsUiPort(stack);
-  const picked = await pool.take(apis.length + (wantUi ? 1 : 0));
-  const ports: Record<string, number> = {};
-  apis.forEach((a, i) => { ports[a.repo.toLowerCase()] = picked[i]; });
-  const uiPort = wantUi ? picked[picked.length - 1] : undefined;
   // The served app's own port and baseHref, from its project file: the URL when the stack doesn't say.
   const app = stack.ui && uiDir ? uiApp(repoFiles(uiDir), uiProject(stack.ui.steps)) : undefined;
+  // One port per API, and one for the UI when it takes one: given back when the session ends. The
+  // UI keeps its own port when it's free, where its sign-in is registered (§122).
+  const picked = await pool.take(apis.length);
+  const ports: Record<string, number> = {};
+  apis.forEach((a, i) => { ports[a.repo.toLowerCase()] = picked[i]; });
+  let ui: UiPortPick | undefined;
+  try {
+    ui = needsUiPort(stack) ? await pool.takeUi(uiHomePort(stack, app), who) : undefined;
+  } catch (e) {
+    pool.free(picked);
+    throw e;
+  }
+  if (ui) picked.push(ui.port);
+  const uiPort = ui?.port;
   const ctx: StackRunContext = { branches, ports, ...(uiPort ? { uiPort } : {}), ...(app ? { uiApp: app } : {}) };
   try {
     let cleanup: (() => void) | undefined;
@@ -189,6 +199,7 @@ export async function prepareStackSession(stack: StackInfo, choice: StackChoice,
     return {
       cardId, stack, choice: pick, ctx, places, services,
       label: runLabel(values, pick.apis, ports, stack.ui ? uiPortFor(stack, pick, ctx) : undefined, stack.ui ? uiProject(stack.ui.steps) ?? app?.name : undefined),
+      ...(ui?.note ? { uiNote: ui.note } : {}),
       end: () => { if (ended) return; ended = true; pool.free(picked); undo?.(); },
     };
   } catch (e) {

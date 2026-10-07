@@ -13,7 +13,7 @@ import { CARDS_IN_TERMINAL, CHANNEL_ON, findClaude } from '../server/cards.ts';
 import { bundledClaude, sdkClaude } from '../server/claude-exe.ts';
 import { config, CONFIG_FILE } from '../server/config.ts';
 import { AzureDevOpsHost, GitHubHost, hostFor } from '../server/hosts.ts';
-import { parseRange } from '../server/ports.ts';
+import { parsePortList, parseRange } from '../server/ports.ts';
 import { recipeOf } from '../server/recipes.ts';
 import { readLooseJson, stackOf } from '../server/stack.ts';
 import { parseStep } from '../shared/recipes.ts';
@@ -201,6 +201,9 @@ for (const w of workspaces) {
   const [lo, hi] = parseRange(process.env.CC_CONTROL_PORTS);
   const need = st.apis.length + (needsUiPort(st) ? 1 : 0);
   line(hi - lo + 1 >= need * 2 ? 'ok' : 'warn', 'Local ports', `${lo}-${hi} (CC_CONTROL_PORTS); a run of everything takes ${need}`, hi - lo + 1 >= need * 2 ? '' : 'Widen the range so two cards can run at once.');
+  // §122: the UI keeps its own port when it's free; a second card's takes one registered for sign-in, when listed.
+  const signIn = parsePortList(process.env.CC_CONTROL_UI_PORTS);
+  if (needsUiPort(st)) line(signIn.length ? 'ok' : 'info', 'UI sign-in ports', signIn.length ? `its own port, then ${signIn.join(', ')} (CC_CONTROL_UI_PORTS)` : 'its own port for the first card; a second card’s UI runs on one from the range above', signIn.length ? '' : 'If the app signs in, a port from the range can’t: list ports registered for its sign-in in CC_CONTROL_UI_PORTS.');
   for (const w of stackWarnings(st)) line('warn', 'Two at once', w);
   // Personal values the steps read from config.env (%KUBECONFIG_DEV%): each must be set on this machine.
   for (const name of envNamesIn(st)) {

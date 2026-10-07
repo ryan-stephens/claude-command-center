@@ -2885,3 +2885,48 @@ Screenshots looked at, light and dark. `walk-card.cjs` 66/66 light and dark, `wa
 No code changed. Not run: the walks (a docs-only change); `pnpm typecheck` and `pnpm test` pass.
 
 **Open:** the build waits on the handoff: the ports the owner can get registered, and the redirect's path.
+
+## 122. A card's UI keeps its own port, and a second takes one registered for sign-in
+
+2026-10-07. The handoff from §121's diagnosis at VU:
+- **The UI builds its `redirect_uri` from the page's address:** the origin, then the app's base path, then the callback path. The same goes for its sign-out address. Nothing in its config names a port.
+- **The provider rejects the 18xxx address at its authorize step** (authorization code with PKCE), before any token call.
+- **Each app in the UI's workspace has its own fixed dev port**, and the registered redirect URIs are most likely those ports, each with its own app's path. A provider matches the whole address, so another app's port is no use with this app's path.
+- **The API side is fine:** the gateway takes any origin, and the dev proxy uses `changeOrigin`.
+- **§114 had made this worse:** it moved every card's UI to the range, even when the UI's own port was free. Since then not even one card could sign in.
+
+The handoff suggested borrowing other apps' registered ports by serving this app under their base paths with a rewritten runtime config. That was turned down: it would run the app disguised as another one (base href, routes, assets, proxy paths), and break in ways that are hard to see.
+
+**What changed.**
+- **The UI keeps its own port while it's free** (`PortPool.takeUi` in `server/ports.ts`, `uiHomePort` in `shared/stack.ts`). Its own port is the one its project file gives, else a fixed localhost port in `ui.url`. The step still gets `--port`, now with that port. The first card's UI signs in as it did before §114.
+- **A second card's UI takes the first free port of `CC_CONTROL_UI_PORTS`** (`parsePortList`: `4301,4302` or `4301-4303`). These are the ports registered with the sign-in provider, set in the machine's `config.env`, never in the repo.
+  - The run's output starts with why: *The UI's own port, ‹n›, is in use by ‹card›, so it runs on ‹m› from CC_CONTROL_UI_PORTS.*
+  - A port something else listens on is skipped. Two takes at once never get the same port.
+- **All of them taken:** Try it refuses, naming who holds each: *No sign-in port free for the UI: ‹n› (‹card›), ‹m› (‹card›). Stop one, or add one to CC_CONTROL_UI_PORTS.* The run holds nothing; its APIs' ports go back.
+- **No list set:** a second card's UI takes a port from the range, as in §114, and its output says the sign-in provider may refuse that port and where to list registered ones.
+- `prepareStackSession` takes the card's key to name it. A service's run takes a `note` that starts its output (`RunOptions.note`).
+- The doctor says what the UI's ports will be (*UI sign-in ports*). `docs/config.env.example` and README describe the setting.
+- No new key: the port shows where it did (the run's label, *UI :4216*), and the refusal comes as Try it's error.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (403). New tests:
+- `parsePortList`: lists, ranges, repeats, and things that aren't ports.
+- `takeUi`: its own port first, then a listed one, skipping one something else listens on. When all are taken, the error names each holder. A port given back is its own again. With no list, a port from the range, and a note only when its own port was taken.
+- Four UIs taken at once get four different ports.
+- The stack test now expects the project's own port (4216, or the other app's 4220) where it pinned a range port. A second card gets the range with the note. With a listed port, a second card gets it and a third is refused naming CARD-1 and CARD-2, holding nothing afterwards.
+
+**`walk-two-cards.cjs` (21, light and dark)**, its server with `CC_CONTROL_UI_PORTS=4291`:
+- card A's UI keeps 4216, and card B's takes 4291, each with that `--port`;
+- B's UI output starts with why;
+- a third card is refused on the page (*No sign-in port free for the UI: 4216 (TWO-1), 4291 (TWO-2)…*) and runs nothing;
+- both sign-in ports are free after the stops.
+
+Screenshot looked at: the first wording of the refusal was cut off at the end of the header, so it is shorter now.
+
+The other walks: `walk-card.cjs` 66/66 light and dark, `walk-board-try.cjs` 19/19 light and dark, `walk-deps.cjs` 20/20, `walk-try-compile.cjs` 15/15 light and dark, `walk-hub.cjs` 37/37, `walk-perf.cjs` 25/25. `pnpm run doctor` wasn't run: it signs in to the trackers. Its new line is type-checked only.
+
+**To check at VU:** `git pull`, restart (ask first; this is server code). Try it on a card: its UI's step should end `--port <its usual port>`, and sign-in should work. Before spare ports are registered, a second card's UI runs on 18xxx and its output says why. Once they are registered, put them in `%USERPROFILE%\.cc-control\config.env` as `CC_CONTROL_UI_PORTS=…` and restart. A second card's UI then takes the first of them and signs in. `pnpm run doctor` lists them.
+
+**Open:**
+- The registration request (the owner's): spare localhost ports with the UI's own path, for login and logout redirects, and trusted origins if the provider keeps that list.
+- Where sign-in state is kept (browser storage per port, or a cookie shared by every localhost port) wasn't checked at VU; a shared cookie could let two cards' UIs overwrite each other's sign-in.
+- The fallback, if registration is refused: one front door on the usual port (§121).

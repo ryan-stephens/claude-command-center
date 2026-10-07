@@ -130,30 +130,49 @@ test('no ui.url: the URL is the served app’s own port and baseHref from its pr
   };
   const pool = new PortPool([18441, 18445]);
   const { recipe, opts } = await prepareStackRun(info, { values: { env: 'dev' }, apis: ['orders-api'] }, places, 'cu', join(dir, 'runs-u'), pool);
-  // §114: nx serve without --port gets the picked one (so a second card can run it); the path is still the app's baseHref.
-  assert.equal(recipe.url, 'http://localhost:18442/ap-summary/');
-  assert.equal(opts.choice, 'dev · orders-api :18441 · deny-withdraw :18442');
-  assert.match(recipe.steps.find((s) => /nx\.cmd serve/.test(s))!, /--port 18442$/);
+  // §114: nx serve without --port gets --port; §122: the app's own port while it's free (its sign-in is registered there). The path is the app's baseHref.
+  assert.equal(recipe.url, 'http://localhost:4216/ap-summary/');
+  assert.equal(opts.choice, 'dev · orders-api :18441 · deny-withdraw :4216');
+  assert.match(recipe.steps.find((s) => /nx\.cmd serve/.test(s))!, /--port 4216$/);
+  assert.equal(opts.note, undefined, 'on its own port: nothing to say');
   opts.cleanup?.();
+  assert.deepEqual(pool.taken(), [], 'its own port is given back too');
   // The step names the other app: its port and path.
   const other = { ...info, ui: { ...info.ui!, steps: ['npx nx serve payoff'] } };
   const o = await prepareStackRun(other, { values: { env: 'dev' }, apis: [] }, places, 'cu2', join(dir, 'runs-u'), pool);
-  assert.equal(o.recipe.url, 'http://localhost:18441');
-  assert.equal(o.opts.choice, 'dev · UI only · payoff :18441');
+  assert.equal(o.recipe.url, 'http://localhost:4220');
+  assert.equal(o.opts.choice, 'dev · UI only · payoff :4220');
   o.opts.cleanup?.();
   // A written url wins; ui.path still goes after it.
   const written = { ...info, ui: { ...info.ui!, url: 'http://localhost:{{uiPort}}', path: '/ap-summary/', steps: ['npx nx serve deny-withdraw --port={{uiPort}}'] } };
   const w = await prepareStackRun(written, { values: { env: 'dev' }, apis: [] }, places, 'cu3', join(dir, 'runs-u'), pool);
-  assert.equal(w.recipe.url, 'http://localhost:18441/ap-summary/');
-  assert.equal(w.opts.choice, 'dev · UI only · deny-withdraw :18441');
+  assert.equal(w.recipe.url, 'http://localhost:4216/ap-summary/');
+  assert.equal(w.opts.choice, 'dev · UI only · deny-withdraw :4216');
   w.opts.cleanup?.();
   // VU's stack as saved: url http://localhost:4200 from the example, no --port on the step: the project file's port and path are used.
   const stale = { ...info, ui: { ...info.ui!, url: 'http://localhost:4200' } };
   const s = await prepareStackRun(stale, { values: { env: 'dev' }, apis: [] }, places, 'cu4', join(dir, 'runs-u'), pool);
-  // §114: and its nx serve gets --port with the picked one, so the url is this run's port, on the project file's path.
-  assert.equal(s.recipe.url, 'http://localhost:18441/ap-summary/');
-  assert.equal(s.opts.choice, 'dev · UI only · deny-withdraw :18441');
+  assert.equal(s.recipe.url, 'http://localhost:4216/ap-summary/');
+  assert.equal(s.opts.choice, 'dev · UI only · deny-withdraw :4216');
+  // §114: a second card while the first holds 4216: --port with one from the range, and the run says why.
+  const s2 = await prepareStackRun(stale, { values: { env: 'dev' }, apis: [] }, places, 'cu5', join(dir, 'runs-u'), pool, 'CARD-5');
+  assert.equal(s2.recipe.url, 'http://localhost:18441/ap-summary/');
+  assert.match(s2.opts.note ?? '', /own port, 4216, is in use by cu4, so it runs on 18441\. .*CC_CONTROL_UI_PORTS/);
+  s2.opts.cleanup?.();
   s.opts.cleanup?.();
+  // §122: with ports registered for sign-in, a second card takes one of those; a third, with none left, is told who holds them.
+  const listed = new PortPool([18441, 18445], [18446]);
+  const l1 = await prepareStackRun(stale, { values: { env: 'dev' }, apis: ['orders-api'] }, places, 'cl1', join(dir, 'runs-u'), listed, 'CARD-1');
+  const l2 = await prepareStackRun(stale, { values: { env: 'dev' }, apis: ['orders-api'] }, places, 'cl2', join(dir, 'runs-u'), listed, 'CARD-2');
+  assert.equal(l1.recipe.url, 'http://localhost:4216/ap-summary/');
+  assert.equal(l2.recipe.url, 'http://localhost:18446/ap-summary/');
+  assert.match(l2.opts.note ?? '', /own port, 4216, is in use by CARD-1, so it runs on 18446 from CC_CONTROL_UI_PORTS/);
+  await assert.rejects(prepareStackRun(stale, { values: { env: 'dev' }, apis: ['orders-api'] }, places, 'cl3', join(dir, 'runs-u'), listed, 'CARD-3'),
+    /No sign-in port free for the UI: 4216 \(CARD-1\), 18446 \(CARD-2\)\. Stop one, or add one to CC_CONTROL_UI_PORTS\./);
+  assert.deepEqual(listed.taken(), [4216, 18441, 18442, 18446], 'the refused run holds nothing: its API’s port went back');
+  l1.opts.cleanup?.();
+  l2.opts.cleanup?.();
+  assert.deepEqual(listed.taken(), []);
 });
 
 // A stand-in okteto: `okteto up -f <manifest>` reads the manifest's forward and starts the API on

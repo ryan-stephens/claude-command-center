@@ -402,6 +402,17 @@ export function staleUrl(url: string, appPort: number): boolean {
   return Boolean(m && Number(m[1]) !== appPort);
 }
 
+/**
+ * The UI's own port (§122): its project file's, else a fixed localhost port in `ui.url`. The address
+ * its sign-in is registered for, so the run keeps it when it's free.
+ */
+export function uiHomePort(stack: Pick<Stack, 'ui'>, app?: UiApp): number | undefined {
+  if (app?.port) return app.port;
+  const url = stack.ui?.url;
+  const m = url && !USES('uiPort').test(url) ? /^https?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})(?:\/|$)/i.exec(url) : null;
+  return m ? Number(m[1]) : undefined;
+}
+
 /** The port the UI serves on for this run, as uiUrlFor works it out, when it is a number. */
 export function uiPortFor(stack: Stack, choice: StackChoice, ctx: StackRunContext): number | undefined {
   const url = uiUrlFor(stack, choice, ctx);

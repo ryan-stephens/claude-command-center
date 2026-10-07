@@ -303,6 +303,8 @@ export interface RunOptions {
   /** The card the run belongs to, when the key isn't the card's id (a service's run is kept under runKey(card, service)). */
   cardId?: string;
   service?: string;
+  /** A line the run's output starts with: why the UI isn't on its own port (§122). */
+  note?: string;
 }
 
 /** Runs cards' recipes, one per key: a card's id, or runKey(card, service) for one service of its stack (§82). Starting a key again stops that run first (and runs its stop: steps). */
@@ -412,6 +414,7 @@ export class RunService {
     this.live.set(key, live);
     // A fresh log: whoever follows this key starts over (the service was started again).
     this.lines?.(key, [], true);
+    if (opts.note) this.logLine(live, 0, opts.note);
     this.step(live, 0);
     this.changed();
     return run;

@@ -27,7 +27,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { ChannelService } from './channel.ts';
 import { Typist } from './typist.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
-import { parseRange, PortPool } from './ports.ts';
+import { parsePortList, parseRange, PortPool } from './ports.ts';
 import { plainStack, prepareStackSession, restoreLeftovers, runsDir, saveStack, serviceRecipe, stackOf, stackRecipe, stackRows, type StackSession } from './stack.ts';
 import { detectWorkspaceStack, joinStack } from './stack-detect.ts';
 import { suggested, unknownStackRepos, validateStack } from '../shared/stack.ts';
@@ -186,7 +186,7 @@ function ticketsMsg(): ServerMsg {
 const follows = new Map<WebSocket, Set<string>>();
 // Local ports for stack runs, one per API and UI, so two cards can run the same stack at once; an
 // okteto up's other forwards take theirs from it too (§114).
-const ports = new PortPool(parseRange(process.env.CC_CONTROL_PORTS));
+const ports = new PortPool(parseRange(process.env.CC_CONTROL_PORTS), parsePortList(process.env.CC_CONTROL_UI_PORTS));
 const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env, {
   pool: ports,
   // §117: a card's runs write their output to its logs folder, for its Claude to read.
@@ -718,7 +718,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
           if (!session) throw new Error('Nothing is running for this card yet: pick the environment and the services, then start them.');
           const recipe = serviceRecipe(session, service);
           send(ws, { type: 'ok', reqId: msg.reqId });
-          await runs.start(runKey(card.id, service), recipe, session.places, { cardId: card.id, service, choice: session.label });
+          await runs.start(runKey(card.id, service), recipe, session.places, { cardId: card.id, service, choice: session.label, ...(service === 'ui' && session.uiNote ? { note: session.uiNote } : {}) });
           return;
         }
         const c = (msg.choice ?? {}) as { values?: unknown; apis?: unknown };
@@ -726,11 +726,11 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         const apis = Array.isArray(c.apis) ? c.apis.map(String).slice(0, 30) : [];
         // The last session goes first (its proxy copy and ports are this one's to make again).
         await endSession(card.id, true);
-        const session = await prepareStackSession(stack, { values, apis }, runPlaces(card), card.id, runsDir(DB_PATH), ports);
+        const session = await prepareStackSession(stack, { values, apis }, runPlaces(card), card.id, runsDir(DB_PATH), ports, card.key);
         sessions.set(card.id, session);
         send(ws, { type: 'ok', reqId: msg.reqId });
         // Each service as its own run, started together: an API's steps and the UI's run side by side, each with its own stop.
-        for (const sv of session.services) void runs.start(runKey(card.id, sv), serviceRecipe(session, sv), session.places, { cardId: card.id, service: sv, choice: session.label });
+        for (const sv of session.services) void runs.start(runKey(card.id, sv), serviceRecipe(session, sv), session.places, { cardId: card.id, service: sv, choice: session.label, ...(sv === 'ui' && session.uiNote ? { note: session.uiNote } : {}) });
         return;
       }
       const home = cardRepos(card)[0];
