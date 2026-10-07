@@ -44,7 +44,8 @@ export class PortPool {
   async take(n: number): Promise<number[]> {
     const out: number[] = [];
     for (let p = this.range[0]; p <= this.range[1] && out.length < n; p++) {
-      if (this.held.has(p) || await listening(p)) continue;
+      // Held is checked again after the wait: another take running at once may have got it meanwhile (§114).
+      if (this.held.has(p) || await listening(p) || this.held.has(p)) continue;
       this.held.add(p);
       out.push(p);
     }

@@ -568,8 +568,8 @@ function StackTry({ card, stack, source }: { card: Card; stack: Stack; source: s
                     : (live || r) && ticked(sv.id) && <button className="btn py-0 text-[12px]" onClick={(e) => { e.stopPropagation(); tryService(card.id, sv.id); }} title="Start this one on its own"><Key k="r" size="sm" />{r ? 'Again' : 'Start'}</button>}
                   {on && <button className="btn py-0 text-[12px]" onClick={(e) => { e.stopPropagation(); tryService(card.id, sv.id); }} title="Stop it and start it again, the others keep running"><Key k="r" size="sm" />Again</button>}
                 </span>
-                {sv.fixed && <span className="col-start-2 text-[11.5px] text-faint"><b className="font-semibold text-sub">Always starts:</b> the UI is the app you try. Tick the APIs below to run them here too{env ? `; the rest are the shared ${env} ones` : ''}.</span>}
-                {!sv.fixed && (sv.why || !sv.found) && <span className={`col-start-2 text-[11.5px] ${sv.changed ? 'text-attn' : 'text-faint'}`}>{sv.why || 'Can’t tick: this repo isn’t in this card or its lane'}</span>}
+                {sv.fixed && <span className="col-span-2 col-start-2 text-[11.5px] text-faint"><b className="font-semibold text-sub">Always starts:</b> the UI is the app you try. Tick the APIs below to run them here too{env ? `; the rest are the shared ${env} ones` : ''}.</span>}
+                {!sv.fixed && (sv.why || !sv.found) && <span className={`col-span-2 col-start-2 text-[11.5px] ${sv.changed ? 'text-attn' : 'text-faint'}`}>{sv.why || 'Can’t tick: this repo isn’t in this card or its lane'}</span>}
               </li>
             );
           })}

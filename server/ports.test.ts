@@ -29,3 +29,10 @@ test('ports are handed out once each, skipping what is held or already listening
     busy.close();
   }
 });
+
+test('two takes at once never get the same port (§114)', async () => {
+  const pool = new PortPool([18720, 18739]);
+  const got = await Promise.all(Array.from({ length: 6 }, () => pool.take(2)));
+  const all = got.flat();
+  assert.equal(new Set(all).size, all.length, all.join(' '));
+});

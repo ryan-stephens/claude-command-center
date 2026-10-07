@@ -9,7 +9,8 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { get as httpGet } from 'node:http';
 import { isAbsolute, join } from 'node:path';
-import { FORWARD_MANIFEST, rewriteForward } from '../shared/okteto.ts';
+import { FORWARD_MANIFEST, otherForwards, rewriteForward } from '../shared/okteto.ts';
+import type { PortPool } from './ports.ts';
 import { findUrl, LOG_KEEP, MAX_STEPS, portOf, specsOf, stepLabel, waitLabel, type CardRun, type LogLine, type RunRecipe, type StepSpec } from '../shared/recipes.ts';
 import { repoName } from '../shared/workspaces.ts';
 import { withoutSecrets } from './config.ts';
@@ -202,19 +203,26 @@ export function expandVars(vars: Record<string, string>, env: NodeJS.ProcessEnv)
 /** The okteto manifest in a folder, if it has one. */
 const MANIFESTS = ['okteto.yml', 'okteto.yaml'];
 
+/** How many ports a forward: step's manifest needs besides the run's own (§114): one per other forward. */
+function sparesFor(spec: StepSpec, cwd: string): number {
+  if (!spec.forward) return 0;
+  const manifest = MANIFESTS.map((f) => join(cwd, f)).find((f) => existsSync(f));
+  try { return manifest ? otherForwards(readFileSync(manifest, 'utf8')) : 0; } catch { return 0; }
+}
+
 /**
  * A forward: step's command: a copy of the folder's okteto manifest is written beside it with the
  * forward pointed at the picked local port, kept out of git through .git/info/exclude, and an
  * okteto command gets `-f <copy>` right after its subcommand (before any `--`). Throws when there
  * is no manifest yet (the step that writes it has to come first) or it has no forward.
  */
-export function forwarded(spec: StepSpec, cwd: string): { cmd: string; made?: string } {
+export function forwarded(spec: StepSpec, cwd: string, spare: number[] = [], moved: { from: number; to: number }[] = []): { cmd: string; made?: string } {
   if (!spec.forward) return { cmd: spec.cmd };
   const manifest = MANIFESTS.map((f) => join(cwd, f)).find((f) => existsSync(f));
   const { local, remote } = spec.forward;
   if (!manifest) throw new Error(`No okteto.yml in ${repoName(cwd)} to forward port ${local}: put forward: on the okteto up line, after the step that writes the manifest.`);
   let text: string;
-  try { text = rewriteForward(readFileSync(manifest, 'utf8'), local, remote); } catch (e) { throw new Error(`Couldn’t point ${repoName(cwd)}’s okteto.yml at port ${local}: ${(e as Error).message}.`); }
+  try { text = rewriteForward(readFileSync(manifest, 'utf8'), local, remote, spare, moved); } catch (e) { throw new Error(`Couldn’t point ${repoName(cwd)}’s okteto.yml at port ${local}: ${(e as Error).message}.`); }
   const copy = join(cwd, FORWARD_MANIFEST);
   writeFileSync(copy, text);
   excludeFromGit(cwd, FORWARD_MANIFEST);
@@ -240,10 +248,10 @@ function excludeFromGit(cwd: string, name: string): void {
  * input, one line each (PowerShell's Read-Host and choice prompts read them); otherwise it has none.
  * `made` collects files the step had written for it (a forward: manifest copy), removed on stop.
  */
-function launch(spec: StepSpec, cwd: string, base: NodeJS.ProcessEnv, detach = process.platform !== 'win32', made?: string[]): ChildProcess {
+function launch(spec: StepSpec, cwd: string, base: NodeJS.ProcessEnv, detach = process.platform !== 'win32', made?: string[], spare?: number[], moved?: { from: number; to: number }[]): ChildProcess {
   const env = { ...base, ...expandVars(spec.env, base) };
   const stdio: ['pipe' | 'ignore', 'pipe', 'pipe'] = [spec.answers ? 'pipe' : 'ignore', 'pipe', 'pipe'];
-  const f = forwarded(spec, cwd);
+  const f = forwarded(spec, cwd, spare, moved);
   if (f.made) made?.push(f.made);
   const child = spec.ps
     ? spawn(process.platform === 'win32' ? 'powershell.exe' : 'pwsh', ['-NoLogo', '-Command', f.cmd], { cwd, env, windowsHide: true, detached: detach, stdio })
@@ -274,6 +282,10 @@ interface Live {
   seq: number;
   /** Files written for steps (forward: manifest copies), removed when the run stops. */
   made: string[];
+  /** Ports taken from the pool for a forward: step's other forwards (§114), given back on stop. */
+  spare: number[];
+  /** Which step got which of them (a step is started again once they are in). */
+  spareFor?: Map<number, number[]>;
   stopped: boolean;
   /** The stop in progress (its stop: steps can take minutes); a start waits for it. */
   stopping?: Promise<void>;
@@ -300,17 +312,20 @@ export class RunService {
   private env: NodeJS.ProcessEnv;
   private httpWaitMs: number;
   private buildWaitMs: number;
+  /** The stack's port pool (§114): a forward: step takes ports from it for its manifest's other forwards. */
+  private pool?: PortPool;
 
   /**
    * `httpWaitMs`: how long a wait:http: step may wait (tests shorten it). `lines`: the run's output as
    * it comes, for whoever follows it on the page (§84): `reset` says the run started afresh, so the
    * lines are the whole log; otherwise they are the ones since the last call.
    */
-  constructor(changed: () => void, env: NodeJS.ProcessEnv, opts: { httpWaitMs?: number; buildWaitMs?: number; lines?: (key: string, lines: LogLine[], reset: boolean) => void } = {}) {
+  constructor(changed: () => void, env: NodeJS.ProcessEnv, opts: { httpWaitMs?: number; buildWaitMs?: number; pool?: PortPool; lines?: (key: string, lines: LogLine[], reset: boolean) => void } = {}) {
     this.changed = changed;
     this.lines = opts.lines;
     this.httpWaitMs = opts.httpWaitMs ?? HTTP_WAIT_MS;
     this.buildWaitMs = opts.buildWaitMs ?? BUILD_WAIT_MS;
+    this.pool = opts.pool;
     // Plain output, no dev server opening a browser of its own (o opens it), and no tokens from the settings file.
     this.env = { ...withoutSecrets(env), FORCE_COLOR: '0', NO_COLOR: '1', BROWSER: 'none', PYTHONUNBUFFERED: '1' };
   }
@@ -381,7 +396,7 @@ export class RunService {
       text: `Starting ${opts.service ?? (recipe.workspaceId ? 'the workspace' : repoName(recipe.repo))}`,
       ...(opts.choice ? { choice: opts.choice } : {}),
     };
-    const live: Live = { run, specs, places: at, procs: [], lines: specs.map(() => []), log: [], fresh: [], seq: 1, made: [], stopped: false, ...(opts.cleanup ? { cleanup: opts.cleanup } : {}) };
+    const live: Live = { run, specs, places: at, procs: [], lines: specs.map(() => []), log: [], fresh: [], seq: 1, made: [], spare: [], stopped: false, ...(opts.cleanup ? { cleanup: opts.cleanup } : {}) };
     this.live.set(key, live);
     // A fresh log: whoever follows this key starts over (the service was started again).
     this.lines?.(key, [], true);
@@ -419,13 +434,25 @@ export class RunService {
       this.changed();
       return;
     }
+    // §114: an okteto up whose manifest forwards more than the API's port (a debugger, another
+    // service) gets a port of its own for each from the pool first, so a second card's run of the
+    // same API doesn't clash on them. Taken once per step; the step starts when they are in.
+    const need = this.pool && !live.spareFor?.has(i) ? sparesFor(spec, cwd) : 0;
+    if (need) {
+      (live.spareFor ??= new Map()).set(i, []);
+      void this.pool!.take(need).then((p) => { live.spare.push(...p); live.spareFor!.set(i, p); if (live.stopped) this.pool!.free(p); else this.step(live, i); }, () => { this.step(live, i); });
+      return;
+    }
     step.state = 'go';
     run.text = stepLabel(spec);
     const last = i === runnable[runnable.length - 1];
     this.logLine(live, i, `$ ${spec.cmd}`, true);
     let child: ChildProcess;
     try {
-      child = launch(spec, cwd, this.env, undefined, live.made);
+      const moved: { from: number; to: number }[] = [];
+      child = launch(spec, cwd, this.env, undefined, live.made, live.spareFor?.get(i), moved);
+      if (moved.length) this.logLine(live, i, `(this run’s ports for the manifest’s other forwards: ${moved.map((m) => `${m.from} → ${m.to}`).join(', ')}; okteto picks its own SSH port)`);
+      else if (spec.forward) this.logLine(live, i, '(okteto picks its own SSH port for this run)');
     } catch (e) {
       // What a forward: step needed wasn't there: the run stops here, with the reason on the step.
       step.state = 'bad';
@@ -653,6 +680,7 @@ export class RunService {
   /** Undo what the run changed outside its processes, once: the files written for its steps, then what the caller asked. */
   private cleanup(live: Live): void {
     for (const f of live.made.splice(0)) rmSync(f, { force: true });
+    this.pool?.free(live.spare.splice(0));
     const c = live.cleanup;
     live.cleanup = undefined;
     try { c?.(); } catch (e) { live.run.text = `Stopped, but couldn’t undo a change: ${(e as Error).message}`; }

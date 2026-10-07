@@ -56,15 +56,42 @@ function forwards(lines: string[]): Found[] {
   return out;
 }
 
+/** The forward a run points at its picked port: the one whose remote side is `remote`, else the first. */
+function mainForward(all: Found[], remote?: number): Found | undefined {
+  return (remote !== undefined ? all.find((f) => f.remote === remote) : undefined) ?? all[0];
+}
+
 /**
  * The manifest with one forward's local side set to `local`: the forward whose remote side is
  * `remote`, else the first one. Throws when the manifest has no forward (nothing to point at).
+ *
+ * §114, so a second card can run the same API at once: every other forward's local side is set to
+ * the next of `spare` (a debugger's 5005 would clash otherwise; one with no spare left is kept), and
+ * a `remote:` line (the local SSH port, which the team's helper writes as 22000) is taken out, so
+ * okteto picks a free one itself (its default). `moved` says what went where.
  */
-export function rewriteForward(text: string, local: number, remote?: number): string {
+export function rewriteForward(text: string, local: number, remote?: number, spare: number[] = [], moved: { from: number; to: number }[] = []): string {
   const lines = text.split(/\r?\n/);
   const all = forwards(lines);
   if (!all.length) throw new Error('the manifest has no forward: line to change');
-  const pick = (remote !== undefined ? all.find((f) => f.remote === remote) : undefined) ?? all[0];
+  const pick = mainForward(all, remote)!;
   lines[pick.at] = pick.rewrite(lines[pick.at], local);
-  return lines.join(text.includes('\r\n') ? '\r\n' : '\n');
+  const left = [...spare];
+  for (const f of all) {
+    if (f === pick || !left.length) continue;
+    const to = left.shift()!;
+    lines[f.at] = f.rewrite(lines[f.at], to);
+    moved.push({ from: f.local, to });
+  }
+  const out = lines.filter((l) => !REMOTE_SSH.test(l));
+  return out.join(text.includes('\r\n') ? '\r\n' : '\n');
+}
+
+/** A dev entry's `remote: 22000`: the local port okteto's SSH uses. */
+const REMOTE_SSH = /^\s*remote:\s*\d{2,5}\s*(#.*)?$/;
+
+/** How many of the manifest's forwards aren't the one pointed at the run's port: each needs a port of its own (§114). */
+export function otherForwards(text: string): number {
+  const all = forwards(text.split(/\r?\n/));
+  return all.length ? all.length - 1 : 0;
 }

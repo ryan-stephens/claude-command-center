@@ -252,6 +252,19 @@ export function stackDraft(repoNames: string[]): Stack {
 
 const USES = (what: string) => new RegExp(`\\{\\{\\s*${what}\\s*\\}\\}`);
 
+/** A dev server that takes --port: Nx's serve targets, ng serve, webpack serve, Vite. */
+const SERVES_ON_PORT = /\bnx(\.cmd)?\s+(run\s+\S+:serve\S*|serve)\b|\bng(\.cmd)?\s+serve\b|\bwebpack(\.cmd)?\s+serve\b|(^|[\s\\/])vite(\.cmd)?(\s|$)/i;
+
+/**
+ * §114: a UI start step that serves on its project's fixed port (no --port, no {{uiPort}}) gets
+ * `--port {{uiPort}}` added, as an okteto up gets forward: (serviceSteps), so a second card's UI
+ * starts on a port of its own instead of stopping at "Port 4200 is already in use".
+ */
+export function autoUiPort(line: string): boolean {
+  const spec = parseStep(line);
+  return Boolean(spec && !spec.note && !spec.stop && SERVES_ON_PORT.test(spec.cmd) && !/--port\b/.test(spec.cmd) && !USES('uiPort').test(line));
+}
+
 /**
  * What would stop a stack running twice at once, or would mislead: said in the editor and by the
  * doctor, never enforced (a team that runs one card at a time can leave it).
@@ -267,7 +280,7 @@ export function stackWarnings(stack: Stack): string[] {
   const legacy = stack.apis.filter((a) => a.values.port && !a.values.appPort).map((a) => a.repo);
   if (legacy.length) out.push(`${legacy.join(', ')}: "port" in values now means the port inside the container ({{appPort}}); the local port is picked per run. Call it "appPort" to say so.`);
   if (/\{\{\s*name\s*\}\}-\{\{\s*branch\s*\}\}/.test(apiLines)) out.push('Use {{deployment}} for the deployment’s name: it is {{name}}-{{branch}} cut to 50 characters, as Kubernetes needs.');
-  if (stack.ui && !USES('uiPort').test([...stack.ui.steps, stack.ui.url ?? ''].join('\n'))) {
+  if (stack.ui && !needsUiPort(stack)) {
     out.push('The UI starts on a fixed port, so two cards can’t run it at once: add --port {{uiPort}} to its start step and put {{uiPort}} in ui.url.');
   }
   return out;
@@ -275,7 +288,7 @@ export function stackWarnings(stack: Stack): string[] {
 
 /** Does the UI want a port picked for it? */
 export function needsUiPort(stack: Pick<Stack, 'ui'>): boolean {
-  return Boolean(stack.ui && USES('uiPort').test([...stack.ui.steps, stack.ui.url ?? ''].join('\n')));
+  return Boolean(stack.ui && (USES('uiPort').test([...stack.ui.steps, stack.ui.url ?? ''].join('\n')) || stack.ui.steps.some(autoUiPort)));
 }
 
 /** The repos a stack names that aren't in `known` (folder names, any case): a stack still holding an example's names. */
@@ -376,6 +389,8 @@ export function uiUrlFor(stack: Stack, choice: StackChoice, ctx: StackRunContext
   const inSteps = fixedPort(stack.ui.steps.map((s) => fill(s, vars, 'the UI’s steps')));
   const port = ctx.uiPort ?? inSteps ?? ctx.uiApp?.port;
   let base = stack.ui.url ? fill(stack.ui.url, vars, 'the UI’s url') : port ? `http://localhost:${port}` : undefined;
+  // §114: --port {{uiPort}} was added to its start step, so a url written with the project's fixed port is this run's port instead.
+  if (base && ctx.uiPort && stack.ui.url && !USES('uiPort').test(stack.ui.url) && stack.ui.steps.some(autoUiPort)) base = base.replace(/^(https?:\/\/(?:localhost|127\.0\.0\.1)):\d{2,5}/i, `$1:${ctx.uiPort}`);
   // A url written with a port the steps don't set, when the app's project file says another: the file is right (the url was a guess, or from the example).
   if (base && stack.ui.url && !ctx.uiPort && !inSteps && ctx.uiApp?.port && staleUrl(base, ctx.uiApp.port)) base = `http://localhost:${ctx.uiApp.port}`;
   return base ? withPath(base, stack.ui.path ?? ctx.uiApp?.path) : undefined;
@@ -440,7 +455,7 @@ export function serviceSteps(stack: Stack, choice: StackChoice, ctx: StackRunCon
   };
   if (service === 'ui') {
     if (!stack.ui) throw new Error('The stack has no UI.');
-    add(stack.ui.steps, stack.ui.repo, uiVars(values, stack.ui, ctx), 'the UI’s steps');
+    add(stack.ui.steps.map((l) => (ctx.uiPort && autoUiPort(l) ? `${l} --port {{uiPort}}` : l)), stack.ui.repo, uiVars(values, stack.ui, ctx), 'the UI’s steps');
   } else {
     const [api] = pickedApis(stack, [service]);
     const key = api.repo.toLowerCase();

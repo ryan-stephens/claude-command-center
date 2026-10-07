@@ -130,14 +130,16 @@ test('no ui.url: the URL is the served app’s own port and baseHref from its pr
   };
   const pool = new PortPool([18441, 18445]);
   const { recipe, opts } = await prepareStackRun(info, { values: { env: 'dev' }, apis: ['orders-api'] }, places, 'cu', join(dir, 'runs-u'), pool);
-  assert.equal(recipe.url, 'http://localhost:4216/ap-summary/');
-  assert.equal(opts.choice, 'dev · orders-api :18441 · deny-withdraw :4216');
+  // §114: nx serve without --port gets the picked one (so a second card can run it); the path is still the app's baseHref.
+  assert.equal(recipe.url, 'http://localhost:18442/ap-summary/');
+  assert.equal(opts.choice, 'dev · orders-api :18441 · deny-withdraw :18442');
+  assert.match(recipe.steps.find((s) => /nx\.cmd serve/.test(s))!, /--port 18442$/);
   opts.cleanup?.();
   // The step names the other app: its port and path.
   const other = { ...info, ui: { ...info.ui!, steps: ['npx nx serve payoff'] } };
   const o = await prepareStackRun(other, { values: { env: 'dev' }, apis: [] }, places, 'cu2', join(dir, 'runs-u'), pool);
-  assert.equal(o.recipe.url, 'http://localhost:4220');
-  assert.equal(o.opts.choice, 'dev · UI only · payoff :4220');
+  assert.equal(o.recipe.url, 'http://localhost:18441');
+  assert.equal(o.opts.choice, 'dev · UI only · payoff :18441');
   o.opts.cleanup?.();
   // A written url wins; ui.path still goes after it.
   const written = { ...info, ui: { ...info.ui!, url: 'http://localhost:{{uiPort}}', path: '/ap-summary/', steps: ['npx nx serve deny-withdraw --port={{uiPort}}'] } };
@@ -148,14 +150,17 @@ test('no ui.url: the URL is the served app’s own port and baseHref from its pr
   // VU's stack as saved: url http://localhost:4200 from the example, no --port on the step: the project file's port and path are used.
   const stale = { ...info, ui: { ...info.ui!, url: 'http://localhost:4200' } };
   const s = await prepareStackRun(stale, { values: { env: 'dev' }, apis: [] }, places, 'cu4', join(dir, 'runs-u'), pool);
-  assert.equal(s.recipe.url, 'http://localhost:4216/ap-summary/');
-  assert.equal(s.opts.choice, 'dev · UI only · deny-withdraw :4216');
+  // §114: and its nx serve gets --port with the picked one, so the url is this run's port, on the project file's path.
+  assert.equal(s.recipe.url, 'http://localhost:18441/ap-summary/');
+  assert.equal(s.opts.choice, 'dev · UI only · deny-withdraw :18441');
   s.opts.cleanup?.();
 });
 
 // A stand-in okteto: `okteto up -f <manifest>` reads the manifest's forward and starts the API on
 // that local port, as the real one would forward it. The UI serves its proxy copy on --port.
-const OKTETO = "const a=process.argv;const f=a[a.indexOf('-f')+1];const m=/-\\s*(\\d+):(\\d+)/.exec(require('fs').readFileSync(f,'utf8'));process.env.PORT=m[1];console.log('Forward: '+m[1]+' -> '+m[2]);require(require('path').join(process.cwd(),'api.js'))";
+// Like the real one (§114), it also holds every other forward's local port and the remote: (SSH) port,
+// and fails as okteto does when one is already in use on this machine.
+const OKTETO = "const a=process.argv;const f=a[a.indexOf('-f')+1];const t=require('fs').readFileSync(f,'utf8');const m=/-\\s*(\\d+):(\\d+)/.exec(t);const held=[...t.matchAll(/-\\s*(\\d+):(\\d+)/g)].slice(1).map((x)=>Number(x[1]));const r=/remote:\\s*(\\d+)/.exec(t);if(r)held.push(Number(r[1]));for(const p of held)require('net').createServer().listen(p,'127.0.0.1').on('error',()=>{console.log('x Couldn\\'t connect to your development container: local port '+p+' is already in-use in your local machine');process.exit(1)});process.env.PORT=m[1];console.log('Forward: '+m[1]+' -> '+m[2]);require(require('path').join(process.cwd(),'api.js'))";
 const UI_PORT = "const a=process.argv;const f=a[2];const p=Number(a[a.indexOf('--port')+1]);require('http').createServer((q,r)=>r.end(require('fs').readFileSync(f,'utf8'))).listen(p,()=>console.log('Local: http://localhost:'+p+'/'))";
 
 test('two cards run the same API and UI at once: each run gets its own ports, forwarded through a copy of the manifest', async () => {
@@ -164,7 +169,8 @@ test('two cards run the same API and UI at once: each run gets its own ports, fo
   writeFileSync(join(bin, 'okteto.js'), OKTETO);
   writeFileSync(join(bin, 'okteto.cmd'), `@node "${join(bin, 'okteto.js')}" %*\r\n`);
   writeFileSync(join(bin, 'okteto'), `#!/bin/sh\nnode "${join(bin, 'okteto.js')}" "$@"\n`, { mode: 0o755 });
-  const manifest = 'name: orders-api\nforward:\n  - 8080:8080\n';
+  // As the team's helper writes it (§114): a fixed SSH port and a debugger forward, which a second card's okteto up clashed on.
+  const manifest = 'name: orders-api\nremote: 18469\nforward:\n  - 8080:8080\n  - 18468:5005\n';
   const api1 = repo('two-api-c1', { 'api.js': API, 'okteto.yml': manifest }, 'card-1');
   const api2 = repo('two-api-c2', { 'api.js': API, 'okteto.yml': manifest }, 'card-2');
   const ui1 = repo('two-ui-c1', { 'ui.js': UI_PORT, 'proxy.conf.json': PROXY }, 'card-1');
@@ -178,8 +184,8 @@ test('two cards run the same API and UI at once: each run gets its own ports, fo
     }), workspaceId: 'w2', source: '',
   };
   const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
-  const runs = new RunService(() => {}, { ...process.env, [pathKey]: `${bin}${process.platform === 'win32' ? ';' : ':'}${process.env[pathKey]}` });
   const pool = new PortPool([18450, 18459]);
+  const runs = new RunService(() => {}, { ...process.env, [pathKey]: `${bin}${process.platform === 'win32' ? ';' : ':'}${process.env[pathKey]}` }, { pool });
   const runsDir = join(dir, 'two-runs');
   try {
     const a = await prepareStackRun(info, { values: {}, apis: ['orders-api'] }, { cwd: ui1, repos: { 'orders-api': api1, 'web-ui': ui1 } }, 'c1', runsDir, pool);
@@ -192,8 +198,9 @@ test('two cards run the same API and UI at once: each run gets its own ports, fo
     await runs.start('c1', a.recipe, { cwd: ui1, repos: { 'orders-api': api1, 'web-ui': ui1 } }, a.opts);
     await runs.start('c2', b.recipe, { cwd: ui2, repos: { 'orders-api': api2, 'web-ui': ui2 } }, b.opts);
     await until(() => runs.get('c1')?.state === 'up' && runs.get('c2')?.state === 'up', 20_000).catch((e: Error) => { throw new Error(`${e.message}: ${JSON.stringify([runs.get('c1'), runs.get('c2')].map((r) => [r?.state, r?.text, r?.steps.map((s) => [s.state, s.tail])]))}`); });
-    assert.equal(readFileSync(join(api1, 'okteto.cc-control.yml'), 'utf8'), 'name: orders-api\nforward:\n  - 18450:8080\n', 'the copy forwards the picked port');
-    assert.equal(readFileSync(join(api2, 'okteto.cc-control.yml'), 'utf8'), 'name: orders-api\nforward:\n  - 18452:8080\n');
+    assert.equal(readFileSync(join(api1, 'okteto.cc-control.yml'), 'utf8'), 'name: orders-api\nforward:\n  - 18450:8080\n  - 18454:5005\n', 'the copy forwards the picked port, the debugger gets one of its own, and okteto picks its SSH port');
+    assert.equal(readFileSync(join(api2, 'okteto.cc-control.yml'), 'utf8'), 'name: orders-api\nforward:\n  - 18452:8080\n  - 18455:5005\n');
+    assert.ok(runs.log('c1').some((l) => /other forwards: 18468 → 18454; okteto picks its own SSH port/.test(l.text)), 'the run says where the debugger is');
     assert.equal(readFileSync(join(api1, 'okteto.yml'), 'utf8'), manifest, 'the manifest itself is untouched');
     assert.match(readFileSync(join(api1, '.git', 'info', 'exclude'), 'utf8'), /okteto\.cc-control\.yml/);
     assert.match(runs.get('c1')!.steps[0].tail.join('\n'), /okteto up -f okteto\.cc-control\.yml|Forward: 18450 -> 8080/);
@@ -205,7 +212,7 @@ test('two cards run the same API and UI at once: each run gets its own ports, fo
     await runs.stop('c1');
     assert.equal(existsSync(join(api1, 'okteto.cc-control.yml')), false, 'the copy goes with the run');
     assert.equal(readFileSync(join(api1, 'down.txt'), 'utf8'), 'orders-api-card-1', '{{deployment}} in the stop step');
-    assert.deepEqual(pool.taken(), [18452, 18453], 'card 1’s ports are free again, card 2’s still held');
+    assert.deepEqual(pool.taken(), [18452, 18453, 18455], 'card 1’s ports (the debugger’s too) are free again, card 2’s still held');
     assert.equal(await (await fetch('http://localhost:18452')).text(), 'api', 'card 2 is still up');
     await assert.rejects(fetch('http://localhost:18450'));
     await runs.stop('c2');

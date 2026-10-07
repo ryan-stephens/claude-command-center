@@ -2650,3 +2650,58 @@ Screenshots looked at: the first layout put an *always starts* pill beside the n
 **To check at VU:** `git pull`, restart (ask first; this is server code), then Try it on the card. The UI's row should be first and say *Always starts*. Its status should say *compiling* until Nx prints its done line, and only then be up with Open. If it never becomes up, paste the last lines Nx prints once the app is ready: its wording may need adding to `buildLine`, or set `wait:"<that text>"` on the UI's step in the stack setup (`e`).
 
 **Open:** the done and failed lines are a list of known wordings; a dev server that says something else waits out the 15-minute cap (or takes a `wait:`). A rebuild after the app is up (a save) doesn't take it back to *compiling*.
+
+## 114. Two cards on the same API and UI at once: the UI's port, okteto's SSH port and its other forwards are each run's own
+
+2026-10-07. The owner, at VU: with one card's UI and API running, Try it on a second card in the same repos failed. The second API's `okteto up` stopped with *Couldn't connect to your development container: local port 22000 is already in-use in your local machine*, and the second UI stopped at *Port 4216 is already in use. Would you like to use a different port?*
+
+**Cause.**
+- **Okteto:** since §54 a run's `okteto up` gets a copy of the manifest whose API forward uses the port picked for that run. The team's helper also writes `remote: 22000`, the local SSH port, into the manifest, plus a debugger forward. The copy kept both, so the second card's `okteto up` clashed on them. Okteto's own default for `remote` is a random free port (its manifest reference).
+- **UI:** the stack's UI step was `nx run …:serve --proxyConfig={{proxy}}` with no `--port`, so it served on the project's 4216. The setup warned about a fixed port but didn't fix it, and the dev server's question waits for an answer a step never gives.
+- **Found on the way:** `PortPool.take` checked that a port was free, waited on the listening check, then marked it held. Two takes running at once could both get the same port.
+
+**What changed.**
+- **The manifest copy** (`rewriteForward` in `shared/okteto.ts`):
+  - The `remote:` line is taken out, so okteto picks a free SSH port itself.
+  - Every forward besides the API's gets a port of its own from the stack's pool. Before an `okteto up` step starts, `RunService` takes one port per other forward (`sparesFor`, `otherForwards`). The step's output says where they went (*this run's ports for the manifest's other forwards: 5005 → 18002; okteto picks its own SSH port*), so the debugger can be attached there. They are given back with the run, with the copy.
+  - `RunService` gets the server's `PortPool` (`server/index.ts`).
+- **The UI's port** (`autoUiPort` in `shared/stack.ts`):
+  - A UI start step that is a dev server taking `--port` (Nx's serve targets, `ng serve`, `webpack serve`, Vite), with no `--port` and no `{{uiPort}}`, gets `--port {{uiPort}}` added. The run picks the port, the way an `okteto up` already gets `forward:`.
+  - A `ui.url` written with a fixed localhost port, as the example and the owner's saved stack have, takes the run's port; the path is still the project file's baseHref.
+  - The setup's fixed-port warning now shows only for a start line that can't take `--port` (`npm start`).
+- **`PortPool.take`** checks *held* again after the wait.
+- **The Try it panel:** the UI's caption and an API's note run under the buttons too. With Open, Stop and Again on the UI's row, the caption had been squeezed into a column a word wide.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (391).
+- `rewriteForward` on a manifest shaped like the helper's (`remote: 22000`, the API's forward and two more, CRLF): the API's forward gets the run's port, the others get the spares in order (one with no spare left is kept), the `remote:` line goes, `remotePort:` is left alone, and the rest is byte for byte.
+- The pool: six takes at once get twelve different ports. This test failed before the fix.
+- Stack tests now expect the picked port where they pinned the fixed one: the example's `nx run shop:serve` gets `--port 18001` and its url that port; the owner's saved stack (url `http://localhost:4200`, no `--port`) gets the run's port on the project's baseHref.
+- The existing two-cards test runs a stand-in okteto that holds every forward and the `remote:` port and fails as okteto does on one in use. It now uses a manifest with `remote:` and a debugger forward; both cards come up, each with its own debugger port, and stopping card A frees its ports, the debugger's too. Before the pool fix, this test caught both cards being given the same debugger port.
+
+**New `walk-two-cards.cjs` (15, light and dark).** It starts its own isolated server with these stand-ins first on its `PATH`:
+- `okteto`, as above;
+- `nx`, which serves on the project's 4216 unless given `--port`, and asks the dev server's question when 4216 is taken;
+- a helper that writes `okteto.yml` with `remote: 22000` and a 5005 debugger forward.
+
+The stack is saved as the owner's was: no `--port`, url `:4216`. Card A is started from its Try it panel with `t`, then card B while A runs. The walk checks that:
+- both come up;
+- each UI is on its own port, not 4216, with `--port` on its step;
+- neither manifest copy has `remote:`, and the four forward ports are all different;
+- each API answers as its own card's, and each UI's proxy points at its own card's API;
+- A's output says where 5005 went;
+- after stopping both, their ports answer nothing and the copies are gone;
+- there are no page errors.
+
+Screenshots looked at (the squeezed caption; fixed). `walk-card.cjs` 59/59 light and dark, `walk-board-try.cjs` 19/19 light and dark, `walk-deps.cjs` 20/20, `walk-try-compile.cjs` 15/15 light and dark, `walk-hub.cjs` 29/29, `walk-perf.cjs` 25/25.
+
+**To check at VU:** `git pull`, restart (ask first; this is server code). Stop both cards' runs first, and run `okteto down` for the second card's deployment if its failed run left it up (okteto said so). Then Try it on card A, and on card B while A runs:
+- each UI's step should end `--port 180xx`, on a different port for each card;
+- each API's output should say where its other forwards went and that okteto picks the SSH port;
+- both should come up, and each UI should show its own card's changes.
+
+If the helper's manifest forwards something else that has to stay on its port, say which.
+
+**Open:**
+- A UI started with `npm start` (no `--port`) still serves on its fixed port; the setup says so.
+- A module-federation host's remotes may start on their own fixed ports; not seen yet.
+- The UI row's *up* text is squeezed out next to three buttons; the dot still shows the state.

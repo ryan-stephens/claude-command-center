@@ -181,7 +181,11 @@ function ticketsMsg(): ServerMsg {
 
 /** Which runs' output each connection follows (§84): the Output view on the page asks for the keys it shows. */
 const follows = new Map<WebSocket, Set<string>>();
+// Local ports for stack runs, one per API and UI, so two cards can run the same stack at once; an
+// okteto up's other forwards take theirs from it too (§114).
+const ports = new PortPool(parseRange(process.env.CC_CONTROL_PORTS));
 const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env, {
+  pool: ports,
   lines: (key, lines, reset) => {
     for (const [ws, keys] of follows) if (keys.has(key) && ws.readyState === ws.OPEN) send(ws, reset ? { type: 'run.log', key, lines: runs.log(key) } : { type: 'run.lines', key, lines });
   },
@@ -195,8 +199,6 @@ async function endSession(cardId: string, quiet = false): Promise<void> {
   sessions.get(cardId)?.end();
   sessions.delete(cardId);
 }
-// Local ports for stack runs, one per API and UI, so two cards can run the same stack at once.
-const ports = new PortPool(parseRange(process.env.CC_CONTROL_PORTS));
 const ship = new ShipService(cards, runs);
 
 /** Recipes for every repo the page may show one for: the library's, the workspaces' and the cards'. */

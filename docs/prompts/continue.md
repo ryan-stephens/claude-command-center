@@ -27,6 +27,7 @@ The main concepts:
 - §110, §111: a card's worktree gets the main checkout's `node_modules` as a folder of hard links (`scripts/link-deps.ts`). The VU UI is a huge monolith, about 20 minutes to install, so never install per card and never junction: `git worktree remove` follows a junction and empties the main checkout's packages.
 - §112: the clone's lock let two clones through when a stack's services started together, and the half-made `node_modules.cc-control-tmp` it left broke Nx's project graph. The lock is now renamed into place whole, the clone is built in the git folder, and a leftover is removed by the next Try it.
 - §113: the Try it panel lists the UI first, as the service that always starts, and says why. A compiling dev server (Nx, Angular, webpack) is up only when it prints its done line, not when it first prints its address.
+- §114: two cards can run the same API and UI at once. A UI dev server without `--port` gets `--port {{uiPort}}`, and the manifest copy drops okteto's fixed SSH port (`remote:`) and gives every other forward a port of its own. `PortPool.take` no longer hands one port to two takes running at once.
 
 The earlier direction, for history:
 
@@ -68,10 +69,10 @@ The earlier direction, for history:
 
 ## State
 - **Push finished work to `main`** (owner, 2026-09-30): once a change is verified and committed, push it without asking. The owner now works and tests mainly on their Veterans United laptop, from a clone they `git pull`; that is where the real Jira Cloud, TFS and Okteto are. Restarting a running server, writing to Jira or TFS, and opening real PRs still need asking.
-- Checks: `pnpm typecheck`, `pnpm test` (389 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
+- Checks: `pnpm typecheck`, `pnpm test` (391 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
 - **Walkthroughs** in `docs/walkthroughs/simple-new-card/`:
   - `walk-card` (59, light and dark), `walk-hub` (29, a real Haiku card, `PORT=7794`) and `walk-perf` (the speed budget) must pass before a commit.
-  - Feature walks: `walk-board-try` (19), `walk-verify` (38, stand-in tools in `standins/verify-tools.cjs`) `walk-deps` (20, with a stack of two services on one bare worktree) and `walk-try-compile` (15, light and dark: the UI row, and a compiling stand-in UI).
+  - Feature walks: `walk-board-try` (19), `walk-verify` (38, stand-in tools in `standins/verify-tools.cjs`) `walk-deps` (20, with a stack of two services on one bare worktree) `walk-try-compile` (15, light and dark: the UI row, and a compiling stand-in UI) and `walk-two-cards` (15, light and dark: its own server with stand-in okteto and nx; two cards on one API and UI at once).
   - **`walk-perf`'s key-to-paint numbers have been 14 to 28 ms against 16 since the afternoon of 2026-10-06, on page code that measured 9 ms that morning.** An A/B against the §104 page showed the same scatter, so it's the machine. Look into it before trusting a perf result.
 - **Stopping a test server with `Stop-Process` orphans its sessions' MCP servers** (§95, §98). Check for `npx … mcp-server-*` processes whose parent is gone, and stop only those trees.
 - **Every walk that makes worktrees must leave none behind:** check `%TEMP%\cc-demo` for `*-card-*` folders after a walk you stopped.

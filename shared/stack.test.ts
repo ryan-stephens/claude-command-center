@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseStep, recipeLabel, recipeText } from './recipes.ts';
-import { apiVars, choiceLabel, choiceValues, fill, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, runLabel, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiPortFor, uiProject, uiUrlFor, unknownStackRepos, retarget, staleUrl, validateStack, withPath, type Stack, type StackRunContext } from './stack.ts';
+import { apiVars, choiceLabel, choiceValues, fill, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, runLabel, serviceSteps, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiPortFor, uiProject, uiUrlFor, unknownStackRepos, retarget, staleUrl, validateStack, withPath, type Stack, type StackRunContext } from './stack.ts';
 
 const stack: Stack = validateStack({
   choose: { env: ['dev', 'uat'] },
@@ -66,9 +66,13 @@ test('ports are picked per run: {{port}} is the picked one, {{appPort}} the cont
   assert.deepEqual(stackRules(stack, { values: {}, apis: ['orders-api'] }, ctx)['/orders/api/**'], { target: 'http://localhost:18000/' });
   const withUi = validateStack({ ...STACK_EXAMPLE, apis: [{ repo: 'orders-api', values: { name: 'orders-api', dir: 'OrdersApi', appPort: '8080', route: 'orders' } }] });
   assert.equal(needsUiPort(withUi), true);
-  assert.equal(needsUiPort(stack), false, 'a fixed port: none picked');
+  // §114: nx serve with no --port gets one picked and added; its url's fixed port is this run's.
+  assert.equal(needsUiPort(stack), true, 'nx serve without --port: one is picked');
+  assert.equal(needsUiPort({ ui: { ...stack.ui!, steps: ['npm start'] } }), false, 'a start line that takes no --port: none picked');
   assert.equal(uiUrlFor(withUi, { values: {}, apis: [] }, ctx), 'http://localhost:18001');
-  assert.equal(uiUrlFor(stack, { values: {}, apis: [] }, ctx), 'http://localhost:4200');
+  assert.equal(uiUrlFor(stack, { values: {}, apis: [] }, ctx), 'http://localhost:18001');
+  assert.deepEqual(serviceSteps(stack, { values: {}, apis: [] }, ctx, 'ui').steps, ['@web-ui nx run shop:serve --proxyConfig=p.json --port 18001']);
+  assert.equal(uiUrlFor(stack, { values: {}, apis: [] }, { ...ctx, uiPort: undefined }), 'http://localhost:4200', 'no port picked: the url as written');
   // No url in the stack: the --port in the steps, else the served app's own port and baseHref from its project file, else 4200; ui.path goes after the port.
   const noUrl = (ui: Partial<NonNullable<Stack['ui']>>, c: Partial<StackRunContext> = {}): string | undefined => uiUrlFor({ ...stack, ui: { repo: 'web-ui', steps: ['nx serve deny-withdraw'], ...ui } }, { values: {}, apis: [] }, { ...ctx, uiPort: undefined, ...c });
   assert.equal(noUrl({}), undefined, 'nothing says the port: the address the app prints is used');
@@ -106,10 +110,10 @@ test('ports are picked per run: {{port}} is the picked one, {{appPort}} the cont
 
 test('what keeps a stack from running twice at once is said, not enforced', () => {
   const w = stackWarnings(stack);
-  assert.equal(w.length, 3, w.join('\n'));
+  assert.equal(w.length, 2, w.join('\n'));
   assert.match(w[0], /orders-api, fees-api: "port" in values now means the port inside the container/);
   assert.match(w[1], /Use \{\{deployment\}\}/);
-  assert.match(w[2], /add --port \{\{uiPort\}\} to its start step/);
+  assert.match(stackWarnings({ ...stack, ui: { ...stack.ui!, steps: ['npm start'] } }).at(-1)!, /add --port \{\{uiPort\}\} to its start step/, 'a start line the app can’t give --port to still gets the word (nx serve gets it added, §114)');
   assert.match(stackWarnings({ ...stack, api: { ...stack.api, steps: ['forward:no okteto up'] } })[0], /forward:no keeps the okteto up step on the manifest’s own port/, 'only an opt-out is worth a word');
   assert.deepEqual(stackWarnings(validateStack({ api: { steps: ['PORT={{port}} dotnet run'] }, apis: [{ repo: 'a-api', values: { appPort: '80' } }] })), [], 'no okteto, no proxy: nothing to say');
 });
