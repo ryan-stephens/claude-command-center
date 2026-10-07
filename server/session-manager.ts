@@ -26,6 +26,8 @@ interface LiveSession {
   items: TranscriptItem[];
   partial: string;
   ctxPct?: number;
+  /** §119: the message it was started with, for Ctrl+K before the history knows it. */
+  firstPrompt?: string;
   /** §115: tokens in the context window and the window they're measured against (the SDK's /context summary). */
   ctxTokens?: number;
   ctxMax?: number;
@@ -149,6 +151,7 @@ export class SessionManager {
       out.set(h.sessionId, {
         id: h.sessionId,
         title: h.customTitle || h.summary || h.firstPrompt || '(untitled)',
+        ...(h.firstPrompt ? { firstPrompt: h.firstPrompt.slice(0, 200) } : {}),
         cwd: h.cwd ?? '',
         branch: h.gitBranch,
         lastModified: h.lastModified,
@@ -187,7 +190,8 @@ export class SessionManager {
       if (!samePath(d, cwd)) dirs = addPath(dirs, d);
     }
     this.dirs.setSessionDirs(id, dirs);
-    this.start({ id, cwd, title: firstLine(prompt) || 'New session', options: { sessionId: id } });
+    const l = this.start({ id, cwd, title: firstLine(prompt) || 'New session', options: { sessionId: id } });
+    if (prompt?.trim()) l.firstPrompt = prompt.trim();
     if (prompt?.trim()) this.send(id, prompt);
     else this.emitUpsert(id);
     return id;
@@ -715,6 +719,7 @@ export class SessionManager {
     return {
       id: l.id,
       title: h?.customTitle || l.title,
+      ...((h?.firstPrompt ?? l.firstPrompt) ? { firstPrompt: (h?.firstPrompt ?? l.firstPrompt)!.slice(0, 200) } : {}),
       cwd: l.cwd,
       branch: l.branch ?? h?.gitBranch,
       lastModified: Math.max(l.lastModified, h?.lastModified ?? 0),

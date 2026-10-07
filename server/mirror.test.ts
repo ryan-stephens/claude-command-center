@@ -62,3 +62,43 @@ test('only top-level session files count', () => {
   assert.equal(sessionOfFile(`C--repos-web\\${ID}\\subagents\\agent-1.jsonl`), null);
   assert.equal(sessionOfFile(`C--repos-web\\notes.jsonl`), null);
 });
+
+test('§119: a client gets only what follows what it has; nothing when nothing does; all of it when its copy is no longer the start', async () => {
+  let items = [{ uuid: 'a' }, { uuid: 'b' }];
+  const sent: [string, unknown[], number | undefined][] = [];
+  const m = new Mirror<string>({ read: async () => items, send: (c, _id, it, from) => sent.push([c, it, from]), owned: () => false, throttleMs: 5 });
+  m.watch('p', ID);
+  m.has('p', ID, items);
+  items = [...items, { uuid: 'c' }, { uuid: 'd' }];
+  m.changed(ID);
+  await tick(30);
+  assert.deepEqual(sent.at(-1), ['p', [{ uuid: 'c' }, { uuid: 'd' }], 2], 'only the two new ones, from 2');
+  m.changed(ID);
+  await tick(30);
+  assert.equal(sent.length, 1, 'nothing new: nothing sent');
+  items = [{ uuid: 'x' }, { uuid: 'y' }, { uuid: 'z' }, { uuid: 'w' }, { uuid: 'v' }];
+  m.changed(ID);
+  await tick(30);
+  assert.deepEqual(sent.at(-1), ['p', items, undefined], 'the start changed (a /clear, a compaction): all of it');
+  m.watch('q', ID);
+  items = [...items, { uuid: 'u' }];
+  m.changed(ID);
+  await tick(30);
+  assert.deepEqual(sent.filter(([c]) => c === 'q').at(-1), ['q', items, undefined], 'a client the mirror knows nothing about gets all of it');
+  m.stop();
+});
+
+test('§119: a slow read spaces the next ones out', async () => {
+  let reads = 0;
+  const m = new Mirror<string>({ read: async () => { reads++; await tick(30); return []; }, send: () => {}, owned: () => false, throttleMs: 5 });
+  m.watch('p', ID);
+  m.changed(ID);
+  await tick(50);
+  assert.equal(reads, 1);
+  m.changed(ID);
+  await tick(60);
+  assert.equal(reads, 1, 'it took 30 ms, so the next waits about 150 ms, not 5');
+  await tick(150);
+  assert.equal(reads, 2);
+  m.stop();
+});

@@ -14,6 +14,8 @@ interface Item {
   kind: 'Action' | 'Workflow' | 'Session' | 'Lane';
   label: string;
   detail?: string;
+  /** §119: more to match on, not shown (a session's first prompt: its title may be Claude's own by now). */
+  also?: string;
   run: () => void;
 }
 
@@ -101,6 +103,7 @@ export function Palette() {
       kind: 'Session',
       label: s.title,
       detail: repoName(s.cwd),
+      ...(s.firstPrompt && s.firstPrompt !== s.title ? { also: s.firstPrompt } : {}),
       run: () => openSession(s.id),
     }));
     return [...actions, ...commands, ...wsItems, ...sessionItems];
@@ -115,7 +118,7 @@ export function Palette() {
       .map((item) => {
         // The label decides; the detail (repo, group) only counts when the label doesn't match at all.
         const label = fuzzyScore(query, item.label);
-        return { item, score: label >= 0 ? label : fuzzyScore(query, `${item.label} ${item.detail ?? ''}`) - 1 };
+        return { item, score: label >= 0 ? label : fuzzyScore(query, `${item.label} ${item.detail ?? ''} ${item.also ?? ''}`) - 1 };
       })
       .filter((r) => r.score >= minScore)
       .sort((a, b) => b.score - a.score)

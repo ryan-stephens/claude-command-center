@@ -7,6 +7,12 @@ import { sessionOfFile } from './mirror.ts';
 const PROJECTS_DIR = join(homedir(), '.claude', 'projects');
 const LIST_LIMIT = 300;
 const REFRESH_DEBOUNCE_MS = 1500;
+/**
+ * §119: a session the list has already, whose transcript only grows (a terminal writing it): the
+ * list is read again at most this often. Reading it takes about 150 ms and goes to every page, and a
+ * terminal writes many times a second. A new session still shows within REFRESH_DEBOUNCE_MS.
+ */
+const KNOWN_REFRESH_MS = 10_000;
 /** A transcript written this recently by a process we don't own is probably open in a terminal. */
 export const ACTIVE_ELSEWHERE_MS = 2 * 60_000;
 
@@ -23,6 +29,7 @@ export class HistoryIndex {
   private byId = new Map<string, SDKSessionInfo>();
   private watcher: FSWatcher | null = null;
   private timer: NodeJS.Timeout | null = null;
+  private due = 0;
   private onChange: () => void;
   private onFile: (sessionId: string) => void;
   private running: (sessionId: string) => boolean;
@@ -46,7 +53,7 @@ export class HistoryIndex {
         const id = sessionOfFile(String(file));
         if (id) this.onFile(id);
         const owner = ownerOfFile(String(file));
-        if (!owner || !this.running(owner)) this.scheduleRefresh();
+        if (!owner || !this.running(owner)) this.scheduleRefresh(owner && this.byId.has(owner) ? KNOWN_REFRESH_MS : REFRESH_DEBOUNCE_MS);
       });
     } catch (e) {
       console.warn(`history: cannot watch ${PROJECTS_DIR}: ${(e as Error).message}`);
@@ -62,12 +69,16 @@ export class HistoryIndex {
     return this.byId.get(id);
   }
 
-  scheduleRefresh(): void {
-    if (this.timer) return;
+  /** Read the list again in `ms` (or sooner, if a read is already due sooner). */
+  scheduleRefresh(ms = REFRESH_DEBOUNCE_MS): void {
+    const due = Date.now() + ms;
+    if (this.timer && this.due <= due) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.due = due;
     this.timer = setTimeout(() => {
       this.timer = null;
       this.refresh().then(this.onChange, (e) => console.warn(`history refresh failed: ${e.message}`));
-    }, REFRESH_DEBOUNCE_MS);
+    }, ms);
   }
 
   async refresh(): Promise<void> {

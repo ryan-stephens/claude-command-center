@@ -300,7 +300,7 @@ manager.setCardSessions((id) => {
 // Sessions open in a terminal: whoever is looking at one sees it update live.
 const mirror = new Mirror<WebSocket>({
   read: (id) => manager.transcript(id),
-  send: (ws, id, items) => send(ws, { type: 'session.transcript', id, items: items as TranscriptItem[] }),
+  send: (ws, id, items, from) => send(ws, { type: 'session.transcript', id, items: items as TranscriptItem[], ...(from !== undefined ? { from } : {}) }),
   owned: (id) => manager.owns(id),
 });
 
@@ -495,7 +495,10 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         timings.set(msg.id, { key: card.key, at: Date.now(), what: 'warm' });
         manager.warm(msg.id);
       }
-      send(ws, transcriptFor(msg.id, await manager.transcript(msg.id), msg.have));
+      const items = await manager.transcript(msg.id);
+      send(ws, transcriptFor(msg.id, items, msg.have));
+      // §119: a terminal's later writes send this page only what follows these.
+      mirror.has(ws, msg.id, items);
       // From now on what Claude writes in it comes to this page (and only the session it shows).
       partials.watch(ws, msg.id);
       return;

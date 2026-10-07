@@ -408,9 +408,18 @@ async function wsWindow(page, fn) {
     await page.keyboard.type(RUN);
     await sleep(300);
     const rows = await page.evaluate(() => [...document.querySelectorAll('[role="listbox"] [role="option"]')].slice(0, 4).map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
-    const tPal = await timedKey(page, 'Enter', `() => { const box = document.querySelector('textarea[aria-label="Message to Claude"]'); return Boolean(box && document.body.textContent.includes('PERFWORD')); }`);
+    const tPal = await timedKey(page, 'Enter', `() => { const box = document.querySelector('textarea[aria-label="Message to Claude"]'); return Boolean(box && document.body.textContent.includes('PERFWORD')); }`).catch(() => -1);
     measure('Ctrl+K → a session picked → on screen (warm)', tPal, BUDGET.palette);
-    if (tPal < 0) console.log(`     the palette's first rows: ${rows.join(' || ')}`);
+    if (tPal < 0) {
+      console.log(`     the palette's first rows (typed ${RUN}): ${rows.join(' || ') || 'none'}`);
+      const titles = await page.evaluate((run) => new Promise((resolve) => {
+        const ws = new WebSocket(`ws://${location.host}/ws`);
+        ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === 'sessions') { ws.close(); resolve(m.sessions.filter((x) => x.live).map((x) => `${x.id.slice(0, 8)} "${x.title}"${x.title.includes(run) ? ' (has it)' : ''}`)); } };
+        setTimeout(() => { ws.close(); resolve(['no sessions message']); }, 3000);
+      }), RUN);
+      console.log(`     the server's live sessions: ${titles.join(' || ')}`);
+      await page.keyboard.press('Escape');
+    }
     await page.screenshot({ path: path.join(OUT, '06-palette-pick.png') });
     // Typing in the full-screen session's box (a controlled field: each key renders the view).
     await page.evaluate(() => { window.__typing = []; });

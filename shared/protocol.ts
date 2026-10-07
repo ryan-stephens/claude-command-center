@@ -75,6 +75,12 @@ export interface SessionSummary {
   /** Transcript written recently by someone else, probably an open terminal. */
   activeElsewhere?: boolean;
   ctxPct?: number;
+  /**
+   * §119: what the session was started with (its first prompt, cut short), for Ctrl+K: Claude Code
+   * titles a session itself after a turn or two (an "ai-title"), so its title may no longer hold
+   * the words you started it with.
+   */
+  firstPrompt?: string;
   /** Live sessions (§115): tokens in the context window, the window, and the running cost estimate in USD. */
   ctxTokens?: number;
   ctxMax?: number;

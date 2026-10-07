@@ -2808,3 +2808,39 @@ Screenshot looked at. `walk-board-try.cjs` 19/19, `walk-deps.cjs` 20/20, `walk-t
 **To check at VU:** a page change. `git pull`, `pnpm build` and a reload are enough, unless the server is behind (§114 to §117 need a restart anyway). Drag the edge above a card's message box, or press `Ctrl+Shift+↑`.
 
 **Open:** the full-screen session's box already grows with its text (to 8 lines) but can't be dragged; *Ctrl+K → a session* in `walk-perf` (above).
+
+## 119. A terminal session writing no longer slows the app; Ctrl+K finds a session by what started it
+
+2026-10-07. The owner: with a terminal up as well, everything is very slow and delayed; without one, it is fast.
+
+**Measured** (new `walk-mirror.cjs`). It copies a large real transcript (29 MB) to a throwaway session beside it, opens that full screen on an isolated server, and appends an assistant message to its transcript every 150 ms, as a terminal writing would. It deletes the copy afterwards. While the stand-in terminal wrote:
+- **The page received 8.6 MB in 8 s.** Every re-read sent the whole transcript (about 700 KB, 1,100 items), up to every 0.7 s; the page parsed and merged each one.
+- **The server re-read the whole file each time** (`getSessionMessages`, 50 to 70 ms for 20 to 30 MB).
+- **The session list was read again and sent to every page** after any write by a session the app doesn't run: `listSessions` over 300 sessions takes about 150 ms here, and the list is 57 KB. This happened every 1.5 s for as long as any terminal session wrote, whichever session the page showed. That is "a terminal up" in general, not only `g`.
+- With the page's CPU slowed four times (as a slower laptop's), typing in the box measured 19.7 ms p95 while the terminal wrote.
+
+**What changed.**
+- **The mirror sends each page only what follows what it has** (`server/mirror.ts`).
+  - It keeps each page's item count and last uuid: set when the page opens the session (`has`), and kept up to date after each send.
+  - A change sends `from` that count, which the page already merges (§97). Nothing new sends nothing.
+  - A transcript whose start changed (a `/clear`, a compaction) is sent whole, as before.
+- **A large transcript is re-read less often:** the wait between reads is the larger of 0.7 s and five times the last read's time.
+- **The session list** (`server/history-index.ts`) is read again at most every 10 s for a session it already has whose transcript grows. A new session still shows within 1.5 s; a sooner read already due is kept.
+- **Found on the way, the `walk-perf` miss open since §104/§105** (*Ctrl+K → a session* at -1 ms in about half the runs):
+  - Claude Code titles a session itself after a turn (an `ai-title` line in its transcript, "Plan CARD-1"). The session list then reports that title, so the words the session was started with were no longer searchable.
+  - Sessions now carry their first prompt (`SessionSummary.firstPrompt`, from the history or the live session), and Ctrl+K matches on it when the title doesn't match (it isn't shown).
+  - `walk-perf` now says what the palette and the server had when it misses, rather than stopping.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (400). New mirror tests:
+- only what follows is sent, from its count;
+- nothing is sent when nothing is new;
+- the whole transcript goes when its start changed, or to a page the mirror knows nothing about;
+- a 30 ms read spaces the next out to about 150 ms.
+
+**`walk-mirror.cjs` (8)**: the page received **0.07 MB** in 8 s (from 8.6 MB) and the session list once or not at all (from 5 times). Every message the terminal wrote showed on the page. Typing p95 while it wrote, with the CPU slowed four times: 15.2 ms (from 19.7). The budgets (key → paint 16 ms, transcript 50 KB/s, the list sent at most once) fail the walk.
+
+`walk-perf.cjs`: Ctrl+K found the new card's session in 3 of 3 runs (17 to 19 ms). One of the three had *Ctrl+Enter → the card open* at 336 ms against 300, the same scatter as §112. `walk-card.cjs` 66/66 light and dark, `walk-board-try.cjs` 19/19, `walk-deps.cjs` 20/20, `walk-try-compile.cjs` 15/15, `walk-two-cards.cjs` 17/17, `walk-hub.cjs` 37/37.
+
+**To check at VU:** `git pull`, restart (ask first; this is server code). With a terminal session running, and a card open in the app (its own, or another), typing and the chat should stay quick.
+
+**Open:** a session the app shows while a terminal writes it is still re-read whole from disk at each change (now less often for a big one). Reading only the new lines would mean parsing the transcript ourselves, which the SDK keeps internal.
