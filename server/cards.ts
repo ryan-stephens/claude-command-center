@@ -191,20 +191,33 @@ function git(cwd: string, args: string[]): Promise<string> {
  * branch is new (made with the first worktree of each repo) unless `onExisting`: a repo added to a
  * running card joins the card's branch, which that repo may already have (a branch of that name
  * made by hand) or not. A folder that isn't the top of a git repo (any folder can be context) is
- * left as it is and named in `skipped`, except the home repo, which must be one. If any worktree
- * can't be made, the ones already made are removed with their branches, so nothing is left half done.
+ * left as it is and named in `skipped`, except the home repo, which must be one. A worktree already
+ * there on `branch` (the "What happens" lines run by hand make exactly that) is used as it is, and a
+ * branch already there is checked out rather than made. If any worktree can't be made, the ones
+ * made here are removed with the branches made here, so nothing is left half done.
  */
 export async function makeWorktrees(repos: string[], home: string, key: string, branch: string, onExisting = false): Promise<{ folders: CardFolder[]; skipped: string[] }> {
   // Every repo at once (§98): they are separate git repos, so nothing is shared but the wait.
-  const one = async (repo: string): Promise<{ repo: string; dir?: string; made?: boolean }> => {
+  const one = async (repo: string): Promise<{ repo: string; dir?: string; made?: boolean; adopted?: boolean }> => {
     const top = await git(repo, ['rev-parse', '--show-toplevel']).catch(() => '');
     if (!top || !samePath(top, repo)) {
       if (samePath(repo, home)) throw new Error(`${repoName(repo)} isn’t a git repo, so it can’t have a worktree.`);
       return { repo };
     }
     const dir = worktreeFor(repo, key);
-    if (existsSync(dir)) throw new Error(`${dir} already exists, so the worktree for ${repoName(repo)} can’t go there.`);
-    const has = onExisting && Boolean(await git(repo, ['branch', '--list', branch]).catch(() => ''));
+    if (existsSync(dir)) {
+      const there = await worktreeAt(repo, dir);
+      if (there?.branch === branch) return { repo, dir, adopted: true };
+      throw new Error(there
+        ? `${dir} is already a worktree of ${repoName(repo)}, on ${there.branch ?? 'no branch'} rather than ${branch}. Remove it (git -C ${repo} worktree remove ${dir}) or switch it to ${branch}, then start again.`
+        : `${dir} already exists and isn’t a worktree of ${repoName(repo)}, so the worktree can’t go there. Move or delete it, then start again.`);
+    }
+    // onExisting: a repo added later joins the card's branch. Otherwise a branch of this name is the card's own, made by hand.
+    const has = Boolean(await git(repo, ['branch', '--list', branch]).catch(() => ''));
+    if (has && !onExisting) {
+      const busy = await git(repo, ['worktree', 'list', '--porcelain']).catch(() => '');
+      if (busy.split(/\r?\n/).includes(`branch refs/heads/${branch}`)) throw new Error(`${branch} is already checked out in another folder of ${repoName(repo)}, so its worktree can’t have it too.`);
+    }
     await git(repo, ['worktree', 'add', dir, ...(has ? [branch] : ['-b', branch])]).catch((e: Error) => { throw new Error(`Couldn't make a worktree for ${repoName(repo)}: ${e.message}`); });
     return { repo, dir, made: !has };
   };
@@ -214,13 +227,27 @@ export async function makeWorktrees(repos: string[], home: string, key: string, 
   if (failed) {
     // One failed: undo the others, and say the first failure in the repos' order.
     for (const f of done) {
-      if (!f.dir) continue;
+      if (!f.dir || f.adopted) continue;
       await git(f.repo, ['worktree', 'remove', '--force', f.dir]).catch(() => {});
       if (f.made) await git(f.repo, ['branch', '-D', branch]).catch(() => {});
     }
     throw failed.reason;
   }
   return { folders: done.flatMap((f) => (f.dir ? [{ repo: f.repo, dir: f.dir }] : [])), skipped: done.filter((f) => !f.dir).map((f) => f.repo) };
+}
+
+/** The worktree of `repo` at `dir`, with its branch (none when detached); undefined when `dir` isn't one of them. */
+export async function worktreeAt(repo: string, dir: string): Promise<{ branch?: string; head?: string } | undefined> {
+  const list = await git(repo, ['worktree', 'list', '--porcelain']).catch(() => '');
+  for (const block of list.split(/\r?\n\r?\n/)) {
+    const lines = block.split(/\r?\n/);
+    const path = lines.find((l) => l.startsWith('worktree '))?.slice(9);
+    if (!path || !samePath(path, dir)) continue;
+    const ref = lines.find((l) => l.startsWith('branch '))?.slice(7);
+    const head = lines.find((l) => l.startsWith('HEAD '))?.slice(5);
+    return { ...(ref ? { branch: ref.replace(/^refs\/heads\//, '') } : {}), ...(head ? { head } : {}) };
+  }
+  return undefined;
 }
 
 /** Delete a folder, trying again for a few seconds while Windows still has it open. */
@@ -436,12 +463,14 @@ export class CardService {
     if (card.launch.branch === 'pr' && card.pr) {
       const { source, target, number } = card.pr;
       const dir = worktreeFor(start, key);
-      if (existsSync(dir)) throw new Error(`${dir} already exists, so the copy on PR #${number}'s branch can't go there.`);
+      const there = existsSync(dir) ? await worktreeAt(start, dir) : undefined;
+      if (existsSync(dir) && !there) throw new Error(`${dir} already exists and isn’t a worktree of ${repoName(start)}, so the copy on PR #${number}'s branch can't go there. Move or delete it, then start again.`);
       await git(start, ['fetch', 'origin', source, target]).catch((e: Error) => { throw new Error(`Couldn't fetch ${source} from origin in ${repoName(start)}: ${e.message}`); });
-      await git(start, ['worktree', 'add', '--detach', dir, `origin/${source}`]).catch((e: Error) => { throw new Error(`Couldn't make a copy of ${repoName(start)} on ${source}: ${e.message}`); });
+      // A copy already there (the "What happens" lines run by hand) is used as it is.
+      if (!there) await git(start, ['worktree', 'add', '--detach', dir, `origin/${source}`]).catch((e: Error) => { throw new Error(`Couldn't make a copy of ${repoName(start)} on ${source}: ${e.message}`); });
       card.cwd = dir;
       card.branchName = source;
-      this.step(card, `Fetched PR #${number}’s branch and made a copy ${repoName(dir)} on ${source}`);
+      this.step(card, there ? `Fetched PR #${number}’s branch; used the copy ${repoName(dir)} already there` : `Fetched PR #${number}’s branch and made a copy ${repoName(dir)} on ${source}`);
     } else if (card.launch.branch === 'current') {
       card.branchName = await git(home, ['branch', '--show-current']).catch(() => undefined) || undefined;
       this.step(card, card.branchName ? `Stayed on ${card.branchName} in ${repoName(home)}` : `Stayed where ${repoName(home)} is`);

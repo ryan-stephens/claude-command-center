@@ -42,11 +42,44 @@ test('a worktree card gets a worktree of every git repo on one branch; plain fol
 test('if one repo can’t have its worktree, the ones already made are taken back', async () => {
   const ui = repo('web-ui');
   const api = repo('fees-api');
-  git(api, 'branch', 'card-8-x');
-  await assert.rejects(makeWorktrees([ui, api], ui, 'CARD-8', 'card-8-x'), /Couldn't make a worktree for fees-api/);
+  // The branch is checked out in fees-api's usual folder, so its worktree can't have it.
+  git(api, 'switch', '-qc', 'card-8-x');
+  await assert.rejects(makeWorktrees([ui, api], ui, 'CARD-8', 'card-8-x'), /card-8-x is already checked out in another folder of fees-api/);
   assert.equal(existsSync(`${ui}-card-8`), false, 'the UI’s worktree is gone');
   assert.equal(git(ui, 'branch', '--list', 'card-8-x'), '', 'and its branch');
-  assert.equal(git(api, 'branch', '--list', 'card-8-x'), 'card-8-x', 'a branch that was there before is kept');
+  assert.equal(git(api, 'branch', '--show-current'), 'card-8-x', 'a branch that was there before is kept');
+});
+
+test('worktrees made by hand from the "What happens" lines are used as they are, and a branch already there is checked out', async () => {
+  const ui = repo('hand-ui');
+  const api = repo('hand-api');
+  const lib = repo('hand-lib');
+  git(ui, 'worktree', 'add', `${ui}-card-20`, '-b', 'card-20-x');
+  writeFileSync(join(`${ui}-card-20`, 'work.txt'), 'kept');
+  git(api, 'branch', 'card-20-x');
+  const { folders } = await makeWorktrees([ui, api, lib], ui, 'CARD-20', 'card-20-x');
+  assert.deepEqual(folders.map((f) => f.dir), [`${ui}-card-20`, `${api}-card-20`, `${lib}-card-20`]);
+  assert.equal(existsSync(join(`${ui}-card-20`, 'work.txt')), true, 'the hand-made worktree is untouched');
+  for (const f of folders) assert.equal(git(f.dir, 'branch', '--show-current'), 'card-20-x');
+});
+
+test('a folder in the way is named with what to do: a worktree on another branch, or not a worktree', async () => {
+  const ui = repo('way-ui');
+  git(ui, 'worktree', 'add', `${ui}-card-21`, '-b', 'other');
+  await assert.rejects(makeWorktrees([ui], ui, 'CARD-21', 'card-21-x'), /already a worktree of way-ui, on other rather than card-21-x/);
+  const api = repo('way-api');
+  mkdirSync(`${api}-card-22`);
+  await assert.rejects(makeWorktrees([api], api, 'CARD-22', 'card-22-x'), /isn’t a worktree of way-api/);
+});
+
+test('a hand-made worktree stays when another repo fails', async () => {
+  const ui = repo('keep-ui');
+  const api = repo('keep-api');
+  git(ui, 'worktree', 'add', `${ui}-card-23`, '-b', 'card-23-x');
+  mkdirSync(`${api}-card-23`);
+  await assert.rejects(makeWorktrees([ui, api], ui, 'CARD-23', 'card-23-x'));
+  assert.equal(existsSync(`${ui}-card-23`), true);
+  assert.equal(git(`${ui}-card-23`, 'branch', '--show-current'), 'card-23-x', 'with its branch');
 });
 
 test('the home repo must be a git repo', async () => {

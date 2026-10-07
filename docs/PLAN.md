@@ -2505,3 +2505,15 @@ Screenshots looked at (the Look up button wrapped; fixed). `walk-card.cjs` 59/59
 **Verified:** `pnpm typecheck`, `pnpm test` (372). With the SDK's `claude.exe` renamed away: doctor reported the fallback to `~\.local\bin\claude.exe`, and a real one-turn `query()` through `sdkClaude()` answered. Then the binary was put back, and doctor reports the SDK's own again.
 
 **To check at VU:** `git pull`, restart (ask first), `pnpm run doctor`. The new line should say the SDK's own binary or the one on PATH. Then *Start work* on a new card. If it says neither, install Claude Code or set `CC_CONTROL_CLAUDE` in `config.env` to the full path of `claude.exe`.
+
+## 109. Start work uses worktrees already made by hand
+
+2026-10-06. The owner: they ran the commands from a new card's *What happens* preview by hand, which made the card's worktrees (`git worktree add <repo>-<key> -b <branch>`). *Start work* then refused, because those folders already existed, so the card couldn't start.
+
+**What changed.**
+- `makeWorktrees` (`server/cards.ts`): a folder already there that is a worktree of that repo on the card's branch is used as it is (`worktreeAt` reads `git worktree list --porcelain`). If something else fails, nothing here undoes it. A branch of the card's name with no worktree is checked out instead of made, unless it is already checked out in another folder; that error says so. A folder on another branch, or one that isn't a worktree, gets an error that says what to do.
+- A PR card's copy already there (`git worktree add --detach`, from the preview) is used too.
+
+**Verified:** `pnpm typecheck`, `pnpm test` (375). New tests: a worktree made by hand is used and its files are untouched; a branch made by hand is checked out; a worktree on another branch and a plain folder each get their message; a worktree made by hand stays when another repo fails.
+
+**To check at VU:** `git pull`, restart (ask first), then *Start work* on the card whose worktrees exist. The boot steps should list them and the session should open in the home repo's worktree.
