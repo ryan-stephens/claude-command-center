@@ -254,7 +254,8 @@ function Chat({ card }: { card: Card }) {
   const mark = seen > 0 && seen < count;
   return (
     <div ref={ref} data-chat className="min-h-0 flex-1 overflow-y-auto px-5 py-4" onScroll={(e) => { const el = e.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
-      <div className="mx-auto grid max-w-[880px] gap-3">
+      {/* §120: one column that never grows past the chat (an auto grid track takes its widest content, so a long line made the whole chat scroll sideways). */}
+      <div className="mx-auto grid max-w-[880px] grid-cols-[minmax(0,1fr)] gap-3">
         {booting(card) && <BootLines card={card} />}
         {!card.sessionId && !booting(card) && <p className="text-sm text-faint">The chat shows once the session has started and linked to this card.</p>}
         {items && (mark

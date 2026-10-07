@@ -33,6 +33,13 @@ The main concepts:
 - §117: Try it writes each card's app and services' output to `runs/logs/<card key>/<service>.log`; the card's session can read that folder and its system prompt says where it is.
 - §118: the card chat's message box grows with its text and can be made taller (drag its top edge, `Ctrl+Shift+↑ / ↓`), kept in the browser.
 - §119: a terminal session writing no longer floods the page (the mirror sends only what follows; the session list is re-read at most every 10 s for a known session), and Ctrl+K matches a session's first prompt (Claude Code's own `ai-title` replaces its title). `walk-mirror` measures it.
+- §120: the card chat fits its column (its grid track grew to its widest content: a wide table, a long line); `walk-chat-width` checks it.
+
+**Open, next (2026-10-07, from the VU laptop):** two cards on the same UI now get ports of their own (§114), but the UI on a picked port (18xxx) can't sign in. The team's identity provider (an OIDC app) rejects the login because `redirect_uri` must be one of the app's registered login redirect URIs, and only the UI's usual port is registered. Picking ports alone can't fix that. The options to weigh with the owner:
+  1. Register a small fixed set of extra redirect URIs (say the usual port and three more) with whoever administers the OIDC app, and pick the UI's port from that set, not from the 18000 range (a separate pool for UIs, `CC_CONTROL_UI_PORTS`).
+  2. One front door on the usual port: a small reverse proxy the app runs on the registered port, forwarding to the chosen card's UI port (picked with a key, or by a cookie or path). Only one card's UI is reached at a time per browser, but every card's stack keeps running; it needs WebSocket (dev server reload) and the redirect back from sign-in to go through it.
+  3. Per-card host names (`card-1.localhost:<port>`) if the identity provider allows a wildcard in a redirect URI; same registration question as 1.
+  Measure first: what the UI sends as `redirect_uri` (its environment config, or computed from `window.location`), whether the API also checks the origin, and which of these the owner can get registered. Never commit the identity provider's host, the app's client id or any VU URL.
 
 The earlier direction, for history:
 
@@ -77,8 +84,8 @@ The earlier direction, for history:
 - Checks: `pnpm typecheck`, `pnpm test` (400 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
 - **Walkthroughs** in `docs/walkthroughs/simple-new-card/`:
   - `walk-card` (66, light and dark), `walk-hub` (37, a real Haiku card, `PORT=7794`) and `walk-perf` (the speed budget) must pass before a commit.
-  - Feature walks: `walk-board-try` (19), `walk-verify` (38, stand-in tools in `standins/verify-tools.cjs`) `walk-deps` (20, with a stack of two services on one bare worktree) `walk-try-compile` (15, light and dark: the UI row, and a compiling stand-in UI) and `walk-two-cards` (17, light and dark: its own server with stand-in okteto and nx; two cards on one API and UI at once), `walk-mirror` (8: a terminal writing into a big session; its own server; numbers only).
-  - **`walk-perf`'s key-to-paint numbers have been 14 to 28 ms against 16 since the afternoon of 2026-10-06, on page code that measured 9 ms that morning.** An A/B against the §104 page showed the same scatter, so it's the machine. Look into it before trusting a perf result.
+  - Feature walks: `walk-board-try` (19), `walk-verify` (38, stand-in tools in `standins/verify-tools.cjs`), `walk-deps` (20, with a stack of two services on one bare worktree), `walk-try-compile` (15, light and dark: the UI row, and a compiling stand-in UI), `walk-two-cards` (17, light and dark: its own server with stand-in okteto and nx; two cards on one API and UI at once), `walk-mirror` (8: a terminal writing into a big session; its own server; numbers only) and `walk-chat-width` (6, light and dark; PORT=7811).
+  - **`walk-perf`'s key-to-paint numbers have been 14 to 28 ms against 16 since the afternoon of 2026-10-06, on page code that measured 9 ms that morning.** An A/B against the §104 page showed the same scatter, so it's the machine. Look into it before trusting a perf result. (Since §119 the runs have been clean more often than not; Ctrl+K's miss was a real bug, fixed there.)
 - **Stopping a test server with `Stop-Process` orphans its sessions' MCP servers** (§95, §98). Check for `npx … mcp-server-*` processes whose parent is gone, and stop only those trees.
 - **Every walk that makes worktrees must leave none behind:** check `%TEMP%\cc-demo` for `*-card-*` folders after a walk you stopped.
 

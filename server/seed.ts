@@ -37,6 +37,8 @@ export interface SeedOptions {
   sessionId?: string;
   /** How many transcript items the seeded session shows (walk-perf, §95): earlier turns are made up to reach it. */
   size?: number;
+  /** §120: add content wider than the chat (a wide table, a long code line, a long command). */
+  wide?: boolean;
 }
 
 const PLAN = ['1. Persist the guest cart to localStorage with a 30-day stamp.', '2. On sign-in, merge it into the account cart without duplicating lines (key on sku + options).', '3. Keep gift cards attached through the merge; a test for each path.'].join('\n');
@@ -80,10 +82,26 @@ function filler(key: string, count: number): TranscriptItem[] {
   return out.slice(0, count);
 }
 
-/** The transcript the seeded session shows, as the page draws it; `size` makes it that long with earlier turns. */
-export function seedTranscript(key: string, state: NonNullable<SeedOptions['state']>, size = 0): TranscriptItem[] {
-  const own = seedOwn(key, state);
+/** The transcript the seeded session shows, as the page draws it; `size` makes it that long with earlier turns; `wide` adds content wider than the chat (§120). */
+export function seedTranscript(key: string, state: NonNullable<SeedOptions['state']>, size = 0, wide = false): TranscriptItem[] {
+  const own = [...seedOwn(key, state), ...(wide ? wideItems(key) : [])];
   return size > own.length ? [...filler(key, size - own.length), ...own] : own;
+}
+
+/** §120: what a real chat has that is wider than the column: a wide table, a long code line, a long word and URL, a long command and its output. */
+function wideItems(key: string): TranscriptItem[] {
+  const u = (n: number) => `seed-${key}-w${n}`;
+  const cols = Array.from({ length: 14 }, (_, i) => `column_${i + 1}_heading`);
+  const table = `| ${cols.join(' | ')} |\n|${cols.map(() => '---').join('|')}|\n| ${cols.map((_, i) => `value-${i}-${'x'.repeat(12)}`).join(' | ')} |`;
+  const longLine = `const config = { ${Array.from({ length: 30 }, (_, i) => `option${i}: "value-${i}"`).join(', ')} };`;
+  const word = `C:\\Users\\someone\\source\\repos\\Workspaces\\${'very-long-folder-name-'.repeat(8)}end\\file.ts`;
+  const url = `https://example.invalid/${'path-segment-'.repeat(20)}?query=${'q'.repeat(60)}`;
+  const command = `pnpm exec nx run-many --target=test --projects=${Array.from({ length: 25 }, (_, i) => `project-${i}`).join(',')} --parallel=4 --skip-nx-cache`;
+  return [
+    { kind: 'assistant', uuid: u(1), text: `Here is what I found:\n\n${table}\n\n\`\`\`ts\n${longLine}\n\`\`\`\n\nThe file is ${word} and the docs are at ${url}.` },
+    { kind: 'tool', uuid: u(2), toolUseId: 'tu-w1', name: 'Bash', input: JSON.stringify({ command }) },
+    { kind: 'tool_result', uuid: u(3), toolUseId: 'tu-w1', text: `${'='.repeat(240)}\n${longLine}`, isError: false },
+  ];
 }
 
 function seedOwn(key: string, state: NonNullable<SeedOptions['state']>): TranscriptItem[] {
@@ -172,6 +190,7 @@ export function cleanSeed(raw: unknown): SeedOptions {
     ...(typeof r.channel === 'boolean' ? { channel: r.channel } : {}),
     ...(Array.isArray(r.files) ? { files: strs(r.files, 50) } : {}),
     ...(typeof r.token === 'string' && /^[\w-]{8,80}$/.test(r.token) ? { token: r.token } : {}),
+    ...(r.wide === true ? { wide: true } : {}),
     ...(typeof r.sessionId === 'string' && /^[0-9a-f-]{36}$/.test(r.sessionId) ? { sessionId: r.sessionId } : {}),
     ...(typeof r.size === 'number' && r.size > 0 ? { size: Math.min(2000, Math.floor(r.size)) } : {}),
   };

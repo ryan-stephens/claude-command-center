@@ -2844,3 +2844,25 @@ Screenshot looked at. `walk-board-try.cjs` 19/19, `walk-deps.cjs` 20/20, `walk-t
 **To check at VU:** `git pull`, restart (ask first; this is server code). With a terminal session running, and a card open in the app (its own, or another), typing and the chat should stay quick.
 
 **Open:** a session the app shows while a terminal writes it is still re-read whole from disk at each change (now less often for a big one). Reading only the new lines would mean parsing the transcript ourselves, which the SDK keeps internal.
+
+## 120. The card chat fits its column
+
+2026-10-07. The owner: the card's chat doesn't fit the screen; it has a huge horizontal scroll bar.
+
+**Cause** (reproduced). The chat's column is a CSS grid with an automatic track (`grid` with no columns), and an automatic track is as wide as its widest content. Any long unbroken thing in the transcript made the whole chat that wide: a wide markdown table, a long code line, a long path or URL. With the new `wide` seed (a 14-column table, a 600-character code line, a long path and URL, a long command and its output), the chat scrolled **3,922 px** sideways at 1440 px. Even *Finished its turn* was that wide.
+
+**What changed.**
+- The chat's grid is one column that never grows past the chat: `grid-cols-[minmax(0,1fr)]` (`Chat` in `web/components/CardView.tsx`).
+- Markdown text wraps a long word, path or URL anywhere (`.md { overflow-wrap: anywhere }` in `web/styles.css`). Code blocks and tables are at most the column's width and scroll inside their own box, as they were meant to. Table cells still break only at spaces, so a heading isn't cut mid-word (seen in the first screenshot: *colum / n_1_h*).
+- `cards.seed` takes `wide: true` (test servers only) for that transcript (`wideItems` in `server/seed.ts`).
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (400). **New `walk-chat-width.cjs` (6, light and dark)** on an isolated server, a seeded card with the wide transcript, at 1440 and 1024 px, with and without a panel open:
+- the page and the chat scroll 0 px sideways (from 3,922 to 4,524), and nothing reaches past the chat's right edge;
+- the table and the code line scroll inside their own boxes;
+- there are no page errors.
+
+Screenshots looked at, light and dark. `walk-card.cjs` 66/66 light and dark, `walk-hub.cjs` 37/37, `walk-perf.cjs` 25/25.
+
+**To check at VU:** a page change: `git pull`, `pnpm build`, reload. A card whose chat scrolled sideways should fit.
+
+**Open:** at 1024 px with a panel open, the message box is narrow next to its three buttons (*Image*, *+ Context*, *Send*); they could go under it at that width.

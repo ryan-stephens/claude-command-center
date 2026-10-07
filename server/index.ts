@@ -1062,7 +1062,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const id = crypto.randomUUID();
       const card = seedCard(o, id, Date.now());
       // On a real session (walk-resume) the chat shows the session's own transcript, not a made-up one.
-      if (!o.sessionId) seededTranscripts.set(card.sessionId!, seedTranscript(card.key, o.state ?? 'plan', o.size));
+      if (!o.sessionId) seededTranscripts.set(card.sessionId!, seedTranscript(card.key, o.state ?? 'plan', o.size, o.wide));
       // A token (test servers only): a launcher or hook started by hand can prove itself to the card (§87's walkthrough).
       if (o.token) cards.putWithToken(card, o.token); else cards.put(card);
       send(ws, { type: 'card.started', reqId: msg.reqId, id });
