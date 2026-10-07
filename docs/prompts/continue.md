@@ -39,7 +39,7 @@ The main concepts:
   1. Register a small fixed set of extra redirect URIs (say the usual port and three more) with whoever administers the OIDC app, and pick the UI's port from that set, not from the 18000 range (a separate pool for UIs, `CC_CONTROL_UI_PORTS`).
   2. One front door on the usual port: a small reverse proxy the app runs on the registered port, forwarding to the chosen card's UI port (picked with a key, or by a cookie or path). Only one card's UI is reached at a time per browser, but every card's stack keeps running; it needs WebSocket (dev server reload) and the redirect back from sign-in to go through it.
   3. Per-card host names (`card-1.localhost:<port>`) if the identity provider allows a wildcard in a redirect URI; same registration question as 1.
-  Measure first: what the UI sends as `redirect_uri` (its environment config, or computed from `window.location`), whether the API also checks the origin, and which of these the owner can get registered. Never commit the identity provider's host, the app's client id or any VU URL.
+  Measure first: what the UI sends as `redirect_uri` (its environment config, or computed from `window.location`), whether the API also checks the origin, and which of these the owner can get registered. **Chosen (§121):** option 1, with option 2 as the fallback; the VU diagnosis prompt is `docs/prompts/continue-signin-at-vu.md`, and the build waits on its handoff. Never commit the identity provider's host, the app's client id or any VU URL.
 
 The earlier direction, for history:
 

@@ -2866,3 +2866,22 @@ Screenshots looked at, light and dark. `walk-card.cjs` 66/66 light and dark, `wa
 **To check at VU:** a page change: `git pull`, `pnpm build`, reload. A card whose chat scrolled sideways should fit.
 
 **Open:** at 1024 px with a panel open, the message box is narrow next to its three buttons (*Image*, *+ Context*, *Send*); they could go under it at that width.
+
+## 121. Sign-in on a picked UI port: the choice, and what to find out at VU first
+
+2026-10-07. The owner, at VU: since §114 a card's UI serves on a port of its own (18xxx), and there it can't sign in. The team's identity provider (an OIDC app) rejects the login because `redirect_uri` must be one of the app's registered login redirect URIs, and only the UI's usual port is registered.
+
+**Chosen, pending what VU finds:**
+- **First choice: registered UI ports.** Get a few extra localhost ports registered with the OIDC app (the usual one and three more), and take a card's UI port from that set: a pool of its own, `CC_CONTROL_UI_PORTS`, beside the 18000 range. It is the smallest change, every card's UI stays usable at once, and nothing new sits in the request path.
+- **Fallback: one front door** on the usual port, a proxy to the chosen card's UI. It needs no registration, but it has to carry the dev server's WebSocket and the redirect back from sign-in, and a browser reaches one card's UI at a time.
+- **Dropped: a host name per card** (`card-1.localhost`). Every card on one port needs the front door anyway, plus a wildcard redirect most providers refuse.
+
+**To find out at VU first** (`docs/prompts/continue-signin-at-vu.md`, a diagnosis prompt in the two-laptop shape):
+- what the UI sends as `redirect_uri` and where it comes from (its page's address, its environment files, or a runtime config), its flow (PKCE in the browser, or a callback to the API), and whether sign-in is kept per port (browser storage) or in a cookie every localhost port shares;
+- whether the API checks the origin (CORS, a header, a token claim), and whether the provider also keeps a trusted-origins list for the browser's token call;
+- which localhost redirect URIs are registered now, who administers the app, and whether they'd add the extra ports (login, logout, and trusted origin);
+- anything else the UI loads that stays on a fixed port (module-federation remotes; §114's open item).
+
+No code changed. Not run: the walks (a docs-only change); `pnpm typecheck` and `pnpm test` pass.
+
+**Open:** the build waits on the handoff: the ports the owner can get registered, and the redirect's path.
