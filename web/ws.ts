@@ -4,7 +4,7 @@ import type { StackChoice } from '../shared/stack.ts';
 import type { Changes } from '../shared/changes.ts';
 import type { TicketTransition } from '../shared/tickets.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
-import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type RepoInfo, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
+import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ImageAttachment, type RepoInfo, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import type { PromptContext } from '../shared/prompts.ts';
 import type { EnvCheck, LookupResult, SetInfo, VerifyEnv } from '../shared/verify.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
@@ -263,9 +263,9 @@ export function followRun(key: string): () => void {
 }
 
 /** A message to the card's session (§93: the app runs it; a session not running is resumed first). Rejects when it can't go in. */
-export async function sayToCard(id: string, text: string): Promise<void> {
+export async function sayToCard(id: string, text: string, images: ImageAttachment[] = []): Promise<void> {
   // Long enough for a session to be resumed first (a terminal card's legacy tab, §85, takes longest).
-  await request((reqId) => ({ type: 'card.send', reqId, id, text }), 120_000);
+  await request((reqId) => ({ type: 'card.send', reqId, id, text, ...(images.length ? { images } : {}) }), 120_000);
 }
 
 /** Answer what the card's session is asking: through the broker (§93), or a terminal card's channel or launcher. */

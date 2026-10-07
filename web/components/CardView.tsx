@@ -17,7 +17,10 @@ import { repoName } from '../../shared/workspaces.ts';
 import { CARD_PANELS, type CardPanel } from '../line-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard } from '../line-model.ts';
 import { QuestionForm } from './QuestionForm.tsx';
-import { answerAsk, boardOf, changeHooks, editRecipe, goToTab, lastPick, openAddComposer, openApp, openNeighbour, openOutput, openWorktrees, popOutChanges, rememberPick, saySubmit, setChangeCount, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
+import { answerAsk, attachToSay, boardOf, changeHooks, editRecipe, goToTab, lastPick, openAddComposer, openApp, openNeighbour, openOutput, openWorktrees, pickSayImage, popOutChanges, rememberPick, saySubmit, setChangeCount, setSayImages, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
+import { IMAGE_TYPES, type Pasted } from '../say-images.ts';
+
+const NO_IMAGES: Pasted[] = [];
 import { openSession } from '../keys.ts';
 import { get, set, setPanelW, useStore } from '../store.ts';
 import { cardChanges, openTranscript, send, stackPlan } from '../ws.ts';
@@ -296,6 +299,7 @@ function BootLines({ card }: { card: Card }) {
  * sending moves the session into the app.
  */
 function Say({ card }: { card: Card }) {
+  const images = useStore((s) => s.sayImages[card.id] ?? NO_IMAGES);
   if (!card.sessionId) return null;
   const ended = card.live?.phase === 'ended';
   const reachable = canReach(card);
@@ -324,8 +328,24 @@ function Say({ card }: { card: Card }) {
           {ask.kind === 'question' && ask.detail && <p className="text-[13.5px]">{ask.detail}</p>}
         </div>
       )}
-      <div className="mx-auto flex w-full max-w-[880px] items-end gap-2">
-        <textarea id="card-say" rows={2} placeholder={ask?.kind === 'question' && ask.questions?.length ? 'Or say something else: it goes in as your next message' : reachable ? `Message ${card.key}… Enter sends, Shift+Enter is a new line` : `Message ${card.key}… Enter resumes the session and sends`} spellCheck={false} className="field grow resize-none text-[13.5px]" />
+      {images.length > 0 && (
+        // §116: the images going with the next message; × or Backspace in an empty box takes one out.
+        <div className="mx-auto flex w-full max-w-[880px] flex-wrap gap-2" aria-label="Images to send">
+          {images.map((img, i) => (
+            <span key={img.url.slice(-40) + i} className="relative">
+              <img src={img.url} alt={`Image ${i + 1}`} className="h-16 w-16 rounded-lg border border-line object-cover" />
+              <button onClick={() => setSayImages(card.id, images.filter((_, j) => j !== i))} aria-label={`Remove image ${i + 1}`} className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-line bg-surface text-[11px] text-faint hover:text-bad">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="mx-auto flex w-full max-w-[880px] items-end gap-2"
+        onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
+        onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); void attachToSay(card.id, [...e.dataTransfer.files]); } }}>
+        <input id="card-say-file" type="file" accept={IMAGE_TYPES.join(',')} multiple hidden onChange={(e) => { const f = [...(e.currentTarget.files ?? [])]; e.currentTarget.value = ''; if (f.length) void attachToSay(card.id, f).then(() => document.getElementById('card-say')?.focus()); }} />
+        <textarea id="card-say" rows={2}
+          onPaste={(e) => { const f = [...e.clipboardData.files]; if (f.some((x) => IMAGE_TYPES.includes(x.type))) { e.preventDefault(); void attachToSay(card.id, f); } }} placeholder={ask?.kind === 'question' && ask.questions?.length ? 'Or say something else: it goes in as your next message' : reachable ? `Message ${card.key}… Enter sends, Shift+Enter is a new line` : `Message ${card.key}… Enter resumes the session and sends`} spellCheck={false} className="field grow resize-none text-[13.5px]" />
+        {app && <button className="btn py-1.5" onClick={() => pickSayImage(card.id)} title="Images go with your next message: pick files, paste one in the box (Ctrl+V) or drop them on it. Up to 5, 5 MB each"><Key k="⇧I" size="sm" />Image</button>}
         {card.stage !== 'done' && <button className="btn py-1.5" onClick={() => openAddComposer(card.id)} title="Add a repo, a folder, a ticket or a note: it goes in with your next message"><Key k="c" size="sm" />+ Context</button>}
         <button className="btn btn-primary py-1.5" onClick={() => saySubmit(card.id)} title={app ? (reachable ? 'Sent to the session at once' : 'Resumes the session in the app and sends') : reachable ? 'Typed into its terminal tab' : 'Moves the session into the app (its tab is gone) and sends'}><Key k="Enter" size="sm" tone="ghost" />{reachable ? 'Send' : 'Resume and send'}</button>
       </div>

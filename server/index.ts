@@ -755,6 +755,8 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       const id = String(msg.id);
       const card = cards.get(id);
       if (!card?.sessionId) throw new Error(`${card?.key ?? 'That card'} hasn’t started a session yet.`);
+      // §116: images go with the message into an app session; a terminal tab can only be typed into.
+      const images = cleanImages(msg.images);
       // The app runs the card's session (§93): the message goes straight in; one that isn't live (the
       // server restarted, or it ended) is resumed by the send itself. A terminal card whose tab can't
       // be reached moves into the app first.
@@ -765,15 +767,16 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         const live = manager.isLive(sessionId);
         timings.set(sessionId, { key: card.key, at: t0, what: 'send' });
         try {
-          await manager.send(sessionId, text);
+          await manager.send(sessionId, text, images);
         } catch (e) {
           logSend(id, `not sent: ${(e as Error).message}`);
           throw e;
         }
-        logSend(id, `${text.length} chars into the app session${live ? ` in ${Date.now() - t0} ms` : `, resumed in ${Date.now() - t0} ms`}`);
+        logSend(id, `${text.length} chars${images.length ? ` and ${images.length} image${images.length === 1 ? '' : 's'}` : ''} into the app session${live ? ` in ${Date.now() - t0} ms` : `, resumed in ${Date.now() - t0} ms`}`);
         send(ws, { type: 'ok', reqId: msg.reqId });
         return;
       }
+      if (images.length) throw new Error('Images can’t be typed into a terminal tab: close the tab, and the next message moves the session into the app.');
       // Legacy (terminal cards): no way in (the tab closed, the session ended, or the card started before this): the session
       // is resumed in a new tab and the message goes in once its channel connects or its launcher polls (§85, §87).
       if ((!channels.has(id) && !typist.alive(id)) || cards.get(id)?.live?.phase === 'ended') {

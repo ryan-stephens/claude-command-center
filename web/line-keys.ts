@@ -21,6 +21,7 @@ import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
 import { withSimple } from './simple-model.ts';
 import { armProd, cycleEnv, openPage, refreshSets, runCheck, runLookup, runVerify, toggleAdvanced } from './verify-state.ts';
 import { addCardContext, answerCard, focusCardTab, sayToCard, send, startCard, stopRun, tryCard } from './ws.ts';
+import { IMAGE_ONLY_TEXT, MAX_IMAGES, pickImages, readImage, type Pasted } from './say-images.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
@@ -55,6 +56,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Shift+D (a card on the board)', 'Changes full width: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
       ['c (card open)', '+ Context: the same popup the new-card screen has, over the chat (Repos, Folders and Tickets tabs, ← → or Tab switch, / searches, Enter ticks, and a note), Ctrl+Enter adds, Esc goes back. What you add goes to Claude at once when it is between turns, or with your next message while it works. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
+      ['Shift+I  ·  Ctrl+V  ·  drop (card open)', 'Images in your next message: pick image files from disk  ·  paste one in the message box (a screenshot)  ·  drop files on it. Up to 5, 5 MB each (PNG, JPEG, GIF, WebP), shown over the box; × or Backspace in an empty box takes one out. Enter sends them with the text (or alone)'],
       ['t (a card)', 'Try it: start its app in the card’s own folder; again stops it. With a lane stack, the Try it panel’s ticked services start, each on a port of its own. A lane with no stack yet: the stack form opens, filled from what the repos say (okteto.yml, angular.json, the proxy file), and Save and start goes on'],
       ['Shift+R (a card)', 'Restart its app: the run, or every service of its stack with the same pick, stopped and started again. With nothing running it starts it, as t does. On the board the tile has these as buttons (Start or Open, Stop and Restart) on cards in Try it or Ship, the chosen card, and any card whose app runs or failed; they start the app without opening the card'],
       ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
@@ -732,6 +734,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
     case 'y': case 'n': if (s.line.drawer) answerAsk(s.line.drawer, e.key === 'y' ? 'allow' : 'deny'); return true;
     case 'g': if (s.line.drawer) goToTab(s.line.drawer); return true;
     case 'c': if (s.line.drawer) openAddComposer(s.line.drawer); return true;
+    case 'I': if (s.line.drawer) pickSayImage(s.line.drawer); return true;
     case 'x': if (s.line.drawer) withdrawLast(s.line.drawer); return true;
     case 't': if (s.line.drawer) tryIt(s.line.drawer); return true;
     case 'R': if (s.line.drawer) restartApp(s.line.drawer); return true;
@@ -846,16 +849,49 @@ function focusSay(id: string): void {
   focusField('card-say');
 }
 
-/** Send what's in the message box to the card's session (§93); one that isn't running is resumed by the send. */
+/** Send what's in the message box to the card's session (§93); one that isn't running is resumed by the send. Its images go with it (§116). */
 export function saySubmit(id: string): void {
   const el = document.getElementById('card-say') as HTMLTextAreaElement | null;
-  const text = el?.value.trim();
-  if (!el || !text) return;
+  const images = get().sayImages[id] ?? [];
+  const typed = el?.value.trim();
+  if (!el || (!typed && !images.length)) return;
+  const text = typed || IMAGE_ONLY_TEXT;
   const card = get().cards.find((c) => c.id === id);
+  if (images.length && card && card.runner !== 'app' && reachable(card)) { flash('Images can’t be typed into a terminal tab: close the tab, and the next message moves the session into the app'); return; }
   if (card && !reachable(card)) flash(card.runner === 'app' ? `Resuming ${card.key}’s session; your message goes in with it` : `Moving ${card.key}’s session into the app; your message goes in with it`);
-  // The box empties at once (the message shows in the chat); the text comes back if the send fails.
+  // The box empties at once (the message shows in the chat); the text and images come back if the send fails.
   el.value = '';
-  sayToCard(id, text).catch((e: Error) => { if (!el.value) el.value = text; flash(e.message); });
+  setSayImages(id, []);
+  sayToCard(id, text, images.map(({ mediaType, data }) => ({ mediaType, data }))).catch((e: Error) => {
+    if (!el.value && typed) el.value = typed;
+    if (images.length && !(get().sayImages[id] ?? []).length) setSayImages(id, images);
+    flash(e.message);
+  });
+}
+
+/** §116: the images waiting in a card's message box. */
+export function setSayImages(id: string, images: Pasted[]): void {
+  const all = { ...get().sayImages };
+  if (images.length) all[id] = images; else delete all[id];
+  set({ sayImages: all });
+}
+
+/** §116: pasted, dropped or picked files into a card's message box: the images among them, as many as fit. */
+export async function attachToSay(id: string, files: File[]): Promise<boolean> {
+  const have = get().sayImages[id] ?? [];
+  const { take, note } = pickImages(have.length, files);
+  if (note) flash(note);
+  if (!take.length) return Boolean(note);
+  const read = await Promise.all(take.map((i) => readImage(files[i])));
+  setSayImages(id, [...(get().sayImages[id] ?? []), ...read].slice(0, MAX_IMAGES));
+  return true;
+}
+
+/** Shift+I on an open card: pick images from disk for the message box (the box's own file picker). */
+export function pickSayImage(id: string): void {
+  const card = get().cards.find((c) => c.id === id);
+  if (!card?.sessionId) { flash(`${card?.key ?? 'It'} hasn’t started yet`); return; }
+  (document.getElementById('card-say-file') as HTMLInputElement | null)?.click();
 }
 
 /** The card's session is running a turn in the app right now (§93): live, and not between turns. */
@@ -921,6 +957,8 @@ function sayKeys(e: KeyboardEvent): boolean {
   const id = get().line.drawer;
   if (e.key === 'Escape') { el.blur(); return true; }
   if (e.key === 'Enter' && !e.shiftKey) { if (id) saySubmit(id); return true; }
+  // §116: Backspace in an empty box takes the last image back out.
+  if (e.key === 'Backspace' && id && !(el as HTMLTextAreaElement).value && (get().sayImages[id] ?? []).length) { setSayImages(id, (get().sayImages[id] ?? []).slice(0, -1)); return true; }
   // The editing keys go to the box (§106): Ctrl+V pastes, Ctrl+Z undoes, Ctrl+Backspace deletes a word.
   if (editingKey(e)) return false;
   // The session keys that work while typing (Ctrl+Enter, Alt+arrows) must not fire from here.

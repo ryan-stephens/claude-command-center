@@ -2728,3 +2728,28 @@ If the helper's manifest forwards something else that has to stay on its port, s
 **To check at VU:** `git pull`, restart (ask first; this is server code). Send a message on a card. After the reply, the header shows its branch, the context used and the cost. The full-screen view (`Ctrl+Enter`) shows the same.
 
 **Open:** the cost is the SDK's estimate at list price (an organization's contracted rates apply only through managed settings); a session that was never live in the app (history only) shows just its branch.
+
+## 116. Pictures in the card chat
+
+2026-10-07. The owner: the card's chat should take pictures too. The full-screen session's box already did (paste and drop, §22); the card chat's box, where the work happens now, didn't.
+
+**What changed.**
+- **The card chat's box** (`Say` in `web/components/CardView.tsx`) takes images three ways:
+  - `Ctrl+V` of an image (a screenshot) in the box;
+  - dropping image files on the box;
+  - `Shift+I` on the open card, or its *Image* button beside *+ Context*, which opens the file picker.
+  The images wait as thumbnails over the box, each with ×; `Backspace` in an empty box takes the last one out. They are held per card in the store (`sayImages`), so moving away and back keeps them.
+  `Enter` sends them with the text, or alone (*What do you see in this image?*, as the full-screen box says). They come back if the send fails.
+- **Limits** (`pickImages` in `web/say-images.ts`, shared with the full-screen box, which now uses its reader too): PNG, JPEG, GIF or WebP, up to 5 per message, 5 MB each, each refusal said in a flash. The server checks the same (`cleanImages`).
+- **Server:** `card.send` carries `images` into the app session (`manager.send` already took them); the send log counts them. A card still in a terminal tab can't take them (they can't be typed in), and says to close the tab so the next message moves it into the app. `PROTOCOL` 29: an older server would drop the images without a word.
+- **Keys:** `Shift+I` on an open card, a `?` row (*Shift+I · Ctrl+V · drop (card open)*), and *⇧I Image* in the legend beside *Enter Message* for a card the app runs.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (394: `pickImages`, which takes images only, keeps their order, refuses one over 5 MB and stops at 5). **`walk-hub.cjs` (35)** on a real Haiku card:
+- a PNG pasted into the box with `Ctrl+V` shows a thumbnail, and `Backspace` in the empty box takes it out;
+- `Shift+I` opens the file picker, and a solid red PNG picked there shows;
+- after `Enter`, the box and its images empty, and Claude answers *Red* (the server log: *78 chars and 1 image into the app session*).
+Screenshot looked at. `walk-card.cjs` 59/59 light and dark, `walk-board-try.cjs` 19/19, `walk-deps.cjs` 20/20, `walk-try-compile.cjs` 15/15, `walk-two-cards.cjs` 15/15, `walk-verify.cjs` 38/38, `walk-perf.cjs` 25/25.
+
+**To check at VU:** `git pull`, restart (ask first; this is server code, and the page needs the new protocol). On a card, paste a screenshot into the message box, or press `Shift+I` and pick one, then send it with a question about it.
+
+**Open:** the chat shows a sent image as *[image]* in your message, not as a picture: the transcript keeps the text only. Showing the picture would mean keeping it.

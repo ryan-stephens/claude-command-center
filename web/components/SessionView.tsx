@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { FileHit, ImageAttachment, ModelChoice, SessionSummary, SlashInfo, Todo, TranscriptItem, Workspace } from '../../shared/protocol.ts';
+import type { FileHit, ModelChoice, SessionSummary, SlashInfo, Todo, TranscriptItem, Workspace } from '../../shared/protocol.ts';
 import { repoName, samePath, workspacesFor } from '../../shared/workspaces.ts';
 import { turnClock } from '../activity-label.ts';
 import { argQuery, exactCommand, fileQuery, hintChoices, matchSlash, mention, runsAlone, slashQuery } from '../slash.ts';
@@ -17,6 +17,7 @@ import { NumPad } from './NumPad.tsx';
 import { Streaming, Transcript } from './Transcript.tsx';
 import { Icon, Key, Pill, WsBadge } from './ui.tsx';
 import { SessionMeter } from './SessionMeter.tsx';
+import { IMAGE_ONLY_TEXT, IMAGE_TYPES, readImage, type Pasted } from '../say-images.ts';
 
 const EMPTY: TranscriptItem[] = [];
 const NO_SLASH: SlashInfo[] = [];
@@ -206,21 +207,6 @@ interface Suggestion {
   take: (run: boolean) => void;
 }
 
-const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
-type Pasted = ImageAttachment & { url: string };
-
-/** Read an image file for sending: base64 without the data: prefix, plus a preview URL. */
-function readImage(file: File): Promise<Pasted> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => {
-      const url = String(r.result);
-      resolve({ mediaType: file.type as ImageAttachment['mediaType'], data: url.slice(url.indexOf(',') + 1), url });
-    };
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(file);
-  });
-}
 
 function Composer({ id, focused }: { id: string; focused: boolean }) {
   const draft = useStore((s) => s.drafts[id] ?? '');
@@ -325,7 +311,7 @@ function Composer({ id, focused }: { id: string; focused: boolean }) {
 
   function submit() {
     if (voice || (!draft.trim() && !images.length)) return;
-    sendText(draft.trim() ? draft : 'What do you see in this image?');
+    sendText(draft.trim() ? draft : IMAGE_ONLY_TEXT);
   }
 
   async function attach(list: FileList | File[]) {

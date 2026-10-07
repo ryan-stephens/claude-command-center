@@ -17,7 +17,7 @@ import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
 import type { EnvCheck, LookupResult, SetInfo, VerifyEnv, VerifyFile } from './verify.ts';
 
-export const PROTOCOL = 28;
+export const PROTOCOL = 29;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -379,7 +379,7 @@ export type ClientMsg =
   /** Take back something still waiting on a card. */
   | { type: 'card.withdraw'; id: string; itemId: string }
   /** Type into the card's terminal session through its channel. Answered with ok or an error. */
-  | { type: 'card.send'; reqId: string; id: string; text: string }
+  | { type: 'card.send'; reqId: string; id: string; text: string; images?: ImageAttachment[] }
   /** What the card changed in every repo it works in, each file with its patch (Shift+D). Answered with card.changes. */
   | { type: 'card.changes'; reqId: string; id: string }
   /** Verify (§105): each id in each environment, from the set tool; answered with verify.checked. */

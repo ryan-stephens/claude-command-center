@@ -10,6 +10,7 @@ import type { QaState } from './questions.ts';
 import type { Flags } from './home-model.ts';
 import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
 import { asDraft, hasWork, type CardPanel, type Composer, type LineFilter } from './line-model.ts';
+import type { Pasted } from './say-images.ts';
 
 /** Where keys go inside the session view. Esc steps outward: composer → number pad → the line. */
 /** The open card's panel: how wide, between PANEL_MIN and PANEL_MAX. */
@@ -98,6 +99,8 @@ interface State {
   outdated: 'server' | 'page' | null;
   /** Short-lived status line message, e.g. "Nothing needs you". */
   flash: string | null;
+  /** §116: images waiting in each card's message box, by card id, sent with the next message. */
+  sayImages: Record<string, Pasted[]>;
   sound: boolean;
   theme: ThemePref;
 
@@ -188,6 +191,7 @@ export const useStore = create<State>(() => ({
   lastError: null,
   outdated: null,
   flash: null,
+  sayImages: {},
   sound: loadSound(),
   theme,
 

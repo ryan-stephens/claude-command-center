@@ -68,6 +68,15 @@ const items = (page, sid) => page.evaluate((sid) => new Promise((resolve) => {
 const lastAssistant = async (page, sid) => ((await items(page, sid)).filter((i) => i.kind === 'assistant').at(-1) ?? {}).text ?? '';
 
 /** Type into the open card's message box and send it with Enter. */
+/** A square PNG of one colour, made here (§116): what the walk sends Claude to look at. */
+function solidPng(size, [r, g, b]) {
+  const zlib = require('node:zlib');
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type), data]); const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(td) >>> 0); return Buffer.concat([len, td, crc]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(size * 3).map((_, i) => [r, g, b][i % 3])]);
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.concat(Array(size).fill(row)))), chunk('IEND', Buffer.alloc(0))]);
+}
+
 async function say(page, text) {
   await page.locator('#card-say').focus();
   await page.keyboard.type(text);
@@ -170,6 +179,33 @@ const idle = async (page) => { const c = await cardNow(page); return c?.live?.ph
   const metered = await until(async () => (await meter.locator('[data-meter-ctx]').count()) > 0 && (await meter.locator('[data-meter-cost]').count()) > 0, 15000, 300);
   const meterText = metered ? (await meter.innerText()).replace(/\s+/g, ' ') : '';
   check('the chat header shows the branch, context used (tokens / window · %) and cost', metered && /card-1/.test(meterText) && /\d+(\.\d)?k \/ \d+(\.\d)?[kM] · \d+%/.test(meterText) && /\$\d+\.\d\d|<\$0\.01/.test(meterText), meterText);
+
+  // ---- §116: a picture in the card chat ----
+  const red = path.join(OUT, 'red.png');
+  fs.writeFileSync(red, solidPng(48, [220, 20, 20]));
+  // Ctrl+V of a screenshot into the box: a thumbnail over it; Backspace in the empty box takes it out.
+  await page.locator('#card-say').focus();
+  await page.evaluate((b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], 'shot.png', { type: 'image/png' }));
+    document.getElementById('card-say').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, fs.readFileSync(red).toString('base64'));
+  const thumbs = view.getByLabel('Images to send').locator('img');
+  check('Ctrl+V of an image in the message box puts a thumbnail over it', await until(async () => (await thumbs.count()) === 1, 3000, 100));
+  await page.keyboard.press('Backspace');
+  check('Backspace in the empty box takes it back out', await until(async () => (await thumbs.count()) === 0, 3000, 100));
+  await page.locator('#card-say').blur();
+  // Shift+I opens the picker; the image goes with the next message, and Claude sees it.
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser', { timeout: 5000 }), page.keyboard.press('Shift+I')]);
+  await chooser.setFiles(red);
+  check('Shift+I picks an image: its thumbnail shows', await until(async () => (await thumbs.count()) === 1, 3000, 100));
+  await shot(page, 'image-attached');
+  await say(page, 'What single colour fills the attached image? Reply with just that colour word.');
+  check('the box empties, the image with it', await until(async () => (await thumbs.count()) === 0, 3000, 100));
+  const sawRed = await until(async () => /\bred\b/i.test(await lastAssistant(page, sid)), 60000, 300);
+  check('Claude sees the image: it answers red', sawRed, await lastAssistant(page, sid));
+  await until(() => idle(page), 30000);
 
   // ---- A tool prompt, y ----
   await say(page, 'Run this exact shell command with the Bash tool: mkdir hub-walk-dir');
