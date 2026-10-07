@@ -1,4 +1,5 @@
 import { getSessionMessages, query, renameSession, type ModelInfo, type Query, type SDKMessage, type SlashCommand } from '@anthropic-ai/claude-agent-sdk';
+import { execFile } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { MODES, type ImageAttachment, type PermissionMode, type SessionActivity, type SessionStatus, type SessionSummary, type Todo, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { applyEvent, backgroundRunning, idleActivity, setApproval, startTurn } from './activity.ts';
@@ -25,6 +26,13 @@ interface LiveSession {
   items: TranscriptItem[];
   partial: string;
   ctxPct?: number;
+  /** §115: tokens in the context window and the window they're measured against (the SDK's /context summary). */
+  ctxTokens?: number;
+  ctxMax?: number;
+  /** §115: the session's running cost estimate in USD (the latest result's total_cost_usd). */
+  costUsd?: number;
+  /** §115: the branch its folder is on now (git), read at start and after each turn. */
+  branch?: string;
   lastModified: number;
   slash?: SlashCommand[];
   activity: SessionActivity;
@@ -359,6 +367,9 @@ export class SessionManager {
     const began = l.items.some((i) => i.kind === 'user');
     const next = this.start({ id: l.id, cwd: l.cwd, title: l.title, items: [...l.items], options: began ? { resume: l.id } : { sessionId: l.id } });
     next.ctxPct = l.ctxPct;
+    next.ctxTokens = l.ctxTokens;
+    next.ctxMax = l.ctxMax;
+    next.costUsd = l.costUsd;
     next.todos = l.todos;
     const notice: TranscriptItem = { kind: 'notice', uuid: crypto.randomUUID(), text: note };
     next.items.push(notice);
@@ -541,10 +552,21 @@ export class SessionManager {
     };
     self = l;
     this.live.set(id, l);
+    this.readBranch(l);
     this.pump(l);
     q.supportedCommands().then((cmds) => this.setSlash(l, cmds), () => {});
     if (!this.models) q.supportedModels().then((m) => { this.models = m; this.events.commandsChanged(); }, () => {});
     return l;
+  }
+
+  /** §115: the branch the session's folder is on (a turn may have switched it); said to the page when it changes. */
+  private readBranch(l: LiveSession): void {
+    execFile('git', ['-C', l.cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { windowsHide: true, timeout: 5000 }, (err, out) => {
+      const b = err ? undefined : String(out).trim() || undefined;
+      if (b === l.branch) return;
+      l.branch = b;
+      if (this.live.get(l.id) === l) this.emitUpsert(l.id);
+    });
   }
 
   private async pump(l: LiveSession): Promise<void> {
@@ -613,10 +635,13 @@ export class SessionManager {
     }
     if (msg.type === 'result') {
       if (l.status === 'running') this.setStatus(l, 'idle'); // fallback if state events are missing
+      // §115: the running total, cumulative across turns (a crash or startup error may carry 0: keep the last).
+      if (typeof msg.total_cost_usd === 'number' && msg.total_cost_usd > 0) l.costUsd = msg.total_cost_usd;
       l.q.getContextUsage({ detail: 'summary' }).then(
-        (u) => { l.ctxPct = u.percentage; this.emitUpsert(l.id); },
+        (u) => { l.ctxPct = u.percentage; l.ctxTokens = u.totalTokens; l.ctxMax = u.rawMaxTokens; this.emitUpsert(l.id); },
         () => {},
       );
+      this.readBranch(l);
     }
   }
 
@@ -689,11 +714,14 @@ export class SessionManager {
       id: l.id,
       title: h?.customTitle || l.title,
       cwd: l.cwd,
-      branch: h?.gitBranch,
+      branch: l.branch ?? h?.gitBranch,
       lastModified: Math.max(l.lastModified, h?.lastModified ?? 0),
       live: true,
       status: l.status,
       ctxPct: l.ctxPct,
+      ...(l.ctxTokens !== undefined ? { ctxTokens: l.ctxTokens } : {}),
+      ...(l.ctxMax ? { ctxMax: l.ctxMax } : {}),
+      ...(l.costUsd !== undefined ? { costUsd: l.costUsd } : {}),
       background: backgroundRunning(l.activity) || undefined,
       extraDirs: this.extraDirsOf(l.id),
       workspaceDirs: this.workspaceDirsOf(l.cwd),

@@ -165,6 +165,11 @@ const idle = async (page) => { const c = await cardNow(page); return c?.live?.ph
   check('Enter sends at once and the reply arrives', ponged, await lastAssistant(page, sid));
   check('the reply streamed in (a partial was on the page)', await sawPartial(page));
   await until(() => idle(page), 30000);
+  // §115: the chat's header meters the session: its branch, the context window used, and the cost so far.
+  const meter = view.locator('[data-meter]').first();
+  const metered = await until(async () => (await meter.locator('[data-meter-ctx]').count()) > 0 && (await meter.locator('[data-meter-cost]').count()) > 0, 15000, 300);
+  const meterText = metered ? (await meter.innerText()).replace(/\s+/g, ' ') : '';
+  check('the chat header shows the branch, context used (tokens / window · %) and cost', metered && /card-1/.test(meterText) && /\d+(\.\d)?k \/ \d+(\.\d)?[kM] · \d+%/.test(meterText) && /\$\d+\.\d\d|<\$0\.01/.test(meterText), meterText);
 
   // ---- A tool prompt, y ----
   await say(page, 'Run this exact shell command with the Bash tool: mkdir hub-walk-dir');

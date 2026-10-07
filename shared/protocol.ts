@@ -75,6 +75,10 @@ export interface SessionSummary {
   /** Transcript written recently by someone else, probably an open terminal. */
   activeElsewhere?: boolean;
   ctxPct?: number;
+  /** Live sessions (§115): tokens in the context window, the window, and the running cost estimate in USD. */
+  ctxTokens?: number;
+  ctxMax?: number;
+  costUsd?: number;
   /** Live sessions: subagents / shells still running in the background. */
   background?: number;
   /** Repos added to this session itself, besides its own cwd (SDK `additionalDirectories`). */

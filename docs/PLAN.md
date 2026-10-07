@@ -2705,3 +2705,26 @@ If the helper's manifest forwards something else that has to stay on its port, s
 - A UI started with `npm start` (no `--port`) still serves on its fixed port; the setup says so.
 - A module-federation host's remotes may start on their own fixed ports; not seen yet.
 - The UI row's *up* text is squeezed out next to three buttons; the dot still shows the state.
+
+## 115. The chat meters its session: branch, context used, cost
+
+2026-10-07. The owner: the card's chat should show the context used (count and percentage), the cost so far, and the current branch.
+
+**What there was.** The server already asked the SDK for the context percentage after each turn (`ctxPct`), but only the full-screen session view showed it, as a *Memory* bar. The card's chat, where the work happens now, showed none of it.
+
+**What changed.**
+- **Server** (`server/session-manager.ts`):
+  - After each turn's result, `getContextUsage({ detail: 'summary' })` gives the tokens in use and the window they're measured against (`ctxTokens`, `ctxMax`). The summary answers from the last response's usage, with no token-count calls.
+  - The result's `total_cost_usd` is the session's running cost estimate (`costUsd`). It is cumulative across turns, and a resumed session continues from its transcript's total. A zero (a crash or startup result) keeps the last value.
+  - The folder's branch is read with git when the session starts and after each turn (`readBranch`), so a branch Claude switched to shows. The summary's `branch` prefers it to the transcript's.
+  - All of it is carried through a restart, and is sent on `SessionSummary`.
+- **Page:** `SessionMeter` (`web/components/SessionMeter.tsx`, formatting in `web/meter.ts`) shows `⎇ branch`, a context bar with *41k / 200k · 21%* (amber from 70%, red from 85%, as the old bar), and *$0.05*. Its title and label say each part in words; the cost is called an estimate at list price, not a bill.
+  - It is in the card chat's header, before *In a terminal*. Before the session's first turn it shows the card's branch name.
+  - It replaces the *Memory* bar in the full-screen session view.
+  - It is display only, so it adds no key.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (393: `fmtTokens`, `fmtCost`, `ctxTone`, `meterTitle`). **`walk-hub.cjs` (30)** adds a check on a real Haiku card: after the second turn, the header shows the card's branch, tokens of the window with the percentage, and a dollar cost (*⎇ card-1-hub-walk-contributing-note 41k / 200k · 21% $0.05*). Screenshot looked at in dark: the long branch took room from the title, so it is capped narrower. `walk-card.cjs` 59/59 light and dark, `walk-board-try.cjs` 19/19, `walk-deps.cjs` 20/20, `walk-try-compile.cjs` 15/15, `walk-two-cards.cjs` 15/15, `walk-perf.cjs` 25/25.
+
+**To check at VU:** `git pull`, restart (ask first; this is server code). Send a message on a card. After the reply, the header shows its branch, the context used and the cost. The full-screen view (`Ctrl+Enter`) shows the same.
+
+**Open:** the cost is the SDK's estimate at list price (an organization's contracted rates apply only through managed settings); a session that was never live in the app (history only) shows just its branch.

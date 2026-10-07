@@ -23,6 +23,7 @@ import { get, set, setPanelW, useStore } from '../store.ts';
 import { cardChanges, openTranscript, send, stackPlan } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { RunLog } from './RunLog.tsx';
+import { SessionMeter } from './SessionMeter.tsx';
 import { KindPill, useExpandKey } from './TicketLine.tsx';
 import { Streaming, Transcript } from './Transcript.tsx';
 import { VerifyPanel } from './VerifyPanel.tsx';
@@ -48,6 +49,8 @@ const STAGE: Record<Card['stage'], string> = { inbox: 'Inbox', plan: 'Plan', bui
 export function CardView({ id }: { id: string }) {
   const card = useStore((s) => s.cards.find((c) => c.id === id));
   const panel = useStore((s) => s.line.panel);
+  // §115: its session's meter (context, cost, branch) in the chat's header.
+  const session = useStore((s) => (card?.sessionId ? s.sessions.find((x) => x.id === card.sessionId) : undefined));
   // Where it sits among the cards the board shows, for ← →.
   useStore((s) => s.line.filter);
   useStore((s) => s.line.q);
@@ -65,6 +68,7 @@ export function CardView({ id }: { id: string }) {
           <Pill tone={needsYou(card) ? 'amber' : 'grey'}>{STAGE[card.stage]}</Pill>
           {card.kind && card.kind !== 'build' && <KindPill card={card} />}
           <span className="grow" />
+          {card.sessionId && <SessionMeter s={session} branch={card.branchName} className="mr-1" />}
           {card.cwd && card.sessionId && <button className="btn py-0.5 text-[13px]" onClick={() => goToTab(card.id)} title={card.runner === 'app' ? 'Open the session in a Windows Terminal tab (claude --resume), between turns; the card follows it there' : 'Bring its Windows Terminal tab to the front'}><Key k="g" size="sm" />{card.runner === 'app' ? 'In a terminal' : 'Its tab'}</button>}
           {place.at >= 0 && place.total > 1 && (
             <div className="ml-1 flex shrink-0 items-center gap-1.5 text-[12.5px] text-faint">

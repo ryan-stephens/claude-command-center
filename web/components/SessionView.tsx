@@ -16,6 +16,7 @@ import { ApprovalCard } from './Approval.tsx';
 import { NumPad } from './NumPad.tsx';
 import { Streaming, Transcript } from './Transcript.tsx';
 import { Icon, Key, Pill, WsBadge } from './ui.tsx';
+import { SessionMeter } from './SessionMeter.tsx';
 
 const EMPTY: TranscriptItem[] = [];
 const NO_SLASH: SlashInfo[] = [];
@@ -73,7 +74,7 @@ export function SessionView() {
           {session && (
             <div className="flex flex-wrap items-center gap-3 border-b border-line bg-col px-4 py-2 md:px-6">
               <ContextChips s={session} ws={ws} />
-              {session.ctxPct !== undefined && <MemoryMeter pct={session.ctxPct} />}
+              <SessionMeter s={session} className="ml-auto" />
             </div>
           )}
           {session?.activeElsewhere && !session.live && (
@@ -193,17 +194,6 @@ function ContextChips({ s, ws }: { s: SessionSummary; ws: Workspace | null }) {
 }
 
 /** How full Claude's working memory (context window) is; time to tidy up near the top. */
-function MemoryMeter({ pct }: { pct: number }) {
-  const color = pct >= 85 ? 'bg-bad' : pct >= 70 ? 'bg-attn' : 'bg-ok';
-  return (
-    <span className="ml-auto flex items-center gap-2 text-sm text-faint" title={`Claude's working memory for this session is ${pct.toFixed(0)}% full. Near the top, run /compact (Built-in group) to tidy it.`}>
-      Memory
-      <span className="h-1.5 w-16 overflow-hidden rounded-full bg-raise"><span className={`block h-full ${color}`} style={{ width: `${Math.min(100, pct)}%` }} /></span>
-      {Math.round(pct)}%
-    </span>
-  );
-}
-
 /** One row of the suggestion list above the message box: a slash command or an "@" file. */
 interface Suggestion {
   key: string;
