@@ -19,7 +19,14 @@ The main concepts:
 - **A repo library** scanned from source folders; `+` on the line adds a repo from it to a workspace.
 - **The Ticket Line is the home page** (PLAN §27–§30): cards on a board (Inbox → Plan → Build → Needs you → Try it → Ship → Done), each with its own Claude Code session, which the app runs (§93; before that, each ran in a terminal tab). A session opens full screen from its card (`Ctrl+Enter`); `Ctrl+K` finds any session, card or not. The old three-column Home is gone.
 
-**Latest direction (2026-10-06, PLAN §92):** a card's session runs inside the app through the SDK; the terminal is the escape hatch (`g`), and the launcher and channel are being retired. The phased plan is `docs/prompts/continue-hub.md`; Phase A is done (§93, `walk-hub.cjs`). **Speed (§94 to §99) is done:** every number in the budget holds, and `walk-perf.cjs` keeps it so (where it stands and what is left: `docs/prompts/continue-speed.md`). The owner called it "fucking amazing". **Now (2026-10-06): the owner is testing Try it on the VU laptop** with a lane stack (a local UI against a local API they ticked): the services start, the UI reaches the API, the logs come through. The first bug from that round, Open saying *Nothing running yet* while the UI was up, is fixed in §102. Fix what that testing finds; the hub phases B, D to F stay tabled. The earlier direction, for history:
+**Latest direction (2026-10-06, PLAN §92):** a card's session runs inside the app through the SDK; the terminal is the escape hatch (`g`), and the launcher and channel are being retired. The phased plan is `docs/prompts/continue-hub.md`; Phase A is done (§93, `walk-hub.cjs`). **Speed (§94 to §99) is done:** every number in the budget holds, and `walk-perf.cjs` keeps it so (where it stands and what is left: `docs/prompts/continue-speed.md`). The owner called it "fucking amazing". **Now (2026-10-06): the owner is testing Try it on the VU laptop** with a lane stack (a local UI against a local API they ticked): the services start, the UI reaches the API, the logs come through. The first bug from that round, Open saying *Nothing running yet* while the UI was up, is fixed in §102. Fix what that testing finds; the hub phases B, D to F stay tabled. **Since then (2026-10-06):**
+- §104: Start, Stop, Restart (`Shift+R`) and Open buttons on a card's tile.
+- §105 to §107: the Verify panel (`v`) reads two internal tools, the field set tool and the record lookup, read-only. Their addresses and names live in a file on each machine, `~/.cc-control/verify.json`, never in the repo, which is public; `docs/prompts/continue-verify-at-vu.md` is the VU test prompt.
+- §106: Ctrl+V in the message box.
+- §108, §109: the SDK CLI fallback, and worktrees made by hand (another session).
+- §110, §111: a card's worktree gets the main checkout's `node_modules` as a folder of hard links (`scripts/link-deps.ts`). The VU UI is a huge monolith, about 20 minutes to install, so never install per card and never junction: `git worktree remove` follows a junction and empties the main checkout's packages.
+
+The earlier direction, for history:
 
 **Direction (2026-09-29):** the owner still reaches for plain Claude Code terminals over the app. They want it to *sit on top of* terminal sessions and to help people see and follow the development work, rather than replicate Claude Code features. How to get there is open; talk it through with them. `docs/PLAN.md` §26 has the reasoning. **Chosen (§27):** the *Ticket Line*, a board of tickets moving through the loop with a new-card screen for context. The spec is `docs/futures/path-line.html`; the build handoff is `docs/prompts/continue-ticket-line.md`.
 
@@ -59,7 +66,13 @@ The main concepts:
 
 ## State
 - **Push finished work to `main`** (owner, 2026-09-30): once a change is verified and committed, push it without asking. The owner now works and tests mainly on their Veterans United laptop, from a clone they `git pull`; that is where the real Jira Cloud, TFS and Okteto are. Restarting a running server, writing to Jira or TFS, and opening real PRs still need asking.
-- Checks: `pnpm typecheck`, `pnpm test` (355 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
+- Checks: `pnpm typecheck`, `pnpm test` (382 tests, `node:test`) and the Vite build all pass. `tsc` has no unused-locals check, so also run `npx tsc --noUnusedLocals` now and then: it caught a shadowed name in §30.
+- **Walkthroughs** in `docs/walkthroughs/simple-new-card/`:
+  - `walk-card` (59, light and dark), `walk-hub` (29, a real Haiku card, `PORT=7794`) and `walk-perf` (the speed budget) must pass before a commit.
+  - Feature walks: `walk-board-try` (19), `walk-verify` (38, stand-in tools in `standins/verify-tools.cjs`) and `walk-deps` (16).
+  - **`walk-perf`'s key-to-paint numbers have been 14 to 28 ms against 16 since the afternoon of 2026-10-06, on page code that measured 9 ms that morning.** An A/B against the §104 page showed the same scatter, so it's the machine. Look into it before trusting a perf result.
+- **Stopping a test server with `Stop-Process` orphans its sessions' MCP servers** (§95, §98). Check for `npx … mcp-server-*` processes whose parent is gone, and stop only those trees.
+- **Every walk that makes worktrees must leave none behind:** check `%TEMP%\cc-demo` for `*-card-*` folders after a walk you stopped.
 
 ## How to work here
 - Windows 11, Node 24, pnpm; files are CRLF. The Bash tool's heredocs eat backslashes (regexes, Windows paths), so use Write/Edit, or a Python script written with Write.
