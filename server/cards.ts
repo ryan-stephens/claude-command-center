@@ -25,7 +25,7 @@ import { SECRET } from './config.ts';
 import { normalizeFolder } from './fs-browse.ts';
 import { DB_PATH, type Store } from './store.ts';
 import { trustFolders } from './trust.ts';
-import { linkDeps, unlinkDeps } from './deps.ts';
+import { depsState, linkInBackground, unlinkDeps } from './deps.ts';
 import { findClaude } from './claude-exe.ts';
 
 export { findClaude };
@@ -446,21 +446,26 @@ export class CardService {
     card.boot.push({ at: Date.now(), text, state });
   }
 
+  /** A line on a saved card's boot list (a background job finishing after the card started). */
+  private bootLine(id: string, text: string, state: BootStep['state']): void {
+    const card = this.get(id);
+    if (card) this.save({ ...card, boot: [...card.boot, { at: Date.now(), text, state }] });
+  }
+
   /**
-   * §110: a new worktree has no node_modules. Each one with a package.json naming packages gets a
-   * junction to the main checkout's, at once, so Claude's tests and Try it find them (a big repo
-   * can't take a fresh install per card). Says so on the card, with a warning when the branch's
-   * lockfile differs, or why it couldn't (the main checkout has none either).
+   * §110, §111: a new worktree has no node_modules. Each one with a package.json naming packages
+   * gets the main checkout's, as a folder of hard links, in the background (nothing downloaded: a
+   * big repo can't take an install per card), so Claude's tests and Try it find them; Try it waits
+   * for a clone still going. Removing the worktree in any way leaves the main checkout's install
+   * whole. Says so on the card, then how it ended (a lockfile that differs, or no packages to take).
    */
   private linkPackages(card: Card, dirs: string[]): void {
     for (const dir of dirs) {
-      try {
-        const r = linkDeps(dir);
-        if (r.did === 'linked') this.step(card, `${repoName(dir)}: ${r.text} Removing it with git by hand would empty the main checkout's node_modules: remove a card's worktrees here (Shift+X), which unlinks first`, r.lock ? 'bad' : 'ok');
-        else if (r.did === 'missing') this.step(card, `${repoName(dir)}: ${r.text}`, 'bad');
-      } catch (e) {
-        this.step(card, `${repoName(dir)}: couldn’t link node_modules: ${(e as Error).message}`, 'bad');
-      }
+      const s = depsState(dir);
+      if (s.state === 'none' || s.state === 'busy') continue;
+      if (s.state === 'missing') { this.step(card, `${repoName(dir)}: no node_modules in the main checkout${s.main ? ` (${s.main})` : ''} to take: install the packages there once, then Try it`, 'bad'); continue; }
+      this.step(card, `${repoName(dir)}: putting the main checkout’s packages in, in the background (hard links, nothing downloaded); Try it waits for it`, 'go');
+      linkInBackground(dir, (code, last) => this.bootLine(card.id, `${repoName(dir)}: ${last || (code === 0 ? 'the packages are in' : 'couldn’t put the packages in')}`, code !== 0 || /differs/.test(last) ? 'bad' : 'ok'));
     }
   }
 

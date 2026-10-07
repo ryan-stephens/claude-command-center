@@ -2551,3 +2551,44 @@ Also passing: `walk-card.cjs` 59/59 light and dark, `walk-board-try.cjs` 19/19, 
 **To check at VU:** `git pull`, restart (ask first; this is server code). Remove the card whose UI failed, or delete its worktree's empty `node_modules` if there is one, then Try it again: its run should start with *Linked node_modules from the main checkout*, and the UI should come up. A new card should say it linked them. When done with a card, remove its worktrees with Shift+X, not `git worktree remove`.
 
 **Open:** a guard against a session's own `git worktree remove` (a PreToolUse hook on card sessions could refuse it); nested `node_modules` (an app folder with its own); a branch whose lockfile changed really needs its own packages, which this doesn't give it.
+
+## 111. The worktree's node_modules is a folder of hard links, so no removal can empty the main checkout's
+
+2026-10-06. The owner, on §110: the main checkout's node_modules must never be wiped on the VU laptop (it takes about 20 minutes to download again). §110's junction made the app's own removals safe, but `git worktree remove` by hand (or a session running it) would still follow the junction and empty them.
+
+**Tried first (a spike, recorded):**
+- `git -c core.symlinks=true worktree remove`: git still follows the junction and empties the main checkout.
+- A true directory symlink instead of a junction: can't be made without admin rights or Developer Mode (`EPERM` here; likely the same at VU).
+- Measured instead: a clone of hard links. A 100k-file node_modules (a pnpm one) took 13 to 35 s to make and 8 to 19 s to delete, and every file of the source was still there with its link count back to 1. A 4.6k-file npm one took 0.6 s. Its only failures were pnpm files already at NTFS's limit of 1023 names per file; npm's files start with one.
+
+**What changed** (`scripts/link-deps.ts`; §110's names kept).
+- **node_modules in the worktree is a real folder whose files are hard links to the main checkout's**: the same data on disk under a second name, no extra space, nothing downloaded. Removing the worktree in any way only removes those names.
+- **What isn't linked:**
+  - `package.json` files are copied, so a tool that edits one in place edits only the worktree's.
+  - A file that can't be linked (the 1023-name limit, another drive) is copied.
+  - Links inside node_modules are made again: one into the main checkout's node_modules points into the clone, and one into the main checkout (an npm workspace package) points into the worktree's own copy. One to anywhere else is cloned too, never linked, so nothing a removal could follow leads out of the worktree.
+- **Built under `node_modules.cc-control-tmp`, renamed when whole**: a clone cut off half way is thrown away and made again, never taken for finished.
+- **One clone per folder at a time** (a lock outside the repo). When a card's worktrees are made, the clone runs in the background (`linkInBackground`); the card says *putting the main checkout's packages in*, then *Put the main checkout's packages in (N files as hard links, S s)*. Try it's first step (`node scripts/link-deps.ts`) waits for a clone still going, says so, then starts the app.
+- **A §110 junction already in a worktree** (cards made since §110) counts as needing the clone: it is unlinked first, then the clone takes its place, at the next Try it or by running the script there.
+- The lockfile comparison, the *install there once* failure and the `.git/info/exclude` entries (`/node_modules`, `/node_modules.cc-control-tmp`) are as in §110. `unlinkDeps` before each removal here stays, for any junction left.
+- **By hand:** with a workspace package linked inside the clone, `git worktree remove` follows that link into the worktree's own folder and then stops with *Directory not empty*, leaving the worktree half deleted. Only the worktree is affected; delete the leftover folder. The app's removal already finishes such a folder with `fs.rmSync`, which doesn't follow links.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (382). New tests use a repo whose installed node_modules holds a package, a `.bin` shim, a workspace package linked from it and a link to a folder outside the repo. They cover:
+- The states, including §110's junction counting as needing the clone.
+- The clone: a real folder; files with two names, `package.json` with one; the workspace link pointing into the worktree; the outside folder cloned rather than linked; `git status` clean; a second run does nothing.
+- **`git worktree remove --force` by hand, no unlink first: every file of the main checkout's install, its workspace package and the outside folder still there.** The same after replacing a §110 junction.
+- A half-made clone thrown away and made again, and the missing-packages failure.
+- Two scripts at once on one folder make one clone.
+- `withDeps`.
+
+**`walk-deps.cjs` (16)** on an isolated server:
+- A real card's worktree gets the clone in the background, the card says so twice, and the files are hard links. The local `file:` package links to the worktree's own copy.
+- Try it on a bare worktree: the clone step first, then the UI serves. Run again, no step.
+- **A worktree given the packages and removed by hand with `git worktree remove --force`: the main checkout's node_modules whole.**
+- The cards' worktrees removed through the app: the same.
+
+Also: `walk-card.cjs` 59/59 light and dark, `walk-board-try.cjs` 19/19, `walk-hub.cjs` 29/29. `walk-perf.cjs --no-real`: the key-to-paint numbers are still over (19 to 28 ms p95), as in §110's A/B of the page from before any of this (server code only).
+
+**To check at VU:** `git pull`, restart (ask first). A card made since §110 has a junction: press `t` on it and its run should start by replacing the link (*Took away the old node_modules link…*, then *Put the main checkout's packages in (N files…, S s)*) before the UI starts. A new card says the same on its own, in the background. How long the clone takes on the real UI repo is worth noting: at the rate measured here, around a minute for a few hundred thousand files.
+
+**Open:** a guard against a session's own `git worktree remove` is no longer needed for the packages' sake. Nested `node_modules` (an app folder with its own) still get nothing. A branch whose lockfile changed still runs on the main checkout's packages.

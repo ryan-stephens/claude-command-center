@@ -1,11 +1,12 @@
-// A card's worktree and its packages (PLAN §110), on an isolated server (PORT, default 7807): a demo
-// UI repo whose start line is node_modules\.bin\standin-ui.cmd (as an nx UI's is), its main
+// A card's worktree and its packages (PLAN §110, §111), on an isolated server (PORT, default 7807): a
+// demo UI repo whose start line is node_modules\.bin\standin-ui.cmd (as an nx UI's is), its main
 // checkout installed once.
-// 1. A real card started in worktrees (Haiku, one short reply): its worktree gets a junction to the
-//    main checkout's node_modules at once, and the card says so.
+// 1. A real card started in worktrees (Haiku, one short reply): its worktree gets the main
+//    checkout's packages as a folder of hard links, in the background, and the card says so.
 // 2. A card on a worktree with no packages (seeded): Try it's run gets a packages step first (it
-//    links them), then the UI comes up and serves.
-// 3. Removing the cards' worktrees (Shift+X's message) leaves the main checkout's node_modules whole.
+//    puts them in), then the UI comes up and serves.
+// 3. A worktree removed by hand with git, and the cards' worktrees removed by the app: the main
+//    checkout's node_modules stays whole either way.
 // Needs npm on PATH; nothing goes over the network (the package is a local folder).
 const { chromium } = require('C:/Users/ryans/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright');
 const { execFileSync } = require('node:child_process');
@@ -86,8 +87,11 @@ const runOf = async (page, id) => (await latest(page, 'runs'))?.runs.find((r) =>
   const card = await cardOf(page, id);
   const wt = card?.folders?.[0]?.dir;
   check('the card starts in a worktree of the demo repo', Boolean(wt) && fs.existsSync(wt), wt);
-  check('the card says it linked the main checkout’s node_modules', (card?.boot ?? []).some((b) => /deps-ui-card-\d+: Linked node_modules from the main checkout/.test(b.text) && b.state === 'ok'), (card?.boot ?? []).map((b) => b.text).join(' | '));
-  check('the worktree’s node_modules is a link to the main checkout’s', fs.lstatSync(`${wt}/node_modules`).isSymbolicLink() && fs.existsSync(`${wt}/node_modules/.bin/standin-ui.cmd`));
+  check('the card says it is putting the main checkout’s packages in, in the background', (card?.boot ?? []).some((b) => /deps-ui-card-\d+: putting the main checkout’s packages in, in the background/.test(b.text)), (card?.boot ?? []).map((b) => b.text).join(' | '));
+  check('then that they are in, as hard links', await until(async () => ((await cardOf(page, id))?.boot ?? []).some((b) => /Put the main checkout’s packages in \(\d+ files as hard links/.test(b.text) && b.state === 'ok'), 60000), ((await cardOf(page, id))?.boot ?? []).slice(-1).map((b) => b.text).join(''));
+  check('the worktree’s node_modules is a real folder, its files the main checkout’s (hard links)', !fs.lstatSync(`${wt}/node_modules`).isSymbolicLink() && fs.statSync(`${wt}/node_modules/.package-lock.json`).nlink >= 2);
+  // The local package (file:./tools/standin-ui) is a link npm made into the repo: in the clone it points into the worktree's own copy.
+  check('a local package links to the worktree’s own copy, not the main checkout’s', path.resolve(fs.readlinkSync(`${wt}/node_modules/standin-ui`)).toLowerCase() === path.resolve(`${wt}/tools/standin-ui`).toLowerCase(), fs.readlinkSync(`${wt}/node_modules/standin-ui`));
   check('nothing for git to show in the worktree', git(wt, 'status', '--porcelain') === '', git(wt, 'status', '--porcelain'));
   await page.reload();
   await sleep(800);
@@ -108,7 +112,7 @@ const runOf = async (page, id) => (await latest(page, 'runs'))?.runs.find((r) =>
   const run = await runOf(page, seeded.id);
   check('Try it’s run has a packages step first, then the UI', run?.steps?.length === 2 && /link-deps\.ts/.test(run.steps[0].cmd) && /standin-ui/.test(run.steps[1].cmd), (run?.steps ?? []).map((s) => `${s.state}: ${s.cmd}`).join(' | '));
   check('the UI comes up and serves', up && /deps-ui/.test(await serves(UI_PORT_2)), run?.state);
-  check('the packages step said what it did', (run?.steps?.[0]?.tail ?? []).some((l) => /Linked node_modules from the main checkout/.test(l)), (run?.steps?.[0]?.tail ?? []).slice(-3).join(' | '));
+  check('the packages step said what it did', (run?.steps?.[0]?.tail ?? []).some((l) => /Put the main checkout’s packages in/.test(l)), (run?.steps?.[0]?.tail ?? []).slice(-3).join(' | '));
   await page.reload();
   await sleep(800);
   await page.locator(`#card-${seeded.id}`).click();
@@ -129,7 +133,15 @@ const runOf = async (page, id) => (await latest(page, 'runs'))?.runs.find((r) =>
   page.evaluate((id) => { const ws = new WebSocket(`ws://${location.host}/ws`); ws.onopen = () => ws.send(JSON.stringify({ type: 'card.stopRun', id })); }, seeded.id);
   await sleep(1500);
 
-  // 3. Remove the cards' worktrees: the main checkout is as it was.
+  // 3. A worktree with the packages in, removed by hand with git (no unlink, --force): the main checkout keeps them.
+  const wt3 = `${TMP}/cc-demo/deps-ui-byhand`;
+  git(REPO, 'worktree', 'add', '-q', wt3, '-b', 'deps-byhand');
+  execFileSync(process.execPath, [path.join(__dirname, '..', '..', '..', 'scripts', 'link-deps.ts'), wt3], { stdio: 'ignore' });
+  check('a worktree given the packages by the script', fs.existsSync(`${wt3}/node_modules/.bin/standin-ui.cmd`));
+  execFileSync('git', ['-C', REPO, 'worktree', 'remove', '--force', wt3], { stdio: 'ignore' });
+  check('git worktree remove by hand leaves the main checkout’s node_modules whole', !fs.existsSync(wt3) && fs.existsSync(MAIN_BIN) && fs.existsSync(`${REPO}/node_modules/standin-ui/serve.js`));
+
+  // Remove the cards' worktrees through the app: the main checkout is as it was.
   for (const cid of [id, seeded.id]) await ask(page, { type: 'card.removeWorktrees', id: cid, force: true, thenDelete: true }, 120000).catch((e) => console.log('remove:', e.message));
   check('the worktrees are gone', await until(async () => !fs.existsSync(wt) && !fs.existsSync(wt2), 30000), `${fs.existsSync(wt)} ${fs.existsSync(wt2)}`);
   check('the main checkout is as it was, its node_modules whole', git(REPO, 'status', '--porcelain') === '' && fs.existsSync(MAIN_BIN) && fs.existsSync(`${REPO}/node_modules/standin-ui/package.json`));
