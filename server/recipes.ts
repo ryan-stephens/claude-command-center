@@ -13,6 +13,7 @@ import { FORWARD_MANIFEST, rewriteForward } from '../shared/okteto.ts';
 import { findUrl, LOG_KEEP, MAX_STEPS, portOf, specsOf, stepLabel, waitLabel, type CardRun, type LogLine, type RunRecipe, type StepSpec } from '../shared/recipes.ts';
 import { repoName } from '../shared/workspaces.ts';
 import { withoutSecrets } from './config.ts';
+import { withDeps } from './deps.ts';
 import { listening } from './ports.ts';
 import type { Store } from './store.ts';
 
@@ -345,7 +346,8 @@ export class RunService {
   async start(key: string, recipe: RunRecipe, places: RunPlaces | string, opts: RunOptions = {}): Promise<CardRun> {
     await this.stop(key, true);
     const at: RunPlaces = typeof places === 'string' ? { cwd: places, repos: {} } : places;
-    const specs = specsOf(recipe);
+    // A folder without its packages (a card's new worktree) gets them first (§110).
+    const specs = withDeps(specsOf(recipe), (s) => this.where(at, s));
     const run: CardRun = {
       cardId: opts.cardId ?? key, repo: recipe.repo, cwd: at.cwd, state: 'running', startedAt: Date.now(), ...(recipe.url ? { url: recipe.url } : {}),
       ...(opts.service ? { service: opts.service } : {}),

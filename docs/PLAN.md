@@ -2517,3 +2517,37 @@ Screenshots looked at (the Look up button wrapped; fixed). `walk-card.cjs` 59/59
 **Verified:** `pnpm typecheck`, `pnpm test` (375). New tests: a worktree made by hand is used and its files are untouched; a branch made by hand is checked out; a worktree on another branch and a plain folder each get their message; a worktree made by hand stays when another repo fails.
 
 **To check at VU:** `git pull`, restart (ask first), then *Start work* on the card whose worktrees exist. The boot steps should list them and the session should open in the home repo's worktree.
+
+## 110. A card's worktrees get the main checkout's node_modules, as a junction; every removal unlinks it first
+
+2026-10-06. Found at VU: a card's API came up, but its UI didn't: `node_modules\.bin\nx.cmd run …:serve:development …` → *The system cannot find the path specified.* The card's UI runs from its own worktree (§53), and a new worktree has no `node_modules`. The owner's stack started the UI straight from `node_modules\.bin`, without the `if not exist node_modules npm install` line a detected stack gets. Even with that line, a fresh install per card isn't possible: the UI is a large monolith. By hand, the owner has used worktrees with a junction to the main checkout's installed `node_modules`.
+
+**Found on the way (a spike, kept as a test):** with Git for Windows 2.53, `git worktree remove`, with or without `--force`, **follows a `node_modules` junction and deletes what it points at**: the main checkout's packages. `fs.rmSync`, `rmdir /s` and unlinking the junction first don't. An install per worktree was built first and dropped on the owner's word (too big to install per card).
+
+**What changed.**
+- **`scripts/link-deps.ts`** (runs as a script; the server imports its functions):
+  - `depsState`: nothing to do (no `package.json` naming packages, or `node_modules` already there); a link (the main checkout, found through `git rev-parse --git-common-dir`, has a real `node_modules`); or missing (it has none either).
+  - `linkDeps` makes the junction, keeps it out of `git status` through `.git/info/exclude` (`/node_modules`: a `.gitignore` entry of `node_modules/` doesn't match a link), and compares the lockfiles. When this branch's lockfile differs from the main checkout's, it says so: the packages are the main checkout's. Nothing is installed into the shared folder.
+  - When the main checkout has no packages either, it says to install there once, and the step fails.
+- **When a card's worktrees are made** (the card's start, and a repo added later): each worktree is linked at once. The card's boot list says so, warns when the lockfile differs, and says that removing the worktree with git by hand would empty the main checkout's packages.
+- **Try it:** a run's steps get a first step, `node scripts/link-deps.ts`, in each folder that still has no packages (`withDeps` in `RunService.start`, for a single recipe and for every stack service). It links them, or stops the run with what to do instead of *cannot find the path*. Folders that have them get no extra step.
+- **Every worktree removal here unlinks first** (`unlinkDeps`): Shift+X / Delete with worktrees (`removeWorktrees`), and taking back worktrees when a card's start fails. The error that tells you to remove a worktree by hand now says to `rmdir` its `node_modules` link first.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (381). New tests cover:
+- The states, the main checkout found from a worktree, the link made and seen through, `git status` clean with and without a `.gitignore` entry, and the lockfile comparison.
+- The script's exit codes and messages.
+- Unlinking first keeps the main checkout's packages through `git worktree remove`, and not unlinking loses them on Windows (the reason, pinned).
+- `withDeps`: one step per folder, never for `stop:` or `!` steps, none when nothing is needed.
+
+**`walk-deps.cjs` (12)** runs on an isolated server with a demo UI repo whose start line is `node_modules\.bin\standin-ui.cmd`, its main checkout installed once (`npm ci`):
+- A real card (Haiku) started in a worktree gets a junction to the main checkout's `node_modules` at once, the card says so, and `git status` is clean.
+- A seeded card on a bare worktree: Try it's run has the link step first, then the UI comes up and serves. Run again, there is no link step.
+- **Removing both cards' worktrees through the app leaves the main checkout's `node_modules` whole.**
+
+Also passing: `walk-card.cjs` 59/59 light and dark, `walk-board-try.cjs` 19/19, `walk-hub.cjs` 29/29.
+
+`walk-perf.cjs --no-real` measures *a key while a card streams* at 14 to 23 ms p95 on this machine now, against 16. The §104 page, built from before any of today's Verify work, scatters the same way (8 to 23 ms, failing two runs in three), and this change touches no page code. The machine is noisier than this morning, when the same page measured 9 ms. Found while looking: 48 orphaned MCP server trees (§95, §98) from the test servers stopped with `Stop-Process` today, stopped (only those whose parent was gone).
+
+**To check at VU:** `git pull`, restart (ask first; this is server code). Remove the card whose UI failed, or delete its worktree's empty `node_modules` if there is one, then Try it again: its run should start with *Linked node_modules from the main checkout*, and the UI should come up. A new card should say it linked them. When done with a card, remove its worktrees with Shift+X, not `git worktree remove`.
+
+**Open:** a guard against a session's own `git worktree remove` (a PreToolUse hook on card sessions could refuse it); nested `node_modules` (an app folder with its own); a branch whose lockfile changed really needs its own packages, which this doesn't give it.

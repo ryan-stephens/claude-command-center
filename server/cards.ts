@@ -25,6 +25,7 @@ import { SECRET } from './config.ts';
 import { normalizeFolder } from './fs-browse.ts';
 import { DB_PATH, type Store } from './store.ts';
 import { trustFolders } from './trust.ts';
+import { linkDeps, unlinkDeps } from './deps.ts';
 import { findClaude } from './claude-exe.ts';
 
 export { findClaude };
@@ -209,7 +210,7 @@ export async function makeWorktrees(repos: string[], home: string, key: string, 
       const there = await worktreeAt(repo, dir);
       if (there?.branch === branch) return { repo, dir, adopted: true };
       throw new Error(there
-        ? `${dir} is already a worktree of ${repoName(repo)}, on ${there.branch ?? 'no branch'} rather than ${branch}. Remove it (git -C ${repo} worktree remove ${dir}) or switch it to ${branch}, then start again.`
+        ? `${dir} is already a worktree of ${repoName(repo)}, on ${there.branch ?? 'no branch'} rather than ${branch}. Remove it (first rmdir "${join(dir, 'node_modules')}" if it is a link, or git empties the main checkout's node_modules; then git -C ${repo} worktree remove ${dir}) or switch it to ${branch}, then start again.`
         : `${dir} already exists and isn’t a worktree of ${repoName(repo)}, so the worktree can’t go there. Move or delete it, then start again.`);
     }
     // onExisting: a repo added later joins the card's branch. Otherwise a branch of this name is the card's own, made by hand.
@@ -228,6 +229,7 @@ export async function makeWorktrees(repos: string[], home: string, key: string, 
     // One failed: undo the others, and say the first failure in the repos' order.
     for (const f of done) {
       if (!f.dir || f.adopted) continue;
+      unlinkDeps(f.dir);
       await git(f.repo, ['worktree', 'remove', '--force', f.dir]).catch(() => {});
       if (f.made) await git(f.repo, ['branch', '-D', branch]).catch(() => {});
     }
@@ -286,6 +288,8 @@ export async function removeWorktrees(card: Pick<Card, 'folders' | 'branchName' 
     try {
       if (w.missing) await git(w.repo, ['worktree', 'prune']);
       else {
+        // §110: git would follow a node_modules junction and empty the main checkout's packages.
+        unlinkDeps(w.dir);
         await git(w.repo, ['worktree', 'remove', '--force', w.dir]).catch(async (e: Error) => {
           // Windows: a process that just stopped (the card's session, its shell) can hold the folder a
           // moment longer. git has unregistered it by then and left the folder; it goes here.
@@ -442,6 +446,24 @@ export class CardService {
     card.boot.push({ at: Date.now(), text, state });
   }
 
+  /**
+   * §110: a new worktree has no node_modules. Each one with a package.json naming packages gets a
+   * junction to the main checkout's, at once, so Claude's tests and Try it find them (a big repo
+   * can't take a fresh install per card). Says so on the card, with a warning when the branch's
+   * lockfile differs, or why it couldn't (the main checkout has none either).
+   */
+  private linkPackages(card: Card, dirs: string[]): void {
+    for (const dir of dirs) {
+      try {
+        const r = linkDeps(dir);
+        if (r.did === 'linked') this.step(card, `${repoName(dir)}: ${r.text} Removing it with git by hand would empty the main checkout's node_modules: remove a card's worktrees here (Shift+X), which unlinks first`, r.lock ? 'bad' : 'ok');
+        else if (r.did === 'missing') this.step(card, `${repoName(dir)}: ${r.text}`, 'bad');
+      } catch (e) {
+        this.step(card, `${repoName(dir)}: couldn’t link node_modules: ${(e as Error).message}`, 'bad');
+      }
+    }
+  }
+
   /** Branch, then the session (in the app, or a terminal tab). Fails before saving anything if either can't be done, so the new-card screen can be fixed and retried. */
   async start(draft: CardDraft, ticket?: Ticket): Promise<Card> {
     const home = homeOf(draft.packet, draft.launch)!;
@@ -487,6 +509,7 @@ export class CardService {
       card.branchName = branch;
       this.step(card, folders.length === 1 ? `Made a worktree ${repoName(card.cwd)} on ${branch}` : `Made worktrees on ${branch}: ${folders.map((f) => repoName(f.dir)).join(', ')}`);
       if (skipped.length) this.step(card, `Left ${skipped.map(repoName).join(', ')} as ${skipped.length === 1 ? 'it is' : 'they are'}: not a git repo`);
+      this.linkPackages(card, folders.map((f) => f.dir));
     }
     if (card.launch.branch === 'pr' && card.pr) card.folders = [{ repo: start, dir: card.cwd }];
     this.trust(card, ownFolders(card).map((f) => f.dir));
@@ -895,6 +918,7 @@ ${laterText(card.key, later, card, this.opts.runnable?.(card))}`;
         next.folders = [...(card.folders ?? []), ...folders];
         next.boot = [...card.boot, { at: now, text: `Made ${folders.length === 1 ? `a worktree ${repoName(folders[0].dir)}` : `worktrees ${folders.map((f) => repoName(f.dir)).join(', ')}`} on ${card.branchName}${card.runner === 'app' ? '' : ' (added later: run /add-dir there in the tab)'}`, state: 'ok' }];
         this.trust(next, folders.map((f) => f.dir));
+        this.linkPackages(next, folders.map((f) => f.dir));
       }
     }
     this.save(next);
