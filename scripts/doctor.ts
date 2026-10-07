@@ -185,7 +185,10 @@ for (const w of workspaces) {
     line(ok ? 'ok' : 'bad', c, ok ? 'PowerShell has it' : 'PowerShell doesn’t know it', ok ? '' : 'It comes from a module or your PowerShell profile: open PowerShell and check it runs there.');
   }
   if (programs.has('okteto')) {
-    const r = spawnSync('okteto', ['context', 'show'], { encoding: 'utf8', windowsHide: true, timeout: 30_000, shell: process.platform === 'win32' });
+    // One command line, not args: Node 24 warns (DEP0190) when args go to a shell unescaped.
+    const r = process.platform === 'win32'
+      ? spawnSync('okteto context show', { encoding: 'utf8', windowsHide: true, timeout: 30_000, shell: true })
+      : spawnSync('okteto', ['context', 'show'], { encoding: 'utf8', timeout: 30_000 });
     line(r.status === 0 ? 'ok' : 'warn', 'okteto context', r.status === 0 ? (r.stdout || r.stderr).trim().split(/\r?\n/).slice(0, 2).join(' ') : ((r.stderr || r.stdout || '').trim().split(/\r?\n/)[0] || 'couldn’t say'), r.status === 0 ? '' : 'Run okteto context use <your context> (and okteto login if it asks).');
   }
   const inWs = (name: string) => w.repos.find((r) => repoName(r).toLowerCase() === name.toLowerCase());
