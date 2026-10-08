@@ -3019,3 +3019,23 @@ Before step 1, stop any app-summary you run yourself on 4216; otherwise the door
 The handoff is `docs/prompts/continue-canvas.md`. It holds the owner's words, the proposed design (the canvas, the order, the quick view, the keys), the steps (canvas, then quick view, then polish, each its own section), and the walks to update (`walk-card`, `walk-board-try`, `walk-hub`, `walk-perf`, `walk-two-cards`, plus a new `walk-canvas`).
 
 No code changed. Not run: the walks (a docs-only change); `pnpm typecheck` and `pnpm test` pass.
+
+## 125. The canvas: what the owner chose, and a mock to look at first
+
+2026-10-08. The owner settled §124's open questions and asked for a mock before any code. The mock is `docs/futures/canvas.html`: self-contained, with demo data only, in the app's own colour tokens. It has light, dark and System themes, a 1024 px width, and a first-time empty state. The keys work in it.
+
+**Chosen:**
+- **Stable order.** Newest first, and a card stays where you last saw it. Needing you shows as an amber tile and the count in the bar, which also works as a button. `a` focuses the next card that needs you, and the quick view follows. `<` / `>` or a drag move a card earlier or later. (`Alt+←` is the browser's Back, and `Alt+↑ ↓` already hop between the cards' sessions, so neither could reorder.) Grouping by status was turned down.
+- **Tickets to start** sit in a thin strip above the grid. `i` folds it, `v` switches between your tickets and Ready for QA, `n` or `Enter` starts one, and `↑` from the grid's top row goes into it.
+- **The quick view follows the focus.** With it open, the arrows and `a` move it to the next card, so `↓ ↓ ↓` looks through each session in turn. It follows cards only, and closes when the focus goes to a ticket or to Done.
+- **The workspace repo row goes.** A chip's tooltip names the repos, and the workspace dialog (`E`) holds them. `+` `−` `⇧E` `⇧I` `F` keep working.
+- **"Lane" becomes "Workspace"** in every label, in `?`, in the toasts and in the README.
+- **Done** is a collapsed group at the end of the grid. `Space` or `Enter` on its header opens it.
+
+**Put to the owner in the mock, to confirm before building:**
+- `Enter` in the quick view opens the card fully, as it does on the canvas. `r` (reply) opens the quick view with its message box ready, on the canvas too.
+- `Esc` in the quick view only closes it, and never stops Claude, unlike the open card's Esc.
+- Digits answer a question shown in the quick view, and otherwise pick the workspace.
+- Whether the stage strip (Plan · Build · Try · Ship) earns its space on each tile.
+
+Checked: the mock in headless Chromium, in light and dark, at 1440 and 1024 px, and empty, with the screenshots looked at and no console errors. A script drove it: `Space` opens the quick view under the focused tile's row with its notch on the tile; `a` moves to the next card that needs you; a digit answers a question; and `↓` from the last row reaches Done and closes the quick view. No app code changed, so the walks weren't run.

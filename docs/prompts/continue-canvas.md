@@ -34,6 +34,15 @@ In short:
   - keyboard-first with the keys **visible** (keycaps on everything, the legend bar, `?`), the "cockpit" the owner chose over a hide-the-keys look.
 - **Speed comes first** (since 2026-10-06, PLAN §94): `walk-perf.cjs`'s budget must still hold. A key press paints in 16 ms or less, and so on.
 
+## Decided with the owner (2026-10-08, PLAN §125)
+Where this section and the proposal below disagree, this section wins. The mock is `docs/futures/canvas.html`: open it and drive it with the keys.
+- **The order is stable:** newest first, and attention is shown, not sorted. `a` goes to the next card that needs you. `<` / `>` or a drag reorder; keep the order the owner sets.
+- **Tickets to start** go in a strip above the grid: `i` folds it, `v` switches the view, `n` / `Enter` starts one.
+- **The quick view follows the focus,** for cards only.
+- **The workspace repo row goes** into the workspace dialog and the chip's tooltip; its keys stay.
+- **"Lane" becomes "Workspace"** in every user-facing word.
+- **Ask the owner to confirm from the mock before building the quick view:** `Enter` opens fully and `r` replies; `Esc` only closes it; digits answer a question when one shows; whether to keep the stage strip.
+
 ## The proposed design (agree it with the owner before building)
 This is a starting point from the previous session. Present it, with mockups, and settle the open decisions below with the owner. Use AskUserQuestion with `preview` mockups for the layout choices.
 
