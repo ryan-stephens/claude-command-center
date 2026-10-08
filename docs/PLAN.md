@@ -2999,3 +2999,23 @@ Before step 1, stop any app-summary you run yourself on 4216; otherwise the door
 - One browser sees one card at a time on the door. Both cards in two tabs at once would need two registered addresses.
 - A module-federation host whose remotes load from ports of their own goes around the door for those; not seen (the handoff found everything on the UI's own port).
 - §122's `CC_CONTROL_UI_PORTS` stays for doors turned off.
+
+## 124. Direction: the board becomes a canvas of cards, with a quick view under each
+
+2026-10-08. The owner: the home page reads like a kanban board, chosen with business folk in mind (§27), and it doesn't do the job. The job is **switching between sessions**: seeing what is there, what each one is doing and which need you, and getting into one quickly. A card's column comes from a stage the app works out, and people spend their attention on why a card is in its column rather than on the work.
+
+**Chosen direction:**
+- **One canvas, a grid of every card**, with no columns. The stage stays as data and as a small marker on the tile.
+- **A tile says at a glance** what the session is doing or waiting on.
+- **A click or `Enter` opens the card fully**, as today.
+- **A quick view, an expandable drawer attached under the card**, does the same actions without leaving the canvas: answer a question or approval, send a message, Try it, see changes and ship.
+
+**Proposed, to settle with the owner before building:**
+- stable positions (spatial memory) with attention shown and a jump-to-next-needs-you key, or grouping by status;
+- where tickets waiting to start live (a strip above the grid, or behind `⇧T`);
+- whether the quick view follows focus;
+- what the workspace repo row becomes.
+
+The handoff is `docs/prompts/continue-canvas.md`. It holds the owner's words, the proposed design (the canvas, the order, the quick view, the keys), the steps (canvas, then quick view, then polish, each its own section), and the walks to update (`walk-card`, `walk-board-try`, `walk-hub`, `walk-perf`, `walk-two-cards`, plus a new `walk-canvas`).
+
+No code changed. Not run: the walks (a docs-only change); `pnpm typecheck` and `pnpm test` pass.

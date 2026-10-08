@@ -38,7 +38,9 @@ The main concepts:
 
 - §123: the front door. A sign-in registered as a port and a path (tried at VU: another app's registered port is refused), and no more registrations to be had, so cc-control holds the UI's own port and forwards it to one card's UI at a time; every card's UI runs on a port of its own behind it, and `o` on a card shows its UI there, signed in. Each card's API and UI keep running.
 
-**Open, next (2026-10-08):** the owner tries the front door at VU (§123, *To check at VU*): sign-in through it, switching with `o`, live reload after a switch. Never commit the identity provider's host, the app's client id, the apps' names or paths, or any VU URL.
+**Next (2026-10-08): the home page becomes a canvas of cards** with a quick view under each, replacing the board's columns (§124). The handoff is `docs/prompts/continue-canvas.md`; agree the design with the owner before building.
+
+**Also open (2026-10-08):** the owner tries the front door at VU (§123, *To check at VU*): sign-in through it, switching with `o`, live reload after a switch. Never commit the identity provider's host, the app's client id, the apps' names or paths, or any VU URL.
 The earlier direction, for history:
 
 **Direction (2026-09-29):** the owner still reaches for plain Claude Code terminals over the app. They want it to *sit on top of* terminal sessions and to help people see and follow the development work, rather than replicate Claude Code features. How to get there is open; talk it through with them. `docs/PLAN.md` §26 has the reasoning. **Chosen (§27):** the *Ticket Line*, a board of tickets moving through the loop with a new-card screen for context. The spec is `docs/futures/path-line.html`; the build handoff is `docs/prompts/continue-ticket-line.md`.
