@@ -3147,3 +3147,17 @@ An unread turn comes first; once it is seen, the card stays in Your move as *Rea
 - Screenshots looked at.
 
 **Left from §126:** new README screenshots (`docs/screenshots/line*.png` still show the board).
+
+## 128. Your Move: an empty band keeps one row of room
+
+2026-10-08. The owner: "make each section have a fixed minimum height below it so even when they are empty there is enough space there between the empty content area and the next section. That space should be equal to what it would look like if a card was in that section."
+
+**Measured** on an isolated server, light and dark, at 1440 and 1024 px, each tile at its own height (the grid's stretch turned off): a Your move tile is 139 px (a question) to 235 px (a plan), a Claude's move tile 81.5 px, a parked chip 28.8 px. An empty band's note was about 20 px.
+
+**Now** each band's body has at least the height of its shortest tile (`BAND_MIN` in `YourMove.tsx`: 139, 82 and 29 px), whether it shows tiles or its note. A band that empties keeps its room, the page below doesn't jump, and an empty band is never taller than the same band with one card in it.
+
+**Checked:**
+- `pnpm typecheck`, `npx tsc --noUnusedLocals -p .`, `pnpm test` (413).
+- `walk-card` 66/66, light and dark; `walk-hub` 37/37; `walk-perf` 25/25, every line OK (a key paints in 5–9 ms, p95).
+- `walk-your-move` 32/32, light and dark: two new checks, an empty Parked keeps 29 px and is the same height with its chip.
+- Screenshots looked at (dark, 1024 px).

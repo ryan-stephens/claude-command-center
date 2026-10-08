@@ -21,6 +21,11 @@ import { answerQuestionCard, sayToCard } from '../ws.ts';
 
 const STRIP: Card['stage'][] = ['plan', 'build', 'try', 'ship'];
 
+// Each band keeps at least one row of its own tiles' height, so a band that empties keeps its room
+// and the page below it doesn't jump (§128). Measured: the shortest Your move tile (a question) is
+// 139 px, a Claude's move tile 82 px, a parked chip 29 px.
+const BAND_MIN = { you: 'min-h-[139px]', claude: 'min-h-[82px]', parked: 'min-h-[29px]' };
+
 /** Where it is in the loop, as a small marker: Plan · Build · Try · Ship, the current step lit. */
 function Stage({ card }: { card: Card }) {
   const stage = card.stage === 'needs' ? 'build' : card.stage === 'inbox' ? 'plan' : card.stage;
@@ -63,20 +68,20 @@ export function YourMove() {
       <section aria-label="Your move" className="mb-5">
         <BandHead name="Your move" n={h.you.length} tone="attn" note={<>The longest wait first. Answer on the card, or <Key k="Enter" size="sm" inline /> opens it. <Key k="a" size="sm" inline /> goes to the next one.</>} />
         {h.you.length
-          ? <div className="grid grid-cols-[repeat(auto-fill,minmax(330px,1fr))] gap-2.5">{h.you.map((w) => <YouTile key={w.card.id} w={w} focused={focus === w.card.id} />)}</div>
-          : <p className="text-[13px] text-faint">Nothing is waiting on you.{h.claude.length ? ` Claude has ${h.claude.length} in hand.` : ''}</p>}
+          ? <div className={`grid grid-cols-[repeat(auto-fill,minmax(330px,1fr))] gap-2.5 ${BAND_MIN.you}`}>{h.you.map((w) => <YouTile key={w.card.id} w={w} focused={focus === w.card.id} />)}</div>
+          : <p className={`text-[13px] text-faint ${BAND_MIN.you}`}>Nothing is waiting on you.{h.claude.length ? ` Claude has ${h.claude.length} in hand.` : ''}</p>}
       </section>
       <section aria-label="Claude’s move" className="mb-5">
         <BandHead name="Claude’s move" n={h.claude.length} note="Working on its own. It comes back up when it needs you or its turn ends." />
         {h.claude.length
-          ? <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-2">{h.claude.map((c) => <ClaudeTile key={c.id} card={c} focused={focus === c.id} />)}</div>
-          : <p className="text-[13px] text-faint">Nothing is running. <Key k="c" size="sm" inline /> starts a card.</p>}
+          ? <div className={`grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-2 ${BAND_MIN.claude}`}>{h.claude.map((c) => <ClaudeTile key={c.id} card={c} focused={focus === c.id} />)}</div>
+          : <p className={`text-[13px] text-faint ${BAND_MIN.claude}`}>Nothing is running. <Key k="c" size="sm" inline /> starts a card.</p>}
       </section>
       <section aria-label="Parked" className="mb-4">
         <BandHead name="Parked" n={h.parked.length} note="Nobody is waiting on these. Enter opens one to pick it up again." />
         {h.parked.length
-          ? <div className="flex flex-wrap gap-1.5">{h.parked.map((c) => <ParkedChip key={c.id} card={c} focused={focus === c.id} />)}</div>
-          : <p className="text-[13px] text-faint">Nothing parked.</p>}
+          ? <div className={`flex flex-wrap gap-1.5 ${BAND_MIN.parked}`}>{h.parked.map((c) => <ParkedChip key={c.id} card={c} focused={focus === c.id} />)}</div>
+          : <p className={`text-[13px] text-faint ${BAND_MIN.parked}`}>Nothing parked.</p>}
       </section>
       {(h.done.length > 0 || doneTickets.length > 0) && (
         <section aria-label="Done">

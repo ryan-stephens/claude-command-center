@@ -80,6 +80,9 @@ const fire = (page, msg) => page.evaluate((msg) => new Promise((resolve) => { co
     check('Your move: the plan, the tool, the question and both finished turns', (await count('Your move')) === 5 && await inBand('Your move', plan) && await inBand('Your move', idle2), String(await count('Your move')));
     check('Claude’s move: the two working cards', (await count('Claude’s move')) === 2 && await inBand('Claude’s move', working));
     check('Parked is empty, and Done is folded with its one card', (await count('Parked')) === 0 && (await page.locator(`[id="card-${done}"]`).count()) === 0 && /Done\s*1/.test(await page.locator('[id="card-g:done"]').innerText()));
+    const bandBody = (name) => band(name).evaluate((s) => s.children[1].getBoundingClientRect().height);
+    const parkedEmpty = await bandBody('Parked');
+    check('an empty band keeps one tile row of room (§128)', parkedEmpty >= 28, `Parked ${parkedEmpty} px`);
     check('the bar counts the bands', /5\s*your move/.test(await page.locator('body').innerText()) && /2\s*Claude working/.test(await page.locator('body').innerText()) && /0\s*parked/.test(await page.locator('body').innerText()));
     check('a finished turn shows what Claude said and m Seen', await band('Your move').getByRole('button', { name: /Seen/ }).first().isVisible());
     check('the tool asks with Allow / Deny on its tile', await band('Your move').getByRole('button', { name: /^y\s*Allow/ }).isVisible() && await band('Your move').getByRole('button', { name: /^n\s*Deny/ }).isVisible());
@@ -107,6 +110,7 @@ const fire = (page, msg) => page.evaluate((msg) => new Promise((resolve) => { co
     await page.keyboard.press('l');
     const glowed = await until(async () => await inBand('Parked', idle) && await page.locator(`[data-flip="${idle}"]`).evaluate((el) => el.getAnimations().length > 0), 1500);
     check('l parks it, and it glows as it moves', glowed);
+    check('the band is no taller with its chip than it was empty (§128)', Math.abs((await bandBody('Parked')) - parkedEmpty) <= 1, `${parkedEmpty} → ${await bandBody('Parked')} px`);
     check('the try is kept in this browser', await page.evaluate((id) => JSON.parse(localStorage.getItem('cc-control.tried.v1') || '{}')[id]?.ok === true, idle));
 
     // ↓ from Your move reaches Claude's move.
