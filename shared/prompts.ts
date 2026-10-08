@@ -1,5 +1,5 @@
 // Saved opening prompts (PLAN §62): a prompt is a template with {{placeholders}} that the new-card
-// screen fills from the card as it stands (its ticket, repos, folders, lane, branch, kind), so the
+// screen fills from the card as it stands (its ticket, repos, folders, workspace, branch, kind), so the
 // first thing Claude is told names the context it was given. Pure: the page renders, the server
 // stores, and both share the placeholder list and the three defaults the store is seeded with.
 
@@ -42,7 +42,7 @@ export const PLACEHOLDERS: { name: string; what: string }[] = [
   { name: 'repos', what: 'the repos Claude can see, by name, the one it starts in first' },
   { name: 'home', what: 'the repo it starts in' },
   { name: 'folders', what: 'folders added from disk' },
-  { name: 'lane', what: 'the lane’s name' },
+  { name: 'workspace', what: 'the workspace’s name' },
   { name: 'branch', what: 'the card’s branch name' },
   { name: 'kind', what: 'Develop, QA or Code review' },
 ];
@@ -58,6 +58,8 @@ export function fillers(ctx: PromptContext): Record<string, string> {
     repos: (ctx.repos ?? []).join(', '),
     home: ctx.home ?? '',
     folders: (ctx.folders ?? []).join(', '),
+    workspace: ctx.lane ?? '',
+    // The name it had before workspaces were called that (§126): prompts saved with {{lane}} still fill.
     lane: ctx.lane ?? '',
     branch: ctx.branch ?? '',
     kind: ctx.kind ?? '',

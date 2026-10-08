@@ -63,7 +63,7 @@ export function NewCardSimple() {
                 className={`px-3.5 py-1.5 ${i ? 'border-l border-line' : ''} ${c.kind === k.id ? 'bg-ink font-semibold text-bg' : 'text-sub hover:bg-raise'}`}>{k.name}</button>
             ))}
           </div>
-          {ws && <span className="text-[13px] text-faint">{ws.name} lane</span>}
+          {ws && <span className="text-[13px] text-faint">{ws.name} workspace</span>}
         </div>
         <div className="flex items-center gap-4 text-[13px] text-faint">
           <CornerClose onClick={leaveComposer} />
@@ -391,7 +391,7 @@ function HowBlock({ c, keyName, focused, onFocus, pinned, user }: { c: Composer;
 }
 
 function OptionRow({ c, r, i, focused, keyName, trust }: { c: Composer; r: GoRow; i: number; focused: boolean; keyName: string; trust: boolean }) {
-  const label = r.id === 'ws' ? 'Lane' : r.id === 'home' ? 'Starts in' : r.id === 'branch' ? 'Branch' : r.id === 'mode' ? 'First step' : r.id === 'model' ? 'Model' : r.label;
+  const label = r.id === 'ws' ? 'Workspace' : r.id === 'home' ? 'Starts in' : r.id === 'branch' ? 'Branch' : r.id === 'mode' ? 'First step' : r.id === 'model' ? 'Model' : r.label;
   const why = r.id === 'branch' && c.kind === 'build'
     ? (c.launch.branch === 'worktree' ? `Each repo gets a folder of its own next to it on the card’s branch, so other cards in the same repos are never touched.${trust ? '' : ' Claude Code asks once in the tab whether to trust the new folder.'}`
       : c.launch.branch === 'new' ? 'Switches the repo’s usual folder to the new branch; another card in the same repo would then change the files under this one.'
@@ -513,7 +513,7 @@ function Picker({ c, embedded = false }: { c: Composer; embedded?: boolean }) {
       )}
       {!embedded && context && !addTo && (
         <div className="flex items-end justify-between gap-4 border-t border-line pt-3">
-          <div className="text-[12.5px] text-faint">{tab === 'folders' ? 'Folders from disk (docs, a spec, a tool’s): Claude can read and edit what is inside. Type or paste a path, or browse for one; a folder listed can be left out, brought back or taken off the card.' : tab === 'repos' ? 'Picking a repo keeps the list open; picking it again takes it out. Another folder of repos lists its repos here for this card only, never the lane.' : 'Picking a ticket keeps the list open; picking it again takes it out.'} Everything you add is on the card already.</div>
+          <div className="text-[12.5px] text-faint">{tab === 'folders' ? 'Folders from disk (docs, a spec, a tool’s): Claude can read and edit what is inside. Type or paste a path, or browse for one; a folder listed can be left out, brought back or taken off the card.' : tab === 'repos' ? 'Picking a repo keeps the list open; picking it again takes it out. Another folder of repos lists its repos here for this card only, never the workspace.' : 'Picking a ticket keeps the list open; picking it again takes it out.'} Everything you add is on the card already.</div>
           <button className="btn btn-primary shrink-0 px-4 py-2" onClick={closePicker}>Done <Key k="Esc" size="sm" tone="ghost" /></button>
         </div>
       )}

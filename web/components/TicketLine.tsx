@@ -10,7 +10,7 @@ import { bindingsFor, displayCombo } from '../bindings.ts';
 import { importWorkspace } from '../commands.ts';
 import { cardActivity } from '../line-model.ts';
 import { anyLive, cardRecipe, mainRun, type CardRun } from '../../shared/recipes.ts';
-import { openApp, openComposer, restartApp, tryIt, workspaceKey } from '../line-keys.ts';
+import { canTryCard, openApp, openComposer, restartApp, tryIt, workspaceKey } from '../line-keys.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
 import { CardView } from './CardView.tsx';
 import { YourMove } from './YourMove.tsx';
@@ -49,11 +49,15 @@ function LineBar() {
   const filter = useStore((s) => s.line.filter);
   const cards = useStore((s) => s.cards);
   // §126: the bands' counts, for every lane (the chips narrow the page, not these).
-  const seen = useStore((s) => s.seen);
-  const runs = useStore((s) => s.runs);
-  const home = homeOf(cards, runs, seen ?? {});
+  useStore((s) => s.seen);
+  useStore((s) => s.runs);
+  useStore((s) => s.tried);
+  useStore((s) => s.recipes);
+  const now = get();
+  const home = homeOf(cards, now.runs, now.seen ?? {}, 'all', '', { tried: now.tried, canTry: (c) => canTryCard(now, c) });
   const working = home.claude.length;
   const needs = home.you.length;
+  const parked = home.parked.length;
   const chip = (on: boolean) => `flex items-center gap-2 whitespace-nowrap rounded-lg border px-2 py-1 text-[13.5px] ${on ? 'border-ring bg-surface shadow-[0_0_0_2px_color-mix(in_srgb,var(--c-ring)_25%,transparent)]' : 'border-line bg-surface hover:bg-raise'}`;
   return (
     <div className="flex items-center gap-3 overflow-x-auto border-b border-line bg-col px-4 py-2">
@@ -63,15 +67,16 @@ function LineBar() {
           <Key k={String(i + 1)} size="sm" /><WsBadge ws={w} size={20} />{w.name}
         </button>
       ))}
-      <button className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-dashed border-line px-2 py-1 text-[13.5px] text-faint hover:text-ink" onClick={() => set({ modal: { kind: 'workspace', id: null } })} title="New lane">
-        <Icon name="plus" size={14} />Lane<Key k="W" size="sm" />
+      <button className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-dashed border-line px-2 py-1 text-[13.5px] text-faint hover:text-ink" onClick={() => set({ modal: { kind: 'workspace', id: null } })} title="New workspace">
+        <Icon name="plus" size={14} />Workspace<Key k="W" size="sm" />
       </button>
       {!SLIM.filter && <SearchBox />}
       <span className="grow" />
       <span className={`whitespace-nowrap text-[13.5px] ${needs ? 'text-attn' : 'text-sub'}`} title="a goes to the next one"><b className={`tabular-nums ${needs ? '' : 'text-ink'}`}>{needs}</b> your move</span>
       <span className={`whitespace-nowrap text-[13.5px] ${working ? 'text-busy' : 'text-sub'}`}><b className={`tabular-nums ${working ? '' : 'text-ink'}`}>{working}</b> Claude working</span>
+      <span className="whitespace-nowrap text-[13.5px] text-sub"><b className="tabular-nums text-ink">{parked}</b> parked</span>
       {!SLIM.lineButtons && <>
-        <button className="btn whitespace-nowrap py-1" onClick={() => set({ modal: { kind: 'tickets' } })} title="Demo tickets, Jira and Trello, and which lane each project goes to"><Key k="⇧T" size="sm" />Tickets</button>
+        <button className="btn whitespace-nowrap py-1" onClick={() => set({ modal: { kind: 'tickets' } })} title="Demo tickets, Jira and Trello, and which workspace each project goes to"><Key k="⇧T" size="sm" />Tickets</button>
         <button className="btn whitespace-nowrap py-1" onClick={() => openComposer()}><Key k="c" size="sm" />New card</button>
       </>}
     </div>
@@ -116,7 +121,7 @@ function WorkspaceBar() {
     <div className="flex items-center gap-2 overflow-x-auto border-b border-line bg-col px-4 py-1.5 text-[13px]">
       {ws ? (
         <>
-          <span className="whitespace-nowrap text-faint" title="Every card in this lane can read and change all of these repos">{ws.name} repos</span>
+          <span className="whitespace-nowrap text-faint" title="Every card in this workspace can read and change all of these repos">{ws.name} repos</span>
           {ws.repos.length
             ? ws.repos.map((r) => (
               <span key={r} title={r} className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-line bg-raise px-1.5 font-mono text-[12px] text-sub">
@@ -125,16 +130,16 @@ function WorkspaceBar() {
             ))
             : <span className="whitespace-nowrap text-faint">none yet: + adds one from the library</span>}
           <span className="mx-1 h-4 w-px bg-line" />
-          {act('Add', '+', () => workspaceKey('addRepo'), 'Add a repo from the library to this lane')}
+          {act('Add', '+', () => workspaceKey('addRepo'), 'Add a repo from the library to this workspace')}
           {ws.repos.length > 0 && act('Remove', '−', () => workspaceKey('removeRepo'))}
           {act('Edit', 'E', () => workspaceKey('edit'))}
-          {act('Share', '⇧E', () => workspaceKey('share'), 'Save this lane as a file to share')}
+          {act('Share', '⇧E', () => workspaceKey('share'), 'Save this workspace as a file to share')}
         </>
       ) : count ? null : (
-        <span className="whitespace-nowrap text-faint">No lanes yet. A lane groups the repos you work on together: W makes one.</span>
+        <span className="whitespace-nowrap text-faint">No workspaces yet. A workspace groups the repos you work on together: W makes one.</span>
       )}
       <span className="grow" />
-      {act('Import', '⇧I', importWorkspace, 'Import a lane someone shared')}
+      {act('Import', '⇧I', importWorkspace, 'Import a workspace someone shared')}
       {act(sources ? 'Library folders' : 'Pick repo folders', 'F', () => set({ modal: { kind: 'sources' } }), 'Choose the folders the repo library lists')}
     </div>
   );
@@ -195,7 +200,7 @@ export function TryButtons({ card, focused, compact }: { card: Card; focused: bo
           <button className={`${btn} text-sub hover:text-ink`} aria-label="Restart" onClick={(e) => act(e, restartApp)} title="Restart: stop it and start it again"><Icon name="restart" size={13} /><Key k="⇧R" size="sm" /></button>
         </>
       ) : (
-        <button className={`${btn} text-acc`} onClick={(e) => act(e, tryIt)} title="Start the app the way the card’s repo or lane says"><Icon name="play" size={13} />{run?.state === 'failed' ? 'Start again' : 'Start'}<Key k="t" size="sm" /></button>
+        <button className={`${btn} text-acc`} onClick={(e) => act(e, tryIt)} title="Start the app the way the card’s repo or workspace says"><Icon name="play" size={13} />{run?.state === 'failed' ? 'Start again' : 'Start'}<Key k="t" size="sm" /></button>
       )}
     </div>
   );

@@ -81,7 +81,7 @@ export function chips(c: Composer, library: RepoInfo[]): Chip[] {
       const isLib = library.some((x) => samePath(x.path, r.item.id)) || c.packet.workspace.some((w) => w.id === r.item.id);
       // A repo picked from a folder added for this card (§65) says which folder, so it is clear where it came from.
       const from = own && !isLib ? sourceOf(c, r.item.id) : null;
-      out.push({ id: `${r.layer}:${r.item.id}`, label: repoName(r.item.id), sub: own ? (isLib ? undefined : from ? repoName(from.path) : r.item.on ? 'folder' : 'folder · left out') : r.item.on ? 'lane' : 'lane · left out', kind: 'repo', on: r.item.on, own, row: i });
+      out.push({ id: `${r.layer}:${r.item.id}`, label: repoName(r.item.id), sub: own ? (isLib ? undefined : from ? repoName(from.path) : r.item.on ? 'folder' : 'folder · left out') : r.item.on ? 'workspace' : 'workspace · left out', kind: 'repo', on: r.item.on, own, row: i });
     } else {
       out.push({ id: `${r.layer}:${r.item.id}`, label: r.item.id.replace(/^ticket:/, ''), sub: 'related', kind: 'ticket', on: r.item.on, own, row: i });
     }
@@ -112,7 +112,7 @@ export function howFacts(c: Composer, workspaces: Workspace[], key: string, mode
   const branch = branchFor(key, (c.ticket?.title ?? c.title) || 'new');
   const ws = workspaces.find((w) => w.id === c.workspaceId);
   const out: HowFact[] = [
-    { id: 'ws', label: 'Lane', value: ws?.name ?? 'None', note: ws ? 'its repos and notes are part of the context' : undefined },
+    { id: 'ws', label: 'Workspace', value: ws?.name ?? 'None', note: ws ? 'its repos and notes are part of the context' : undefined },
     { id: 'home', label: 'Starts in', value: homeName, note: repos.length > 1 ? `Claude’s working folder; the other ${repos.length - 1 === 1 ? 'repo is' : 'repos are'} added beside it` : undefined },
   ];
   if (c.kind === 'build') out.push({ id: 'branch', label: 'Branch', value: branch, note: `a new worktree of ${repos.length > 1 ? 'each repo' : 'the repo'}, so nothing else you have open is touched` });

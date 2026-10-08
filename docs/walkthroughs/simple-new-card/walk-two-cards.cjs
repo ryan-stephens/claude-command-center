@@ -170,7 +170,8 @@ const tails = (rs) => rs.map((r) => `${r.service}:${r.state} ${r.steps.map((s) =
   await shot(page, 'card-b-on-4216');
   await page.keyboard.press('Escape');
   await sleep(500);
-  const tileText = (c) => page.locator(`#card-${cards[c].id}`).innerText();
+  // §126: the whole tile (a card ready to try shows its app's address in the box under its title).
+  const tileText = (c) => page.locator(`[data-flip="${cards[c].id}"]`).innerText();
   check('on the board, card B’s tile says its app is on localhost:4216, card A’s that it is behind it', (await tileText('b')).includes('App on localhost:4216') && (await tileText('a')).includes('App behind :4216'), `${(await tileText('a')).replace(/\s+/g, ' ')} | ${(await tileText('b')).replace(/\s+/g, ' ')}`);
   await shot(page, 'board-door');
   const rb2 = await runsOf(page, cards.b.id), ra2 = await runsOf(page, cards.a.id);

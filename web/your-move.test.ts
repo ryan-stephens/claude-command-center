@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Card, CardLive } from '../shared/cards.ts';
 import type { CardRun } from '../shared/recipes.ts';
-import { homeCards, homeOf, needOf, nextNeeding, pruneSeen, seenNow, stepBox, unread, type Box } from './your-move.ts';
+import { bandsOf, homeCards, homeOf, needOf, nextNeeding, problemText, pruneSeen, seenNow, stepBox, triedBefore, unread, type Box } from './your-move.ts';
 
 const card = (id: string, o: Partial<Card> = {}): Card => ({
   id, key: id, title: id, workspaceId: 'w1', stage: 'build', createdAt: 0, boot: [], sessionId: `s-${id}`,
@@ -83,4 +83,28 @@ test('arrows: ← → in reading order, ↑ ↓ to the nearest box of the row ab
   assert.equal(stepBox(boxes, 'e', 0, 1), 'e', 'no row below: stays');
   assert.equal(stepBox(boxes, null, 0, 1), 'a', 'nothing focused: the first');
   assert.equal(stepBox([], 'a', 1, 0), null);
+});
+
+test('ready to try: a turn ended in Try it with an app to start, until you try it; again once Claude changes it', () => {
+  const can = () => true;
+  const c = card('t', { stage: 'try', live: live('waiting', 10) });
+  assert.deepEqual(needOf(c, undefined, { t: 10 }, { canTry: can }), { need: 'try', since: 10 }, 'seen, so ready to try');
+  assert.equal(needOf(c, undefined, {}, { canTry: can })?.need, 'unread', 'an unread turn comes first');
+  assert.equal(needOf(c, undefined, { t: 10 }, { canTry: () => false }), undefined, 'nothing to start: nothing to try');
+  assert.equal(needOf(c, undefined, { t: 10 }, { canTry: can, tried: { t: { at: 11, ok: true } } }), undefined, 'tried since it finished');
+  assert.equal(needOf({ ...c, live: live('waiting', 20) }, undefined, { t: 20 }, { canTry: can, tried: { t: { at: 11, ok: false } } })?.need, 'try', 'changed since: ready again');
+  assert.equal(triedBefore({ ...c, live: live('waiting', 20) }, { t: { at: 11, ok: false } }), true);
+  assert.equal(triedBefore(c, {}), false);
+  assert.equal(needOf({ ...c, stage: 'build' }, undefined, { t: 10 }, { canTry: can }), undefined, 'only a turn that ended in Try it');
+  assert.equal(needOf({ ...c, live: live('working', 10) }, undefined, {}, { canTry: can }), undefined, 'not while Claude is on it');
+});
+
+test('Parked is idle the longest first; bandsOf says where each card is', () => {
+  const h = homeOf([card('new-idle', { createdAt: 9, live: live('waiting', 50) }), card('old-idle', { createdAt: 1, live: live('waiting', 5) }), card('w', { live: live('working', 1) })], {}, { 'new-idle': 50, 'old-idle': 5 });
+  assert.deepEqual(h.parked.map((c) => c.id), ['old-idle', 'new-idle']);
+  assert.deepEqual([...bandsOf(h)], [['w', 'claude'], ['old-idle', 'parked'], ['new-idle', 'parked']]);
+});
+
+test('Found a problem says what you saw, as a reply', () => {
+  assert.equal(problemText('  the button overlaps the header \n'), 'I tried it and found a problem: the button overlaps the header');
 });

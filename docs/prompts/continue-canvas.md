@@ -1,6 +1,6 @@
 # The cards canvas: replace the board with one grid of cards and a quick view under each
 
-> **Superseded (2026-10-08, PLAN §126):** after using the canvas mock the owner chose **Your Move** from five layouts (`docs/futures/home-layouts.html`), and it is built: cards in three bands by whose turn it is. What follows is the history of the canvas idea. What is left: *Ready to try* with Looks good / Found a problem, the Lane → Workspace rename, and new README screenshots (§126, *Not done yet*).
+> **Superseded (2026-10-08, PLAN §126):** after using the canvas mock the owner chose **Your Move** from five layouts (`docs/futures/home-layouts.html`), and it is built: cards in three bands by whose turn it is. What follows is the history of the canvas idea. Ready to try, the parked count, the glow and the Workspace rename followed in §127; new README screenshots are what is left.
 
 Paste this into a new Claude Code session opened in `D:\repos\cc-control`.
 

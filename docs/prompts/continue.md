@@ -38,7 +38,7 @@ The main concepts:
 
 - §123: the front door. A sign-in registered as a port and a path (tried at VU: another app's registered port is refused), and no more registrations to be had, so cc-control holds the UI's own port and forwards it to one card's UI at a time; every card's UI runs on a port of its own behind it, and `o` on a card shows its UI there, signed in. Each card's API and UI keep running.
 
-**Now (2026-10-08): the home page is Your Move** (§126): cards in three bands by whose turn it is (Your move, Claude's move, Parked), answered on the tile, unread turns kept per browser. It replaced the board's columns, after the canvas (§124, §125) felt jumbled and five layouts were compared (`docs/futures/home-layouts.html`). `walk-your-move` checks it. Next: *Ready to try* with Looks good / Found a problem, the Lane → Workspace rename, and new screenshots.
+**Now (2026-10-08): the home page is Your Move** (§126): cards in three bands by whose turn it is (Your move, Claude's move, Parked), answered on the tile, unread turns kept per browser. It replaced the board's columns, after the canvas (§124, §125) felt jumbled and five layouts were compared (`docs/futures/home-layouts.html`). `walk-your-move` checks it. Since §127 it matches its mock: *Ready to try* with Looks good (`l`) / Found a problem (`p`), a parked count, cards that glow as they change band, and *Lane* is *Workspace* on screen. Next: new README screenshots.
 
 **Also open (2026-10-08):** the owner tries the front door at VU (§123, *To check at VU*): sign-in through it, switching with `o`, live reload after a switch. Never commit the identity provider's host, the app's client id, the apps' names or paths, or any VU URL.
 The earlier direction, for history:

@@ -4,20 +4,20 @@
 // Parked: nobody waits on it. Tickets to start sit in a strip above; Done folds away below.
 // The bands come from your-move.ts; the keys from line-keys.ts (boardKeys).
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
 import { askOf, cardRepos, type Card } from '../../shared/cards.ts';
 import { mainRun } from '../../shared/recipes.ts';
 import { allMerged, prsLine, prsOf } from '../../shared/ship.ts';
 import { INBOX_VIEWS, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { repoName } from '../../shared/workspaces.ts';
-import { answerAsk, DONE_FOCUS, doneTicketsOf, goToTab, homeNow, inboxOf, openCard, openComposer, switchInbox } from '../line-keys.ts';
+import { answerAsk, DONE_FOCUS, doneTicketsOf, goToTab, homeNow, inboxOf, looksGood, openCard, openComposer, openProblem, switchInbox } from '../line-keys.ts';
 import { elapsed, matches, ticketFocus } from '../line-model.ts';
-import { flash, get, markSeen, set, toggleTicketsFolded, useStore } from '../store.ts';
-import { NEED_LABEL, type Need, type Waiting } from '../your-move.ts';
+import { flash, get, markSeen, markTried, set, toggleTicketsFolded, useStore } from '../store.ts';
+import { bandsOf, NEED_LABEL, problemText, triedBefore, type Need, type Waiting } from '../your-move.ts';
 import { useNow } from './ActivityBar.tsx';
 import { ActLine, appAt, KindPill, RunLine, TryButtons } from './TicketLine.tsx';
 import { Key, SWATCH, TicketKey } from './ui.tsx';
-import { answerQuestionCard } from '../ws.ts';
+import { answerQuestionCard, sayToCard } from '../ws.ts';
 
 const STRIP: Card['stage'][] = ['plan', 'build', 'try', 'ship'];
 
@@ -41,6 +41,8 @@ export function YourMove() {
   useStore((s) => s.cards);
   useStore((s) => s.runs);
   useStore((s) => s.seen);
+  useStore((s) => s.tried);
+  useStore((s) => s.recipes);
   useStore((s) => s.tickets);
   useStore((s) => s.line.filter);
   useStore((s) => s.line.q);
@@ -48,13 +50,15 @@ export function YourMove() {
   const focus = useStore((s) => s.line.focus);
   const any = useStore((s) => s.cards.length > 0 || s.tickets.length > 0);
   const h = homeNow(get());
+  const scroller = useRef<HTMLDivElement>(null);
+  useMoves(scroller, h);
   useEffect(() => {
     if (focus) document.getElementById(`card-${focus}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [focus]);
   const doneTickets = doneTicketsOf(get());
   if (!any) return <FirstTime />;
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-3">
+    <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-3">
       <TicketStrip />
       <section aria-label="Your move" className="mb-5">
         <BandHead name="Your move" n={h.you.length} tone="attn" note={<>The longest wait first. Answer on the card, or <Key k="Enter" size="sm" inline /> opens it. <Key k="a" size="sm" inline /> goes to the next one.</>} />
@@ -95,6 +99,35 @@ export function YourMove() {
       )}
     </div>
   );
+}
+
+/**
+ * A card that changed band slides from where it was to where it is, and glows for a moment, so you
+ * see what moved (§126). Positions are measured after every commit, against the scrolling page.
+ */
+function useMoves(scroller: RefObject<HTMLDivElement | null>, h: ReturnType<typeof homeNow>) {
+  const prev = useRef<{ bands: Map<string, string>; at: Map<string, { x: number; y: number }> } | null>(null);
+  useLayoutEffect(() => {
+    const root = scroller.current;
+    if (!root) return;
+    const box = root.getBoundingClientRect();
+    const at = new Map<string, { x: number; y: number }>();
+    const els = [...root.querySelectorAll<HTMLElement>('[data-flip]')];
+    for (const el of els) { const r = el.getBoundingClientRect(); at.set(el.dataset.flip!, { x: r.left - box.left, y: r.top - box.top + root.scrollTop }); }
+    const bands = bandsOf(h);
+    const before = prev.current;
+    prev.current = { bands, at };
+    if (!before || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const moved = [...bands].filter(([id, b]) => before.bands.has(id) && before.bands.get(id) !== b).map(([id]) => id);
+    if (!moved.length) return;
+    for (const el of els) {
+      const id = el.dataset.flip!;
+      const a = before.at.get(id);
+      const b = at.get(id);
+      if (a && b && (a.x !== b.x || a.y !== b.y)) el.animate([{ transform: `translate(${a.x - b.x}px, ${a.y - b.y}px)` }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.2,.7,.2,1)' });
+      if (moved.includes(id)) el.animate([{ boxShadow: '0 0 0 4px color-mix(in srgb, var(--c-acc) 55%, transparent)' }, { boxShadow: '0 0 0 0 transparent' }], { duration: 1600, easing: 'ease-out' });
+    }
+  });
 }
 
 function BandHead({ name, n, note, tone }: { name: string; n: number; note: ReactNode; tone?: 'attn' }) {
@@ -159,7 +192,7 @@ function TicketChip({ t, focused }: { t: Ticket; focused: boolean }) {
 
 const NEED_TONE: Record<Need, string> = {
   tool: 'bg-attn-bg text-attn', plan: 'bg-attn-bg text-attn', question: 'bg-attn-bg text-attn', reply: 'bg-attn-bg text-attn', tab: 'bg-attn-bg text-attn',
-  failed: 'bg-bad-bg text-bad', tryFailed: 'bg-bad-bg text-bad', unread: 'bg-busy-bg text-busy',
+  failed: 'bg-bad-bg text-bad', tryFailed: 'bg-bad-bg text-bad', unread: 'bg-busy-bg text-busy', try: 'bg-calm-bg text-calm',
 };
 
 /** A card waiting on you: what it needs, how long it has waited, and the answer keys right on it. */
@@ -167,17 +200,18 @@ function YouTile({ w, focused }: { w: Waiting; focused: boolean }) {
   const { card, need } = w;
   const now = useNow(true);
   const color = useWsColor(card.workspaceId);
-  const asking = need !== 'unread' && need !== 'failed' && need !== 'tryFailed';
+  const asking = need !== 'unread' && need !== 'failed' && need !== 'tryFailed' && need !== 'try';
   const long = asking && now - w.since >= 10 * 60_000;
   const bad = need === 'failed' || need === 'tryFailed';
   return (
     <div
+      data-flip={card.id}
       className={`flex min-w-0 flex-col rounded-xl border border-t-[3px] bg-surface text-[13px] ${focused ? 'is-focus' : bad ? 'border-bad/45' : long ? 'border-attn/55' : 'border-line'}`}
       style={{ borderTopColor: color }}
     >
       <button id={`card-${card.id}`} onClick={() => openCard(card.id)} className="flex flex-col gap-1 rounded-t-xl px-3 pb-1 pt-2 text-left hover:bg-raise/60">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className={`min-w-0 truncate whitespace-nowrap rounded px-1.5 font-mono text-[10px] font-bold uppercase leading-[18px] tracking-wide ${NEED_TONE[need]}`}>{need === 'unread' && card.stage === 'try' ? 'Finished · ready to try' : NEED_LABEL[need]}</span>
+          <span className={`min-w-0 truncate whitespace-nowrap rounded px-1.5 font-mono text-[10px] font-bold uppercase leading-[18px] tracking-wide ${NEED_TONE[need]}`}>{NEED_LABEL[need]}</span>
           <TicketKey k={card.key} source={card.ticket?.source} />
           {card.kind && card.kind !== 'build' && <KindPill card={card} />}
           <span className="grow" />
@@ -198,8 +232,10 @@ function Ask({ w }: { w: Waiting }) {
   const ask = askOf(card);
   const run = useStore((s) => mainRun(s.runs, card.id));
   const btn = 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-line bg-surface py-0.5 pl-0.5 pr-2 text-[12.5px] font-semibold hover:bg-raise';
-  const box = (tone: 'attn' | 'bad' | 'busy', children: ReactNode) => (
-    <div className={`flex flex-col gap-2 rounded-lg border px-2.5 py-2 ${tone === 'attn' ? 'border-attn/45 bg-attn-bg' : tone === 'bad' ? 'border-bad/45 bg-bad-bg' : 'border-busy/30 bg-busy-bg'}`}>{children}</div>
+  const tried = useStore((s) => s.tried);
+  const problem = useStore((s) => s.line.problem === card.id);
+  const box = (tone: 'attn' | 'bad' | 'busy' | 'calm', children: ReactNode) => (
+    <div className={`flex flex-col gap-2 rounded-lg border px-2.5 py-2 ${tone === 'attn' ? 'border-attn/45 bg-attn-bg' : tone === 'bad' ? 'border-bad/45 bg-bad-bg' : tone === 'calm' ? 'border-calm/40 bg-calm-bg' : 'border-busy/30 bg-busy-bg'}`}>{children}</div>
   );
   const open = <button className={btn} onClick={() => openCard(card.id)}><Key k="Enter" size="sm" />{need === 'reply' ? 'Reply' : need === 'question' ? 'Answer' : 'Open it'}</button>;
   if (need === 'tool' || need === 'plan') {
@@ -232,6 +268,23 @@ function Ask({ w }: { w: Waiting }) {
   if (need === 'tab') return box('attn', <><span>{card.live?.text || 'Waiting for you in its terminal'}</span><span className="flex gap-1.5"><button className={btn} onClick={() => goToTab(card.id)}><Key k="g" size="sm" />Answer in its terminal</button></span></>);
   if (need === 'failed') return box('bad', <><span className="font-semibold text-bad">{card.boot.filter((b) => b.state === 'bad').at(-1)?.text ?? 'It didn’t start'}</span><span className="flex gap-1.5">{open}</span></>);
   if (need === 'tryFailed') return box('bad', <><span className="font-semibold text-bad">{run?.text || 'Try it failed'}</span><span className="text-[12px] text-sub">t starts it again (below); Enter opens the card with its output.</span></>);
+  if (need === 'try') {
+    // The buttons under the tile start, open, stop and restart the app; here: how trying it went.
+    const app = run?.state === 'up' ? <span className="font-semibold text-ok">● {appAt(run)}</span>
+      : run?.state === 'running' ? <span className="flex items-center gap-1.5 text-busy"><span className="spinner" />Starting the app</span>
+      : <span className="text-sub">The app isn’t running: <Key k="t" size="sm" inline /> starts it.</span>;
+    return box('calm', <>
+      <span className="font-semibold text-calm">{triedBefore(card, tried) ? 'Ready to try again: Claude changed it since your last try' : 'Ready to try'}</span>
+      <span className="text-[12.5px]">{app}</span>
+      {problem
+        ? <ProblemBox id={card.id} />
+        : <span className="flex flex-wrap gap-1.5">
+          <button className={`${btn} text-ok`} onClick={() => looksGood(card.id)}><Key k="l" size="sm" />Looks good</button>
+          <button className={`${btn} text-bad`} onClick={() => openProblem(card.id)}><Key k="p" size="sm" />Found a problem</button>
+          {open}
+        </span>}
+    </>);
+  }
   // A finished turn you haven't seen: what Claude said, and m to put it away.
   return box('busy', <>
     <span className="line-clamp-3 whitespace-pre-line text-[12.5px]">{(card.live?.lastMessage ?? card.live?.text ?? 'Finished its turn').replace(/^#+\s*/gm, '')}</span>
@@ -242,12 +295,36 @@ function Ask({ w }: { w: Waiting }) {
   </>);
 }
 
+/** Found a problem: what you saw goes to the card's session as a reply (Enter, in line-keys), and the card goes back to Claude. */
+function ProblemBox({ id }: { id: string }) {
+  const send = () => {
+    const el = document.getElementById('problem-say') as HTMLInputElement | null;
+    const what = el?.value.trim();
+    if (!what) { el?.focus(); return; }
+    set({ line: { ...get().line, problem: null } });
+    markTried(id, false);
+    markSeen(id);
+    sayToCard(id, problemText(what)).then(() => flash('Sent back to Claude'), (e: Error) => flash(e.message));
+  };
+  return (
+    <span className="flex items-center gap-1.5">
+      <input
+        id="problem-say" autoFocus autoComplete="off" aria-label="What went wrong"
+        placeholder="What went wrong? Enter sends it to Claude, Esc cancels"
+        className="min-w-0 flex-1 rounded-md border border-ring bg-surface px-2 py-1 text-[12.5px] outline-none placeholder:text-faint"
+        onBlur={(e) => { if (!e.currentTarget.value.trim()) set({ line: { ...get().line, problem: null } }); }}
+      />
+      <button className="inline-flex items-center gap-1 rounded-md border border-line bg-surface py-0.5 pl-0.5 pr-2 text-[12px] font-semibold hover:bg-raise" onMouseDown={(e) => { e.preventDefault(); send(); }}><Key k="Enter" size="sm" />Send</button>
+    </span>
+  );
+}
+
 /** A card Claude is working on: what it is doing now, and for how long. */
 function ClaudeTile({ card, focused }: { card: Card; focused: boolean }) {
   const now = useNow(true);
   const color = useWsColor(card.workspaceId);
   return (
-    <div className={`flex min-w-0 flex-col rounded-xl border border-l-[3px] bg-col text-[13px] ${focused ? 'is-focus' : 'border-line'}`} style={{ borderLeftColor: color }}>
+    <div data-flip={card.id} className={`flex min-w-0 flex-col rounded-xl border border-l-[3px] bg-col text-[13px] ${focused ? 'is-focus' : 'border-line'}`} style={{ borderLeftColor: color }}>
       <button id={`card-${card.id}`} onClick={() => openCard(card.id)} className="flex min-w-0 flex-col gap-1 rounded-xl px-2.5 py-2 text-left hover:bg-raise">
         <span className="flex items-center gap-1.5">
           <TicketKey k={card.key} source={card.ticket?.source} />
@@ -273,7 +350,7 @@ function ParkedChip({ card, focused }: { card: Card; focused: boolean }) {
   const prs = prsOf(card.ship);
   const where = prs.length ? prsLine(prs) : card.live?.phase === 'ended' ? 'Session ended' : `idle ${elapsed(card.live?.at ?? card.createdAt, now)}`;
   return (
-    <div className={`flex min-w-0 max-w-[520px] items-center rounded-full border bg-surface text-[12.5px] ${focused ? 'is-focus' : 'border-line'}`}>
+    <div data-flip={card.id} className={`flex min-w-0 max-w-[520px] items-center rounded-full border bg-surface text-[12.5px] ${focused ? 'is-focus' : 'border-line'}`}>
       <button id={`card-${card.id}`} onClick={() => openCard(card.id)} className="flex min-w-0 items-center gap-2 rounded-full py-1 pl-2.5 pr-3 text-left hover:bg-raise" title={`${card.key} ${card.title}\n${cardRepos(card).map(repoName).join(', ')}`}>
         <span className="h-2 w-2 shrink-0 rounded-[3px]" style={{ background: color }} />
         <TicketKey k={card.key} source={card.ticket?.source} />
@@ -294,10 +371,10 @@ function FirstTime() {
       <p>A card is one piece of work, a ticket or an idea, with its own Claude session and branch, and a way to try it and ship it. Cards show here by whose move it is: yours, Claude’s, or nobody’s.</p>
       <div className="mt-4 flex flex-wrap justify-center gap-2.5">
         <button className="btn btn-primary" onClick={() => openComposer()}><Key k="c" size="sm" tone="ghost" />New card</button>
-        <button className="btn" onClick={() => set({ modal: { kind: 'workspace', id: null } })}><Key k="W" size="sm" />New lane</button>
+        <button className="btn" onClick={() => set({ modal: { kind: 'workspace', id: null } })}><Key k="W" size="sm" />New workspace</button>
         <button className="btn" onClick={() => set({ modal: { kind: 'tickets' } })}><Key k="⇧T" size="sm" />Jira, Trello or demo tickets</button>
       </div>
-      <p className="mt-4 text-[13px] text-faint">A lane groups the repos you work on together. Every card in it can use all of them.</p>
+      <p className="mt-4 text-[13px] text-faint">A workspace groups the repos you work on together. Every card in it can use all of them.</p>
     </div>
   );
 }

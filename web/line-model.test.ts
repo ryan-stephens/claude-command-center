@@ -180,7 +180,7 @@ test('w keeps a repo the card added for the whole workspace', () => {
   assert.deepEqual(composer.packet.workspace.map((i) => i.label), ['web-app', 'tokens', 'pay']);
   assert.equal(composer.packet.card.length, 0);
   assert.match(String(keepForWorkspace(c, 0)), /Only a repo you added/);
-  assert.match(String(keepForWorkspace({ ...c, workspaceId: null }, at)), /no lane/);
+  assert.match(String(keepForWorkspace({ ...c, workspaceId: null }, at)), /no workspace/);
 });
 
 test('the model: the default is named, ← → or m pick Opus, Sonnet, Haiku and back', () => {

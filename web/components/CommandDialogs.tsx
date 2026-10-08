@@ -127,7 +127,7 @@ export function EditDialog({ group, slot }: { group: CommandGroup | null; slot: 
           <label className={labelClass}>Group<input value={groupName} onChange={(e) => setGroupName(e.target.value)} className={fieldClass} /></label>
           <label className={labelClass}>Saved for
             <select value={scope} onChange={(e) => setScope(e.target.value as Scope)} className={fieldClass}>
-              {workspaceId && <option value="workspace">this lane</option>}
+              {workspaceId && <option value="workspace">this workspace</option>}
               <option value="global">just me, everywhere</option>
               {cwd && <option value="repo">everyone in this repo</option>}
             </select>

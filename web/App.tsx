@@ -11,8 +11,8 @@ import { cycleTheme, jumpToAttention, onKeyDown, onKeyUp, openSession } from './
 import { applyHints, trimLegend } from './hints.ts';
 import { legendFor, lineLegendFor } from './legend.ts';
 import { needsYou, packetRows } from './line-model.ts';
-import { unread } from './your-move.ts';
-import { cardTurnRunning, goHome } from './line-keys.ts';
+import { readyToTry, unread } from './your-move.ts';
+import { canTryCard, cardTurnRunning, goHome } from './line-keys.ts';
 import { pickerList } from './simple-keys.ts';
 import { chips, simpleOf } from './simple-model.ts';
 import { SLIM } from './slim.ts';
@@ -51,6 +51,7 @@ function Legend() {
   const anyNeeds = useStore((s) => s.cards.some((c) => needsYou(c) || unread(c, s.seen ?? {})));
   const focusAsks = useStore((s) => { const c = s.cards.find((x) => x.id === s.line.focus); return Boolean(c && c.live?.phase === 'needs' && askOf(c) && askOf(c)!.kind !== 'question'); });
   const focusUnread = useStore((s) => { const c = s.cards.find((x) => x.id === s.line.focus); return Boolean(c && unread(c, s.seen ?? {})); });
+  const focusTry = useStore((s) => { const c = s.cards.find((x) => x.id === s.line.focus); return Boolean(c && !unread(c, s.seen ?? {}) && readyToTry(c, s.tried, (x) => canTryCard(s, x))); });
   // Only once the session is in the list: before that, the key would open a session the page doesn't have.
   const hasSession = useStore((s) => { const id = s.cards.find((c) => c.id === (s.line.drawer ?? s.line.focus))?.sessionId; return Boolean(id && s.sessions.some((x) => x.id === id)); });
   const filtered = useStore((s) => Boolean(s.line.q.trim()));
@@ -105,7 +106,7 @@ function Legend() {
   const simple = isSimple ? { block: spBlock, adding: spAdding, context: spContext, folders: spFolders, repos: spRepos, onSource: spOnSource, prompt: spPrompt, more: spMore, hasTicket: spTicket, details: spDetails, ticketLink: spTicketLink, ownChip: spOwn } : undefined;
   if (modal) return null;
   const items = trimLegend(screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, anyNeeds, focusAsks, focusUnread, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, question, hasTab, needsTab, inApp, working, hasChanges, hasDraft, tab, simple, panel, hasStack, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, anyNeeds, focusAsks, focusUnread, focusTry, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, question, hasTab, needsTab, inApp, working, hasChanges, hasDraft, tab, simple, panel, hasStack, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings }), hints);
   if (!items) return null;
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');
@@ -190,7 +191,7 @@ function OutdatedBanner() {
     <div className="flex items-center gap-2.5 border-b border-line bg-bad-bg px-4 py-2 text-sm text-bad" role="alert">
       <Icon name="warn" size={16} />
       {outdated === 'server'
-        ? <span><strong>The cc-control server is out of date.</strong> It started before the last update, so lanes and the repo library can’t save. Restart it: stop it and run <code className="font-mono">pnpm start</code>.</span>
+        ? <span><strong>The cc-control server is out of date.</strong> It started before the last update, so workspaces and the repo library can’t save. Restart it: stop it and run <code className="font-mono">pnpm start</code>.</span>
         : <span><strong>This page is older than the cc-control server.</strong> Reload it (<Key k="F5" size="sm" inline />).</span>}
     </div>
   );

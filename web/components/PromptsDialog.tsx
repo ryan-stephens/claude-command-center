@@ -54,7 +54,7 @@ export function PromptsDialog({ draft }: { draft?: { body: string } }) {
   return (
     <Overlay label="Saved prompts" wide>
       <DialogTitle>Saved prompts</DialogTitle>
-      <p className="mb-3 text-sm text-sub">The opening message of a new card can start from one of these. Its <span className="font-mono">{'{{placeholders}}'}</span> are filled from the card: the ticket, the repos, folders, lane, branch and kind. A prompt with a kind is offered first for that kind of card.</p>
+      <p className="mb-3 text-sm text-sub">The opening message of a new card can start from one of these. Its <span className="font-mono">{'{{placeholders}}'}</span> are filled from the card: the ticket, the repos, folders, workspace, branch and kind. A prompt with a kind is offered first for that kind of card.</p>
       {prompts.length ? (
         <ul className="space-y-1" role="listbox" aria-label="Prompts">
           {prompts.map((p, i) => (

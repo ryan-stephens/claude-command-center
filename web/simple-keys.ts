@@ -130,7 +130,7 @@ export function pickerList(c: Composer): PickerRow[] {
       if (c.addTo && cardHasRepo(c, r.path)) return { id: r.path, label: r.name, sub: 'has it', in: true };
       const where = repoOrigin(c, r.path);
       const on = where === 'workspace' ? c.packet.workspace.find((x) => x.id === r.path)?.on !== false : where === 'card';
-      return { id: r.path, label: r.name, sub: where === 'workspace' ? (on ? 'lane' : 'lane · left out') : where === 'card' ? (c.addTo ? 'adding' : 'added') : r.branch ?? '', in: Boolean(on) };
+      return { id: r.path, label: r.name, sub: where === 'workspace' ? (on ? 'workspace' : 'workspace · left out') : where === 'card' ? (c.addTo ? 'adding' : 'added') : r.branch ?? '', in: Boolean(on) };
     });
   }
   if (tab === 'folders') {
@@ -240,7 +240,7 @@ export function pickAt(c: Composer, at: number, remove = false): void {
       return;
     }
     if (c.addTo && cardHasRepo(c, row.repo.path)) { say(`${c.addTo.key} can already use ${row.repo.name}.`); return; }
-    if (remove && repoOrigin(c, row.repo.path) !== 'card') { say('Only a repo this card added can be taken out; a lane repo is left out instead.', true); return; }
+    if (remove && repoOrigin(c, row.repo.path) !== 'card') { say('Only a repo this card added can be taken out; a workspace repo is left out instead.', true); return; }
     updatePicker((x) => clearNote(toggleSource(x, row.repo.path)));
     return;
   }
@@ -453,7 +453,7 @@ export function simpleKeys(e: KeyboardEvent, typing: boolean): boolean {
       if (e.key === 'Enter' || e.key === ' ') { actChip(c); return true; }
       if (e.key === '+' || e.key === 'a') { openPicker('context'); return true; }
       if (e.key === 'x' || e.key === 'Delete') { actChip(c, true); return true; }
-      if (e.key === 'w') { const chip = chips(c, s.library.repos)[sp.ci]; if (chip?.own && chip.kind === 'repo') keepRepo(chip.row); else flash('Only a repo you added to this card can be kept for the lane.'); return true; }
+      if (e.key === 'w') { const chip = chips(c, s.library.repos)[sp.ci]; if (chip?.own && chip.kind === 'repo') keepRepo(chip.row); else flash('Only a repo you added to this card can be kept for the workspace.'); return true; }
       return false;
     }
     case 'msg':

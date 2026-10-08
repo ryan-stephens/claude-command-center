@@ -260,7 +260,7 @@ function workspaceLayer(ws: Workspace | null, recipes: Recipes, kind: CardKind =
   const r = recipes[wsRecipeKey(ws.id)] ?? recipeFor(recipes, homeRepo(ws) ?? ws.repos[0]);
   return [
     ...ws.repos.map(repoItem),
-    ...(ws.notes ? [{ kind: 'note' as const, id: WORKSPACE_NOTES, label: `Lane notes: ${firstLine(ws.notes)}`, text: ws.notes, on: true }] : []),
+    ...(ws.notes ? [{ kind: 'note' as const, id: WORKSPACE_NOTES, label: `Workspace notes: ${firstLine(ws.notes)}`, text: ws.notes, on: true }] : []),
     ...(ws.testing && kind === 'qa' ? [{ kind: 'note' as const, id: TESTING_NOTES, label: `How this team tests: ${firstLine(ws.testing)}`, text: ws.testing, on: true }] : []),
     ...(r ? [{ kind: 'recipe' as const, id: `recipe:${r.repo}`, label: recipeLabel(r), text: recipeText(r), on: true }] : []),
   ];
@@ -508,9 +508,9 @@ export function togglePacketRow(c: Composer, index: number, remove = false): Com
  */
 export function keepForWorkspace(c: Composer, index: number): { composer: Composer; repo: string } | string {
   const row = packetRows(c)[index];
-  if (c.addTo) return 'Adding to a running card: keep repos for the lane with + on the board.';
-  if (!row || row.layer !== 'card' || row.item.kind !== 'repo') return 'Only a repo you added to this card can be kept for the lane.';
-  if (!c.workspaceId) return 'This card has no lane. Pick one under How it starts.';
+  if (c.addTo) return 'Adding to a running card: keep repos for the workspace with + on the board.';
+  if (!row || row.layer !== 'card' || row.item.kind !== 'repo') return 'Only a repo you added to this card can be kept for the workspace.';
+  if (!c.workspaceId) return 'This card has no workspace. Pick one under How it starts.';
   const { item } = row;
   const packet = { ...c.packet, card: c.packet.card.filter((i) => i !== item), workspace: [...c.packet.workspace, { ...item, on: true }] };
   return { composer: { ...c, packet }, repo: item.id };

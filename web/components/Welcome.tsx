@@ -55,7 +55,7 @@ export function Welcome() {
         </Cluster>
       </div>
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-        <button className="btn btn-primary px-5" onClick={() => dismiss(true)}>{hasWorkspaces ? 'Let’s go' : 'Set up my first lane'}<Key k="Enter" size="sm" tone="ghost" /></button>
+        <button className="btn btn-primary px-5" onClick={() => dismiss(true)}>{hasWorkspaces ? 'Let’s go' : 'Set up my first workspace'}<Key k="Enter" size="sm" tone="ghost" /></button>
         <button className="btn btn-ghost" onClick={() => dismiss(false)}>Skip<Key k="Esc" size="sm" /></button>
       </div>
       <p className="mt-4 text-center text-sm text-faint"><Key k={k('help')} size="sm" /> lists every key · <Key k={k('palette')} size="sm" /> searches everything</p>

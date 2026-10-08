@@ -1,7 +1,9 @@
 // The home page as Your Move (PLAN §126). This walk starts its own isolated server (PORT, default
 // 7827, a fresh DB), seeds a Demo lane with eight cards through cards.seed (a plan, a tool, a
 // question, two working, two finished, one done) and the demo tickets, and checks: the three bands
-// by whose turn it is; a going round Your move; m and opening a card putting a finished turn away;
+// by whose turn it is; a going round Your move; m and opening a card marking a finished turn seen,
+// which leaves it Ready to try; l (looks good) parking it, with a glow as it moves; p (found a
+// problem) sending what you saw as a reply (caught in the page, not sent);
 // ← → on an open card keeping the order it was opened in; the arrows across bands; Done folding;
 // the tickets strip (i folds it, v switches it); the digits still picking the lane; ? listing the
 // new keys. Screenshots in light, dark and at 1024 px.
@@ -78,7 +80,7 @@ const fire = (page, msg) => page.evaluate((msg) => new Promise((resolve) => { co
     check('Your move: the plan, the tool, the question and both finished turns', (await count('Your move')) === 5 && await inBand('Your move', plan) && await inBand('Your move', idle2), String(await count('Your move')));
     check('Claude’s move: the two working cards', (await count('Claude’s move')) === 2 && await inBand('Claude’s move', working));
     check('Parked is empty, and Done is folded with its one card', (await count('Parked')) === 0 && (await page.locator(`[id="card-${done}"]`).count()) === 0 && /Done\s*1/.test(await page.locator('[id="card-g:done"]').innerText()));
-    check('the bar counts the bands', /5\s*your move/.test(await page.locator('body').innerText()) && /2\s*Claude working/.test(await page.locator('body').innerText()));
+    check('the bar counts the bands', /5\s*your move/.test(await page.locator('body').innerText()) && /2\s*Claude working/.test(await page.locator('body').innerText()) && /0\s*parked/.test(await page.locator('body').innerText()));
     check('a finished turn shows what Claude said and m Seen', await band('Your move').getByRole('button', { name: /Seen/ }).first().isVisible());
     check('the tool asks with Allow / Deny on its tile', await band('Your move').getByRole('button', { name: /^y\s*Allow/ }).isVisible() && await band('Your move').getByRole('button', { name: /^n\s*Deny/ }).isVisible());
     const order = await band('Your move').locator('[id^="card-"]').evaluateAll((els) => els.map((e) => e.id.slice(5)));
@@ -97,7 +99,15 @@ const fire = (page, msg) => page.evaluate((msg) => new Promise((resolve) => { co
     // m on a finished turn: it leaves Your move for Parked.
     for (let i = 0; i < 6 && (await focused()) !== idle; i++) { await page.keyboard.press('a'); await sleep(120); }
     await page.keyboard.press('m'); await sleep(300);
-    check('m puts a finished turn away: it is Parked now', await inBand('Parked', idle) && !(await inBand('Your move', idle)));
+    const tileText = (id) => page.locator(`[data-flip="${id}"]`).innerText();
+    check('m marks a finished turn seen: it stays as Ready to try, with Looks good and Found a problem', await inBand('Your move', idle) && /Ready to try/.test(await tileText(idle)) && /Looks good/.test(await tileText(idle)) && /Found a problem/.test(await tileText(idle)));
+    await shot(page, 'ready-to-try');
+
+    // l: tried, looks good. It goes to Parked, and glows as it moves.
+    await page.keyboard.press('l');
+    const glowed = await until(async () => await inBand('Parked', idle) && await page.locator(`[data-flip="${idle}"]`).evaluate((el) => el.getAnimations().length > 0), 1500);
+    check('l parks it, and it glows as it moves', glowed);
+    check('the try is kept in this browser', await page.evaluate((id) => JSON.parse(localStorage.getItem('cc-control.tried.v1') || '{}')[id]?.ok === true, idle));
 
     // ↓ from Your move reaches Claude's move.
     await page.keyboard.press('a'); await sleep(150);
@@ -117,7 +127,25 @@ const fire = (page, msg) => page.evaluate((msg) => new Promise((resolve) => { co
     const want = before.map((id) => `MOVE-${10 + ids.indexOf(id)}`);
     check('→ on an open card steps through Your move in order, skipping none', want.every((k, i) => seen[i] === k), `${seen.join(' ')} (wanted ${want.join(' ')})`);
     await page.keyboard.press('Escape'); await sleep(400);
-    check('a finished turn you opened is seen: it went to Parked', await inBand('Parked', idle2));
+    check('a finished turn you opened is seen: Ready to try now', await inBand('Your move', idle2) && /Ready to try/.test(await tileText(idle2)));
+
+    // p: what went wrong, sent to the card's session as a reply. The page's message is caught before it leaves.
+    await page.evaluate(() => {
+      window.__sent = [];
+      const send = WebSocket.prototype.send;
+      WebSocket.prototype.send = function (data) { try { const m = JSON.parse(data); if (m.type === 'card.send') { window.__sent.push(m); return; } } catch { /* not ours */ } return send.call(this, data); };
+    });
+    for (let i = 0; i < 6 && (await focused()) !== idle2; i++) { await page.keyboard.press('a'); await sleep(120); }
+    await page.keyboard.press('p'); await sleep(250);
+    check('p opens the Found a problem box on the tile, focused', await page.evaluate(() => document.activeElement?.id === 'problem-say'));
+    await page.keyboard.press('Escape'); await sleep(200);
+    check('Esc closes it', (await page.locator('#problem-say').count()) === 0);
+    await page.keyboard.press('p'); await sleep(250);
+    await page.keyboard.type('the badge overlaps the header on small screens');
+    await page.keyboard.press('Enter'); await sleep(300);
+    const sent = await page.evaluate(() => window.__sent);
+    check('Enter sends what you saw to its session', sent.length === 1 && sent[0].id === idle2 && sent[0].text === 'I tried it and found a problem: the badge overlaps the header on small screens', JSON.stringify(sent[0] ?? {}).slice(0, 160));
+    check('…and the try is kept as a problem, so it leaves Your move', await page.evaluate((id) => JSON.parse(localStorage.getItem('cc-control.tried.v1') || '{}')[id]?.ok === false, idle2) && !(await inBand('Your move', idle2)));
 
     // Done opens and folds again.
     await page.locator('[id="card-g:done"]').click(); await sleep(250);
@@ -146,8 +174,8 @@ const fire = (page, msg) => page.evaluate((msg) => new Promise((resolve) => { co
     await page.keyboard.press('Shift+Slash');
     const opened = await until(async () => /Every key/.test(await page.locator('body').innerText()), 4000);
     const help = await page.locator('body').innerText();
-    const rows = [/The next card that needs you/, /Seen: a turn that finished/, /Fold or show the tickets to start/, /right on its tile/];
-    check('? lists a, m, i and the answers on a tile', opened && rows.every((r) => r.test(help)), opened ? rows.filter((r) => !r.test(help)).join(' ') : 'the overlay didn’t open');
+    const rows = [/The next card that needs you/, /Seen: a turn that finished/, /You tried its change/, /Fold or show the tickets to start/, /right on its tile/];
+    check('? lists a, m, l / p, i and the answers on a tile', opened && rows.every((r) => r.test(help)), opened ? rows.filter((r) => !r.test(help)).join(' ') : 'the overlay didn’t open');
     await page.keyboard.press('Escape'); await sleep(300);
 
     await page.keyboard.press('1'); await sleep(300);

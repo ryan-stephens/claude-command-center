@@ -53,7 +53,7 @@ export function StackSetup({ workspaceId, then }: { workspaceId: string; then?: 
     try { stack = stackFromForm(form); } catch (e) { setError((e as Error).message); return; }
     setBusy(true);
     // The stack reaches the page before the ok (the server sends it first), so t finds it.
-    saveStack(workspaceId, stack).then(() => { close(); flash(`Saved ${ws?.name ?? 'the lane'}’s stack`); if (then) tryIt(then); }, (e: Error) => { setError(e.message); setBusy(false); });
+    saveStack(workspaceId, stack).then(() => { close(); flash(`Saved ${ws?.name ?? 'the workspace'}’s stack`); if (then) tryIt(then); }, (e: Error) => { setError(e.message); setBusy(false); });
   };
   useDialogKeys((e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { save(); return true; }
@@ -73,8 +73,8 @@ export function StackSetup({ workspaceId, then }: { workspaceId: string; then?: 
   const cols = advanced ? 'grid-cols-[1.5rem_1.2fr_1fr_1fr_5rem_1fr_1fr]' : 'grid-cols-[1.5rem_1.2fr_1fr_1fr]';
   return (
     <Overlay label="Set up the stack" wide="xl">
-      <DialogTitle>Set up {ws?.name ?? 'the lane'}’s stack</DialogTitle>
-      <p className="mb-4 text-[13px] text-sub">{then && !saved ? <b className="text-ink">This lane has no stack yet. </b> : null}What Try it starts for a card in this lane: the APIs you tick, each on its own dev environment and a local port of its own, and the UI pointed at them through a copy of its proxy file. Two cards can run the same stack at once. What the repos say is filled in already.</p>
+      <DialogTitle>Set up {ws?.name ?? 'the workspace'}’s stack</DialogTitle>
+      <p className="mb-4 text-[13px] text-sub">{then && !saved ? <b className="text-ink">This workspace has no stack yet. </b> : null}What Try it starts for a card in this lane: the APIs you tick, each on its own dev environment and a local port of its own, and the UI pointed at them through a copy of its proxy file. Two cards can run the same stack at once. What the repos say is filled in already.</p>
       <div className="grid max-h-[calc(100vh-17rem)] gap-5 overflow-y-auto pr-1">
         <section className="grid gap-2">
           <div className="eyebrow">Environments</div>
@@ -113,7 +113,7 @@ export function StackSetup({ workspaceId, then }: { workspaceId: string; then?: 
 
         <section className="grid gap-2">
           <div className="eyebrow">The APIs</div>
-          {form.apis.length === 0 && <p className="text-[13px] text-faint">No other repos in this lane. Add the API repos to the lane first (+ on the board), and they appear here to tick.</p>}
+          {form.apis.length === 0 && <p className="text-[13px] text-faint">No other repos in this workspace. Add the API repos to the workspace first (+ on the board), and they appear here to tick.</p>}
           {form.apis.length > 0 && <p className="text-[12.5px] text-faint">Tick the ones Try it can start. Each gets a port of its own per run; its name and route come from its repo.</p>}
           <div className="grid gap-1.5">
             <div className={`grid ${cols} gap-2 px-1 text-[11.5px] font-semibold text-faint`}><span /><span>repo</span><span>name on the dev environment</span><span>route in the proxy</span>{advanced && <><span>container port</span><span>project folder</span><span>ready when this answers</span></>}</div>
@@ -180,7 +180,7 @@ export function StackSetup({ workspaceId, then }: { workspaceId: string; then?: 
       </div>
       {error && <div className="mt-3 rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad" role="alert">{error}</div>}
       <div className="mt-4 flex items-center gap-3">
-        <span className="grow text-[12.5px] text-faint">The stack is the lane’s: every card in it starts this way. Nothing here holds a secret; tokens and kubeconfigs stay in config.env.</span>
+        <span className="grow text-[12.5px] text-faint">The stack is the workspace’s: every card in it starts this way. Nothing here holds a secret; tokens and kubeconfigs stay in config.env.</span>
         <button className="btn" onClick={close}>Close<Key k="Esc" size="sm" /></button>
         <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : then ? 'Save and start' : 'Save'}<Key k="Ctrl Enter" size="sm" tone="ghost" /></button>
       </div>

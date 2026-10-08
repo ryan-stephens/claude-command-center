@@ -3099,3 +3099,51 @@ Seen in the layouts and worth keeping for later: Test Bench's ↻ when a try is 
   Screenshots looked at.
 
 :7788 was already taken by another cc-control server, running since 2026-09-30. It isn't this session's, so it was left alone, and these tests used :7826.
+
+## 127. Your Move at parity with its mock: Ready to try, a parked count, cards that glow as they move, and workspaces
+
+2026-10-08. The owner: "continue working until we're at parity with what the mockup had" (layout 1 in `docs/futures/home-layouts.html`).
+
+**Ready to try** is one of Your move's needs (`readyToTry` in `web/your-move.ts`). A card needs it when:
+- its turn ended in Try it (the server moves it there when a turn ends with changes);
+- it has an app to start (a run recipe or a workspace, the same test as its Try it buttons, `canTryCard`);
+- you haven't tried it since.
+
+An unread turn comes first; once it is seen, the card stays in Your move as *Ready to try*. The tile:
+- says whether the app is up (the front door's address, §123), starting, or not running;
+- has the Try it buttons under it (`t`, `⇧R`, `o`);
+- has *Looks good* (`l`) and *Found a problem* (`p`).
+
+*Looks good* keeps the try in this browser (`cc-control.tried.v1`, like the seen record), and the card parks. *Found a problem* opens a box on the tile. Enter sends *"I tried it and found a problem: …"* to the card's session, the card goes back to Claude's move, and when that turn ends it comes back *Ready to try again: Claude changed it since your last try*. `m` on such a card says how to finish with it.
+
+**Also as in the mock:**
+- The bar counts *parked* beside *your move* and *Claude working*.
+- Parked is idle the longest first: a card joins at the end when it parks and stays put after.
+- A card that changes band slides from where it was and glows for a moment (`useMoves`: positions measured after each commit, animated with the Web Animations API, off under reduced motion).
+
+**Lane → Workspace** (decided in §125):
+- every word on screen in `web/` (the bar, `?`, the legend, dialogs, toasts, the palette, the new-card screen, the README);
+- the prompt placeholder is `{{workspace}}` now, and prompts saved with `{{lane}}` still fill;
+- comments and code names are unchanged.
+
+**Walks changed:**
+- `walk-your-move` (30/30, light and dark) now covers:
+  - *Ready to try* after `m`;
+  - `l` parking a card, with the glow;
+  - the try being kept;
+  - `p`'s box, opened and closed with Esc;
+  - Enter sending the problem: the page's `card.send` is caught before it leaves, so no session is resumed for a seeded card;
+  - the bar's parked count, and `?` listing `l` / `p`.
+- `walk-two-cards` reads the app's address from the whole tile.
+- `walk-perf` opens its first card from the first tile, so → always has a card after it.
+- `walk-lane` uses the new words. It still needs a server whose repo library is seeded (`walk-simple`, or `library.setSources`).
+
+**Checked:**
+- `pnpm typecheck`, `npx tsc --noUnusedLocals -p .`, `pnpm test` (413).
+- `walk-card` 66/66, light and dark.
+- `walk-hub` 37/37 (a real Haiku card).
+- `walk-perf` 25/25, every budget line OK (a key paints in 4–9 ms, p95, against 16).
+- `walk-board-try` 19/19, `walk-two-cards` 26/26 light and dark, `walk-lane` 14/14, `walk-your-move` 30/30 light and dark.
+- Screenshots looked at.
+
+**Left from §126:** new README screenshots (`docs/screenshots/line*.png` still show the board).

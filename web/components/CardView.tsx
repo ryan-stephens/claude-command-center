@@ -578,7 +578,7 @@ function StackTry({ card, stack, source }: { card: Card; stack: Stack; source: s
   const ticked = (id: string) => id === 'ui' || pick.apis.includes(id);
   return (
     <>
-      <Sec title={live ? `Running · ${label ?? ''}` : 'Services'} right={<button className="flex items-center gap-1.5 text-[12px] text-faint hover:text-ink" onClick={() => editRecipe(card.id)} title="Change the lane's stack">set up <Key k="e" size="sm" /></button>}>
+      <Sec title={live ? `Running · ${label ?? ''}` : 'Services'} right={<button className="flex items-center gap-1.5 text-[12px] text-faint hover:text-ink" onClick={() => editRecipe(card.id)} title="Change the workspace's stack">set up <Key k="e" size="sm" /></button>}>
         {error && <p className="text-[13px] text-bad" role="alert">{error}</p>}
         <ul className="grid gap-1" role="listbox" aria-label="The environment and the services">
           {choose.map(([k, vals], i) => (
@@ -620,7 +620,7 @@ function StackTry({ card, stack, source }: { card: Card; stack: Stack; source: s
                 {sv.id === 'ui' && r?.door && <span className="col-span-2 col-start-2 text-[11.5px] text-faint">{r.door.shown
                   ? <><DoorChip run={r} /> localhost:{r.door.port} shows this card’s UI (the port its sign-in takes).</>
                   : <>Behind localhost:{r.door.port}, which shows another card’s UI now: <Key k="o" size="sm" /> shows this one there.</>}</span>}
-                {!sv.fixed && (sv.why || !sv.found) && <span className={`col-span-2 col-start-2 text-[11.5px] ${sv.changed ? 'text-attn' : 'text-faint'}`}>{sv.why || 'Can’t tick: this repo isn’t in this card or its lane'}</span>}
+                {!sv.fixed && (sv.why || !sv.found) && <span className={`col-span-2 col-start-2 text-[11.5px] ${sv.changed ? 'text-attn' : 'text-faint'}`}>{sv.why || 'Can’t tick: this repo isn’t in this card or its workspace'}</span>}
               </li>
             );
           })}
@@ -629,7 +629,7 @@ function StackTry({ card, stack, source }: { card: Card; stack: Stack; source: s
           <button className={`btn py-1 ${!live && card.stage === 'try' ? 'btn-primary' : ''}`} onClick={() => tryIt(card.id)}><Key k="t" size="sm" tone={!live && card.stage === 'try' ? 'ghost' : undefined} />{live ? 'Stop all' : `Start ${pick.apis.length ? `${pick.apis.length} API${pick.apis.length === 1 ? '' : 's'}${stack.ui ? ' and the UI' : ''}` : stack.ui ? 'the UI' : 'nothing'}`}</button>
           {!live && <span className="text-[12px] text-faint">APIs left unticked are served by the shared {pick.values.env ?? choose[0]?.[1][0] ?? ''} environment.</span>}
         </div>
-        {source.startsWith('from the workspace file') && !live && <div className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">This stack came with a lane file someone shared. Read its steps before starting: they run on this machine.</div>}
+        {source.startsWith('from the workspace file') && !live && <div className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">This stack came with a workspace file someone shared. Read its steps before starting: they run on this machine.</div>}
       </Sec>
       {highlighted && (
         <Sec id="try-it" title={highlighted.id === 'ui' ? `${stack.ui?.repo ?? 'UI'} · its steps` : `${highlighted.id} · its steps`} right={run ? <span className="text-[12px] text-faint">{run.text}</span> : null}>
@@ -672,7 +672,7 @@ function RecipeTry({ card }: { card: Card }) {
   const specs = recipe ? specsOf(recipe) : [];
   const live = last?.state === 'running' || last?.state === 'up';
   const run = last && (live || (recipe && last.steps.map((s) => s.cmd).join('\n') === specs.map((s) => s.cmd).join('\n'))) ? last : undefined;
-  const name = recipe?.workspaceId ? `${wsName ?? 'the lane'} lane` : home ? repoName(home) : card.key;
+  const name = recipe?.workspaceId ? (wsName ? `the ${wsName} workspace` : 'the workspace') : home ? repoName(home) : card.key;
   const all: RunStep[] = run?.steps ?? specs.map((s) => ({
     cmd: s.cmd, state: s.note ? 'note' as const : 'wait' as const, tail: [],
     ...(s.repo ? { repo: s.repo } : {}), ...(Object.keys(s.env).length ? { env: Object.keys(s.env) } : {}), ...(s.stop ? { stop: true } : {}),
@@ -704,7 +704,7 @@ function RecipeTry({ card }: { card: Card }) {
             {stops.map((s, i) => <StepRow key={`stop${i}`} s={s} />)}
           </ol>
         ) : <p className="text-[13px] text-faint">Nothing in {name} says how it starts (no package.json or compose file): e sets it up.</p>}
-        {recipe?.source.startsWith('from the workspace file') && !run && <div className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">This came with a lane file someone shared. Read the commands before starting: they run on this machine.</div>}
+        {recipe?.source.startsWith('from the workspace file') && !run && <div className="rounded-lg bg-attn-bg px-3 py-2 text-[13px] text-attn">This came with a workspace file someone shared. Read the commands before starting: they run on this machine.</div>}
         <Output card={card} run={run} />
       </Sec>
     </>
@@ -733,7 +733,7 @@ function ContextPanel({ card }: { card: Card }) {
     <>
       <AddedSince card={card} />
       <Sec title="What Claude was given" right={<span className="text-[12px] text-faint">{fmtK(size)} · {memoryPct(size)}% of its memory</span>}>
-        <div className="grid gap-1.5"><div className="flex gap-2 text-[13px]"><b>Lane</b><span className="text-faint">{wsName ? `shared by every ${wsName} card` : 'no lane'}</span></div><Chips items={card.packet.workspace} /></div>
+        <div className="grid gap-1.5"><div className="flex gap-2 text-[13px]"><b>Workspace</b><span className="text-faint">{wsName ? `shared by every ${wsName} card` : 'no workspace'}</span></div><Chips items={card.packet.workspace} /></div>
         <div className="grid gap-1.5">
           <div className="flex gap-2 text-[13px]"><b>Ticket</b><span className="text-faint">{card.ticket ? `from ${SOURCE_NAME[card.ticket.source]} ${card.ticket.key}${card.ticket.demo ? ' (a demo ticket)' : ''}` : 'no ticket'}</span></div>
           {card.ticket && <Chips items={card.packet.ticket} />}

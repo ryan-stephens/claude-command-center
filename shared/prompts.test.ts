@@ -22,6 +22,7 @@ test('every placeholder fills from the card; lists read inline', () => {
   assert.equal(f.branch, 'shop-155-add-a-size-guide');
   const r = renderPrompt('Review {{ticket}} in {{repos}}, starting in {{home}}, on {{branch}} ({{kind}}, lane {{lane}}).', ctx);
   assert.equal(r.text, 'Review SHOP-155 (Add a size guide to product pages) in web-app, payments-api, starting in web-app, on shop-155-add-a-size-guide (Develop, lane Shop).');
+  assert.equal(renderPrompt('In the {{workspace}} workspace.', ctx).text, 'In the Shop workspace.', '{{workspace}} is the name now; {{lane}} still fills (above)');
   assert.deepEqual(r.missing, []);
 });
 

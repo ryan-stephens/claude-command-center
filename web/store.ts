@@ -10,7 +10,7 @@ import type { QaState } from './questions.ts';
 import type { Flags } from './home-model.ts';
 import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
 import { asDraft, hasWork, type CardPanel, type Composer, type LineFilter } from './line-model.ts';
-import { pruneSeen, seenNow, type Seen } from './your-move.ts';
+import { pruneSeen, seenNow, type Seen, type Tried } from './your-move.ts';
 import type { Pasted } from './say-images.ts';
 
 /** Where keys go inside the session view. Esc steps outward: composer → number pad → the line. */
@@ -97,6 +97,8 @@ interface State {
   unread: Record<string, number>;
   /** §126: when you last saw each card, so a turn that finished after it is unread (your move). null until this browser has a record. */
   seen: Seen | null;
+  /** §126: your tries of each card's change (Looks good / Found a problem), so Ready to try leaves Your move until it changes again. */
+  tried: Tried;
   lastError: string | null;
   /** The server predates this page ('server': restart it) or the page predates the server ('page': reload). */
   outdated: 'server' | 'page' | null;
@@ -131,7 +133,7 @@ interface State {
    * The board: the focused card, the card open in the drawer and its tab, the workspace shown, and
    * the text filter (/).
    */
-  line: { focus: string | null; drawer: string | null; /** The open card's dock panel (§81), kept from card to card; `at`: the file chosen in Changes. */ panel: CardPanel | null; at: number; /** Bumped when a card's Try it pick changes (it lives in localStorage), so the panel redraws. */ pickTick?: number; /** The panel's width in px (dragged or [ ]; remembered per browser). */ panelW: number; filter: LineFilter; q: string; searching: boolean; /** The Inbox's view (v): yours, or ready for QA. */ view: InboxView; /** §126: the tickets strip above the bands is folded (i), and the Done group is open. */ ticketsFolded: boolean; doneOpen: boolean; /** The cards' order when one was opened: ← → follow it, so a card leaving Your move as you read it doesn't reshuffle them (§126). */ order?: string[] };
+  line: { focus: string | null; drawer: string | null; /** The open card's dock panel (§81), kept from card to card; `at`: the file chosen in Changes. */ panel: CardPanel | null; at: number; /** Bumped when a card's Try it pick changes (it lives in localStorage), so the panel redraws. */ pickTick?: number; /** The panel's width in px (dragged or [ ]; remembered per browser). */ panelW: number; filter: LineFilter; q: string; searching: boolean; /** The Inbox's view (v): yours, or ready for QA. */ view: InboxView; /** §126: the tickets strip above the bands is folded (i), and the Done group is open. */ ticketsFolded: boolean; doneOpen: boolean; /** The card whose Found a problem box is open on its tile (p). */ problem?: string | null; /** The cards' order when one was opened: ← → follow it, so a card leaving Your move as you read it doesn't reshuffle them (§126). */ order?: string[] };
   /** What the tracker's search found for the new-card screen's search box (other people's tickets too). */
   found: Found;
   /** The new-card screen, while it is open. */
@@ -192,6 +194,7 @@ export const useStore = create<State>(() => ({
   permissions: {},
   unread: {},
   seen: loadSeen(),
+  tried: loadTried(),
   lastError: null,
   outdated: null,
   flash: null,
@@ -362,8 +365,27 @@ export function markSeen(id: string): void {
   saveSeen(seen);
 }
 
+const TRIED_KEY = 'cc-control.tried.v1';
+
+function loadTried(): Tried {
+  try { const raw = localStorage.getItem(TRIED_KEY); return raw ? JSON.parse(raw) as Tried : {}; } catch { return {}; }
+}
+
+/** l or p on a card ready to try: you tried it now, and it looked good or it didn't. */
+export function markTried(id: string, ok: boolean): void {
+  const tried = { ...get().tried, [id]: { at: Date.now(), ok } };
+  set({ tried });
+  try { localStorage.setItem(TRIED_KEY, JSON.stringify(tried)); } catch { /* storage off: lasts until a reload */ }
+}
+
 /** The cards arrived: a browser with no record yet starts with everything seen; gone cards drop out. */
 export function syncSeen(cards: Card[]): void {
+  const t = get().tried;
+  const kept = pruneSeen(t, cards);
+  if (Object.keys(kept).length !== Object.keys(t).length) {
+    set({ tried: kept });
+    try { localStorage.setItem(TRIED_KEY, JSON.stringify(kept)); } catch { /* ignore */ }
+  }
   const s = get();
   const seen = s.seen ? pruneSeen(s.seen, cards) : seenNow(cards);
   if (s.seen && Object.keys(seen).length === Object.keys(s.seen).length) return;

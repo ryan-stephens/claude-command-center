@@ -253,7 +253,7 @@ function NewSessionDialog({ workspaceId, repo }: { workspaceId: string | null; r
             <span className="inline-flex items-center gap-1.5 rounded-full bg-raise px-2.5 py-0.5 font-semibold" title={cwd}><Icon name="repo" size={14} />{repoName(cwd)}</span>
             {workspaceRepos(cwd, workspaces).map((d) => {
               const owner = workspacesFor(cwd, workspaces).find((w) => w.repos.some((r) => samePath(r, d))) ?? null;
-              return <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5" title={`${d}\nFrom the ${owner?.name ?? ''} lane`}><WsBadge ws={owner} size={14} />{repoName(d)}</span>;
+              return <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5" title={`${d}\nFrom the ${owner?.name ?? ''} workspace`}><WsBadge ws={owner} size={14} />{repoName(d)}</span>;
             })}
             {extras.filter((d) => !workspaceRepos(cwd, workspaces).some((w) => samePath(w, d))).map((d) => <span key={d} className="inline-flex items-center gap-1.5 rounded-full bg-raise px-2.5 py-0.5" title={d}><Icon name="link" size={13} />{repoName(d)}</span>)}
             {choices.length > 1 && <button className="text-faint underline hover:text-ink" onClick={() => setStep('where')}>change</button>}
@@ -368,7 +368,7 @@ function WorkspaceDialog({ id }: { id: string | null }) {
   const toggle = (p: string) => setRepos((x) => (picked(p) ? removePath(x, p) : addPath(x, p)));
 
   function save() {
-    if (!name.trim()) { setError('Give the lane a name.'); return; }
+    if (!name.trim()) { setError('Give the workspace a name.'); return; }
     const workspaceId = existing?.id ?? crypto.randomUUID();
     const homePath = home && repos.some((r) => samePath(r, home)) ? home : undefined;
     send({ type: 'workspace.save', workspace: { id: workspaceId, name: name.trim(), color, repos, home: homePath, notes, testing }, template: existing ? undefined : template });
@@ -405,9 +405,9 @@ function WorkspaceDialog({ id }: { id: string | null }) {
   };
 
   return (
-    <Overlay label={existing ? 'Edit lane' : 'New lane'} wide>
+    <Overlay label={existing ? 'Edit workspace' : 'New workspace'} wide>
       <div onKeyDown={onKey}>
-        <DialogTitle>{existing ? 'Edit lane' : 'New lane'}</DialogTitle>
+        <DialogTitle>{existing ? 'Edit workspace' : 'New workspace'}</DialogTitle>
         <div className="flex flex-wrap items-end gap-4">
           <label className="min-w-0 grow">
             <span className="eyebrow mb-1.5 block">Name</span>
@@ -433,11 +433,11 @@ function WorkspaceDialog({ id }: { id: string | null }) {
 
         <div className="mt-5">
           <div className="mb-1.5 flex items-baseline justify-between gap-2">
-            <span className="eyebrow">Repos · every card in the lane can use them</span>
+            <span className="eyebrow">Repos · every card in the workspace can use them</span>
             <span className="text-xs text-faint">{library.sources.length ? `Library: ${library.sources.map(repoName).join(', ')}` : 'No library folder yet'}</span>
           </div>
           <div ref={chipsRow} data-list="1" tabIndex={0} onKeyDown={chipsKey} onFocus={() => setCi(Math.min(ci, repos.length))}
-            className="flex flex-wrap gap-2 rounded-xl p-0.5 outline-none" role="listbox" aria-label="Repos in the lane">
+            className="flex flex-wrap gap-2 rounded-xl p-0.5 outline-none" role="listbox" aria-label="Repos in the workspace">
             {repos.map((p, i) => (
               <span key={p} role="option" aria-selected={i === chipAt} title={p}
                 className={`inline-flex h-8 items-center gap-2 rounded-full border border-line bg-surface px-3 text-[13.5px] ${i === chipAt ? 'blk-focus' : ''}`}>
@@ -476,7 +476,7 @@ function WorkspaceDialog({ id }: { id: string | null }) {
                             className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] ${i === index ? 'is-focus bg-raise' : 'hover:bg-raise'}`}>
                             <span className="grid h-4 w-4 shrink-0 place-items-center rounded border-[1.5px] border-line font-mono text-[11px] font-bold text-ok">{on ? '✓' : ''}</span>
                             <span className="min-w-0 grow truncate">{repoName(p)}</span>
-                            <span className="shrink-0 text-xs text-faint">{on ? (isHome(p) ? 'home' : 'in the lane') : elsewhere || ''}</span>
+                            <span className="shrink-0 text-xs text-faint">{on ? (isHome(p) ? 'home' : 'in the workspace') : elsewhere || ''}</span>
                           </button>
                         );
                       })}
@@ -489,7 +489,7 @@ function WorkspaceDialog({ id }: { id: string | null }) {
                       onUse={async (p) => { await setSources(addPath(library.sources, p)); setAdding('repos'); setIndex(0); }} />
                   </>}
               <div className="flex items-end justify-between gap-4 border-t border-line pt-3">
-                <div className="text-[12.5px] text-faint">{adding === 'repos' ? 'Picking a repo keeps the list open; picking it again takes it out. One of them is the home repo, where new sessions start.' : 'Every repo in a folder you add appears under Repos.'} Everything you add is in the lane already.</div>
+                <div className="text-[12.5px] text-faint">{adding === 'repos' ? 'Picking a repo keeps the list open; picking it again takes it out. One of them is the home repo, where new sessions start.' : 'Every repo in a folder you add appears under Repos.'} Everything you add is in the workspace already.</div>
                 <button type="button" className="btn btn-primary shrink-0 px-4 py-2" onClick={donePicking}>Done <Key k="Esc" size="sm" tone="ghost" /></button>
               </div>
             </section>
@@ -526,8 +526,8 @@ function WorkspaceDialog({ id }: { id: string | null }) {
         {error && <p className="mt-3 text-sm text-bad">{error}</p>}
         <div className="mt-5 flex items-center gap-3">
           <DialogKeys items={[['Tab', 'next part'], ['← →', 'along the repos'], ['Enter', '+ Repo'], ['x', 'take out'], ['h', 'home repo'], ['Ctrl Enter', 'save from a note']]} />
-          {existing && <button className="btn btn-ghost ml-auto" onClick={() => exportWorkspace(existing.id)} title="Save this lane and its workflows as a file to share (Shift+E on the Ticket Line)"><Icon name="file" size={16} />Export</button>}
-          <button className={`btn btn-primary ${existing ? '' : 'ml-auto'}`} onClick={save}>{existing ? 'Save' : 'Create lane'}<Key k="Enter" size="sm" tone="ghost" /></button>
+          {existing && <button className="btn btn-ghost ml-auto" onClick={() => exportWorkspace(existing.id)} title="Save this workspace and its workflows as a file to share (Shift+E on the Ticket Line)"><Icon name="file" size={16} />Export</button>}
+          <button className={`btn btn-primary ${existing ? '' : 'ml-auto'}`} onClick={save}>{existing ? 'Save' : 'Create workspace'}<Key k="Enter" size="sm" tone="ghost" /></button>
         </div>
       </div>
     </Overlay>
@@ -564,7 +564,7 @@ function DeleteWorkspaceDialog({ id }: { id: string }) {
     return true;
   });
   return (
-    <Overlay label="Delete lane">
+    <Overlay label="Delete workspace">
       <DialogTitle>Delete {ws?.name ?? 'workspace'}?</DialogTitle>
       <p className="text-sub">Only the grouping and its workflows go. The repos and every session in them stay where they are.</p>
       <div className="mt-5 flex justify-end gap-2.5">
@@ -734,7 +734,7 @@ function TicketsDialog() {
           <Key k="D" size="sm" />
         </button>
       </div>
-      <h3 className="eyebrow mb-2 mt-5">Which lane each project goes to</h3>
+      <h3 className="eyebrow mb-2 mt-5">Which workspace each project goes to</h3>
       {projects.length ? (
         <ul className="space-y-1" role="listbox" aria-label="Projects">
           {projects.map((p, i) => {
@@ -744,9 +744,9 @@ function TicketsDialog() {
                 className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 ${i === at ? 'is-focus bg-raise' : ''}`}>
                 <span className="w-14 shrink-0 text-xs text-faint">{p.source === 'jira' ? 'Jira' : 'Trello'}</span>
                 <span className="min-w-0 grow truncate font-semibold">{p.name}<span className="ml-2 font-normal text-faint">{p.source === 'jira' ? p.id : ''} · {p.count} ticket{p.count === 1 ? '' : 's'}</span></span>
-                <button className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-surface hover:text-ink" onClick={() => map(i, -1)} aria-label="Previous lane"><Icon name="back" size={14} /></button>
+                <button className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-surface hover:text-ink" onClick={() => map(i, -1)} aria-label="Previous workspace"><Icon name="back" size={14} /></button>
                 <span className="flex w-40 items-center gap-2 truncate text-sm">{ws ? <><WsBadge ws={ws} size={18} />{ws.name}</> : <span className="text-faint">No workspace (All only)</span>}</span>
-                <button className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-surface hover:text-ink" onClick={() => map(i, 1)} aria-label="Next lane"><Icon name="right" size={14} /></button>
+                <button className="grid h-7 w-7 place-items-center rounded-lg text-faint hover:bg-surface hover:text-ink" onClick={() => map(i, 1)} aria-label="Next workspace"><Icon name="right" size={14} /></button>
               </li>
             );
           })}
@@ -774,11 +774,11 @@ function TicketsDialog() {
 }
 
 const PICK_TITLE: Record<WorkspaceAction, string> = {
-  addRepo: 'Add a repo to which lane?',
-  removeRepo: 'Remove a repo from which lane?',
-  edit: 'Edit which lane?',
-  share: 'Share which lane?',
-  delete: 'Delete which lane?',
+  addRepo: 'Add a repo to which workspace?',
+  removeRepo: 'Remove a repo from which workspace?',
+  edit: 'Edit which workspace?',
+  share: 'Share which workspace?',
+  delete: 'Delete which workspace?',
 };
 
 /** All is showing on the line and a workspace key was pressed: which workspace it is for. */
@@ -842,7 +842,7 @@ function RepoPicker({ target }: { target: RepoTarget }) {
     close();
   }
 
-  const title = target.kind === 'workspace' ? `Add a repo to ${ws?.name ?? 'the lane'}` : 'Let this session work in another repo';
+  const title = target.kind === 'workspace' ? `Add a repo to ${ws?.name ?? 'the workspace'}` : 'Let this session work in another repo';
   if (browseFrom !== null) {
     return (
       <Overlay label={title}>
@@ -935,7 +935,7 @@ function RepoRemover({ target }: { target: RepoTarget }) {
       <DialogTitle>{title}</DialogTitle>
       <p className="mb-3 text-sm text-sub">
         {ws
-          ? 'Sessions in this lane stop using it (a session that is working finishes first). Sessions that run in it leave the lane. The repo itself is untouched.'
+          ? 'Sessions in this workspace stop using it (a session that is working finishes first). Sessions that run in it leave the workspace. The repo itself is untouched.'
           : session?.live ? 'The session restarts in place without it; the conversation is kept.' : 'It takes effect the next time the session runs.'}
       </p>
       <ul className="space-y-0.5" role="listbox" aria-label="Repos">
@@ -955,7 +955,7 @@ function RepoRemover({ target }: { target: RepoTarget }) {
               <span className="w-5" />
               <WsBadge ws={owner} size={16} />
               <span className="shrink-0 whitespace-nowrap">{repoName(d)}</span>
-              <span className="min-w-0 truncate text-xs">from {owner?.name ?? 'its lane'}: remove it there (− on the Ticket Line)</span>
+              <span className="min-w-0 truncate text-xs">from {owner?.name ?? 'its workspace'}: remove it there (− on the Ticket Line)</span>
             </li>
           );
         })}

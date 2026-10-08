@@ -92,6 +92,8 @@ export interface LineLegendInput {
   anyNeeds?: boolean;
   focusAsks?: boolean;
   focusUnread?: boolean;
+  /** Board (§126): the focused card is ready to try (l looks good, p found a problem). */
+  focusTry?: boolean;
   /** The focused card's session has linked (the expand key opens it). */
   hasSession?: boolean;
   /** The focused or open card has a terminal tab (g brings it forward); it is waiting on you there and the page can't answer. */
@@ -161,7 +163,7 @@ function simpleLegend(x: LineLegendInput): LegendItem[] {
     ];
   }
   const here: LegendItem[] = sp.block === 'ticket' ? [{ keys: ['Enter'], label: sp.hasTicket ? 'Change ticket' : 'Find a ticket' }, ...(sp.hasTicket ? [{ keys: ['Space'], label: sp.details ? 'Hide details' : 'Details' }, ...(sp.ticketLink ? [{ keys: ['o'], label: 'Open in the tracker' }] : []), { keys: ['x'], label: 'No ticket' }] : [])]
-    : sp.block === 'context' ? [{ keys: ['←', '→'], label: 'Along the chips' }, { keys: ['Enter'], label: 'Include / leave out' }, { keys: ['+'], label: 'Add context' }, ...(sp.ownChip ? [{ keys: ['x'], label: 'Take out' }, { keys: ['w'], label: 'Keep for the lane' }] : [])]
+    : sp.block === 'context' ? [{ keys: ['←', '→'], label: 'Along the chips' }, { keys: ['Enter'], label: 'Include / leave out' }, { keys: ['+'], label: 'Add context' }, ...(sp.ownChip ? [{ keys: ['x'], label: 'Take out' }, { keys: ['w'], label: 'Keep for the workspace' }] : [])]
     : sp.block === 'msg' ? [{ keys: ['Enter'], label: 'Write the message' }, { keys: ['Space'], label: 'Pick a prompt' }, { keys: ['w'], label: 'Have Claude write it' }, { keys: ['s'], label: 'Save as a prompt' }, { keys: ['⇧E'], label: 'Edit prompts' }]
     : sp.block === 'how' ? (sp.more ? [{ keys: ['←', '→'], label: 'Change' }, { keys: ['Enter'], label: 'Close the options' }] : [{ keys: ['Enter'], label: 'Options' }])
     : [{ keys: ['Enter'], label: 'Start work', tone: 'acc' }];
@@ -179,7 +181,7 @@ function simpleLegend(x: LineLegendInput): LegendItem[] {
 /** The workspace keys, shown on the board. */
 const WORKSPACE_KEYS: LegendItem[] = [
   { keys: ['+', '−'], label: 'Repos' },
-  { keys: ['W', 'E', '⇧Del'], label: 'Lane' },
+  { keys: ['W', 'E', '⇧Del'], label: 'Workspace' },
   { keys: ['⇧E', '⇧I'], label: 'Share / import' },
   { keys: ['F'], label: 'Folders' },
 ];
@@ -208,7 +210,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
         : x.pane === 'pkt'
           ? (x.preview ? [] : [
             { keys: ['↑', '↓'], label: 'Move' }, { keys: ['Space'], label: 'Include or leave out' }, { keys: ['x'], label: 'Remove' },
-            ...(x.cardRepo && !x.addingTo ? [{ keys: ['w'], label: 'Keep for the lane' }] : []),
+            ...(x.cardRepo && !x.addingTo ? [{ keys: ['w'], label: 'Keep for the workspace' }] : []),
             { keys: ['e'], label: 'Your note' },
           ])
           : [{ keys: ['↑', '↓'], label: 'Option' }, { keys: ['←', '→'], label: 'Change' }]),
@@ -250,6 +252,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     ...(x.anyNeeds ? [{ keys: ['a'], label: 'Next that needs you', tone: 'attn' as const }] : []),
     ...(x.focusAsks ? [{ keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' as const }] : []),
     ...(x.focusUnread ? [{ keys: ['m'], label: 'Seen' }] : []),
+    ...(x.focusTry ? [{ keys: ['l'], label: 'Looks good', tone: 'acc' as const }, { keys: ['p'], label: 'Found a problem' }] : []),
     ...(x.onTicket ? [{ keys: ['n', 'Enter'], label: 'Start work', tone: 'acc' as const }, { keys: ['Delete'], label: 'Hide' }] : []),
     ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open the card' }, ...tryKeys(x), ...(x.hasTab ? [{ keys: ['g'], label: x.inApp ? 'In a terminal' : x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab && !x.inApp ? { tone: 'attn' as const } : {}) }] : []), { keys: ['e'], label: 'How it runs' }] : []),
     ...(x.hasSession ? [full] : []),
@@ -257,7 +260,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     { keys: ['⇧T'], label: 'Tickets' },
     { keys: ['v'], label: 'Tickets: mine / QA' },
     { keys: ['i'], label: 'Fold tickets' },
-    { keys: ['1–9', '0'], label: 'Lane / all' },
+    { keys: ['1–9', '0'], label: 'Workspace / all' },
     { keys: ['/'], label: 'Filter' },
     ...(x.filtered ? [{ keys: ['Esc'], label: 'Clear filter' }] : []),
     ...(x.hasFocus && x.hasWorktrees ? [{ keys: ['⇧X'], label: 'Worktrees' }] : []),

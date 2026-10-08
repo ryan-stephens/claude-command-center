@@ -112,7 +112,7 @@ function ShipForm({ id }: { id: string }) {
   let at = 0;
   return (
     <Overlay label={rest ? 'Ship the rest' : 'Ship'} wide>
-      <div className="mb-1 text-sm text-faint">{rest ? 'Ship the rest' : 'Ship'} · {ws?.name ?? 'no lane'}</div>
+      <div className="mb-1 text-sm text-faint">{rest ? 'Ship the rest' : 'Ship'} · {ws?.name ?? 'no workspace'}</div>
       <DialogTitle><span className="flex min-w-0 items-center gap-2"><TicketKey k={card.key} source={card.ticket?.source} /><span className="truncate">{card.title}</span></span></DialogTitle>
       {!plan && !error && <p className="text-sm text-faint"><span className="spinner mr-2 inline-block" />Looking at the repo{several ? 's' : ''}…</p>}
       {plan && (

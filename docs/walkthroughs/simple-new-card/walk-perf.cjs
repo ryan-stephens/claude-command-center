@@ -273,6 +273,9 @@ async function wsWindow(page, fn) {
   await page.keyboard.press('Escape');
   await sleep(200);
   const cold = []; const warm = [];
+  // From the first card, so → has cards after it whatever the bands' order (§126).
+  for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowLeft');
+  await sleep(200);
   await mark(page, 'first card open');
   let from = await openLabel(page);
   let t = await timedKey(page, 'Enter', chatOf(from));

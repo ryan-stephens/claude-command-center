@@ -171,7 +171,7 @@ function ContextChips({ s, ws }: { s: SessionSummary; ws: Workspace | null }) {
       {fromWs.map((d) => {
         const owner = ownerOf(d);
         return (
-          <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line py-0.5 pl-1.5 pr-3 text-sm" title={`${d}\nFrom the ${owner?.name ?? ''} lane: every session there can use it. Remove it from the lane (− on the Ticket Line).`}>
+          <span key={d} className="inline-flex items-center gap-1.5 rounded-full border border-line py-0.5 pl-1.5 pr-3 text-sm" title={`${d}\nFrom the ${owner?.name ?? ''} lane: every session there can use it. Remove it from the workspace (− on the Ticket Line).`}>
             <WsBadge ws={owner} size={16} />{repoName(d)}
           </span>
         );

@@ -3,7 +3,7 @@
 // expanding a session. Every key here has a row in LINE_SECTIONS (the ? overlay) and in
 // lineLegendFor (the bar at the bottom).
 
-import { askOf, cardRepos, ownFolders, reachable, waiting } from '../shared/cards.ts';
+import { askOf, cardRepos, ownFolders, reachable, waiting, type Card } from '../shared/cards.ts';
 import { anyLive, appToOpen, cardRecipe, runKey, runsOf, wsRecipeKey } from '../shared/recipes.ts';
 import { allMerged, openPrs, prsOf } from '../shared/ship.ts';
 import type { StackChoice } from '../shared/stack.ts';
@@ -11,8 +11,8 @@ import { repoName } from '../shared/workspaces.ts';
 import { finishedTickets, inbox, INBOX_VIEWS, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
 import { openSession } from './keys.ts';
-import { closeComposer, currentWorkspace, flash, get, markSeen, set, setFilter, setInboxView, setPanelW, takeDraft, toggleTicketsFolded, type WorkspaceAction } from './store.ts';
-import { homeCards, homeOf, nextNeeding, stepBox, type Box, type Home } from './your-move.ts';
+import { closeComposer, currentWorkspace, flash, get, markSeen, markTried, set, setFilter, setInboxView, setPanelW, takeDraft, toggleTicketsFolded, type WorkspaceAction } from './store.ts';
+import { homeCards, homeOf, nextNeeding, problemText, stepBox, type Box, type Home } from './your-move.ts';
 import {
   addComposer, additionOf, cardFolders, type CardPanel, stepCard, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lineSessions, matches, newComposer, packetRows, PANES, pickTicket,
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource, editingKey,
@@ -32,23 +32,24 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['← → ↑ ↓', 'Move between cards: the tickets to start, then the three bands (Your move, Claude’s move, Parked), then Done. A card sits in a band by whose turn it is, never by stage'],
       ['a', 'The next card that needs you: Your move, the longest wait first, round again'],
       ['y / n (a card asking)', 'Allow or deny what it asks, or approve its plan / keep planning, right on its tile'],
-      ['1–9 (a card asking one plain question)', 'Pick that answer, right on its tile. Anywhere else the digits pick the lane'],
+      ['1–9 (a card asking one plain question)', 'Pick that answer, right on its tile. Anywhere else the digits pick the workspace'],
       ['m', 'Seen: a turn that finished while you were elsewhere leaves Your move (opening the card does the same)'],
+      ['l / p (a card ready to try)', 'You tried its change: it looks good (it leaves Your move until Claude changes it again), or you found a problem: a box on the tile takes what went wrong, and Enter sends it to the session, so the card goes back to Claude’s move. Start and open its app with t and o'],
       ['i', 'Fold or show the tickets to start'],
       ['Enter / Space (Done)', 'Open or fold the Done group'],
       ['Enter', 'Open the card: its chat (the session the app runs for it, streaming as Claude writes, with the message box and what it is asking) and a dock on the left whose panels open beside it'],
       ['n / Enter (a ticket to start)', 'Start work on it: the new-card screen, with the ticket as its context'],
       ['v', 'Tickets to start: yours, or every ticket Ready for QA in your projects'],
       ['Delete (a ticket to start)', 'Hide it (nothing changes in Jira or Trello; Shift+T shows it again)'],
-      ['Shift+T', 'Tickets: demo tickets (D), Jira and Trello (R refreshes), which lane each project goes to, and tickets you hid'],
+      ['Shift+T', 'Tickets: demo tickets (D), Jira and Trello (R refreshes), which workspace each project goes to, and tickets you hid'],
       ['Ctrl+Enter', 'The card’s session full screen, in the app’s session view (Esc comes back)'],
       ['c', 'New card: build its context and start work; Claude runs in the app. A card you left half-built (Esc, Alt+L) is picked up again; Shift+C starts a fresh one'],
-      ['1–9  /  0', 'Show one lane’s cards / all of them'],
+      ['1–9  /  0', 'Show one workspace’s cards / all of them'],
       ['/', 'Filter the cards by words'],
       ['Shift+D / Shift+T / v / Shift+C / m (card open)', 'The dock’s panels, beside the chat: Changes (what it changed, by repo, with the diffs), Try it (its app, or its services, with their output), Verify (is a field in the set, in Dev and UAT; a record’s values; the team’s tools), Context (how it started, what Claude was given, what was added since), More (steps, where it runs, the PR, the report). The same key closes the panel; the panel stays open from card to card'],
       ['j / k  ·  Space  ·  f (Changes panel)', 'The next / previous file  ·  open or close its diff under it (several can be open; a click on a file does the same)  ·  pop every repo’s changes out full width, on the chosen file (Pop out in the panel’s title)'],
       ['z  ·  Z (Changes panel, and popped out)', 'Fold or unfold the chosen file’s repo (its files go under the header, which keeps the count)  ·  fold every repo, or unfold them all. A header click does the same with the mouse; a second click on the chosen file folds its diff'],
-      ['j / k  ·  Space  ·  r  ·  q (Try it panel, a lane with a stack)', 'The environment row and each service (the UI first: it always starts)  ·  change the environment, or tick an API to run here too  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
+      ['j / k  ·  Space  ·  r  ·  q (Try it panel, a workspace with a stack)', 'The environment row and each service (the UI first: it always starts)  ·  change the environment, or tick an API to run here too  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
       ['e  ·  Shift+P (Verify panel)', 'Dev ↔ UAT for the lookup and the tools’ pages  ·  Prod for the lookup, after a second press (it reads production; nothing is written). The field check always shows Dev and UAT side by side, and where they differ'],
       ['i  ·  l  ·  Enter (Verify panel)', 'The field ids box (filled from ids the ticket and your notes name; Ctrl+Enter checks from there)  ·  the record id box (Enter looks it up)  ·  check the ids in every environment, and look the record up when one is named'],
       ['r  ·  a (Verify panel)', 'Read the current field set again (kept ten minutes otherwise)  ·  Advanced fetch on the lookup, slower (off by default)'],
@@ -62,14 +63,14 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['1–9  ·  Tab / Shift+Tab  ·  y (a question on the card)', 'Claude’s question form, drawn as it is in the tab: a digit picks an option (a single choice moves on to the next question; boxes toggle), the digit after the options is Type something  ·  the next / previous question, or Submit at the end  ·  submit the answers. A message from the box instead goes in as the next turn'],
       ['g (a card)', 'Open it in a terminal: between turns, the app lets go of the session and a Windows Terminal tab resumes it (claude --resume), the card following it there. A card already in a tab: brings that tab forward'],
       ['Shift+D (a card on the board)', 'Changes full width: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
-      ['c (card open)', '+ Context: the same popup the new-card screen has, over the chat (Repos, Folders and Tickets tabs, ← → or Tab switch, / searches, Enter ticks, and a note), Ctrl+Enter adds, Esc goes back. What you add goes to Claude at once when it is between turns, or with your next message while it works. A repo gets a worktree on the card’s branch, and an API or UI among them joins the lane’s stack; a note naming an API makes t suggest it'],
+      ['c (card open)', '+ Context: the same popup the new-card screen has, over the chat (Repos, Folders and Tickets tabs, ← → or Tab switch, / searches, Enter ticks, and a note), Ctrl+Enter adds, Esc goes back. What you add goes to Claude at once when it is between turns, or with your next message while it works. A repo gets a worktree on the card’s branch, and an API or UI among them joins the workspace’s stack; a note naming an API makes t suggest it'],
       ['x (card open)', 'Take back the last thing still waiting on the card'],
       ['Ctrl+Shift+↑ / ↓ (card open)', 'The message box taller / shorter (or drag its top edge; double-click it for the usual size). It also grows with what you type, up to most of the window. Kept in this browser'],
       ['Shift+I  ·  Ctrl+V  ·  drop (card open)', 'Images in your next message: pick image files from disk  ·  paste one in the message box (a screenshot)  ·  drop files on it. Up to 5, 5 MB each (PNG, JPEG, GIF, WebP), shown over the box; × or Backspace in an empty box takes one out. Enter sends them with the text (or alone)'],
-      ['t (a card)', 'Try it: start its app in the card’s own folder; again stops it. With a lane stack, the Try it panel’s ticked services start, each on a port of its own. A lane with no stack yet: the stack form opens, filled from what the repos say (okteto.yml, angular.json, the proxy file), and Save and start goes on'],
+      ['t (a card)', 'Try it: start its app in the card’s own folder; again stops it. With a workspace stack, the Try it panel’s ticked services start, each on a port of its own. A workspace with no stack yet: the stack form opens, filled from what the repos say (okteto.yml, angular.json, the proxy file), and Save and start goes on'],
       ['Shift+R (a card)', 'Restart its app: the run, or every service of its stack with the same pick, stopped and started again. With nothing running it starts it, as t does. On the board the tile has these as buttons (Start or Open, Stop and Restart) on cards in Try it or Ship, the chosen card, and any card whose app runs or failed; they start the app without opening the card'],
       ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request. A UI whose sign-in only takes its own port (localhost:4200, say) runs on a port of its own behind cc-control’s front door there: o points the door at this card’s UI, then opens it, so cards switch on that port at once, signed in. The tile and the Try it panel mark the card the door shows (on :4200)'],
-      ['e (a card)', 'How it runs. A lane of several repos: its stack as a form (the environments, the UI, the APIs to tick with their names and routes, and how an API starts on the dev environment in three answers; ports, folders, health paths, the proxy rule and the lines behind Advanced). A single repo: what starts it, an install step, where it serves, what runs on stop; Ctrl+Enter saves either'],
+      ['e (a card)', 'How it runs. A workspace of several repos: its stack as a form (the environments, the UI, the APIs to tick with their names and routes, and how an API starts on the dev environment in three answers; ports, folders, health paths, the proxy rule and the lines behind Advanced). A single repo: what starts it, an install step, where it serves, what runs on stop; Ctrl+Enter saves either'],
       ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket, in each repo the card changed (one block per repo in the sheet; the PRs link each other); if it stops part-way, s again ships only the repos left; on a card in Ship with every PR open, merge them. On a QA or review card: its report (Enter copies, j posts it on the Jira ticket and m moves the ticket, each after you confirm; o opens the PR, d moves the card to Done)'],
       ['d (a card in Ship)', 'Done: the PR was merged or closed by hand, or the host isn’t one Ship can follow'],
       ['Shift+X (a card)', 'Worktrees: the folders the card made, with what each still holds; on a Done card, remove them and their branch (Enter the clean ones, f all of them)'],
@@ -77,15 +78,15 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
     ],
   },
   {
-    title: 'Lanes (Ticket Line)',
+    title: 'Workspaces (Ticket Line)',
     keys: [
-      ['W', 'New lane'],
-      ['E (or e with no card focused)', 'Edit the lane shown (with All showing, pick which)'],
-      ['In the lane dialog: ← → / x / h / Enter', 'Along the repo chips / take one out / make it the home repo / + Repo: a popup with Repos (the library; ↑ ↓, Enter ticks one and keeps the list open) and Library folders (the folders the library scans); ← → or Tab switch tabs, Esc closes the popup'],
-      ['+ / −', 'Add a repo from the library to the lane shown / remove one (every card and session in it can use them all)'],
+      ['W', 'New workspace'],
+      ['E (or e with no card focused)', 'Edit the workspace shown (with All showing, pick which)'],
+      ['In the workspace dialog: ← → / x / h / Enter', 'Along the repo chips / take one out / make it the home repo / + Repo: a popup with Repos (the library; ↑ ↓, Enter ticks one and keeps the list open) and Library folders (the folders the library scans); ← → or Tab switch tabs, Esc closes the popup'],
+      ['+ / −', 'Add a repo from the library to the workspace shown / remove one (every card and session in it can use them all)'],
       ['F', 'Choose the folders the repo library lists'],
-      ['Shift+E / Shift+I', 'Share the lane as a file / import one'],
-      ['Shift+Delete', 'Delete the lane shown (its repos and sessions stay)'],
+      ['Shift+E / Shift+I', 'Share the workspace as a file / import one'],
+      ['Shift+Delete', 'Delete the workspace shown (its repos and sessions stay)'],
     ],
   },
   {
@@ -96,18 +97,18 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Enter (ticket)', 'Pick a ticket, or change it (/ searches, Jira too; x takes it off and a title can be typed instead)'],
       ['Space (ticket)', 'Show or hide the ticket’s details under its counts: every acceptance criterion, each comment with who and when, the linked tickets'],
       ['o (ticket)', 'Open the ticket in the tracker, in the browser (its key is a link too)'],
-      ['← → (what Claude can see)', 'Move along the chips: the lane’s repos, this card’s repos, folders and related tickets, then + Context'],
-      ['Enter / Space (a chip)', 'Include or leave out a lane repo; on + Context, open the picker'],
+      ['← → (what Claude can see)', 'Move along the chips: the workspace’s repos, this card’s repos, folders and related tickets, then + Context'],
+      ['Enter / Space (a chip)', 'Include or leave out a workspace repo; on + Context, open the picker'],
       ['+ or a (what Claude can see)', 'Add context: a popup with Repos (the library), Folders (ones from disk: type or paste a path and Enter, or b browses in the Windows folder dialog; on one listed, Enter leaves it out or brings it back, x takes it off) and Tickets (related ones; Jira is searched too). ← → or Tab switch tabs, ↑ ↓ move, Enter adds one and keeps the list open (on one already ticked, takes it out), Esc closes'],
-      ['b (Repos tab)', 'Another folder of repos to pick from, for this card only (the lane and the library are not changed): b browses in the Windows folder dialog, or paste the folder’s path in the box and Enter, or Enter on the last row. Its repos are listed under its path; x on that heading takes the folder off, and repos you picked from it stay on the card'],
+      ['b (Repos tab)', 'Another folder of repos to pick from, for this card only (the workspace and the library are not changed): b browses in the Windows folder dialog, or paste the folder’s path in the box and Enter, or Enter on the last row. Its repos are listed under its path; x on that heading takes the folder off, and repos you picked from it stay on the card'],
       ['x (a chip)', 'Take out something this card added'],
-      ['w (a chip)', 'Keep a repo you added for the whole lane'],
+      ['w (a chip)', 'Keep a repo you added for the whole workspace'],
       ['Enter or e (opening message)', 'Write the first thing Claude is told (the context itself arrives through the hook, so keep it to a prompt)'],
-      ['Space (opening message)', 'Pick a saved prompt: its {{placeholders}} are filled from the card (ticket, repos, folders, lane, branch, kind) and it follows the card as you add context, until you edit the text; Write your own detaches it. ↑ ↓ Enter, Esc closes'],
+      ['Space (opening message)', 'Pick a saved prompt: its {{placeholders}} are filled from the card (ticket, repos, folders, workspace, branch, kind) and it follows the card as you add context, until you edit the text; Write your own detaches it. ↑ ↓ Enter, Esc closes'],
       ['w (opening message)', 'Have Claude write it: the rough words in the box plus the card’s context go to a cheap model for one turn (no tools, nothing read from disk); its answer replaces the text'],
       ['s (opening message)', 'Save the message as a new prompt (what the card filled in goes back to placeholders)'],
       ['Shift+E', 'Saved prompts: ↑ ↓, n new, e or Enter edit (name, kind, body, with the placeholders and a live example from this card beside it; Ctrl+Enter saves), Delete twice removes, Esc'],
-      ['Enter (session settings)', 'Open its options: lane, the repo it starts in, branch, mode, model (↑ ↓ a row, ← → change, Enter closes)'],
+      ['Enter (session settings)', 'Open its options: workspace, the repo it starts in, branch, mode, model (↑ ↓ a row, ← → change, Enter closes)'],
       ['k / m', 'Kind of work (Develop, QA, Code review) / the model, from anywhere on the screen'],
       ['p', 'Preview exactly what Claude gets'],
       ['Ctrl+Enter (or Enter on Start)', 'Start work'],
@@ -126,9 +127,9 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['/', 'Search the tickets (by key or words; Jira is searched too, for anyone’s ticket) or the repo library'],
       ['k', 'Kind of work: Develop, QA (test someone’s change) or Code review'],
       ['x', 'Remove something you added to this card (on the card’s ticket: take it off)'],
-      ['w (what Claude will know)', 'Keep a repo you added to this card for the whole lane'],
+      ['w (what Claude will know)', 'Keep a repo you added to this card for the whole workspace'],
       ['e', 'Write your own note for Claude'],
-      ['← → (how it starts)', 'Change the option: lane, the repo it starts in, branch, mode, model'],
+      ['← → (how it starts)', 'Change the option: workspace, the repo it starts in, branch, mode, model'],
       ['m', 'Change the model: your default, Opus, Sonnet or Haiku'],
       ['p', 'Preview exactly what Claude gets'],
       ['Ctrl+Enter', 'Start work (also while typing); adding to a running card, add it'],
@@ -160,7 +161,44 @@ export function switchInbox(): void {
 
 /** The home page's bands (§126): the cards the line shows, by whose turn it is. */
 export function homeNow(s: ReturnType<typeof get>): Home {
-  return homeOf(s.cards, s.runs, s.seen ?? {}, s.line.filter, s.line.q);
+  return homeOf(s.cards, s.runs, s.seen ?? {}, s.line.filter, s.line.q, { tried: s.tried, canTry: (c) => canTryCard(s, c) });
+}
+
+/** The card has an app to start: a run recipe, or a lane (whose stack t sets up). The same test as its Try it buttons. */
+export function canTryCard(s: ReturnType<typeof get>, c: Card): boolean {
+  return Boolean(cardRecipe(s.recipes, c.workspaceId, cardRepos(c)[0]) || c.workspaceId);
+}
+
+/** l: you tried the card's change and it looks good. It leaves Your move until Claude changes it again. */
+export function looksGood(id: string): void {
+  const card = get().cards.find((c) => c.id === id);
+  if (!card) return;
+  markTried(id, true);
+  markSeen(id);
+  flash(`${card.key}: tried, looks good`);
+}
+
+/** p: the Found a problem box on the card's tile; Enter sends what you saw to its session. */
+export function openProblem(id: string): void {
+  set({ line: { ...get().line, focus: id, problem: id } });
+  requestAnimationFrame(() => document.getElementById('problem-say')?.focus());
+}
+
+/** The Found a problem box: Enter sends it as a reply (the card goes back to Claude), Esc closes it. */
+function problemKeys(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLInputElement;
+  if (el.id !== 'problem-say') return false;
+  const id = get().line.problem;
+  if (e.key === 'Escape') { el.blur(); set({ line: { ...get().line, problem: null } }); return true; }
+  if (e.key !== 'Enter' || !id) return editingKey(e) ? false : e.ctrlKey || e.altKey;
+  const what = el.value.trim();
+  if (!what) { flash('Say what went wrong first'); return true; }
+  const card = get().cards.find((c) => c.id === id);
+  set({ line: { ...get().line, problem: null } });
+  markTried(id, false);
+  markSeen(id);
+  sayToCard(id, problemText(what)).then(() => flash(`${card?.key ?? 'It'}: sent back to Claude`), (err: Error) => flash(err.message));
+  return true;
 }
 
 /** The cards in reading order (what ← → walk with a card open, and Alt+↑ ↓ from a session). */
@@ -230,7 +268,7 @@ export function workspaceKey(then: WorkspaceAction): void {
   if (ws) { runWorkspaceAction(then, ws.id); return; }
   if (!s.workspaces.length) {
     if (then === 'addRepo') set({ modal: { kind: 'workspace', id: null } });
-    else flash('No lanes yet. W makes one.');
+    else flash('No workspaces yet. W makes one.');
     return;
   }
   if (s.workspaces.length === 1) { runWorkspaceAction(then, s.workspaces[0].id); return; }
@@ -456,7 +494,7 @@ export function toggleTryRow(id: string): void {
   const sv = tryRows.services[at - tryRows.choose.length];
   if (!sv) return;
   if (sv.fixed) { flash('The UI always starts: it is the app you try. Space ticks the APIs under it'); return; }
-  if (!sv.found) { flash(`${sv.id} isn’t in this card or its lane`); return; }
+  if (!sv.found) { flash(`${sv.id} isn’t in this card or its workspace`); return; }
   const apis = pick.apis.includes(sv.id) ? pick.apis.filter((a) => a !== sv.id) : [...pick.apis, sv.id];
   rememberPick(id, { ...pick, apis });
 }
@@ -732,7 +770,7 @@ export function keepRepo(index: number): void {
   send({ type: 'workspace.addRepo', id: c.workspaceId!, path: r.repo });
   set({ composer: { ...r.composer, error: null } });
   const ws = get().workspaces.find((w) => w.id === c.workspaceId);
-  flash(`Kept for ${ws?.name ?? 'the lane'}: every card there gets it`);
+  flash(`Kept for ${ws?.name ?? 'the workspace'}: every card there gets it`);
 }
 
 /** What the tracker's search found for this text (nothing while it answers an older search). */
@@ -827,11 +865,11 @@ function boardKeys(e: KeyboardEvent): boolean {
   if (digit && !e.shiftKey) {
     const n = Number(digit[1]);
     const ws = s.workspaces[n - 1];
-    if (n && !ws) { flash(s.workspaces.length ? `There is no lane ${n}` : 'No lanes yet. W makes one.'); return true; }
+    if (n && !ws) { flash(s.workspaces.length ? `There is no workspace ${n}` : 'No workspaces yet. W makes one.'); return true; }
     const filter = n === 0 ? 'all' : ws.id;
     setFilter(filter);
     set({ line: { ...get().line, focus: firstFocus(get()) } });
-    flash(n === 0 ? 'Every lane' : ws.name);
+    flash(n === 0 ? 'Every workspace' : ws.name);
     return true;
   }
   if (e.key !== 'e' && workspaceKeys(e)) return true;
@@ -858,7 +896,19 @@ function boardKeys(e: KeyboardEvent): boolean {
   }
   switch (e.key) {
     case 'a': { const next = nextNeeding(homeNow(s), focused); if (next) set({ line: { ...s.line, focus: next } }); else flash('Nothing is waiting on you'); return true; }
-    case 'm': if (focused) { markSeen(focused); flash('Marked as seen'); } else flash('Pick a card first'); return true;
+    case 'm': {
+      if (!focused) { flash('Pick a card first'); return true; }
+      markSeen(focused);
+      const still = homeNow(get()).you.find((w) => w.card.id === focused);
+      flash(still?.need === 'try' ? 'Seen. It is ready to try: l looks good, p found a problem' : 'Marked as seen');
+      return true;
+    }
+    case 'l': case 'p': {
+      const card = focused ? s.cards.find((c) => c.id === focused) : undefined;
+      if (!card || card.stage !== 'try') { flash('l and p are for a card ready to try'); return true; }
+      if (e.key === 'l') looksGood(card.id); else openProblem(card.id);
+      return true;
+    }
     case 'y': if (focused) answerAsk(focused, 'allow'); else flash('Pick a card first'); return true;
     case 'Enter': if (focused) openCard(focused); return true;
     case 't': if (focused) tryIt(focused); else flash('Pick a card first'); return true;
@@ -1055,6 +1105,7 @@ export function lineKeys(e: KeyboardEvent, typing: boolean): boolean {
   const s = get();
   if (s.screen !== 'line' || s.modal) return false;
   if (s.composer) return composerKeys(e, typing);
+  if (typing && problemKeys(e)) return true;
   if (typing) return searchKeys(e);
   if (s.line.drawer) return drawerKeys(e);
   return boardKeys(e);
