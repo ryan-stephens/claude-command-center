@@ -10,7 +10,8 @@ import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, p
 import { uiApp } from '../shared/stack-detect.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
 import { run } from './hosts.ts';
-import { PortPool, type UiPortPick } from './ports.ts';
+import type { FrontDoors } from './front-door.ts';
+import { listening, PortPool, type UiPortPick } from './ports.ts';
 import type { RunOptions, RunPlaces } from './recipes.ts';
 import { repoFiles } from './repo-files.ts';
 import type { Store } from './store.ts';
@@ -104,8 +105,8 @@ export { readLooseJson } from '../shared/stack.ts';
  * what's wrong (an API or UI repo the card doesn't have, a proxy file that isn't there or isn't
  * JSON, no port left), having taken nothing.
  */
-export async function prepareStackRun(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string, pool = new PortPool(), who = cardId): Promise<{ recipe: RunRecipe; opts: RunOptions }> {
-  const session = await prepareStackSession(stack, choice, places, cardId, dir, pool, who);
+export async function prepareStackRun(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string, pool = new PortPool(), who = cardId, doors?: FrontDoors): Promise<{ recipe: RunRecipe; opts: RunOptions }> {
+  const session = await prepareStackSession(stack, choice, places, cardId, dir, pool, who, doors);
   const steps = stackSteps(stack, session.choice, session.ctx);
   const url = uiUrlFor(stack, session.choice, session.ctx);
   return {
@@ -139,7 +140,7 @@ export interface StackSession {
  * one), and the proxy copy written with the picked APIs' rules. The steps come per service from
  * serviceRecipe.
  */
-export async function prepareStackSession(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string, pool = new PortPool(), who = cardId): Promise<StackSession> {
+export async function prepareStackSession(stack: StackInfo, choice: StackChoice, places: RunPlaces, cardId: string, dir: string, pool = new PortPool(), who = cardId, doors?: FrontDoors): Promise<StackSession> {
   const values = choiceValues(stack, choice.values);
   const apis = pickedApis(stack, choice.apis);
   const pick = { values, apis: apis.map((a) => a.repo) };
@@ -155,13 +156,13 @@ export async function prepareStackSession(stack: StackInfo, choice: StackChoice,
   // The served app's own port and baseHref, from its project file: the URL when the stack doesn't say.
   const app = stack.ui && uiDir ? uiApp(repoFiles(uiDir), uiProject(stack.ui.steps)) : undefined;
   // One port per API, and one for the UI when it takes one: given back when the session ends. The
-  // UI keeps its own port when it's free, where its sign-in is registered (§122).
+  // UI goes behind the front door on its own port (§123), else keeps that port when it's free (§122).
   const picked = await pool.take(apis.length);
   const ports: Record<string, number> = {};
   apis.forEach((a, i) => { ports[a.repo.toLowerCase()] = picked[i]; });
   let ui: UiPortPick | undefined;
   try {
-    ui = needsUiPort(stack) ? await pool.takeUi(uiHomePort(stack, app), who) : undefined;
+    ui = needsUiPort(stack) ? await uiPortOf(uiHomePort(stack, app), pool, cardId, who, doors) : undefined;
   } catch (e) {
     pool.free(picked);
     throw e;
@@ -200,12 +201,32 @@ export async function prepareStackSession(stack: StackInfo, choice: StackChoice,
       cardId, stack, choice: pick, ctx, places, services,
       label: runLabel(values, pick.apis, ports, stack.ui ? uiPortFor(stack, pick, ctx) : undefined, stack.ui ? uiProject(stack.ui.steps) ?? app?.name : undefined),
       ...(ui?.note ? { uiNote: ui.note } : {}),
-      end: () => { if (ended) return; ended = true; pool.free(picked); undo?.(); },
+      end: () => { if (ended) return; ended = true; pool.free(picked); if (ui?.door) doors?.leave(cardId); undo?.(); },
     };
   } catch (e) {
     pool.free(picked);
+    if (ui?.door) doors?.leave(cardId);
     throw e;
   }
+}
+
+/**
+ * The UI's port (§123): with front doors on and the UI's own port known, a port from the range behind
+ * the door on its own port, the one its sign-in is registered for; the door is opened if it isn't yet.
+ * When that port is taken by something else (the door can't open there), as §122: its own port when
+ * free, else one of CC_CONTROL_UI_PORTS, else the range.
+ */
+async function uiPortOf(home: number | undefined, pool: PortPool, cardId: string, who: string, doors?: FrontDoors): Promise<UiPortPick> {
+  if (doors && home && (doors.isOpen(home) || !(await listening(home)))) {
+    const [port] = await pool.take(1);
+    try {
+      await doors.join(home, cardId, who, port);
+      return { port, from: 'range', door: home, note: `(The UI runs on ${port}, behind cc-control’s front door on ${home}, where its sign-in is registered: o on the card shows it there.)` };
+    } catch {
+      pool.free([port]);
+    }
+  }
+  return pool.takeUi(home, who);
 }
 
 /** One service's recipe for the session: its steps then its stop: steps; the UI's carries the app's URL. */

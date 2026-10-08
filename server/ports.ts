@@ -50,6 +50,8 @@ export interface UiPortPick {
   from: 'home' | 'list' | 'range';
   /** What the run's output should say about it; none when the UI is on its own port. */
   note?: string;
+  /** The front door it is behind (§123): the UI's own port, which cc-control holds. */
+  door?: number;
 }
 
 export class PortPool {

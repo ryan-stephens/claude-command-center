@@ -2930,3 +2930,72 @@ The other walks: `walk-card.cjs` 66/66 light and dark, `walk-board-try.cjs` 19/1
 - The registration request (the owner's): spare localhost ports with the UI's own path, for login and logout redirects, and trusted origins if the provider keeps that list.
 - Where sign-in state is kept (browser storage per port, or a cookie shared by every localhost port) wasn't checked at VU; a shared cookie could let two cards' UIs overwrite each other's sign-in.
 - The fallback, if registration is refused: one front door on the usual port (§121).
+
+## 123. The front door: every card's UI behind the port its sign-in takes, shown one at a time
+
+2026-10-08. Tried at VU with §122, a second app-summary on another app's registered port was refused by the provider all the same: *the redirect_uri must be a login redirect URI in the app's settings*. A registered address is a port and a path together, so app-summary's path signs in only on its own port. The owner won't ask for more registrations. So every card's UI has to be reached on that one port. The owner still wants to test cards' changes side by side: each card's API and UI running at once, shown one at a time.
+
+**What changed.**
+- **A front door** (`FrontDoors` in `server/front-door.ts`). While any card's UI of an app runs, cc-control holds that UI's own port and forwards everything on it to one card's UI:
+  - the pages, with the Host kept as the door's;
+  - the API calls, which that UI's dev server sends on to its own card's API;
+  - set-cookie headers, all of them;
+  - live reload's WebSocket.
+
+  It listens on 127.0.0.1 and ::1 (a browser may try `localhost` as either), loopback only.
+  - The first card started is shown.
+  - When the shown card's UI stops, the door shows another card's. With the last one gone it closes and the port is free.
+  - When the door turns to another card, the old card's live-reload sockets are closed.
+  - A card's UI that doesn't answer gets a page saying so (*TWO-2's UI isn't answering: it may still be compiling…*), with no stack trace.
+- **Every card's UI runs on a port from the range** (`uiPortOf` in `server/stack.ts`) when the UI's own port is known and is free or already the door's.
+  - Its output starts with *The UI runs on 18004, behind cc-control's front door on 4216, where its sign-in is registered: o on the card shows it there.*
+  - When something else listens on that port (the owner's own dev server), the door can't open and it is as §122.
+  - `CC_CONTROL_FRONT_DOOR=0` turns doors off.
+- **`o` points the door, then opens the app through it** (`openThroughDoor` in `web/line-keys.ts`, `door.show`).
+  - The tab opens at once (a browser lets only the key press open one) and goes to the app when the server says the door has turned.
+  - When it turned, the flash says *localhost:4216 now shows TWO-2's UI; a tab already on it shows it after a reload*.
+- **Where it shows:**
+  - each UI's run carries `door: { port, shown, url }` (`runsMsg` in `server/index.ts`);
+  - the tile says *App on localhost:4216* for the card shown and *App behind :4216* for the others;
+  - the Try it panel's UI caption says *on :4216 … shows this card's UI*, or *Behind localhost:4216 … o shows this one there*;
+  - the `?` row for `o` explains it, and the doctor says the door is on.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (407).
+- `front-door.test.ts`:
+  - two stand-in UIs behind one door;
+  - the request forwarded as asked with the door's Host;
+  - both cookies through;
+  - a WebSocket to the shown card, closed on a turn, and a new one to the other card;
+  - the turn on `show`;
+  - a 502 page naming the card when its UI is down;
+  - the door showing the card left when one leaves, and closing (the port free) with the last;
+  - a port taken by something else refused with why;
+  - two joins at once opening one door.
+- `stack.test.ts`: two sessions both on range ports behind the project's port, the note, the door turning and closing as sessions end, and §122 when the port is taken.
+- `recipes.test.ts`: `o` opens through the door.
+
+**`walk-two-cards.cjs` (26, light and dark)**, with the stack saved as the owner's (`ui.url` on 4216):
+- both UIs come up on ports of their own, both behind 4216, which shows card A's (with A's API);
+- `o` on card B opens a tab on `localhost:4216` that shows B's UI with B's API, and 4216 serves B's from then on;
+- the flash, the panel's *on :4216* and the tiles say so, and the runs say B shown, A not;
+- after both stop, 4216 answers nothing.
+
+Screenshots looked at, light and dark:
+- the first try put the marker beside the UI's name, which squeezed the name to one letter; it is in the caption now;
+- on the tile it pushed Restart off, and the tile said *App at localhost:18004*; the tile's app line now says where the door is.
+
+`walk-card.cjs` 66/66 light and dark, `walk-board-try.cjs` 19/19 light and dark, `walk-deps.cjs` 20/20, `walk-try-compile.cjs` 15/15 light and dark, `walk-hub.cjs` 37/37, `walk-perf.cjs` 25/25.
+
+**To check at VU:** `git pull`, restart (ask first; this is server code). Delete the `CC_CONTROL_UI_PORTS` line from `config.env` first: it isn't needed. Then:
+1. Try it on card A. Its UI's step ends `--port 180xx`, and its output says it is behind the front door on 4216. Open (`o`) opens `localhost:4216/<the app's path>`; sign in.
+2. Try it on card B while A runs. Then `o` on card B: the tab on 4216 shows B's UI, still signed in, calling B's API.
+3. `o` on card A switches back. A tab already on 4216 shows the other card after a reload.
+4. Live reload: a saved change in the shown card's UI should reload the page as before.
+
+Before step 1, stop any app-summary you run yourself on 4216; otherwise the door can't open and it is as §122.
+
+**Open:**
+- Not seen at VU yet: whether the app's dev server takes the door's Host header (it is `localhost`, which webpack's dev server allows) and whether live reload reconnects through the door after a switch.
+- One browser sees one card at a time on the door. Both cards in two tabs at once would need two registered addresses.
+- A module-federation host whose remotes load from ports of their own goes around the door for those; not seen (the handoff found everything on the UI's own port).
+- §122's `CC_CONTROL_UI_PORTS` stays for doors turned off.

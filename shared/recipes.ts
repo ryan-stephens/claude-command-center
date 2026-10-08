@@ -74,6 +74,11 @@ export interface CardRun {
   choice?: string;
   /** A stack's run of one service (§82): an API's repo name, or "ui". Unset: the card's single recipe. */
   service?: string;
+  /**
+   * A UI behind a front door (§123): the port cc-control holds for it (the one its sign-in is
+   * registered for), whether the door shows this card's UI now, and the app's address through it.
+   */
+  door?: { port: number; shown: boolean; url: string };
 }
 
 /**
@@ -114,8 +119,10 @@ export function mainRun(runs: Record<string, CardRun>, cardId: string): CardRun 
  * UI's, else the first service's) once it is up; `starting` while it comes up. A stack's runs are
  * keyed by service (`card#ui`), so the card's id alone found nothing and Open said nothing ran.
  */
-export function appToOpen(runs: Record<string, CardRun>, cardId: string): { url: string } | 'starting' | null {
+export function appToOpen(runs: Record<string, CardRun>, cardId: string): { url: string; door?: CardRun['door'] } | 'starting' | null {
   const run = mainRun(runs, cardId);
+  // §123: a UI behind a front door opens through it, on the port its sign-in is registered for.
+  if (run?.state === 'up' && run.door) return { url: run.door.url, door: run.door };
   if (run?.state === 'up' && run.url) return { url: run.url };
   return run?.state === 'running' ? 'starting' : null;
 }

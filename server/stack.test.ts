@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { validateStack } from '../shared/stack.ts';
+import { FrontDoors } from './front-door.ts';
 import { PortPool } from './ports.ts';
 import { RunService } from './recipes.ts';
 import { prepareStackRun, prepareStackSession, readLooseJson, restoreLeftovers, saveStack, serviceRecipe, stackOf, stackRecipe, stackRows } from './stack.ts';
@@ -173,6 +175,48 @@ test('no ui.url: the URL is the served app’s own port and baseHref from its pr
   l1.opts.cleanup?.();
   l2.opts.cleanup?.();
   assert.deepEqual(listed.taken(), []);
+});
+
+test('front doors (§123): every card’s UI on a port of its own behind its own port; the door goes with the last; a port taken by something else is as §122', async () => {
+  const ui = repo('d-ui', {
+    'package.json': '{}',
+    'apps/shop/project.json': JSON.stringify({ name: 'shop', targets: { build: { options: { baseHref: '/shop/' } }, serve: { options: { proxyConfig: 'apps/shop/proxy.conf.json', port: 18795 } } } }),
+    'apps/shop/proxy.conf.json': PROXY,
+  }, 'main');
+  const places = { cwd: ui, repos: { 'd-ui': ui } };
+  const info = { ...validateStack({ ...makeStack(), ui: { repo: 'd-ui', proxyFile: 'apps/shop/proxy.conf.json', steps: ['npx nx serve shop --proxyConfig={{proxy}}'] } }), workspaceId: 'wd', source: '' };
+  const pool = new PortPool([18796, 18799]);
+  const doors = new FrontDoors();
+  try {
+    const a = await prepareStackSession(info, { values: { env: 'dev' }, apis: [] }, places, 'da', join(dir, 'runs-d'), pool, 'CARD-1', doors);
+    const b = await prepareStackSession(info, { values: { env: 'dev' }, apis: [] }, places, 'db', join(dir, 'runs-d'), pool, 'CARD-2', doors);
+    assert.equal(a.ctx.uiPort, 18796, 'not its own port: the door holds that');
+    assert.equal(b.ctx.uiPort, 18797);
+    assert.match(serviceRecipe(a, 'ui').steps[0], /--port 18796$/);
+    assert.equal(serviceRecipe(b, 'ui').url, 'http://localhost:18797/shop/');
+    assert.match(a.uiNote ?? '', /runs on 18796, behind cc-control’s front door on 18795, where its sign-in is registered: o on the card shows it there/);
+    assert.deepEqual(doors.stateOf('da'), { port: 18795, shown: true });
+    assert.deepEqual(doors.stateOf('db'), { port: 18795, shown: false });
+    a.end();
+    assert.deepEqual(doors.stateOf('db'), { port: 18795, shown: true }, 'card 1 stopped: the door shows card 2');
+    b.end();
+    assert.equal(doors.isOpen(18795), false, 'the last one stopped: the door closes');
+    assert.deepEqual(pool.taken(), []);
+    // Something else on the UI's own port: no door; as §122, a port from the range with why.
+    const other = createServer().listen(18795, '127.0.0.1');
+    await new Promise((r) => other.once('listening', r));
+    try {
+      const c = await prepareStackSession(info, { values: { env: 'dev' }, apis: [] }, places, 'dc', join(dir, 'runs-d'), pool, 'CARD-3', doors);
+      assert.equal(doors.stateOf('dc'), undefined);
+      assert.equal(c.ctx.uiPort, 18796);
+      assert.match(c.uiNote ?? '', /own port, 18795, is in use by something else on this machine/);
+      c.end();
+    } finally {
+      other.close();
+    }
+  } finally {
+    doors.closeAll();
+  }
 });
 
 // A stand-in okteto: `okteto up -f <manifest>` reads the manifest's forward and starts the API on

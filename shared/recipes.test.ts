@@ -13,3 +13,9 @@ test('o opens a stack card’s UI: its runs are keyed by service, not by the car
   assert.equal(appToOpen(map(run({ service: 'ui', state: 'stopped', url: 'http://localhost:4200' })), 'c1'), null);
   assert.equal(appToOpen(runs, 'other-card'), null);
 });
+
+test('o opens a UI behind a front door through the door, on its sign-in port (§123)', () => {
+  const door = { port: 4216, shown: false, url: 'http://localhost:4216/app/' };
+  assert.deepEqual(appToOpen(map(run({ service: 'ui', url: 'http://localhost:18003/app/', door })), 'c1'), { url: 'http://localhost:4216/app/', door });
+  assert.equal(appToOpen(map(run({ service: 'ui', state: 'running', door })), 'c1'), 'starting', 'not before it is up');
+});

@@ -415,6 +415,8 @@ export type ClientMsg =
   /** Stop the card's run and the app it started. */
   /** Stop the card's run; with a stack, every service and the session (its ports and proxy copy), or one `service` alone. */
   | { type: 'card.stopRun'; id: string; service?: string }
+  /** o on a card whose UI is behind a front door (§123): the door shows that card's UI. Answered with ok or an error. */
+  | { type: 'door.show'; reqId: string; id: string }
   /** Follow these runs' output (§84): the keys (runKey) this connection wants, replacing the last set; each new one is answered with run.log, then run.lines as it prints. */
   | { type: 'run.follow'; keys: string[] }
   /** Save the run recipe you wrote for a repo; no steps goes back to the detected one. Answered with ok or an error. */

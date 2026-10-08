@@ -203,7 +203,9 @@ for (const w of workspaces) {
   line(hi - lo + 1 >= need * 2 ? 'ok' : 'warn', 'Local ports', `${lo}-${hi} (CC_CONTROL_PORTS); a run of everything takes ${need}`, hi - lo + 1 >= need * 2 ? '' : 'Widen the range so two cards can run at once.');
   // §122: the UI keeps its own port when it's free; a second card's takes one registered for sign-in, when listed.
   const signIn = parsePortList(process.env.CC_CONTROL_UI_PORTS);
-  if (needsUiPort(st)) line(signIn.length ? 'ok' : 'info', 'UI sign-in ports', signIn.length ? `its own port, then ${signIn.join(', ')} (CC_CONTROL_UI_PORTS)` : 'its own port for the first card; a second card’s UI runs on one from the range above', signIn.length ? '' : 'If the app signs in, a port from the range can’t: list ports registered for its sign-in in CC_CONTROL_UI_PORTS.');
+  // §123: by default every card's UI runs behind a front door on its own port instead.
+  if (needsUiPort(st) && process.env.CC_CONTROL_FRONT_DOOR !== '0') line('ok', 'UI sign-in', 'front door: each card’s UI runs on a port from the range above, behind cc-control on the UI’s own port; o on a card shows its UI there (CC_CONTROL_FRONT_DOOR=0 turns it off)');
+  else if (needsUiPort(st)) line(signIn.length ? 'ok' : 'info', 'UI sign-in ports', signIn.length ? `its own port, then ${signIn.join(', ')} (CC_CONTROL_UI_PORTS)` : 'its own port for the first card; a second card’s UI runs on one from the range above', signIn.length ? '' : 'If the app signs in, a port from the range can’t: list ports registered for its sign-in in CC_CONTROL_UI_PORTS.');
   for (const w of stackWarnings(st)) line('warn', 'Two at once', w);
   // Personal values the steps read from config.env (%KUBECONFIG_DEV%): each must be set on this machine.
   for (const name of envNamesIn(st)) {

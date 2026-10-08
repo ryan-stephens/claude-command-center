@@ -226,6 +226,11 @@ export async function tryCard(id: string, choice?: StackChoice, service?: string
   await request((reqId) => ({ type: 'card.try', reqId, id, ...(choice ? { choice } : {}), ...(service ? { service } : {}) }), 60_000);
 }
 
+/** o on a card whose UI is behind a front door (§123): the door shows that card's UI. */
+export async function showDoor(id: string): Promise<void> {
+  await request((reqId) => ({ type: 'door.show', reqId, id }), 10_000);
+}
+
 /** Verify (§105): each id in each environment, from the set tool (ValidateField, with the cached set's version). */
 export async function verifyCheck(envs: VerifyEnv[], ids: string[]): Promise<EnvCheck[]> {
   return (await request((reqId) => ({ type: 'verify.check', reqId, envs, ids }), 90_000) as Extract<ServerMsg, { type: 'verify.checked' }>).envs;

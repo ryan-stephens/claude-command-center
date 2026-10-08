@@ -20,7 +20,7 @@ import {
 import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
 import { withSimple } from './simple-model.ts';
 import { armProd, cycleEnv, openPage, refreshSets, runCheck, runLookup, runVerify, toggleAdvanced } from './verify-state.ts';
-import { addCardContext, answerCard, focusCardTab, sayToCard, send, startCard, stopRun, tryCard } from './ws.ts';
+import { addCardContext, answerCard, focusCardTab, sayToCard, send, showDoor, startCard, stopRun, tryCard } from './ws.ts';
 import { IMAGE_ONLY_TEXT, MAX_IMAGES, pickImages, readImage, type Pasted } from './say-images.ts';
 import { fitSay, nudgeSay } from './say-size.ts';
 
@@ -61,7 +61,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['Shift+I  ·  Ctrl+V  ·  drop (card open)', 'Images in your next message: pick image files from disk  ·  paste one in the message box (a screenshot)  ·  drop files on it. Up to 5, 5 MB each (PNG, JPEG, GIF, WebP), shown over the box; × or Backspace in an empty box takes one out. Enter sends them with the text (or alone)'],
       ['t (a card)', 'Try it: start its app in the card’s own folder; again stops it. With a lane stack, the Try it panel’s ticked services start, each on a port of its own. A lane with no stack yet: the stack form opens, filled from what the repos say (okteto.yml, angular.json, the proxy file), and Save and start goes on'],
       ['Shift+R (a card)', 'Restart its app: the run, or every service of its stack with the same pick, stopped and started again. With nothing running it starts it, as t does. On the board the tile has these as buttons (Start or Open, Stop and Restart) on cards in Try it or Ship, the chosen card, and any card whose app runs or failed; they start the app without opening the card'],
-      ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request'],
+      ['o (a card)', 'Open the app its run is serving; with nothing running, its pull request. A UI whose sign-in only takes its own port (localhost:4200, say) runs on a port of its own behind cc-control’s front door there: o points the door at this card’s UI, then opens it, so cards switch on that port at once, signed in. The tile and the Try it panel mark the card the door shows (on :4200)'],
       ['e (a card)', 'How it runs. A lane of several repos: its stack as a form (the environments, the UI, the APIs to tick with their names and routes, and how an API starts on the dev environment in three answers; ports, folders, health paths, the proxy rule and the lines behind Advanced). A single repo: what starts it, an install step, where it serves, what runs on stop; Ctrl+Enter saves either'],
       ['s (a card)', 'Ship: commit the files you tick, push, and open a PR written from the ticket, in each repo the card changed (one block per repo in the sheet; the PRs link each other); if it stops part-way, s again ships only the repos left; on a card in Ship with every PR open, merge them. On a QA or review card: its report (Enter copies, j posts it on the Jira ticket and m moves the ticket, each after you confirm; o opens the PR, d moves the card to Done)'],
       ['d (a card in Ship)', 'Done: the PR was merged or closed by hand, or the host isn’t one Ship can follow'],
@@ -471,10 +471,25 @@ export function openApp(id: string): void {
   // The card's PRs: the first still open, else the first; a QA or review card's is the one it looks at.
   const prs = card ? prsOf(card.ship) : [];
   const pr = openPrs(prs)[0] ?? prs[0] ?? card?.pr;
-  if (app && app !== 'starting') window.open(app.url, '_blank', 'noopener');
+  if (app && app !== 'starting' && app.door) openThroughDoor(id, app.url, app.door.port, app.door.shown);
+  else if (app && app !== 'starting') window.open(app.url, '_blank', 'noopener');
   else if (app === 'starting') flash('The app is still starting');
   else if (pr) { window.open(pr.url, '_blank', 'noopener'); if (prs.length > 1) flash(`Opened PR #${pr.number}${pr.repo ? ` (${pr.repo})` : ''}; the others are in the Ship section`); }
   else flash('Nothing running yet: t tries it');
+}
+
+/**
+ * §123: a UI behind a front door: the door is pointed at this card first, then the app opens through
+ * it. The tab opens at once (a browser lets only the key press itself open one) and goes to the app
+ * once the server says the door has turned.
+ */
+function openThroughDoor(id: string, url: string, port: number, shown: boolean): void {
+  const tab = window.open('about:blank', '_blank');
+  const key = get().cards.find((c) => c.id === id)?.key ?? 'This card';
+  showDoor(id).then(() => {
+    if (tab) { tab.opener = null; tab.location.href = url; } else window.open(url, '_blank', 'noopener');
+    if (!shown) flash(`localhost:${port} now shows ${key}’s UI; a tab already on it shows it after a reload`);
+  }, (e: Error) => { tab?.close(); flash(e.message); });
 }
 
 /** d on a card in Ship: done by hand (the PR merged or closed elsewhere, or a host Ship can't follow). */

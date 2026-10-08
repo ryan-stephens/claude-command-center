@@ -6,8 +6,9 @@
 // helper that writes okteto.yml with remote: 22000 and a 5005 debugger forward, then okteto up. The
 // UI's step is `nx serve app --proxyConfig={{proxy}}` with ui.url http://localhost:4216, as a stack
 // saved before §114 has it. Card A is started, then card B, from the Try it panel with t.
-// §122: the server has CC_CONTROL_UI_PORTS=4291 (one port registered for sign-in): card A's UI keeps its
-// own 4216, card B's takes 4291, and a third card, C, is refused with who holds them.
+// §123: each card's UI runs on a port of its own behind cc-control's front door on the UI's own 4216
+// (the port its sign-in takes): 4216 shows card A's first; o on card B opens B's there, signed-in
+// address and all; the door closes with the last UI.
 // Run: pnpm exec vite build --outDir ../dist/web-test first. DARK=1 for dark mode.
 const { chromium } = require('C:/Users/ryans/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright');
 const { spawn, spawnSync, execFileSync } = require('node:child_process');
@@ -15,7 +16,6 @@ const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
 const PORT = process.env.PORT || '7809';
-const SIGN_IN = 4291;
 const dark = process.env.DARK === '1';
 const REPO = path.resolve(__dirname, '..', '..', '..').replace(/\\/g, '/');
 const OUT = path.join(__dirname, dark ? 'shots-two-cards-dark' : 'shots-two-cards');
@@ -49,7 +49,7 @@ function makeRepo(dir, files) {
   git(dir, 'config', 'user.name', 'walk');
   git(dir, 'add', '.');
   git(dir, 'commit', '-q', '-m', 'init');
-  for (const c of ['a', 'b', 'c']) git(dir, 'worktree', 'add', '-q', `${dir}-${c}`, '-b', `card-${c}`);
+  for (const c of ['a', 'b']) git(dir, 'worktree', 'add', '-q', `${dir}-${c}`, '-b', `card-${c}`);
 }
 
 let server;
@@ -58,7 +58,7 @@ function startServer() {
   fs.writeFileSync(`${BIN}/okteto.cmd`, `@node "${STANDINS}/okteto-up.cjs" %*\r\n`);
   fs.writeFileSync(`${BIN}/nx.cmd`, `@node "${STANDINS}/nx-serve.cjs" %*\r\n`);
   const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
-  const env = { ...process.env, [pathKey]: `${BIN.replace(/\//g, '\\')};${process.env[pathKey]}`, CC_CONTROL_PORT: PORT, CC_CONTROL_DB: DB, CC_CONTROL_MODEL: 'claude-haiku-4-5-20251001', CC_CONTROL_WEB_DIST: `${REPO}/dist/web-test`, CC_CONTROL_UI_PORTS: String(SIGN_IN) };
+  const env = { ...process.env, [pathKey]: `${BIN.replace(/\//g, '\\')};${process.env[pathKey]}`, CC_CONTROL_PORT: PORT, CC_CONTROL_DB: DB, CC_CONTROL_MODEL: 'claude-haiku-4-5-20251001', CC_CONTROL_WEB_DIST: `${REPO}/dist/web-test` };
   for (const f of [DB, `${DB}-wal`, `${DB}-shm`, LOG]) fs.rmSync(f, { force: true });
   const out = fs.openSync(LOG, 'a');
   server = spawn(process.execPath, ['server/index.ts'], { cwd: REPO, env, stdio: ['ignore', out, out], windowsHide: true });
@@ -104,8 +104,8 @@ const tails = (rs) => rs.map((r) => `${r.service}:${r.state} ${r.steps.map((s) =
     ui: { repo: 'two-ui', proxyFile: 'proxy.conf.json', steps: ['nx serve app --proxyConfig={{proxy}}'], url: 'http://localhost:4216' },
   } });
   const cards = {};
-  for (const c of ['a', 'b', 'c']) cards[c] = await ask(page, { type: 'cards.seed', options: { repos: [API, UI], worktrees: [`${API}-${c}`, `${UI}-${c}`], workspaceId: 'ws-demo-two', key: `TWO-${' abc'.indexOf(c)}`, state: 'idle', title: `Card ${c.toUpperCase()}` } });
-  await page.evaluate((ids) => localStorage.setItem('cc-control.stackPick', JSON.stringify(Object.fromEntries(ids.map((id) => [id, { values: { env: 'dev' }, apis: ['two-api'] }])))), [cards.a.id, cards.b.id, cards.c.id]);
+  for (const c of ['a', 'b']) cards[c] = await ask(page, { type: 'cards.seed', options: { repos: [API, UI], worktrees: [`${API}-${c}`, `${UI}-${c}`], workspaceId: 'ws-demo-two', key: `TWO-${c === 'a' ? 1 : 2}`, state: 'idle', title: `Card ${c.toUpperCase()}` } });
+  await page.evaluate((ids) => localStorage.setItem('cc-control.stackPick', JSON.stringify(Object.fromEntries(ids.map((id) => [id, { values: { env: 'dev' }, apis: ['two-api'] }])))), [cards.a.id, cards.b.id]);
   await page.reload();
   await sleep(1000);
 
@@ -131,8 +131,9 @@ const tails = (rs) => rs.map((r) => `${r.service}:${r.state} ${r.steps.map((s) =
   const ui = (rs) => rs.find((r) => r.service === 'ui');
   const portOf = (u) => Number(/:(\d+)/.exec(u ?? '')?.[1]);
   const uiA = portOf(ui(ra)?.url), uiB = portOf(ui(rb)?.url);
-  check('card A’s UI keeps its own 4216, card B’s takes the sign-in port 4291 (§122)', uiA === 4216 && uiB === SIGN_IN, `${uiA} ${uiB}`);
-  check('each UI’s step was given its --port', / --port 4216$/.test(ui(ra)?.steps?.[0]?.cmd ?? '') && new RegExp(` --port ${SIGN_IN}$`).test(ui(rb)?.steps?.[0]?.cmd ?? ''), `${ui(ra)?.steps?.[0]?.cmd} | ${ui(rb)?.steps?.[0]?.cmd}`);
+  check('each UI on a port of its own, not 4216 (the front door holds that)', uiA && uiB && uiA !== uiB && uiA !== 4216 && uiB !== 4216, `${uiA} ${uiB}`);
+  check('each UI’s step was given its --port', new RegExp(` --port ${uiA}$`).test(ui(ra)?.steps?.[0]?.cmd ?? '') && new RegExp(` --port ${uiB}$`).test(ui(rb)?.steps?.[0]?.cmd ?? ''), `${ui(ra)?.steps?.[0]?.cmd} | ${ui(rb)?.steps?.[0]?.cmd}`);
+  check('both UIs are behind the door on 4216, which shows card A’s (the first in)', ui(ra)?.door?.port === 4216 && ui(ra)?.door?.shown === true && ui(rb)?.door?.port === 4216 && ui(rb)?.door?.shown === false, JSON.stringify([ui(ra)?.door, ui(rb)?.door]));
   const copy = (c) => fs.readFileSync(`${API}-${c}/okteto.cc-control.yml`, 'utf8');
   const fwd = (t) => [...t.matchAll(/-\s*(\d+):(\d+)/g)].map((m) => `${m[1]}:${m[2]}`);
   check('each card’s manifest copy: no fixed SSH port', !/remote:/.test(copy('a')) && !/remote:/.test(copy('b')));
@@ -154,16 +155,26 @@ const tails = (rs) => rs.map((r) => `${r.service}:${r.state} ${r.steps.map((s) =
     ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === 'run.log' && m.key === key) { ws.close(); resolve(m.lines.map((l) => l.text)); } };
     setTimeout(() => { ws.close(); resolve([]); }, 3000);
   }), `${cards.b.id}#ui`);
-  check('card B’s UI output says why: 4216 is TWO-1’s, so 4291 from CC_CONTROL_UI_PORTS', /own port, 4216, is in use by TWO-1, so it runs on 4291 from CC_CONTROL_UI_PORTS/.test(logB[0] ?? ''), logB[0]);
+  check('card B’s UI output says where it runs and how to see it', new RegExp(`runs on ${uiB}, behind cc-control’s front door on 4216, where its sign-in is registered: o on the card shows it there`).test(logB[0] ?? ''), logB[0]);
 
-  // §122: card C, with both sign-in ports held, is refused on the page with who holds them, and runs nothing.
+  // §123: 4216 shows card A's UI (with A's API); o on card B (open, its Try it panel up) opens 4216 showing B's.
+  check('localhost:4216 serves card A’s UI, pointed at card A’s API', (await get(4216)).includes(`localhost:${apiPort('a')}`));
+  const [tab] = await Promise.all([context.waitForEvent('page'), page.keyboard.press('o')]);
+  await tab.waitForURL(/localhost:4216/, { timeout: 8000 }).catch(() => {});
+  await tab.waitForLoadState().catch(() => {});
+  const tabText = await tab.textContent('body').catch(() => '');
+  check('o on card B opens localhost:4216, which now shows card B’s UI with B’s API', /^http:\/\/localhost:4216\/?$/.test(tab.url()) && tabText.includes(`localhost:${apiPort('b')}`), `${tab.url()} ${tabText.slice(0, 80)}`);
+  await tab.close();
+  check('…the door turned: 4216 serves card B’s', (await get(4216)).includes(`localhost:${apiPort('b')}`));
+  check('the page says so, and marks card B “on :4216”', await until(async () => (await page.getByText('localhost:4216 now shows TWO-2’s UI').count()) > 0 && (await page.getByText('on :4216').count()) > 0, 5000));
+  await shot(page, 'card-b-on-4216');
   await page.keyboard.press('Escape');
-  await sleep(400);
-  await start('c');
-  const refused = await until(async () => (await page.getByText(/No sign-in port free for the UI: 4216 \(TWO-1\), 4291 \(TWO-2\)\. Stop one, or add one to CC_CONTROL_UI_PORTS\./).count()) > 0, 8000);
-  await shot(page, 'card-c-refused');
-  check('card C is refused: every sign-in port is in use, by TWO-1 and TWO-2', refused);
-  check('…and runs nothing', (await runsOf(page, cards.c.id)).length === 0);
+  await sleep(500);
+  const tileText = (c) => page.locator(`#card-${cards[c].id}`).innerText();
+  check('on the board, card B’s tile says its app is on localhost:4216, card A’s that it is behind it', (await tileText('b')).includes('App on localhost:4216') && (await tileText('a')).includes('App behind :4216'), `${(await tileText('a')).replace(/\s+/g, ' ')} | ${(await tileText('b')).replace(/\s+/g, ' ')}`);
+  await shot(page, 'board-door');
+  const rb2 = await runsOf(page, cards.b.id), ra2 = await runsOf(page, cards.a.id);
+  check('…and the runs say so: B shown, A not', ui(rb2)?.door?.shown === true && ui(ra2)?.door?.shown === false);
 
   // Stop both: their ports are free again.
   const apiA = apiPort('a');
@@ -182,7 +193,7 @@ const tails = (rs) => rs.map((r) => `${r.service}:${r.state} ${r.steps.map((s) =
   check('each card’s logs folder has its API’s and UI’s output', keys.length === 2 && keys.every((k) => /Now listening on/.test(read(k, 'two-api.log')) && /compiled successfully/.test(read(k, 'ui.log'))), keys.map(logsOf).join(' | '));
   check('…its own: card A’s API log names card A’s port, B’s names B’s', read(keys[0], 'two-api.log').includes(`:${apiA}`) && !read(keys[1], 'two-api.log').includes(`:${apiA}`));
   check('the manifest copies go with the runs', !fs.existsSync(`${API}-a/okteto.cc-control.yml`) && !fs.existsSync(`${API}-b/okteto.cc-control.yml`));
-  check('the sign-in ports are free again', !(await get(4216)) && !(await get(SIGN_IN)));
+  check('the door closed with the last UI: 4216 answers nothing', !(await get(4216)));
   check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   await browser.close();
   stopServer();

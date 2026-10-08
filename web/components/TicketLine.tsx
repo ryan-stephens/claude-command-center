@@ -11,7 +11,7 @@ import { importWorkspace } from '../commands.ts';
 import { INBOX_VIEWS, inView, qaLine, SOURCE_NAME, type Ticket } from '../../shared/tickets.ts';
 import { age } from '../home-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, ticketFocus } from '../line-model.ts';
-import { anyLive, cardRecipe, mainRun } from '../../shared/recipes.ts';
+import { anyLive, cardRecipe, mainRun, type CardRun } from '../../shared/recipes.ts';
 import { boardOf, openApp, openCard, openComposer, restartApp, switchInbox, tryIt, workspaceKey } from '../line-keys.ts';
 import { allMerged, prsLine, prsOf } from '../../shared/ship.ts';
 import { currentWorkspace, get, NO_BINDINGS, set, setFilter, useStore } from '../store.ts';
@@ -223,6 +223,12 @@ const EMPTY: Record<Card['stage'], ReactNode> = {
   plan: 'Empty', build: 'Empty', needs: 'Nothing waiting on you', try: 'Empty', ship: 'Empty', done: 'Merged PRs land here',
 };
 
+/** Where the app is: behind a front door (§123), the door's address, which shows it or another card's. */
+function appAt(run: CardRun): string {
+  if (run.door) return run.door.shown ? `App on localhost:${run.door.port}` : `App behind :${run.door.port}`;
+  return `App at ${(run.url ?? 'running').replace(/^https?:\/\//, '')}`;
+}
+
 /** On a tile: the card's app, while it runs or when it failed. */
 function RunLine({ id }: { id: string }) {
   const run = useStore((s) => mainRun(s.runs, id));
@@ -231,7 +237,7 @@ function RunLine({ id }: { id: string }) {
   return (
     <span className={`flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold ${tone}`}>
       {run.state === 'running' ? <span className="spinner" /> : <span className={`h-2 w-2 shrink-0 rounded-full ${run.state === 'up' ? 'bg-ok' : 'bg-bad'}`} />}
-      <span className="truncate">{run.state === 'up' ? `App at ${(run.url ?? 'running').replace(/^https?:\/\//, '')}` : run.state === 'failed' ? `Try it failed · exit ${run.steps.find((s) => s.state === 'bad')?.code ?? '?'}` : 'Starting the app'}</span>
+      <span className="truncate" title={run.door ? `This card’s UI runs on ${run.url?.replace(/^https?:\/\//, '') ?? 'a port of its own'}, behind localhost:${run.door.port}, the port its sign-in takes. ${run.door.shown ? 'localhost:' + run.door.port + ' shows it now.' : 'o shows it there.'}` : undefined}>{run.state === 'up' ? appAt(run) : run.state === 'failed' ? `Try it failed · exit ${run.steps.find((s) => s.state === 'bad')?.code ?? '?'}` : 'Starting the app'}</span>
     </span>
   );
 }
@@ -319,7 +325,7 @@ function TryButtons({ card, focused }: { card: Card; focused: boolean }) {
     <div role="group" aria-label={`${card.key}’s app`} className="flex items-center gap-0.5 border-t border-line/70 px-1.5 py-1">
       {live ? (
         <>
-          <button className={`${btn} text-acc`} disabled={!up} onClick={(e) => act(e, (id) => openApp(id))} title={up ? `Open ${run?.url} in a new tab` : 'The app is still starting'}><Icon name="popout" size={13} />Open<Key k="o" size="sm" /></button>
+          <button className={`${btn} text-acc`} disabled={!up} onClick={(e) => act(e, (id) => openApp(id))} title={up ? `Open ${run?.door?.url ?? run?.url} in a new tab` : 'The app is still starting'}><Icon name="popout" size={13} />Open<Key k="o" size="sm" /></button>
           <span className="grow" />
           <button className={`${btn} text-sub hover:text-ink`} aria-label="Stop" onClick={(e) => act(e, tryIt)} title="Stop the app (every service of the stack)"><Icon name="stop" size={13} /><Key k="t" size="sm" /></button>
           <button className={`${btn} text-sub hover:text-ink`} aria-label="Restart" onClick={(e) => act(e, restartApp)} title="Restart: stop it and start it again"><Icon name="restart" size={13} /><Key k="⇧R" size="sm" /></button>
@@ -329,6 +335,12 @@ function TryButtons({ card, focused }: { card: Card; focused: boolean }) {
       )}
     </div>
   );
+}
+
+/** §123: the card whose UI the front door shows, marked where its Open is. */
+export function DoorChip({ run }: { run?: CardRun }) {
+  if (!run?.door?.shown) return null;
+  return <span className="shrink-0 rounded bg-ok-bg px-1 font-mono text-[11px] font-semibold text-ok" title={`localhost:${run.door.port} shows this card’s UI (the port its sign-in takes). o on another card shows that one there.`}>on :{run.door.port}</span>;
 }
 
 /** QA or Code review, on a card's tile and in its drawer. */

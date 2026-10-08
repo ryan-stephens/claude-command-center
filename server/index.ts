@@ -28,6 +28,7 @@ import { ChannelService } from './channel.ts';
 import { Typist } from './typist.ts';
 import { cardRecipeOf, recipeOf, RunService, saveRecipe, saveWorkspaceRecipe, workspaceRecipeOf, type RunPlaces } from './recipes.ts';
 import { parsePortList, parseRange, PortPool } from './ports.ts';
+import { FrontDoors } from './front-door.ts';
 import { plainStack, prepareStackSession, restoreLeftovers, runsDir, saveStack, serviceRecipe, stackOf, stackRecipe, stackRows, type StackSession } from './stack.ts';
 import { detectWorkspaceStack, joinStack } from './stack-detect.ts';
 import { suggested, unknownStackRepos, validateStack } from '../shared/stack.ts';
@@ -187,7 +188,22 @@ const follows = new Map<WebSocket, Set<string>>();
 // Local ports for stack runs, one per API and UI, so two cards can run the same stack at once; an
 // okteto up's other forwards take theirs from it too (§114).
 const ports = new PortPool(parseRange(process.env.CC_CONTROL_PORTS), parsePortList(process.env.CC_CONTROL_UI_PORTS));
-const runs = new RunService(() => broadcast({ type: 'runs', runs: runs.list() }), process.env, {
+// §123: a UI whose sign-in is registered for its own port runs on one of the pool's, behind a door
+// cc-control holds on its own port; o on a card points the door at it. CC_CONTROL_FRONT_DOOR=0: off.
+const doors = process.env.CC_CONTROL_FRONT_DOOR === '0' ? undefined : new FrontDoors(() => broadcast(runsMsg()));
+/** The runs, each UI's with the door it is behind. */
+function runsMsg(): ServerMsg {
+  return {
+    type: 'runs',
+    runs: runs.list().map((r) => {
+      const door = r.service === 'ui' ? doors?.stateOf(r.cardId) : undefined;
+      if (!door) return r;
+      const url = r.url ? r.url.replace(/^(https?:\/\/[^/:]+):\d+/, `$1:${door.port}`) : `http://localhost:${door.port}`;
+      return { ...r, door: { ...door, url } };
+    }),
+  };
+}
+const runs = new RunService(() => broadcast(runsMsg()), process.env, {
   pool: ports,
   // §117: a card's runs write their output to its logs folder, for its Claude to read.
   logDir: (cardId) => { const c = cards.get(cardId); return c ? cardLogsDir(runsDir(DB_PATH), c.key) : undefined; },
@@ -726,7 +742,7 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
         const apis = Array.isArray(c.apis) ? c.apis.map(String).slice(0, 30) : [];
         // The last session goes first (its proxy copy and ports are this one's to make again).
         await endSession(card.id, true);
-        const session = await prepareStackSession(stack, { values, apis }, runPlaces(card), card.id, runsDir(DB_PATH), ports, card.key);
+        const session = await prepareStackSession(stack, { values, apis }, runPlaces(card), card.id, runsDir(DB_PATH), ports, card.key, doors);
         sessions.set(card.id, session);
         send(ws, { type: 'ok', reqId: msg.reqId });
         // Each service as its own run, started together: an API's steps and the UI's run side by side, each with its own stop.
@@ -740,6 +756,15 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       if (!existsSync(places.cwd)) throw new Error(`${places.cwd} isn’t there any more.`);
       send(ws, { type: 'ok', reqId: msg.reqId });
       await runs.start(card.id, recipe, places);
+      return;
+    }
+    case 'door.show': {
+      // §123: o on a card whose UI is behind a front door: the door shows that card's UI.
+      const card = cards.get(String(msg.id));
+      const port = doors?.show(String(msg.id));
+      if (!port) throw new Error(`${card?.key ?? 'That card'}’s UI isn’t behind the front door.`);
+      console.log(`front door :${port} → ${card?.key ?? msg.id}`);
+      send(ws, { type: 'ok', reqId: msg.reqId });
       return;
     }
     case 'run.follow': {
@@ -1192,7 +1217,7 @@ wss.on('connection', (ws) => {
   send(ws, cardsMsg());
   send(ws, ticketsMsg());
   send(ws, recipesMsg());
-  send(ws, { type: 'runs', runs: runs.list() });
+  send(ws, runsMsg());
   for (const request of broker.list()) send(ws, { type: 'permission.request', request });
   for (const [id, activity] of manager.activities()) send(ws, { type: 'session.activity', id, activity });
   for (const [id, todos] of manager.allTodos()) send(ws, { type: 'session.todos', id, todos });
@@ -1275,6 +1300,7 @@ process.on('unhandledRejection', (reason) => {
 function shutdown(): void {
   manager.stopAll();
   runs.stopAll();
+  doors?.closeAll();
   channels.closeAll();
   typist.forgetAll();
   typist.stop();
