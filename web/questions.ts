@@ -82,6 +82,20 @@ export function nextMode(mode: PermissionMode | undefined): PermissionMode {
   return MODES[(i + 1) % MODES.length];
 }
 
+/**
+ * Shift+Tab's next mode for a session on this model. Auto isn't offered on Haiku, so the cycle goes
+ * past it there and says so (`skipped`), rather than asking the CLI and failing.
+ */
+export function modeAfter(mode: PermissionMode | undefined, model?: string): { mode: PermissionMode; skipped: boolean } {
+  const next = nextMode(mode);
+  return next === 'auto' && /haiku/i.test(model ?? '') ? { mode: nextMode(next), skipped: true } : { mode: next, skipped: false };
+}
+
+/** A mode as a session or a card's hooks reported it (a plain string there), or Asks first. */
+export function asMode(m: string | undefined): PermissionMode {
+  return m && m in MODE_LABEL ? m as PermissionMode : 'default';
+}
+
 export const MODE_LABEL: Record<PermissionMode, { name: string; hint: string }> = {
   default: { name: 'Asks first', hint: 'asks before anything you haven’t already allowed' },
   acceptEdits: { name: 'Accepts edits', hint: 'edits files without asking; still asks before commands' },

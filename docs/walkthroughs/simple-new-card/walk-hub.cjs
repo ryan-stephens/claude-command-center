@@ -180,6 +180,28 @@ const idle = async (page) => { const c = await cardNow(page); return c?.live?.ph
   const meterText = metered ? (await meter.innerText()).replace(/\s+/g, ' ') : '';
   check('the chat header shows the branch, context used (tokens / window · %) and cost', metered && /card-1/.test(meterText) && /\d+(\.\d)?k \/ \d+(\.\d)?[kM] · \d+%/.test(meterText) && /\$\d+\.\d\d|<\$0\.01/.test(meterText), meterText);
 
+  // ---- §129: the mode on the open card: a chip in the header, Shift+Tab switches it, Auto is skipped on Haiku ----
+  const chip = view.locator('[data-mode]').first();
+  const modeNow = () => chip.getAttribute('data-mode');
+  const m0 = await modeNow();
+  check('the chat header shows the session’s mode (Asks first after an approved plan)', m0 === 'default' && /Asks first/.test(await chip.innerText()), String(m0));
+  await page.evaluate(() => document.activeElement?.blur());
+  await chip.screenshot({ path: path.join(OUT, 'mode-chip.png') }).catch(() => {});
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await view.locator('[data-meter]').first().locator('xpath=..').screenshot({ path: path.join(OUT, 'mode-header-dark.png') }).catch(() => {});
+  await page.emulateMedia({ colorScheme: 'light' });
+  await view.locator('[data-meter]').first().locator('xpath=..').screenshot({ path: path.join(OUT, 'mode-header.png') }).catch(() => {});
+  await page.keyboard.press('Shift+Tab');
+  check('Shift+Tab on the open card: Accepts edits, as the session reports it', await until(async () => (await modeNow()) === 'acceptEdits', 5000, 100), String(await modeNow()));
+  await page.locator('#card-say').focus();
+  await page.keyboard.press('Shift+Tab');
+  const inBox = await page.evaluate(() => document.activeElement?.id === 'card-say');
+  check('Shift+Tab in the message box too: Plan first, and the box keeps the focus', await until(async () => (await modeNow()) === 'plan', 5000, 100) && inBox, String(await modeNow()));
+  await page.keyboard.press('Shift+Tab');
+  const skipped = await until(async () => /Auto isn’t offered on Haiku/.test(await page.locator('body').innerText()), 3000, 100);
+  check('on Haiku the cycle goes past Auto, back to Asks first, and says so', await until(async () => (await modeNow()) === 'default', 5000, 100) && skipped, String(await modeNow()));
+  await page.locator('#card-say').blur();
+
   // ---- §116: a picture in the card chat ----
   const red = path.join(OUT, 'red.png');
   fs.writeFileSync(red, solidPng(48, [220, 20, 20]));

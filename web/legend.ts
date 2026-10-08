@@ -229,7 +229,7 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       { keys: ['Esc'], label: x.working ? 'Stop Claude' : 'Back to the board' },
       ...(x.question ? [{ keys: ['1', '9'], label: 'Pick', tone: 'attn' as const }, { keys: ['Tab'], label: 'Next question' }, { keys: ['y'], label: 'Submit answers', tone: 'attn' as const }] : x.asking ? [{ keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' as const }] : []),
       ...(verify ? [{ keys: ['Enter'], label: 'Check', tone: 'acc' as const }, { keys: ['i', 'l'], label: 'Ids / record' }, { keys: ['e'], label: 'Dev / UAT' }, { keys: ['⇧P'], label: 'Prod' }, { keys: ['r'], label: 'Refresh set' }, { keys: ['a'], label: 'Advanced' }, { keys: ['o', '⇧O', '⇧L'], label: 'Open a tool' }]
-        : x.canSay ? [{ keys: ['Enter'], label: x.inApp ? 'Message' : 'Type to it', tone: x.asking ? undefined : 'acc' as const }, ...(x.inApp ? [{ keys: ['⇧I'], label: 'Image' }] : []), { keys: ['Ctrl⇧↑', '↓'], label: 'Box size' }] : []),
+        : x.canSay ? [{ keys: ['Enter'], label: x.inApp ? 'Message' : 'Type to it', tone: x.asking ? undefined : 'acc' as const }, ...(x.inApp ? [{ keys: ['⇧I'], label: 'Image' }] : []), { keys: ['Ctrl⇧↑', '↓'], label: 'Box size' }, ...(x.inApp ? [{ keys: ['⇧Tab'], label: 'Mode' }] : [])] : []),
       ...(x.hasTab ? [{ keys: ['g'], label: x.inApp ? 'In a terminal' : x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab && !x.inApp ? { tone: 'attn' as const } : {}) }] : []),
       { keys: ['←', '→'], label: 'Previous / next card' },
       // The dock: the panel open is named, the rest are one key each.

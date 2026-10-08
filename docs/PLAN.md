@@ -3161,3 +3161,25 @@ An unread turn comes first; once it is seen, the card stays in Your move as *Rea
 - `walk-card` 66/66, light and dark; `walk-hub` 37/37; `walk-perf` 25/25, every line OK (a key paints in 5–9 ms, p95).
 - `walk-your-move` 32/32, light and dark: two new checks, an empty Parked keeps 29 px and is the same height with its chip.
 - Screenshots looked at (dark, 1024 px).
+
+## 129. The mode on the open card: a chip in the chat's header, and Shift+Tab
+
+2026-10-08. The owner: "Need to be able to switch between plan/auto/ask modes easily."
+
+**What was there:** the full-screen session had a mode chip under its box and `Shift+Tab` cycling Asks first → Accepts edits → Plan first → Auto (`cycleMode`, `session.mode`). The new-card screen picks the mode a card starts in. The open card showed no mode and had no key for it.
+
+**Asked, and chosen:** the same four modes as Claude Code, `Shift+Tab` on the open card, and the chip in the chat's header beside the branch, context and cost.
+
+**Now:**
+- The card chat's header shows the mode chip (`ModeChip`, shared with the full-screen session) with its `⇧Tab` keycap; a click switches it too.
+- `Shift+Tab` on an open card switches its session's mode, in the message box too, and the box keeps the focus. While Claude's question form is up, `Shift+Tab` is still its previous question.
+- The chip reads the mode as the session last said, else as the card's hooks said, else the mode it started in (`cardMode`); a session that isn't running keeps the new mode for its next turn (the server already did this).
+- **Haiku refuses Auto**, so the cycle goes past it there and says so: *"Auto isn't offered on Haiku, so: Asks first…"* (`modeAfter`). The server's own fallback stays for a model that refuses it some other way.
+- A card whose session runs in a terminal says to switch it there.
+- `?` has a row for it, and the open card's legend has `⇧Tab Mode` when the app runs its session.
+
+**Checked:**
+- `pnpm typecheck`, `npx tsc --noUnusedLocals -p .`, `pnpm test` (414: `modeAfter` / `asMode`, the legend's ⇧Tab).
+- `walk-hub` 41/41 on a real Haiku card, four new checks: the header shows Asks first after the approved plan; `Shift+Tab` → Accepts edits as the session reports it; in the box → Plan first, the box keeping the focus; again → past Auto back to Asks first, with the message. One earlier run failed an unrelated step (Haiku answered that no logs existed yet); run again, it passed.
+- `walk-card` 66/66, light and dark; `walk-perf` 25/25, every line OK; `walk-your-move` 32/32.
+- The header looked at in light and dark (`shots-hub/mode-header*.png`).

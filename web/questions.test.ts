@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Question } from '../shared/protocol.ts';
-import { answered, answersFor, enterOnRow, firstOpen, freshQa, nextMode, pick, typeOther } from './questions.ts';
+import { answered, answersFor, asMode, enterOnRow, firstOpen, freshQa, modeAfter, nextMode, pick, typeOther } from './questions.ts';
 
 const lib: Question = { question: 'Which date library?', header: 'Library', multiSelect: false, options: [{ label: 'date-fns', description: '' }, { label: 'dayjs', description: '' }] };
 const feats: Question = { question: 'Which features?', header: 'Features', multiSelect: true, options: [{ label: 'Dark mode', description: '' }, { label: 'Search', description: '' }] };
@@ -46,6 +46,17 @@ test('nextMode cycles like Shift+Tab in Claude Code', () => {
   assert.equal(nextMode('plan'), 'auto');
   assert.equal(nextMode('auto'), 'default');
   assert.equal(nextMode('bypassPermissions'), 'default');
+});
+
+test('modeAfter goes past Auto on Haiku and says so (§129); asMode reads a reported mode', () => {
+  assert.deepEqual(modeAfter('plan', 'claude-sonnet-5-5'), { mode: 'auto', skipped: false });
+  assert.deepEqual(modeAfter('plan', 'haiku'), { mode: 'default', skipped: true });
+  assert.deepEqual(modeAfter('plan', 'claude-haiku-4-5-20251001'), { mode: 'default', skipped: true });
+  assert.deepEqual(modeAfter('default', 'haiku'), { mode: 'acceptEdits', skipped: false });
+  assert.deepEqual(modeAfter(undefined), { mode: 'acceptEdits', skipped: false });
+  assert.equal(asMode('plan'), 'plan');
+  assert.equal(asMode('nonsense'), 'default');
+  assert.equal(asMode(undefined), 'default');
 });
 
 test('Enter on a row: a single choice picks and moves on, then sends after the last', () => {

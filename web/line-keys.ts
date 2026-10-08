@@ -10,8 +10,10 @@ import type { StackChoice } from '../shared/stack.ts';
 import { repoName } from '../shared/workspaces.ts';
 import { finishedTickets, inbox, INBOX_VIEWS, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
-import { openSession } from './keys.ts';
-import { closeComposer, currentWorkspace, flash, get, markSeen, markTried, set, setFilter, setInboxView, setPanelW, takeDraft, toggleTicketsFolded, type WorkspaceAction } from './store.ts';
+import { cycleMode, openSession } from './keys.ts';
+import { asMode } from './questions.ts';
+import type { PermissionMode, SessionSummary } from '../shared/protocol.ts';
+import { closeComposer, currentWorkspace, flash, get, markSeen, sessionById, markTried, set, setFilter, setInboxView, setPanelW, takeDraft, toggleTicketsFolded, type WorkspaceAction } from './store.ts';
 import { homeCards, homeOf, nextNeeding, problemText, stepBox, type Box, type Home } from './your-move.ts';
 import {
   addComposer, additionOf, cardFolders, type CardPanel, stepCard, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lineSessions, matches, newComposer, packetRows, PANES, pickTicket,
@@ -60,6 +62,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['← → (card open)', 'The previous / next card, in the home page’s order'],
       ['Enter (card open)', 'The message box under the chat: Enter sends to the session at once, Shift+Enter is a new line, Esc leaves the box. A session that isn’t running (the server restarted, or it ended) is resumed by the send itself'],
       ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts: n keeps it planning)'],
+      ['Shift+Tab (card open)', 'Switch its session’s mode, as in Claude Code, in the message box too: asks first → accepts edits → plan first → auto. The chip in the chat’s header shows the mode, and a click switches it as well. Auto isn’t offered on Haiku, so the cycle goes past it there and says so. While Claude’s question form is up, Shift+Tab is its previous question'],
       ['1–9  ·  Tab / Shift+Tab  ·  y (a question on the card)', 'Claude’s question form, drawn as it is in the tab: a digit picks an option (a single choice moves on to the next question; boxes toggle), the digit after the options is Type something  ·  the next / previous question, or Submit at the end  ·  submit the answers. A message from the box instead goes in as the next turn'],
       ['g (a card)', 'Open it in a terminal: between turns, the app lets go of the session and a Windows Terminal tab resumes it (claude --resume), the card following it there. A card already in a tab: brings that tab forward'],
       ['Shift+D (a card on the board)', 'Changes full width: what it changed as git sees it, in every repo the card works in (its worktrees, or a repo it edited in place), file by file with the diffs (↑ ↓ file, s ships from there)'],
@@ -795,6 +798,7 @@ function drawerKeys(e: KeyboardEvent): boolean {
     if (e.key === 'y') { questionHooks.submit(); return true; }
     if (/^[1-9]$/.test(e.key)) { questionHooks.digit(Number(e.key)); return true; }
   }
+  if (e.key === 'Tab' && e.shiftKey) { if (s.line.drawer) cycleCardMode(s.line.drawer); return true; }
   switch (e.key) {
     case 'Escape': if (!(s.line.drawer && stopCard(s.line.drawer))) set({ line: { ...s.line, drawer: null } }); return true;
     case 'ArrowLeft': case 'ArrowRight': if (s.line.drawer) openNeighbour(s.line.drawer, e.key === 'ArrowRight' ? 1 : -1); return true;
@@ -1060,6 +1064,19 @@ export function goToTab(id: string): void {
   focusCardTab(id).then((reopened) => flash(fromApp ? `Opened ${card.key} in a terminal tab: the card follows it there` : reopened ? `${card.key}’s tab was gone: opened a new one on its session` : `Brought the tab ${card.key} forward`), (e: Error) => flash(e.message));
 }
 
+/** A card's session's mode: as the session last said, else as its hooks said, else the mode it started in (§129). */
+export function cardMode(card: Card, session: Pick<SessionSummary, 'mode'> | undefined): PermissionMode {
+  return asMode(session?.mode ?? card.live?.mode ?? card.launch.mode);
+}
+
+/** Shift+Tab on an open card: its session's next mode (§129). A session in a terminal switches there. */
+export function cycleCardMode(id: string): void {
+  const card = get().cards.find((c) => c.id === id);
+  if (!card?.sessionId) { flash('It has no session yet'); return; }
+  if (card.runner !== 'app') { flash('Its session runs in a terminal: Shift+Tab there switches its mode'); return; }
+  cycleMode(card.sessionId, cardMode(card, sessionById(card.sessionId)), card.model ?? card.launch.model);
+}
+
 export function answerAsk(id: string, behavior: 'allow' | 'deny'): void {
   const card = get().cards.find((c) => c.id === id);
   const ask = card && askOf(card);
@@ -1075,6 +1092,7 @@ function sayKeys(e: KeyboardEvent): boolean {
   const id = get().line.drawer;
   if (e.key === 'Escape') { el.blur(); return true; }
   if (e.key === 'Enter' && !e.shiftKey) { if (id) saySubmit(id); return true; }
+  if (e.key === 'Tab' && e.shiftKey && !e.ctrlKey && !e.altKey) { if (id) cycleCardMode(id); return true; }
   if (e.ctrlKey && e.shiftKey && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { nudgeSay(e.key === 'ArrowUp' ? 1 : -1); return true; }
   // §116: Backspace in an empty box takes the last image back out.
   if (e.key === 'Backspace' && id && !(el as HTMLTextAreaElement).value && (get().sayImages[id] ?? []).length) { setSayImages(id, (get().sayImages[id] ?? []).slice(0, -1)); return true; }

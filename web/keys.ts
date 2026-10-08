@@ -3,7 +3,7 @@
 // for the bar at the bottom; add a row to both whenever you add a key. Global shortcuts come
 // from bindings.ts so they can be rebound.
 
-import type { PermissionDecision, PermissionRequest } from '../shared/protocol.ts';
+import type { PermissionDecision, PermissionMode, PermissionRequest } from '../shared/protocol.ts';
 import { ACTIONS, actionFor, bindingsFor, comboOf, displayCombo, type ActionId, type Bindings } from './bindings.ts';
 import { cycleGroup, exportPack, fireSlot, importPack } from './commands.ts';
 import { HINTS_LABEL, nextHints } from './hints.ts';
@@ -13,7 +13,7 @@ import {
   activeSession, attention, currentGroup, currentWorkspace, flash, get, markRead, pendingFor, sessionById, set, toggleFold, toggleSound,
 } from './store.ts';
 import { lastPermissionAt, openTranscript, send } from './ws.ts';
-import { answersFor, enterOnRow, firstOpen, freshQa, goTo, MODE_LABEL, nextMode, pick } from './questions.ts';
+import { answersFor, enterOnRow, firstOpen, freshQa, goTo, MODE_LABEL, modeAfter, pick } from './questions.ts';
 import { explainPermission } from './plain.ts';
 import { expandFromLine, goHome, LINE_SECTIONS, lineKeys, lineSessionIds, openLine } from './line-keys.ts';
 
@@ -258,12 +258,16 @@ function questionKeys(e: KeyboardEvent, req: PermissionRequest): boolean {
   return false;
 }
 
-/** Shift+Tab: asks first → accepts edits → plan first → auto, as in Claude Code. */
-export function cycleMode(id: string | null): void {
+/**
+ * Shift+Tab: asks first → accepts edits → plan first → auto, as in Claude Code. `current` and
+ * `model` stand in until the session has said (a card's session that hasn't run in this server yet).
+ */
+export function cycleMode(id: string | null, current?: PermissionMode, model?: string): void {
   if (!id) return;
-  const mode = nextMode(sessionById(id)?.mode);
+  const s = sessionById(id);
+  const { mode, skipped } = modeAfter(s?.mode ?? current, s?.model ?? model);
   send({ type: 'session.mode', id, mode });
-  flash(`${MODE_LABEL[mode].name}: ${MODE_LABEL[mode].hint}`);
+  flash(`${skipped ? 'Auto isn’t offered on Haiku, so: ' : ''}${MODE_LABEL[mode].name}: ${MODE_LABEL[mode].hint}`);
 }
 
 /** Claude is mid-turn (including waiting on an approval): Esc stops it, like in Claude Code. */

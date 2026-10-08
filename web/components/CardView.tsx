@@ -17,7 +17,7 @@ import { repoName } from '../../shared/workspaces.ts';
 import { CARD_PANELS, type CardPanel } from '../line-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard } from '../line-model.ts';
 import { QuestionForm } from './QuestionForm.tsx';
-import { answerAsk, attachToSay, changeHooks, editRecipe, goToTab, lastPick, openAddComposer, openApp, openNeighbour, openOrder, openOutput, openWorktrees, pickSayImage, popOutChanges, rememberPick, saySubmit, setChangeCount, setSayImages, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
+import { answerAsk, attachToSay, cardMode, changeHooks, cycleCardMode, editRecipe, goToTab, lastPick, openAddComposer, openApp, openNeighbour, openOrder, openOutput, openWorktrees, pickSayImage, popOutChanges, rememberPick, saySubmit, setChangeCount, setSayImages, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
 import { IMAGE_TYPES, type Pasted } from '../say-images.ts';
 import { fitSay, SAY_DEFAULT, setSayHeight, useSayHeight } from '../say-size.ts';
 
@@ -27,6 +27,7 @@ import { get, markSeen, set, setPanelW, useStore } from '../store.ts';
 import { cardChanges, openTranscript, send, stackPlan } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { RunLog } from './RunLog.tsx';
+import { ModeChip } from './ModeChip.tsx';
 import { SessionMeter } from './SessionMeter.tsx';
 import { DoorChip, KindPill, useExpandKey } from './TicketLine.tsx';
 import { Streaming, Transcript } from './Transcript.tsx';
@@ -77,6 +78,7 @@ export function CardView({ id }: { id: string }) {
           {card.kind && card.kind !== 'build' && <KindPill card={card} />}
           <span className="grow" />
           {card.sessionId && <SessionMeter s={session} branch={card.branchName} className="mr-1" />}
+          {card.sessionId && card.runner === 'app' && <span className="flex shrink-0 items-center gap-1"><ModeChip mode={cardMode(card, session)} onClick={() => cycleCardMode(card.id)} /><Key k="⇧Tab" size="sm" /></span>}
           {card.cwd && card.sessionId && <button className="btn py-0.5 text-[13px]" onClick={() => goToTab(card.id)} title={card.runner === 'app' ? 'Open the session in a Windows Terminal tab (claude --resume), between turns; the card follows it there' : 'Bring its Windows Terminal tab to the front'}><Key k="g" size="sm" />{card.runner === 'app' ? 'In a terminal' : 'Its tab'}</button>}
           {place.at >= 0 && place.total > 1 && (
             <div className="ml-1 flex shrink-0 items-center gap-1.5 text-[12.5px] text-faint">
