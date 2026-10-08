@@ -43,13 +43,15 @@ test('a question or a plan changes the answer keys', () => {
 
 test('the Ticket Line bar follows the view and the new-card panel', () => {
   const labels = (x: Parameters<typeof lineLegendFor>[0]) => lineLegendFor(x).map((i) => i.label);
-  assert.deepEqual(labels({ view: 'board', bindings: {} }), ['Move', 'New card', 'Tickets', 'Inbox: mine / QA', 'Lane / all', 'Filter', 'Repos', 'Lane', 'Share / import', 'Folders']);
+  assert.deepEqual(labels({ view: 'board', bindings: {} }), ['Move', 'New card', 'Tickets', 'Tickets: mine / QA', 'Fold tickets', 'Lane / all', 'Filter', 'Repos', 'Lane', 'Share / import', 'Folders']);
+  // §126: a when something needs you, y / n on a card that asks, m on a turn you haven't seen.
+  assert.deepEqual(labels({ view: 'board', anyNeeds: true, focusAsks: true, focusUnread: true, bindings: {} }).slice(0, 4), ['Move', 'Next that needs you', 'Allow / deny', 'Seen']);
   const focused = labels({ view: 'board', hasFocus: true, hasSession: true, filtered: true, bindings: {} });
   assert.ok(focused.includes('Open the card') && focused.includes('Its session') && focused.includes('Clear filter') && focused.includes('Remove') && focused.includes('How it runs'));
   assert.ok(!labels({ view: 'board', hasFocus: true, bindings: {} }).includes('Its session'), 'no session linked yet: nothing to open');
   assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Add or remove'));
   assert.ok(labels({ view: 'composer', pane: 'src', bindings: {} }).includes('Tickets / Repos / Folders'));
-  assert.equal(labels({ view: 'board', onTicket: true, bindings: {} })[1], 'Start work', 'a ticket in the Inbox: n starts work');
+  assert.equal(labels({ view: 'board', onTicket: true, bindings: {} })[1], 'Start work', 'a ticket to start: n starts work');
   assert.equal(labels({ view: 'board', onTicket: true, bindings: {} })[2], 'Hide', 'and Delete hides it');
   assert.ok(labels({ view: 'composer', pane: 'pkt', bindings: {} }).includes('Include or leave out'));
   assert.ok(!labels({ view: 'composer', pane: 'pkt', bindings: {} }).includes('Keep for the lane'));

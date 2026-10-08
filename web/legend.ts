@@ -86,8 +86,12 @@ export interface LineLegendInput {
   view: 'board' | 'drawer' | 'composer';
   /** Board: a card is focused. */
   hasFocus?: boolean;
-  /** Board: a ticket in the Inbox is focused (n starts work on it). */
+  /** Board: a ticket to start is focused (n starts work on it). */
   onTicket?: boolean;
+  /** Board (§126): some card needs you (a goes to it); the focused one asks y / n can answer, or finished unseen (m). */
+  anyNeeds?: boolean;
+  focusAsks?: boolean;
+  focusUnread?: boolean;
   /** The focused card's session has linked (the expand key opens it). */
   hasSession?: boolean;
   /** The focused or open card has a terminal tab (g brings it forward); it is waiting on you there and the page can't answer. */
@@ -243,12 +247,16 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   }
   return [
     { keys: ['←', '→', '↑', '↓'], label: 'Move' },
+    ...(x.anyNeeds ? [{ keys: ['a'], label: 'Next that needs you', tone: 'attn' as const }] : []),
+    ...(x.focusAsks ? [{ keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' as const }] : []),
+    ...(x.focusUnread ? [{ keys: ['m'], label: 'Seen' }] : []),
     ...(x.onTicket ? [{ keys: ['n', 'Enter'], label: 'Start work', tone: 'acc' as const }, { keys: ['Delete'], label: 'Hide' }] : []),
     ...(x.hasFocus ? [{ keys: ['Enter'], label: 'Open the card' }, ...tryKeys(x), ...(x.hasTab ? [{ keys: ['g'], label: x.inApp ? 'In a terminal' : x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab && !x.inApp ? { tone: 'attn' as const } : {}) }] : []), { keys: ['e'], label: 'How it runs' }] : []),
     ...(x.hasSession ? [full] : []),
     ...(x.hasDraft ? [{ keys: ['c'], label: 'Pick up your card', tone: 'acc' as const }, { keys: ['⇧C'], label: 'New card' }] : [{ keys: ['c'], label: 'New card', tone: 'acc' as const }]),
     { keys: ['⇧T'], label: 'Tickets' },
-    { keys: ['v'], label: 'Inbox: mine / QA' },
+    { keys: ['v'], label: 'Tickets: mine / QA' },
+    { keys: ['i'], label: 'Fold tickets' },
     { keys: ['1–9', '0'], label: 'Lane / all' },
     { keys: ['/'], label: 'Filter' },
     ...(x.filtered ? [{ keys: ['Esc'], label: 'Clear filter' }] : []),

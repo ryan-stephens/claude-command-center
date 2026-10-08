@@ -1,0 +1,920 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cc-control Home Layouts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: a reading column of ideas on top, a live mock frame below, the same sessions shared by five layouts.
+   Colours are cc-control's own tokens (web/styles.css), so each mock reads like the app. */
+:root {
+  --c-bg: #eceae5; --c-col: #f4f3ef; --c-surface: #ffffff; --c-raise: #f1efea; --c-line: #d9d6ce;
+  --c-ink: #17181b; --c-sub: #4b4f57; --c-faint: #646871;
+  --c-acc: #b85500; --c-acc-ink: #ffffff; --c-acc-soft: #fbe9d6; --c-ring: #d36a00;
+  --c-attn: #945000; --c-attn-bg: #fff0d9; --c-busy: #1c5bc9; --c-busy-bg: #e7effd;
+  --c-ok: #15703d; --c-ok-bg: #e3f4ea; --c-bad: #b42318; --c-bad-bg: #fde9e6; --c-calm: #6d3fc0; --c-calm-bg: #efe8fb;
+  --c-kc-top: #ffffff; --c-kc-edge: #b9b5ab; --c-kc-line: #cfcbc1; --c-kc-ink: #26282d;
+  --c-shadow: rgb(30 24 12 / .16);
+  --ws-web: #2f6fdf; --ws-docs: #1f8a4c; --ws-pay: #7a4fd1;
+  --display: "Bricolage Grotesque", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-bg: #0f1115; --c-col: #14171c; --c-surface: #1b1f26; --c-raise: #232832; --c-line: #2c323c;
+    --c-ink: #e9ecf1; --c-sub: #aab2bf; --c-faint: #8f98a8;
+    --c-acc: #ffb454; --c-acc-ink: #1a1206; --c-acc-soft: #3a2c15; --c-ring: #ffb454;
+    --c-attn: #f4b13e; --c-attn-bg: #3a2a10; --c-busy: #8cb3ff; --c-busy-bg: #17233d;
+    --c-ok: #5bd395; --c-ok-bg: #12301f; --c-bad: #ff8a7a; --c-bad-bg: #3b1714; --c-calm: #c4a5ff; --c-calm-bg: #2a1f45;
+    --c-kc-top: #2a303b; --c-kc-edge: #07090c; --c-kc-line: #3a414e; --c-kc-ink: #e9ecf1;
+    --c-shadow: rgb(0 0 0 / .5);
+    --ws-web: #6f9ef5; --ws-docs: #4fc37f; --ws-pay: #a989f0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --c-bg: #0f1115; --c-col: #14171c; --c-surface: #1b1f26; --c-raise: #232832; --c-line: #2c323c;
+  --c-ink: #e9ecf1; --c-sub: #aab2bf; --c-faint: #8f98a8;
+  --c-acc: #ffb454; --c-acc-ink: #1a1206; --c-acc-soft: #3a2c15; --c-ring: #ffb454;
+  --c-attn: #f4b13e; --c-attn-bg: #3a2a10; --c-busy: #8cb3ff; --c-busy-bg: #17233d;
+  --c-ok: #5bd395; --c-ok-bg: #12301f; --c-bad: #ff8a7a; --c-bad-bg: #3b1714; --c-calm: #c4a5ff; --c-calm-bg: #2a1f45;
+  --c-kc-top: #2a303b; --c-kc-edge: #07090c; --c-kc-line: #3a414e; --c-kc-ink: #e9ecf1;
+  --c-shadow: rgb(0 0 0 / .5);
+  --ws-web: #6f9ef5; --ws-docs: #4fc37f; --ws-pay: #a989f0;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--c-bg); color: var(--c-ink); font: 15px/1.55 var(--body); }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--c-ring); outline-offset: 2px; }
+.wrap { max-width: 1360px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 60px; }
+.grow { flex: 1; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(28px, 4vw, 40px); line-height: 1.1; letter-spacing: -.01em; }
+.lede { max-width: 72ch; color: var(--c-sub); font-size: 16px; margin: 10px 0 0; }
+.eyebrow { font: 700 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--c-acc); }
+
+.cross { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 22px 0 6px; }
+.cross div { min-width: 0; padding: 12px 14px; border-top: 2px solid var(--c-line); }
+.cross b { display: block; font-family: var(--display); font-size: 15.5px; margin-bottom: 3px; }
+.cross p { margin: 0; font-size: 13.5px; color: var(--c-sub); }
+
+/* Sticky controls: which layout, how many sessions, the change simulator. */
+.controls { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 22px -16px 0; padding: 10px 16px; background: color-mix(in srgb, var(--c-bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--c-line); }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.tab { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px 5px 6px; border-radius: 9px; border: 1px solid transparent; font-size: 14px; font-weight: 600; color: var(--c-sub); }
+.tab:hover { background: var(--c-col); color: var(--c-ink); }
+.tab[aria-selected="true"] { background: var(--c-surface); border-color: var(--c-line); color: var(--c-ink); box-shadow: 0 1px 0 var(--c-kc-edge); }
+.tab .n { font: 700 11px var(--mono); width: 20px; height: 20px; border-radius: 6px; display: inline-grid; place-items: center; background: var(--c-raise); color: var(--c-faint); }
+.tab[aria-selected="true"] .n { background: var(--c-acc); color: var(--c-acc-ink); }
+.seg { display: inline-flex; border: 1px solid var(--c-line); border-radius: 8px; overflow: hidden; background: var(--c-surface); }
+.seg button { padding: 3px 10px; font-size: 13px; }
+.seg button.on { background: var(--c-ink); color: var(--c-bg); }
+.ctl { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--c-sub); }
+.play { display: inline-flex; align-items: center; gap: 7px; padding: 4px 12px 4px 9px; border-radius: 8px; background: var(--c-acc); color: var(--c-acc-ink); font-size: 13px; font-weight: 700; }
+.play.on { background: var(--c-busy); color: var(--c-surface); }
+.ghost { padding: 4px 10px; border-radius: 8px; border: 1px solid var(--c-line); background: var(--c-surface); font-size: 13px; }
+
+/* The idea block above each mock. */
+.idea { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr); gap: 18px 32px; margin: 26px 0 16px; }
+.idea h2 { font-size: clamp(24px, 3vw, 32px); line-height: 1.1; }
+.idea .thesis { font-family: var(--display); font-size: 19px; line-height: 1.3; color: var(--c-sub); margin: 8px 0 0; text-wrap: balance; }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 22px; }
+.facts div { min-width: 0; }
+.facts b { display: block; font: 700 11.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--c-faint); margin-bottom: 2px; }
+.facts p { margin: 0; font-size: 14px; }
+@media (max-width: 820px) { .idea, .facts { grid-template-columns: 1fr; } }
+
+.frame { overflow-x: auto; border: 1px solid var(--c-line); border-radius: 14px; background: var(--c-bg); box-shadow: 0 12px 40px -24px var(--c-shadow); }
+.mock { min-width: 1080px; height: 700px; display: flex; flex-direction: column; font-size: 13px; }
+.ticker { display: flex; gap: 8px; align-items: baseline; margin-top: 10px; font-size: 13px; color: var(--c-sub); min-height: 22px; flex-wrap: wrap; }
+.ticker b { font: 700 11.5px var(--mono); color: var(--c-faint); text-transform: uppercase; letter-spacing: .06em; }
+.ticker span { white-space: nowrap; }
+.ticker .new { color: var(--c-ink); font-weight: 600; }
+.hint { font-size: 13px; color: var(--c-faint); margin-top: 6px; }
+
+/* ---- shared mock pieces ---- */
+.kc { display: inline-flex; align-items: center; justify-content: center; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 5px; background: var(--c-kc-top); border: 1px solid var(--c-kc-line); box-shadow: 0 1.5px 0 var(--c-kc-edge); color: var(--c-kc-ink); font: 700 10.5px/1 var(--mono); white-space: nowrap; flex: 0 0 auto; }
+.kc.acc { background: var(--c-acc); color: var(--c-acc-ink); border-color: var(--c-acc); }
+.kc.attn { background: var(--c-attn-bg); color: var(--c-attn); border-color: color-mix(in srgb, var(--c-attn) 45%, transparent); }
+.appbar { display: flex; align-items: center; gap: 12px; padding: 7px 14px; border-bottom: 1px solid var(--c-line); background: var(--c-surface); }
+.brand { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 13.5px; }
+.brand i { width: 16px; height: 16px; border-radius: 5px; background: var(--c-acc); }
+.wsf { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 4px; border: 1px solid var(--c-line); border-radius: 8px; font-size: 12.5px; background: var(--c-surface); }
+.wsf.on { border-color: var(--c-ring); }
+.sum { font-size: 12.5px; color: var(--c-sub); white-space: nowrap; }
+.sum b { font-variant-numeric: tabular-nums; color: var(--c-ink); }
+.sum.attn, .sum.attn b { color: var(--c-attn); }
+.legend { display: flex; gap: 14px; padding: 5px 14px; border-top: 1px solid var(--c-line); background: var(--c-surface); font-size: 12px; color: var(--c-sub); white-space: nowrap; overflow: hidden; }
+.legend span { display: inline-flex; gap: 5px; align-items: center; }
+.legend .ctx { font-weight: 700; color: var(--c-ink); }
+.tkey { font: 700 11.5px var(--mono); color: var(--c-sub); white-space: nowrap; }
+.wsdot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--c-faint); }
+.spin { width: 10px; height: 10px; flex: 0 0 auto; border-radius: 50%; border: 2px solid var(--c-busy); border-right-color: transparent; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.t-attn { color: var(--c-attn); } .t-busy { color: var(--c-busy); } .t-ok { color: var(--c-ok); } .t-bad { color: var(--c-bad); } .t-faint { color: var(--c-faint); } .t-calm { color: var(--c-calm); }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border-radius: 5px; font: 700 10px/18px var(--mono); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.b-attn { background: var(--c-attn-bg); color: var(--c-attn); } .b-bad { background: var(--c-bad-bg); color: var(--c-bad); } .b-ok { background: var(--c-ok-bg); color: var(--c-ok); } .b-busy { background: var(--c-busy-bg); color: var(--c-busy); } .b-calm { background: var(--c-calm-bg); color: var(--c-calm); } .b-grey { background: var(--c-raise); color: var(--c-sub); }
+.act { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 3px; border-radius: 7px; border: 1px solid var(--c-line); background: var(--c-surface); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.act:hover { background: var(--c-raise); }
+.act.go { color: var(--c-acc); border-color: color-mix(in srgb, var(--c-acc) 40%, var(--c-line)); }
+.act.ok { color: var(--c-ok); }
+.act.bad { color: var(--c-bad); }
+.acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.cmd { font: 12px var(--mono); background: var(--c-surface); border: 1px solid var(--c-line); border-radius: 6px; padding: 2px 7px; overflow-wrap: anywhere; }
+.trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sel { outline: 2px solid var(--c-ring); outline-offset: -2px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--c-ring) 16%, transparent); }
+.just { animation: just 1.6s ease-out; }
+@keyframes just { 0% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--c-acc) 55%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .just, .spin, .pulse { animation: none !important; } }
+.wait { font: 700 11px var(--mono); font-variant-numeric: tabular-nums; }
+.chat { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; min-width: 0; }
+.chat .me { align-self: flex-end; max-width: 85%; background: var(--c-acc-soft); border-radius: 9px 9px 2px 9px; padding: 3px 9px; }
+.chat .tool { font: 11.5px var(--mono); color: var(--c-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.say { display: flex; align-items: center; gap: 8px; border: 1px solid var(--c-line); border-radius: 9px; background: var(--c-surface); padding: 4px 6px 4px 10px; }
+.say input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--c-ink); font-family: inherit; font-size: 12.5px; }
+.ask { display: flex; flex-direction: column; gap: 7px; border: 1px solid color-mix(in srgb, var(--c-attn) 45%, transparent); background: var(--c-attn-bg); border-radius: 9px; padding: 8px 10px; }
+.ask.bad { border-color: color-mix(in srgb, var(--c-bad) 45%, transparent); background: var(--c-bad-bg); }
+.ask.ok { border-color: color-mix(in srgb, var(--c-ok) 40%, transparent); background: var(--c-ok-bg); }
+.ask .q { font-weight: 600; }
+.cap { font: 700 10.5px var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--c-faint); display: flex; gap: 8px; align-items: center; }
+.empty { color: var(--c-faint); font-size: 12.5px; padding: 10px 2px; }
+
+/* ---- 1 Your Move ---- */
+.ym { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.band-h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 7px; }
+.band-h h3 { font-size: 15px; }
+.band-h .n { font: 700 12px var(--mono); color: var(--c-faint); }
+.band-h p { margin: 0; font-size: 12px; color: var(--c-faint); }
+.band.you h3 { color: var(--c-attn); }
+.ym-you { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+.ym-card { --wsc: var(--c-line); display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; border-radius: 12px; background: var(--c-surface); border: 1px solid var(--c-line); border-top: 3px solid var(--wsc); min-width: 0; }
+.ym-card.urgent { border-color: color-mix(in srgb, var(--c-attn) 55%, var(--c-line)); border-top-color: var(--wsc); }
+.ym-card.failed { border-color: color-mix(in srgb, var(--c-bad) 50%, var(--c-line)); border-top-color: var(--wsc); }
+.ym-top { display: flex; align-items: center; gap: 7px; }
+.ym-title { font-weight: 600; font-size: 14px; line-height: 1.3; }
+.ym-claude { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.ym-mini { --wsc: var(--c-line); display: flex; flex-direction: column; gap: 3px; padding: 7px 10px; border-radius: 10px; background: var(--c-col); border: 1px solid var(--c-line); border-left: 3px solid var(--wsc); min-width: 0; text-align: left; }
+.ym-mini .ttl { font-weight: 600; font-size: 12.5px; }
+.ym-parked { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { --wsc: var(--c-line); display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--c-line); background: var(--c-surface); font-size: 12px; max-width: 320px; }
+.chip .wsdot { background: var(--wsc); }
+.stg { display: inline-flex; gap: 2px; align-items: center; }
+.stg i { width: 10px; height: 3px; border-radius: 2px; background: var(--c-line); }
+.stg i.on { background: var(--c-ok); }
+
+/* ---- 2 Air Traffic ---- */
+.atc { flex: 1; min-height: 0; overflow-y: auto; }
+.atc-row { display: grid; grid-template-columns: 290px minmax(0, 1fr) 210px; align-items: center; min-height: 44px; border-bottom: 1px solid var(--c-line); background: var(--c-surface); }
+.atc-row.need { background: color-mix(in srgb, var(--c-attn-bg) 55%, var(--c-surface)); }
+.atc-row.sel { outline-offset: -2px; }
+.atc-head { position: sticky; top: 0; z-index: 2; background: var(--c-col); min-height: 30px; font: 700 10.5px var(--mono); color: var(--c-faint); }
+.atc-ws { padding: 6px 14px 4px; font: 700 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--c-faint); background: var(--c-col); border-bottom: 1px solid var(--c-line); display: flex; align-items: center; gap: 7px; }
+.atc-l { display: flex; flex-direction: column; padding: 4px 12px 4px 14px; min-width: 0; border-left: 3px solid var(--wsc, transparent); }
+.atc-l .t1 { display: flex; gap: 7px; align-items: center; min-width: 0; }
+.atc-l .ttl { font-weight: 600; font-size: 12.5px; }
+.atc-l .now { font-size: 11.5px; display: flex; align-items: center; gap: 5px; min-width: 0; }
+.tl { position: relative; height: 44px; border-left: 1px solid var(--c-line); border-right: 1px solid var(--c-line); }
+.tl .grid { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--c-line) 60%, transparent); }
+.tl .seg { position: absolute; top: 15px; height: 10px; border-radius: 3px; }
+.seg.work { background: color-mix(in srgb, var(--c-busy) 75%, transparent); }
+.seg.wait { background: var(--c-attn); }
+.seg.idle { background: color-mix(in srgb, var(--c-faint) 30%, transparent); height: 4px; top: 18px; }
+.seg.fail { background: var(--c-bad); }
+.tl .run { position: absolute; top: 30px; height: 3px; border-radius: 2px; background: var(--c-calm); }
+.tl .mark { position: absolute; top: 9px; width: 2px; height: 22px; background: var(--c-ok); border-radius: 1px; }
+.tl .mark.tried::after { content: ""; position: absolute; top: -4px; left: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--c-ok); }
+.tl .tip { position: absolute; top: 12px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: var(--c-attn); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c-attn) 25%, transparent); }
+.pulse { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--c-attn) 6%, transparent); } }
+.tl .nowline { position: absolute; top: 0; bottom: 0; right: 0; width: 2px; background: var(--c-acc); }
+.atc-r { display: flex; justify-content: flex-end; gap: 5px; padding: 0 10px; flex-wrap: wrap; }
+.axis { position: relative; height: 30px; }
+.axis span { position: absolute; top: 8px; transform: translateX(-50%); }
+.atc-x { grid-column: 1 / -1; background: var(--c-col); border-bottom: 1px solid var(--c-line); padding: 10px 14px; }
+
+/* ---- shared quick panel (2, 3, 5) ---- */
+.qp { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 12px 18px; }
+.qp-col { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.svc { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+.files { font: 11.5px var(--mono); color: var(--c-sub); display: flex; flex-direction: column; gap: 1px; }
+.files div { display: flex; gap: 8px; } .files .p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+/* ---- 3 Triage ---- */
+.tri { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr) 390px; }
+.roster { border-right: 1px solid var(--c-line); overflow-y: auto; background: var(--c-col); padding: 6px 0; }
+.roster h4 { margin: 8px 12px 3px; font: 700 10.5px var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--c-faint); display: flex; gap: 7px; align-items: center; }
+.rrow { display: flex; align-items: center; gap: 7px; width: 100%; padding: 4px 12px; text-align: left; font-size: 12.5px; min-width: 0; }
+.rrow:hover { background: var(--c-raise); }
+.rrow.sel { background: var(--c-surface); outline: 0; box-shadow: inset 3px 0 0 var(--c-ring); }
+.rrow.unread .ttl { font-weight: 700; color: var(--c-ink); }
+.rrow .ttl { color: var(--c-sub); }
+.rrow .cnt { margin-left: auto; font: 700 10.5px var(--mono); min-width: 18px; height: 18px; border-radius: 9px; display: inline-grid; place-items: center; padding: 0 5px; }
+.cnt.attn { background: var(--c-attn); color: var(--c-surface); } .cnt.bad { background: var(--c-bad); color: var(--c-surface); } .cnt.unread { background: var(--c-busy); width: 8px; min-width: 8px; height: 8px; padding: 0; }
+.queue { overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 9px; }
+.queue-h { display: flex; align-items: baseline; gap: 10px; }
+.queue-h h3 { font-size: 16px; }
+.moment { --wsc: var(--c-line); display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 4px 10px; padding: 10px 12px; border-radius: 11px; background: var(--c-surface); border: 1px solid var(--c-line); min-width: 0; text-align: left; }
+.moment .ico { grid-row: span 3; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font: 700 13px var(--mono); }
+.moment .hd { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12px; color: var(--c-faint); }
+.moment .what { font-size: 13.5px; font-weight: 600; }
+.allclear { margin: 40px auto; text-align: center; color: var(--c-sub); max-width: 360px; }
+.allclear b { display: block; font-family: var(--display); font-size: 20px; color: var(--c-ink); margin-bottom: 4px; }
+.preview { border-left: 1px solid var(--c-line); overflow-y: auto; padding: 12px 14px; background: var(--c-col); display: flex; flex-direction: column; gap: 10px; }
+.preview .qp { grid-template-columns: 1fr; }
+
+/* ---- 4 Mission Control ---- */
+.mc { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.slots { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 12px 14px 8px; }
+.slot { display: flex; flex-direction: column; min-height: 0; border-radius: 12px; background: var(--c-surface); border: 1px solid var(--c-line); overflow: hidden; }
+.slot.focus { border-color: var(--c-ring); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-ring) 18%, transparent); }
+.slot-h { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-bottom: 1px solid var(--c-line); background: var(--c-col); min-width: 0; }
+.slot-b { flex: 1; min-height: 0; overflow-y: auto; padding: 9px 11px; display: flex; flex-direction: column; gap: 9px; }
+.slot-f { padding: 7px 10px; border-top: 1px solid var(--c-line); display: flex; flex-direction: column; gap: 6px; }
+.slot.free { display: grid; place-items: center; border-style: dashed; background: transparent; color: var(--c-faint); text-align: center; padding: 20px; }
+.pin { font: 700 10px var(--mono); padding: 0 5px; border-radius: 4px; border: 1px solid var(--c-line); color: var(--c-faint); }
+.pin.on { color: var(--c-acc); border-color: var(--c-acc); }
+.dock { display: flex; gap: 12px; align-items: flex-end; padding: 10px 16px 10px; border-top: 1px solid var(--c-line); background: var(--c-col); overflow-x: auto; }
+.puck { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 64px; flex: 0 0 auto; }
+.ring { --p: 0; --rc: var(--c-faint); position: relative; width: 46px; height: 46px; border-radius: 50%; background: conic-gradient(var(--rc) calc(var(--p) * 1%), var(--c-line) 0); display: grid; place-items: center; }
+.ring::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--c-surface); }
+.ring span { position: relative; font: 700 9.5px var(--mono); color: var(--c-sub); text-align: center; line-height: 1.1; }
+.ring .bdg { position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px; border-radius: 8px; font: 700 10px/16px var(--mono); text-align: center; color: var(--c-surface); padding: 0 4px; }
+.ring.need { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-attn) 30%, transparent); }
+.ring.need.pulse { animation: pulse 1.4s ease-in-out infinite; }
+.puck .lbl { font-size: 10.5px; color: var(--c-faint); max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.puck.inslot .ring { opacity: .45; }
+.puck.cur .lbl { color: var(--c-ink); font-weight: 700; }
+
+/* ---- 5 Test Bench ---- */
+.tb { flex: 1; min-height: 0; overflow: auto; }
+.tb table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.tb th { position: sticky; top: 0; z-index: 2; background: var(--c-col); font: 700 10.5px var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--c-faint); text-align: center; padding: 7px 4px 6px; border-bottom: 1px solid var(--c-line); white-space: nowrap; }
+.tb th.l { text-align: left; padding-left: 14px; }
+.tb th button { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
+.tb th button.on { color: var(--c-acc); }
+.tb th .cnt2 { font-size: 10px; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.tb th.try { background: color-mix(in srgb, var(--c-calm-bg) 70%, var(--c-col)); color: var(--c-calm); }
+.tb td { border-bottom: 1px solid var(--c-line); background: var(--c-surface); text-align: center; padding: 0 4px; height: 44px; }
+.tb td.try { background: color-mix(in srgb, var(--c-calm-bg) 35%, var(--c-surface)); }
+.tb tr.need td { background: color-mix(in srgb, var(--c-attn-bg) 45%, var(--c-surface)); }
+.tb tr.need td.try { background: color-mix(in srgb, var(--c-attn-bg) 35%, var(--c-calm-bg)); }
+.tb td.l { text-align: left; padding-left: 0; }
+.tb .who { display: flex; align-items: center; gap: 8px; padding-left: 11px; border-left: 3px solid var(--wsc, transparent); min-width: 0; height: 44px; }
+.tb .who .ttl { font-weight: 600; font-size: 12.5px; }
+.cell { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; font: 700 12px var(--mono); }
+.c-ok { background: var(--c-ok-bg); color: var(--c-ok); }
+.c-bad { background: var(--c-bad-bg); color: var(--c-bad); }
+.c-run { color: var(--c-busy); }
+.c-stale { border: 1.5px dashed var(--c-attn); color: var(--c-attn); }
+.c-none { color: var(--c-line); }
+.c-ready { background: var(--c-calm); color: var(--c-surface); width: auto; padding: 0 7px; font-size: 11px; }
+.next { text-align: left !important; font-size: 12px; padding-right: 12px !important; }
+.tb tr.xrow td { background: var(--c-col); text-align: left; padding: 10px 14px; height: auto; }
+.tb tr.wsrow td { background: var(--c-col); height: 26px; text-align: left; padding-left: 14px; font: 700 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--c-faint); }
+
+/* ---- compare ---- */
+.cmp { overflow-x: auto; border: 1px solid var(--c-line); border-radius: 14px; background: var(--c-surface); margin-top: 18px; }
+.cmp table { border-collapse: collapse; width: 100%; min-width: 860px; font-size: 14px; }
+.cmp th, .cmp td { padding: 10px 14px; border-bottom: 1px solid var(--c-line); text-align: left; vertical-align: top; }
+.cmp th { font-family: var(--display); font-size: 15px; background: var(--c-col); }
+.cmp td:first-child { font-weight: 600; width: 220px; }
+.dots { font: 700 13px var(--mono); letter-spacing: 2px; color: var(--c-acc); white-space: nowrap; }
+.dots i { color: var(--c-line); font-style: normal; }
+.read { max-width: 74ch; margin-top: 26px; }
+.read h3 { font-size: 22px; margin-bottom: 8px; }
+.read p, .read li { font-size: 15px; }
+.read li { margin: 6px 0; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--c-ink); color: var(--c-bg); padding: 8px 14px; border-radius: 9px; font-size: 13.5px; opacity: 0; transition: opacity .15s; pointer-events: none; z-index: 20; max-width: calc(100vw - 32px); }
+.toast.on { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="eyebrow">cc-control · home page · 2026-10-08</div>
+  <h1>Five ways to see every session at once</h1>
+  <p class="lede">The board locked each card into a stage. The open canvas freed them, but with a dozen cards nothing stood out. Each layout below gives the page a structure that comes from something always true about a session, instead of a stage it can drift out of. All five use the same sessions. Press <b>Play changes</b> to have them come and go on their own: finishing turns, asking for things, failing. Then watch how each layout copes.</p>
+
+  <div class="cross">
+    <div><b>Whose move it is</b><p>Every session is either waiting on you, being worked by Claude, or parked. That flips all the time, and it's always true. All five layouts key off it, not the stage.</p></div>
+    <div><b>Unread turns</b><p>A turn that finished while you were elsewhere counts as unread, as in mail. It's the quiet kind of "needs you" the canvas missed.</p></div>
+    <div><b>How long it has waited</b><p>A session that has been blocked on you for 14 minutes matters more than one that asked 10 seconds ago. Waiting time is shown and used for ordering.</p></div>
+    <div><b>Trying it is a step</b><p>"Ready to try" is something a session needs from you, with Start, Open, <i>Looks good</i> and <i>Found a problem</i>. A problem goes back to Claude as a message.</p></div>
+  </div>
+
+  <div class="controls" role="toolbar" aria-label="Layouts">
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <span class="grow"></span>
+    <span class="ctl">Sessions <span class="seg" id="load"><button data-v="8">8</button><button data-v="16" class="on">16</button></span></span>
+    <button class="play" id="play" aria-pressed="false">▶ Play changes</button>
+    <button class="ghost" id="step">Step</button>
+  </div>
+
+  <section id="idea" class="idea" aria-live="polite"></section>
+  <div id="stage"></div>
+  <div class="ticker" id="ticker"></div>
+  <div class="hint" id="hint">Keys work in the mock: <span class="kc">↑</span> <span class="kc">↓</span> or <span class="kc">j</span> <span class="kc">k</span> move, <span class="kc">a</span> goes to the next that needs you, <span class="kc">y</span> <span class="kc">n</span> allow or deny, <span class="kc">1</span>–<span class="kc">3</span> answer, <span class="kc">t</span> start the app, <span class="kc">l</span> looks good, <span class="kc">p</span> found a problem, <span class="kc">s</span> mark as seen, <span class="kc">r</span> retry.</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  /* ================= data ================= */
+  var WS = { web: { name: 'Web', c: 'var(--ws-web)' }, docs: { name: 'Docs', c: 'var(--ws-docs)' }, pay: { name: 'Payments', c: 'var(--ws-pay)' } };
+  var WS_ORDER = ['web', 'docs', 'pay'];
+  var CHECKS = [['plan', 'Plan'], ['code', 'Code'], ['tests', 'Tests'], ['app', 'App runs'], ['tried', 'You tried it'], ['pr', 'PR'], ['ci', 'Checks'], ['merged', 'Merged']];
+  var STAGES = ['plan', 'build', 'try', 'ship'];
+
+  function seed(n) { return function () { n |= 0; n = n + 0x6D2B79F5 | 0; var t = Math.imul(n ^ n >>> 15, 1 | n); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  var rnd = seed(7);
+  function pick(a) { return a[Math.floor(rnd() * a.length)]; }
+
+  var WORK = ['Editing src/auth/guard.ts', 'Running pnpm test', 'Reading the refund service', 'Editing tokens/spacing.json', 'Writing the plan', 'Running the build', 'Searching for callers', 'Editing the docs page'];
+  var SAYS = ['Done. The change is in and the tests pass.', 'I fixed the cause and added a test for it.', 'The page is written; the site builds.', 'Finished. Two files changed.'];
+
+  function S(o) {
+    var d = { kind: '', state: 'working', ask: null, seen: true, since: -5, act: pick(WORK), chat: [], app: null, port: 0, pr: '', ctx: 20, cost: 0.2, files: [], stage: 'build',
+      checks: { plan: 'ok', code: '', tests: '', app: '', tried: '', pr: '', ci: '', merged: '' } };
+    for (var k in o) if (k === 'checks') for (var c in o.checks) d.checks[c] = o.checks[c]; else d[k] = o[k];
+    return d;
+  }
+  var ALL = [
+    S({ id: 'web12', key: 'WEB-12', ws: 'web', title: 'Fix the login redirect loop after a session expires', state: 'working', act: 'Editing src/auth/guard.ts', since: -9, ctx: 27, cost: .24, checks: { code: 'run' },
+      chat: [{ r: 'me', t: 'Users bounce between /login and /home after their session expires. Find out why and fix it.' }, { r: 'cl', t: 'The guard reads the old token before the refresh lands. Moving the check after it.' }, { r: 'tool', t: 'Edit src/auth/guard.ts' }], files: [['src/auth/guard.ts', 14, 9]], port: 4216 }),
+    S({ id: 'web11', key: 'WEB-11', ws: 'web', title: 'Add a dark mode toggle to settings', state: 'waiting', ask: { k: 'approve', cmd: 'pnpm test --filter settings' }, since: -14, app: 'up', port: 4217, ctx: 34, cost: .42,
+      checks: { code: 'ok', app: 'ok' }, chat: [{ r: 'tool', t: 'Edit src/settings/Theme.tsx' }, { r: 'cl', t: 'The toggle is in and the tokens have a dark set. I’d like to run the settings tests.' }], files: [['src/settings/Theme.tsx', 58, 6], ['tokens/dark.json', 20, 0]] }),
+    S({ id: 'doc4', key: 'DOC-4', ws: 'docs', title: 'API reference for the v2 endpoints', state: 'idle', seen: false, since: -3, app: 'up', port: 4321, stage: 'try', ctx: 44, cost: .38,
+      checks: { code: 'ok', tests: 'ok', app: 'ok' }, chat: [{ r: 'cl', t: 'The v2 reference pages are written and the site builds. The pages are under /reference/v2.' }], files: [['reference/v2/orders.md', 140, 0], ['reference/v2/refunds.md', 96, 0]] }),
+    S({ id: 'pay2', key: 'PAY-2', ws: 'pay', title: 'Refund flow for partial orders', state: 'waiting', stage: 'plan', since: -6, ctx: 22, cost: .19, checks: { plan: 'run' },
+      ask: { k: 'question', q: 'How should a partial refund handle the shipping fee?', opts: ['In proportion to the items', 'Never refund shipping', 'Only when every item is refunded'] },
+      chat: [{ r: 'me', t: 'Plan the refund flow for partial orders.' }, { r: 'cl', t: 'The refund service only knows whole orders. One choice decides the plan.' }], port: 4400 }),
+    S({ id: 'web9', key: 'WEB-9', ws: 'web', title: 'Cache headers on static assets', state: 'idle', since: -48, stage: 'ship', pr: '#41 open', ctx: 38, cost: .47,
+      checks: { code: 'ok', tests: 'ok', app: 'ok', tried: 'ok', pr: 'ok', ci: 'run' }, chat: [{ r: 'cl', t: 'The PR is open; checks are running.' }], files: [['vite.config.ts', 9, 2], ['cdn-worker/headers.ts', 31, 4]], port: 4218 }),
+    S({ id: 'pay5', key: 'PAY-5', ws: 'pay', title: 'Retry failed webhooks with backoff', state: 'failed', since: -11, ctx: 51, cost: .62, act: 'The session stopped: exit 1',
+      checks: { code: 'ok', tests: 'bad' }, chat: [{ r: 'cl', t: 'Adding the retry queue. Running the tests next.' }, { r: 'tool', t: '✕ pnpm test webhooks · 3 failed' }], files: [['src/webhooks/retry.ts', 64, 0]], port: 4401 }),
+    S({ id: 'web8', key: 'WEB-8', ws: 'web', kind: 'Review', title: 'Review: lazy-load images below the fold', state: 'working', act: 'Reading src/components/Img.tsx', since: -4, ctx: 18, cost: .11, chat: [{ r: 'me', t: 'Review the PR for WEB-8 against its acceptance criteria.' }, { r: 'tool', t: 'Read src/hooks/useInView.ts' }] }),
+    S({ id: 'doc3', key: 'c-3', ws: 'docs', title: 'Tidy the README and the getting-started steps', state: 'working', stage: 'plan', act: 'Writing the plan', since: -1, ctx: 4, cost: .02, checks: { plan: 'run' }, chat: [] }),
+    S({ id: 'web16', key: 'WEB-16', ws: 'web', title: 'Filters on the search page', state: 'working', act: 'Running pnpm test', since: -7, ctx: 31, cost: .3, checks: { code: 'ok', tests: 'run' }, files: [['src/search/Filters.tsx', 88, 3]], port: 4219, chat: [{ r: 'tool', t: '$ pnpm test search' }] }),
+    S({ id: 'doc8', key: 'DOC-8', ws: 'docs', title: 'A glossary page', state: 'idle', since: -35, stage: 'ship', ctx: 25, cost: .2, checks: { code: 'ok', tests: 'ok', app: 'ok', tried: 'ok' }, files: [['glossary.md', 120, 0]], port: 4322, chat: [{ r: 'cl', t: 'The glossary is written and linked from the sidebar.' }] }),
+    S({ id: 'pay9', key: 'PAY-9', ws: 'pay', title: 'Currency rounding on invoices', state: 'working', act: 'Editing src/money/round.ts', since: -12, ctx: 40, cost: .35, checks: { code: 'run' }, files: [['src/money/round.ts', 22, 8]], port: 4402, chat: [{ r: 'tool', t: 'Edit src/money/round.ts' }] }),
+    S({ id: 'web17', key: 'WEB-17', ws: 'web', title: 'Logout button hidden on mobile', state: 'idle', seen: false, since: -8, stage: 'try', ctx: 21, cost: .16, checks: { code: 'ok', tests: 'ok' }, files: [['src/nav/Menu.css', 6, 2]], port: 4220, chat: [{ r: 'cl', t: 'The button was clipped by the menu’s max-height. Fixed; the nav tests pass.' }] }),
+    S({ id: 'web3', key: 'CDN-3', ws: 'web', title: 'Purge the CDN cache on deploy', state: 'idle', since: -130, stage: 'ship', pr: '#12 merged', ctx: 30, cost: .28, checks: { code: 'ok', tests: 'ok', app: 'ok', tried: 'ok', pr: 'ok', ci: 'ok', merged: 'ok' }, chat: [{ r: 'cl', t: 'Merged.' }] }),
+    S({ id: 'tok2', key: 'TOK-2', ws: 'web', title: 'A spacing scale in the design tokens', state: 'waiting', ask: { k: 'approve', cmd: 'git push origin card/TOK-2' }, since: -2, ctx: 19, cost: .14, checks: { code: 'ok', tests: 'ok' }, files: [['tokens/spacing.json', 40, 0]], chat: [{ r: 'cl', t: 'The scale is in. Pushing the branch so the PR can open.' }] }),
+    S({ id: 'pay11', key: 'PAY-11', ws: 'pay', title: 'Receipts by email', state: 'working', act: 'Reading the mail templates', since: -3, ctx: 12, cost: .08, checks: { plan: 'ok' }, port: 4403, chat: [] }),
+    S({ id: 'doc9', key: 'DOC-9', ws: 'docs', title: 'Changelog for v2', state: 'idle', since: -70, stage: 'build', ctx: 15, cost: .1, checks: { code: 'ok' }, files: [['CHANGELOG.md', 30, 0]], port: 4323, chat: [{ r: 'cl', t: 'A first draft is in. Waiting for the release date to finish it.' }] }),
+  ];
+  var FIRST8 = ['web12', 'web11', 'doc4', 'pay2', 'web9', 'pay5', 'web8', 'doc3'];
+
+  var NOW = 0;
+  // History for the timeline: segments of work / wait / idle / fail, marks of finished turns and tries, and app runs.
+  ALL.forEach(function (s) {
+    var cur = s.state === 'working' ? 'work' : s.state === 'waiting' ? 'wait' : s.state === 'failed' ? 'fail' : 'idle';
+    var t = -95 - Math.floor(rnd() * 10), segs = [], marks = [], runs = [], k = 'work';
+    while (t < s.since - 1) {
+      var d = Math.min(s.since - t, k === 'work' ? 6 + rnd() * 16 : 2 + rnd() * 10);
+      segs.push({ from: t, s: k });
+      if (k === 'work') marks.push({ at: t + d, m: 'turn' });
+      t += d;
+      k = k === 'work' ? (rnd() < .45 ? 'wait' : 'idle') : 'work';
+    }
+    if (s.since < -96) segs = [];
+    segs.push({ from: s.since, s: cur });
+    if (s.app === 'up') runs.push({ from: s.since - 6, to: null });
+    if (s.checks.tried === 'ok' && s.since > -95) marks.push({ at: s.since - 2, m: 'tried' });
+    s.hist = segs; s.marks = marks; s.runs = runs;
+  });
+
+  var st = { view: 'you', load: 16, sel: 'web11', play: false, log: [], changed: {}, step: 0, slots: [{ id: 'web11', pin: false }, { id: 'pay2', pin: false }, { id: 'web12', pin: true }], slot: 0, autofill: true, bench: '', expanded: null };
+
+  function pool() { return st.load === 8 ? ALL.filter(function (s) { return FIRST8.indexOf(s.id) >= 0; }) : ALL; }
+  function byId(id) { return ALL.find(function (s) { return s.id === id; }); }
+
+  /* What a session needs from you, if anything. */
+  function need(s) {
+    if (s.state === 'failed') return 'failed';
+    if (s.state === 'waiting') return s.ask.k;
+    if (s.state === 'idle' && !s.seen) return 'review';
+    if (s.state === 'idle' && s.checks.code === 'ok' && (s.checks.tried === '' || s.checks.tried === 'stale') && s.checks.merged !== 'ok') return 'try';
+    return null;
+  }
+  function turn(s) { return need(s) ? 'you' : s.state === 'working' ? 'claude' : 'parked'; }
+  function waited(s) { return Math.max(0, Math.round(NOW - s.since)); }
+  function ago(m) { m = Math.round(m); return m < 1 ? 'just now' : m < 60 ? m + 'm' : Math.floor(m / 60) + 'h ' + (m % 60) + 'm'; }
+  var NEED = {
+    failed: { label: 'Failed', b: 'b-bad', w: 5, ico: '!', t: 't-bad' },
+    approve: { label: 'Approve', b: 'b-attn', w: 4, ico: 'y', t: 't-attn' },
+    question: { label: 'Question', b: 'b-attn', w: 4, ico: '?', t: 't-attn' },
+    review: { label: 'Finished · unread', b: 'b-busy', w: 3, ico: '✓', t: 't-busy' },
+    try: { label: 'Ready to try', b: 'b-calm', w: 2, ico: '▶', t: 't-calm' },
+  };
+  function prio(s) { var n = need(s); return n ? NEED[n].w * 100 + waited(s) : -1; }
+  function needers() { return pool().filter(need).sort(function (a, b) { return a.since - b.since; }); }
+  function nowText(s) {
+    var n = need(s);
+    if (n === 'failed') return 'Failed: ' + (s.act || 'the session stopped');
+    if (n === 'approve') return 'Wants to run ' + s.ask.cmd;
+    if (n === 'question') return 'Asks: ' + s.ask.q;
+    if (n === 'review') return 'Finished its turn';
+    if (n === 'try') return s.app === 'up' ? 'Ready to try on :' + s.port : 'Ready to try';
+    if (s.state === 'working') return s.act;
+    if (s.checks.merged === 'ok') return 'Merged ' + s.pr.replace(' merged', '');
+    if (s.pr) return 'PR ' + s.pr + (s.checks.ci === 'run' ? ' · checks running' : s.checks.ci === 'bad' ? ' · checks failed' : '');
+    return 'Idle';
+  }
+  function nowClass(s) { var n = need(s); return n ? NEED[n].t : s.state === 'working' ? 't-busy' : 't-faint'; }
+  function mark(s) { return s.state === 'working' ? '<i class="spin"></i>' : '<i class="dot" style="background:currentColor"></i>'; }
+
+  /* ================= changes ================= */
+  function setState(s, state, why) {
+    var seg = state === 'working' ? 'work' : state === 'waiting' ? 'wait' : state === 'failed' ? 'fail' : 'idle';
+    if (s.state === 'working' && state !== 'working') s.marks.push({ at: NOW, m: 'turn' });
+    s.state = state; s.since = NOW; s.hist.push({ from: NOW, s: seg });
+    st.changed[s.id] = st.step;
+    if (why) log(s.key + ' ' + why);
+  }
+  function log(t) { st.log.unshift({ t: t, at: st.step }); st.log = st.log.slice(0, 6); }
+  function finishTurn(s) {
+    var stale = s.checks.tried === 'ok';
+    s.ask = null; s.seen = false; s.checks.code = 'ok'; s.checks.plan = 'ok';
+    s.checks.tests = rnd() < .8 ? 'ok' : 'bad';
+    if (stale) s.checks.tried = 'stale';
+    if (s.stage === 'plan') s.stage = 'build'; else if (s.stage === 'build') s.stage = 'try';
+    s.chat.push({ r: 'cl', t: pick(SAYS) });
+    setState(s, 'idle', 'finished its turn' + (stale ? ' (your earlier try is now out of date)' : ''));
+  }
+  function simulate() {
+    NOW += 1.5; st.step++;
+    var p = pool(), n = 1 + (rnd() < .4 ? 1 : 0);
+    for (var i = 0; i < n; i++) {
+      var s = pick(p), r = rnd();
+      if (s.state === 'working') {
+        if (r < .45) finishTurn(s);
+        else if (r < .62) { s.ask = { k: 'approve', cmd: pick(['pnpm test', 'pnpm build', 'git push origin card/' + s.key, 'npx prisma migrate dev']) }; s.chat.push({ r: 'cl', t: 'I need to run a command.' }); setState(s, 'waiting', 'asks to run ' + s.ask.cmd); }
+        else if (r < .72) { s.ask = { k: 'question', q: 'Which way should I take this?', opts: ['The smaller change', 'The cleaner change', 'Stop and explain'] }; setState(s, 'waiting', 'asks a question'); }
+        else if (r < .79) { s.act = 'The session stopped: exit 1'; s.checks.tests = 'bad'; setState(s, 'failed', 'failed'); }
+        else { s.act = pick(WORK); st.changed[s.id] = st.step; }
+      } else if (s.state === 'waiting' && r < .4) { s.ask = null; s.act = pick(WORK); setState(s, 'working', 'was answered in its terminal'); }
+      else if (s.state === 'idle' && s.seen && !need(s) && r < .25 && s.checks.merged !== 'ok') { s.act = pick(WORK); s.chat.push({ r: 'me', t: 'One more thing: tidy the naming.' }); setState(s, 'working', 'got a new message from its terminal'); }
+      else if (s.pr && s.checks.ci === 'run' && r < .5) { s.checks.ci = rnd() < .7 ? 'ok' : 'bad'; st.changed[s.id] = st.step; log(s.key + ' checks ' + (s.checks.ci === 'ok' ? 'passed' : 'failed')); }
+    }
+    p.forEach(function (s) { if (s.app === 'starting') { s.app = 'up'; s.checks.app = 'ok'; st.changed[s.id] = st.step; log(s.key + '’s app is up on :' + s.port); } });
+    render();
+  }
+
+  /* ================= actions ================= */
+  var toastT;
+  function toast(t) { var el = document.getElementById('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(function () { el.classList.remove('on'); }, 2200); }
+  function doAct(a, id, x) {
+    var s = byId(id); if (!s) return;
+    st.sel = id; st.step++;
+    switch (a) {
+      case 'allow': case 'deny':
+        if (!s.ask || s.ask.k !== 'approve') { toast('Nothing to allow on ' + s.key); break; }
+        s.chat.push({ r: 'tool', t: (a === 'allow' ? '$ ' : 'Denied: ') + s.ask.cmd }); s.ask = null; s.act = a === 'allow' ? 'Running the command' : 'Trying another way';
+        setState(s, 'working', a === 'allow' ? 'allowed by you' : 'denied by you'); break;
+      case 'answer':
+        if (!s.ask || s.ask.k !== 'question') break;
+        s.chat.push({ r: 'me', t: s.ask.opts[x] }); s.ask = null; s.act = 'Writing the plan'; setState(s, 'working', 'answered by you'); break;
+      case 'retry': if (s.state !== 'failed') break; s.act = 'Running pnpm test'; s.checks.tests = 'run'; setState(s, 'working', 'retried'); break;
+      case 'seen': if (s.state === 'idle') { s.seen = true; st.changed[s.id] = st.step; log(s.key + ' marked as seen'); } break;
+      case 'try':
+        s.seen = true;
+        if (s.app === 'up' || s.app === 'starting') { s.app = null; s.checks.app = ''; log(s.key + '’s app stopped'); }
+        else { s.app = 'starting'; s.checks.app = 'run'; log(s.key + '’s app is starting'); toast('Starting ' + s.key + '’s app; it is up after the next change'); }
+        st.changed[s.id] = st.step; break;
+      case 'open': toast(s.app === 'up' ? 'Opens localhost:' + s.port + ' in a new tab' : 'Nothing running yet: t starts the app'); break;
+      case 'good': s.checks.tried = 'ok'; s.seen = true; s.marks.push({ at: NOW, m: 'tried' }); if (s.stage === 'try' || s.stage === 'build') s.stage = 'ship'; st.changed[s.id] = st.step; log(s.key + ': you tried it, looks good'); break;
+      case 'problem':
+        s.checks.tried = 'bad'; s.seen = true; s.chat.push({ r: 'me', t: 'Found a problem when I tried it: the button overlaps the header on small screens.' }); s.act = 'Reading your note';
+        setState(s, 'working', 'got your problem report'); break;
+      case 'send': s.seen = true; s.chat.push({ r: 'me', t: x || 'Keep going.' }); s.ask = null; s.act = 'Reading your message'; setState(s, 'working', 'got your message'); break;
+      case 'full': toast('Opens ' + s.key + ' fully: today’s open card'); break;
+      case 'ship': toast('Ship sheet for ' + s.key + ': commit, push, open a PR'); break;
+    }
+    render();
+  }
+
+  /* ================= small renderers ================= */
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function kc(k, cls) { return '<span class="kc' + (cls ? ' ' + cls : '') + '">' + esc(k) + '</span>'; }
+  function btn(a, id, label, k, cls, x) { return '<button class="act' + (cls ? ' ' + cls : '') + '" data-act="' + a + '" data-id="' + id + '"' + (x !== undefined ? ' data-x="' + x + '"' : '') + '>' + (k ? kc(k) : '') + esc(label) + '</button>'; }
+  function wsc(s) { return WS[s.ws].c; }
+  function justC(s) { return st.changed[s.id] === st.step ? ' just' : ''; }
+  function stages(s) { var at = STAGES.indexOf(s.stage); return '<span class="stg" title="' + s.stage + '">' + STAGES.map(function (x, i) { return '<i class="' + (i <= at ? 'on' : '') + '"></i>'; }).join('') + '</span>'; }
+  function canTry(s) { return s.checks.code === 'ok' && !!s.port; }
+
+  // The thing a session needs, with its answer keys: one block reused by every layout.
+  function askBlock(s, compact) {
+    var n = need(s), h = '';
+    if (n === 'approve') h = '<div class="ask"><span class="q">Wants to run a command</span><span class="cmd">' + esc(s.ask.cmd) + '</span><div class="acts">' + btn('allow', s.id, 'Allow', 'y', 'go') + btn('deny', s.id, 'Deny', 'n') + '</div></div>';
+    else if (n === 'question') h = '<div class="ask"><span class="q">' + esc(s.ask.q) + '</span><div class="acts">' + s.ask.opts.map(function (o, i) { return btn('answer', s.id, o, String(i + 1), '', i); }).join('') + '</div></div>';
+    else if (n === 'failed') h = '<div class="ask bad"><span class="q t-bad">' + esc(s.act) + '</span>' + (compact ? '' : '<span class="cmd">' + esc((s.chat[s.chat.length - 1] || {}).t || '') + '</span>') + '<div class="acts">' + btn('retry', s.id, 'Retry', 'r', 'go') + btn('full', s.id, 'Open it', 'Enter') + '</div></div>';
+    else if (n === 'review') h = '<div class="ask ok" style="background:var(--c-busy-bg);border-color:color-mix(in srgb,var(--c-busy) 35%,transparent)"><span>' + esc((s.chat[s.chat.length - 1] || {}).t || 'Finished.') + '</span><div class="acts">' + btn('seen', s.id, 'Seen', 's') + (canTry(s) ? btn('try', s.id, s.app === 'up' ? 'Stop app' : 'Try it', 't', 'go') : '') + btn('full', s.id, 'Open', 'Enter') + '</div></div>';
+    else if (n === 'try') h = tryBlock(s);
+    return h;
+  }
+  function tryBlock(s) {
+    var up = s.app === 'up', starting = s.app === 'starting';
+    var line = up ? '<span class="t-ok" style="font-weight:600">● App on localhost:' + s.port + '</span>' : starting ? '<span class="t-busy" style="display:flex;gap:6px;align-items:center"><i class="spin"></i>Starting the app</span>' : '<span class="t-faint">The app isn’t running</span>';
+    return '<div class="ask" style="background:var(--c-calm-bg);border-color:color-mix(in srgb,var(--c-calm) 40%,transparent)"><span class="q t-calm">Ready to try' + (s.checks.tried === 'stale' ? ' again: the code changed since your last try' : '') + '</span>' + line +
+      '<div class="acts">' + (up ? btn('open', s.id, 'Open', 'o', 'go') : btn('try', s.id, starting ? 'Starting…' : 'Start the app', 't', 'go')) + btn('good', s.id, 'Looks good', 'l', 'ok') + btn('problem', s.id, 'Found a problem', 'p', 'bad') + '</div></div>';
+  }
+  function chatTail(s, n) {
+    if (!s.chat.length) return '<div class="empty">The session is starting; its first words show here.</div>';
+    return '<div class="chat">' + s.chat.slice(-n).map(function (m) { return m.r === 'tool' ? '<div class="tool">' + esc(m.t) + '</div>' : '<div class="' + m.r + '">' + esc(m.t) + '</div>'; }).join('') + '</div>';
+  }
+  function sayBox(s) { return '<div class="say"><input id="say-' + s.id + '" placeholder="Message ' + esc(s.key) + '…" data-say="' + s.id + '">' + kc('Enter') + '</div>'; }
+  function quickPanel(s) {
+    var add = 0, del = 0; s.files.forEach(function (f) { add += f[1]; del += f[2]; });
+    var left = '<div class="qp-col"><div class="cap">Now <span class="' + nowClass(s) + '" style="text-transform:none;letter-spacing:0;font-family:var(--body);font-size:12px;font-weight:600">' + esc(nowText(s)) + '</span></div>' + chatTail(s, 3) + (need(s) && need(s) !== 'try' ? askBlock(s) : '') + sayBox(s) + '</div>';
+    var right = '<div class="qp-col"><div class="cap">Try it</div>' + (canTry(s) ? tryBlock(s) : '<div class="empty">Nothing to run until there is code.</div>') +
+      '<div class="cap">Changes · ' + s.files.length + ' file' + (s.files.length === 1 ? '' : 's') + (s.files.length ? ' · <span class="t-ok">+' + add + '</span> <span class="t-bad">−' + del + '</span>' : '') + '</div>' +
+      (s.files.length ? '<div class="files">' + s.files.map(function (f) { return '<div><span class="p">' + esc(f[0]) + '</span><span class="t-ok">+' + f[1] + '</span><span class="t-bad">−' + f[2] + '</span></div>'; }).join('') + '</div>' : '') +
+      '<div class="acts">' + btn('full', s.id, 'Open fully', 'Enter') + btn('ship', s.id, 'Ship', 's') + '</div></div>';
+    return '<div class="qp">' + left + right + '</div>';
+  }
+  function appbar(extra) {
+    var p = pool(), you = p.filter(need).length, work = p.filter(function (s) { return s.state === 'working'; }).length;
+    return '<div class="appbar"><span class="brand"><i></i>Command Center</span>' +
+      '<span class="wsf on">' + kc('0') + 'All</span>' + WS_ORDER.map(function (w, i) { return '<span class="wsf">' + kc(String(i + 1)) + '<span class="wsdot" style="background:' + WS[w].c + '"></span>' + WS[w].name + '</span>'; }).join('') +
+      (extra || '') + '<span class="grow"></span><span class="sum' + (you ? ' attn' : '') + '"><b>' + you + '</b> your move</span><span class="sum"><b>' + work + '</b> Claude working</span><span class="sum"><b>' + (p.length - you - work) + '</b> parked</span>' +
+      '<span class="act">' + kc('c') + 'New card</span></div>';
+  }
+  function legend(ctx, keys) { return '<div class="legend"><span class="ctx">' + ctx + '</span>' + keys.map(function (k) { return '<span>' + k[0].split(' ').map(function (x) { return kc(x); }).join('') + esc(k[1]) + '</span>'; }).join('') + '</div>'; }
+
+  /* ================= 1 Your Move ================= */
+  function viewYou() {
+    var p = pool();
+    var you = p.filter(function (s) { return turn(s) === 'you'; }).sort(function (a, b) { return a.since - b.since; });
+    var cl = p.filter(function (s) { return turn(s) === 'claude'; });
+    var pk = p.filter(function (s) { return turn(s) === 'parked'; });
+    var h = '<div class="ym">';
+    h += '<section class="band you"><div class="band-h"><h3>Your move</h3><span class="n">' + you.length + '</span><p>Oldest wait first. Answer right here, or Enter opens the card.</p></div><div class="ym-you">';
+    if (!you.length) h += '<div class="empty">Nothing is waiting on you. Claude has ' + cl.length + ' sessions in hand.</div>';
+    you.forEach(function (s) {
+      var n = need(s), w = waited(s), urgent = (n === 'approve' || n === 'question') && w >= 10;
+      h += '<article class="ym-card' + (n === 'failed' ? ' failed' : urgent ? ' urgent' : '') + (st.sel === s.id ? ' sel' : '') + justC(s) + '" style="--wsc:' + wsc(s) + '" data-pick="' + s.id + '" data-flip="' + s.id + '">' +
+        '<div class="ym-top"><span class="badge ' + NEED[n].b + '">' + NEED[n].label + '</span><span class="tkey">' + s.key + '</span>' + (s.kind ? '<span class="badge b-grey">' + s.kind + '</span>' : '') + '<span class="grow"></span>' + stages(s) +
+        '<span class="wait ' + (urgent ? 't-attn' : 't-faint') + '" title="How long it has waited on you">' + (n === 'review' || n === 'try' ? '' : 'waiting ') + ago(w) + '</span></div>' +
+        '<div class="ym-title">' + esc(s.title) + '</div>' + askBlock(s, true) + '</article>';
+    });
+    h += '</div></section>';
+    h += '<section class="band"><div class="band-h"><h3>Claude’s move</h3><span class="n">' + cl.length + '</span><p>Working on its own. Nothing to do until it hands the turn back.</p></div><div class="ym-claude">';
+    cl.forEach(function (s) {
+      h += '<button class="ym-mini' + (st.sel === s.id ? ' sel' : '') + justC(s) + '" style="--wsc:' + wsc(s) + '" data-pick="' + s.id + '" data-flip="' + s.id + '"><span style="display:flex;gap:6px;align-items:center"><span class="tkey">' + s.key + '</span><span class="grow"></span>' + stages(s) + '<span class="wait t-faint">' + ago(waited(s)) + '</span></span><span class="ttl trunc">' + esc(s.title) + '</span><span class="t-busy trunc" style="display:flex;gap:6px;align-items:center;font-size:12px"><i class="spin"></i>' + esc(s.act) + '</span></button>';
+    });
+    h += '</div></section>';
+    h += '<section class="band"><div class="band-h"><h3>Parked</h3><span class="n">' + pk.length + '</span><p>Nobody is waiting on these. Idle the longest first.</p></div><div class="ym-parked">';
+    pk.sort(function (a, b) { return a.since - b.since; }).forEach(function (s) {
+      h += '<button class="chip' + (st.sel === s.id ? ' sel' : '') + justC(s) + '" style="--wsc:' + wsc(s) + '" data-pick="' + s.id + '" data-flip="' + s.id + '"><span class="wsdot"></span><span class="tkey">' + s.key + '</span><span class="trunc">' + esc(s.title) + '</span><span class="t-faint" style="white-space:nowrap">' + esc(s.pr ? s.pr : 'idle ' + ago(waited(s))) + '</span></button>';
+    });
+    h += '</div></section></div>';
+    return appbar() + h + legend('Your move', [['a', 'next that needs you'], ['↑ ↓', 'move'], ['y n', 'allow / deny'], ['1 2 3', 'answer'], ['t', 'try it'], ['l p', 'looks good / problem'], ['s', 'seen'], ['Enter', 'open fully']]);
+  }
+  function orderYou() { var p = pool(); return ['you', 'claude', 'parked'].reduce(function (a, k) { return a.concat(p.filter(function (s) { return turn(s) === k; }).sort(function (x, y) { return k === 'claude' ? 0 : x.since - y.since; })); }, []); }
+
+  /* ================= 2 Air Traffic ================= */
+  var WIN = 90;
+  function x(t) { return Math.max(0, Math.min(100, (t - (NOW - WIN)) / WIN * 100)); }
+  function timeline(s) {
+    var h = '';
+    for (var g = 15; g < WIN; g += 15) h += '<span class="grid" style="left:' + (g / WIN * 100) + '%"></span>';
+    s.runs.forEach(function (r) { var a = x(r.from), b = x(r.to == null ? NOW : r.to); if (b > a) h += '<span class="run" style="left:' + a + '%;width:' + (b - a) + '%"></span>'; });
+    if (s.app === 'up' && !s.runs.some(function (r) { return r.to == null; })) s.runs.push({ from: NOW, to: null });
+    if (s.app !== 'up') s.runs.forEach(function (r) { if (r.to == null) r.to = NOW; });
+    s.hist.forEach(function (seg, i) {
+      var end = i + 1 < s.hist.length ? s.hist[i + 1].from : NOW;
+      var a = x(seg.from), b = x(end); if (b - a <= 0) return;
+      var cls = seg.s === 'idle' && i === s.hist.length - 1 && need(s) ? 'wait' : seg.s;
+      h += '<span class="seg ' + cls + '" style="left:' + a + '%;width:' + Math.max(.4, b - a) + '%" title="' + seg.s + ' · ' + ago(end - seg.from) + '"></span>';
+    });
+    s.marks.forEach(function (m) { if (m.at > NOW - WIN) h += '<span class="mark' + (m.m === 'tried' ? ' tried' : '') + '" style="left:' + x(m.at) + '%" title="' + (m.m === 'tried' ? 'You tried it' : 'Finished a turn') + '"></span>'; });
+    if (need(s)) h += '<span class="tip' + (need(s) === 'approve' || need(s) === 'question' || need(s) === 'failed' ? ' pulse' : '') + '" style="left:100%;background:' + (need(s) === 'failed' ? 'var(--c-bad)' : need(s) === 'review' ? 'var(--c-busy)' : need(s) === 'try' ? 'var(--c-calm)' : 'var(--c-attn)') + '"></span>';
+    return '<div class="tl">' + h + '<span class="nowline"></span></div>';
+  }
+  function quickActs(s) {
+    var n = need(s);
+    if (n === 'approve') return btn('allow', s.id, 'Allow', 'y', 'go') + btn('deny', s.id, 'Deny', 'n');
+    if (n === 'question') return btn('expand', s.id, 'Answer', 'Space', 'go');
+    if (n === 'failed') return btn('retry', s.id, 'Retry', 'r', 'go');
+    if (n === 'review') return btn('seen', s.id, 'Seen', 's') + btn('expand', s.id, 'Look', 'Space');
+    if (n === 'try') return s.app === 'up' ? btn('open', s.id, 'Open', 'o', 'go') + btn('good', s.id, 'Good', 'l', 'ok') : btn('try', s.id, 'Try it', 't', 'go');
+    return '';
+  }
+  function viewAtc() {
+    var p = pool(), hold = needers(), longest = hold.reduce(function (m, s) { return Math.max(m, waited(s)); }, 0);
+    var axis = ''; for (var g = 0; g <= WIN; g += 15) axis += '<span style="left:' + (g / WIN * 100) + '%">' + (g === WIN ? 'now' : '−' + (WIN - g) + 'm') + '</span>';
+    var h = '<div class="atc"><div class="atc-row atc-head"><span style="padding-left:14px">SESSION · NOW</span><div class="axis">' + axis + '</div><span style="text-align:right;padding-right:12px">ACT</span></div>';
+    WS_ORDER.forEach(function (w) {
+      var rows = p.filter(function (s) { return s.ws === w; }); if (!rows.length) return;
+      h += '<div class="atc-ws"><span class="wsdot" style="background:' + WS[w].c + '"></span>' + WS[w].name + ' <span style="margin-left:4px">' + rows.length + '</span></div>';
+      rows.forEach(function (s) {
+        h += '<div class="atc-row' + (need(s) ? ' need' : '') + (st.sel === s.id ? ' sel' : '') + justC(s) + '" style="--wsc:' + wsc(s) + '" data-pick="' + s.id + '">' +
+          '<div class="atc-l"><div class="t1"><span class="tkey">' + s.key + '</span><span class="ttl trunc">' + esc(s.title) + '</span></div><div class="now ' + nowClass(s) + '">' + mark(s) + '<span class="trunc">' + esc(nowText(s)) + '</span>' + (need(s) ? '<span class="wait" style="margin-left:auto;padding-left:6px">' + ago(waited(s)) + '</span>' : '') + '</div></div>' +
+          timeline(s) + '<div class="atc-r">' + quickActs(s) + '</div></div>';
+        if (st.expanded === s.id) h += '<div class="atc-x">' + quickPanel(s) + '</div>';
+      });
+    });
+    h += '</div>';
+    return appbar('<span class="sum attn" style="margin-left:12px"><b>' + hold.length + '</b> holding · longest ' + ago(longest) + '</span>') + h +
+      legend('Air traffic', [['↑ ↓', 'rows (they never move)'], ['a', 'next that needs you'], ['Space', 'expand the row'], ['y n', 'allow / deny'], ['t', 'try it'], ['s', 'seen'], ['Enter', 'open fully']]);
+  }
+  function orderAtc() { var p = pool(); return WS_ORDER.reduce(function (a, w) { return a.concat(p.filter(function (s) { return s.ws === w; })); }, []); }
+
+  /* ================= 3 Triage ================= */
+  function viewTri() {
+    var p = pool(), q = needers();
+    var sel = byId(st.sel) && pool().indexOf(byId(st.sel)) >= 0 ? byId(st.sel) : q[0] || p[0];
+    var h = '<div class="tri"><nav class="roster" aria-label="Sessions">';
+    WS_ORDER.forEach(function (w) {
+      var rows = p.filter(function (s) { return s.ws === w; }); if (!rows.length) return;
+      h += '<h4><span class="wsdot" style="background:' + WS[w].c + '"></span>' + WS[w].name + '</h4>';
+      rows.forEach(function (s) {
+        var n = need(s), cnt = n === 'failed' ? '<span class="cnt bad">!</span>' : n === 'approve' || n === 'question' ? '<span class="cnt attn">1</span>' : n === 'review' ? '<span class="cnt unread" title="Unread turn"></span>' : n === 'try' ? '<span class="cnt" style="color:var(--c-calm)">▶</span>' : '';
+        h += '<button class="rrow' + (sel === s ? ' sel' : '') + (n === 'review' ? ' unread' : '') + justC(s) + '" data-pick="' + s.id + '">' + (s.state === 'working' ? '<i class="spin"></i>' : '<i class="dot" style="background:' + (n ? 'var(--c-attn)' : 'var(--c-line)') + '"></i>') + '<span class="tkey" style="min-width:48px">' + s.key + '</span><span class="ttl trunc">' + esc(s.title) + '</span>' + cnt + '</button>';
+      });
+    });
+    h += '</nav><section class="queue" aria-label="Up next"><div class="queue-h"><h3>Up next</h3><span class="tkey">' + q.length + '</span><span class="t-faint" style="font-size:12px">Oldest first. Each one leaves the list when you act on it.</span></div>';
+    if (!q.length) h += '<div class="allclear"><b>All clear</b>' + p.filter(function (s) { return s.state === 'working'; }).length + ' sessions are working. New things they need show up here.</div>';
+    q.forEach(function (s) {
+      var n = need(s);
+      h += '<article class="moment' + (sel === s ? ' sel' : '') + justC(s) + '" data-pick="' + s.id + '" data-flip="' + s.id + '"><span class="ico badge ' + NEED[n].b + '">' + NEED[n].ico + '</span>' +
+        '<div class="hd"><span class="wsdot" style="background:' + wsc(s) + '"></span><span class="tkey">' + s.key + '</span><span class="trunc">' + esc(s.title) + '</span><span class="grow"></span><span class="wait">' + ago(waited(s)) + '</span></div>' +
+        '<div class="what ' + NEED[n].t + '">' + esc(nowText(s)) + '</div><div>' + askBlock(s, true) + '</div></article>';
+    });
+    h += '</section><aside class="preview" aria-label="Selected session">' + (sel ? '<div style="display:flex;gap:8px;align-items:center"><span class="wsdot" style="background:' + wsc(sel) + '"></span><span class="tkey">' + sel.key + '</span><b class="trunc" style="font-size:14px">' + esc(sel.title) + '</b></div>' + quickPanel(sel) : '') + '</aside></div>';
+    return appbar() + h + legend('Up next', [['j k', 'the next / previous item'], ['a', 'next that needs you'], ['y n', 'allow / deny'], ['1 2 3', 'answer'], ['s', 'seen'], ['t l p', 'try · good · problem'], ['↑ ↓', 'roster']]);
+  }
+
+  /* ================= 4 Mission Control ================= */
+  function fillSlots() {
+    if (!st.autofill) return;
+    var used = st.slots.map(function (x) { return x.id; });
+    st.slots.forEach(function (sl) {
+      var s = byId(sl.id);
+      var quiet = !s || pool().indexOf(s) < 0 || !need(s);
+      if (sl.pin && s && pool().indexOf(s) >= 0) return;
+      if (!quiet) return;
+      var next = pool().filter(function (x) { return need(x) && used.indexOf(x.id) < 0; }).sort(function (a, b) { return prio(b) - prio(a); })[0];
+      if (next) { used.push(next.id); sl.id = next.id; st.changed[next.id] = st.step; }
+    });
+  }
+  function slotView(sl, i) {
+    var s = byId(sl.id);
+    if (!s || pool().indexOf(s) < 0) return '<div class="slot free' + (st.slot === i ? ' focus' : '') + '" data-slot="' + i + '">' + kc(String(i + 1)) + '<div>Slot ' + (i + 1) + ' is free.<br>Click a puck, or auto-fill brings the next session that needs you.</div></div>';
+    var n = need(s);
+    return '<div class="slot' + (st.slot === i ? ' focus' : '') + justC(s) + '" data-slot="' + i + '"><div class="slot-h">' + kc(String(i + 1), st.slot === i ? 'acc' : '') + '<span class="wsdot" style="background:' + wsc(s) + '"></span><span class="tkey">' + s.key + '</span><span class="trunc" style="font-weight:600">' + esc(s.title) + '</span><span class="grow"></span>' +
+      '<button class="pin' + (sl.pin ? ' on' : '') + '" data-pin="' + i + '" title="Pinned slots keep their session; others auto-fill">' + (sl.pin ? 'PINNED' : 'AUTO') + '</button></div>' +
+      '<div class="slot-b"><div class="' + nowClass(s) + '" style="display:flex;gap:6px;align-items:center;font-weight:600">' + mark(s) + '<span class="trunc">' + esc(nowText(s)) + '</span>' + (n ? '<span class="wait" style="margin-left:auto">' + ago(waited(s)) + '</span>' : '') + '</div>' + chatTail(s, 4) + (n && n !== 'try' ? askBlock(s) : '') + '</div>' +
+      '<div class="slot-f">' + (n === 'try' || (canTry(s) && (s.app === 'up' || s.app === 'starting') && !n) ? tryBlock(s) : '') + sayBox(s) + '</div></div>';
+  }
+  function viewMc() {
+    fillSlots();
+    var p = pool(), inslot = st.slots.map(function (x) { return x.id; });
+    var h = '<div class="mc"><div class="slots">' + st.slots.map(slotView).join('') + '</div><div class="dock" aria-label="Every session">';
+    p.forEach(function (s) {
+      var n = need(s), rc = n === 'failed' ? 'var(--c-bad)' : n === 'approve' || n === 'question' ? 'var(--c-attn)' : n === 'review' ? 'var(--c-busy)' : n === 'try' ? 'var(--c-calm)' : s.state === 'working' ? 'var(--c-busy)' : 'var(--c-faint)';
+      var pr = s.checks.merged === 'ok' ? 100 : Math.round((STAGES.indexOf(s.stage) + 1) / 4 * 100);
+      var bdg = n === 'failed' ? '<span class="bdg" style="background:var(--c-bad)">!</span>' : n === 'approve' || n === 'question' ? '<span class="bdg" style="background:var(--c-attn)">1</span>' : n === 'review' ? '<span class="bdg" style="background:var(--c-busy);min-width:10px;height:10px;top:0;right:0"></span>' : '';
+      h += '<button class="puck' + (inslot.indexOf(s.id) >= 0 ? ' inslot' : '') + (st.sel === s.id ? ' cur' : '') + '" data-puck="' + s.id + '" title="' + esc(s.key + ' · ' + nowText(s)) + '"><span class="ring' + (n === 'approve' || n === 'question' || n === 'failed' ? ' need pulse' : '') + '" style="--p:' + pr + ';--rc:' + rc + '"><span>' + s.key.replace('-', '<br>') + '</span>' + bdg + '</span><span class="lbl">' + esc(s.title) + '</span></button>';
+    });
+    h += '</div></div>';
+    return appbar('<button class="act" style="margin-left:10px" id="autofill">' + kc('f') + 'Auto-fill: ' + (st.autofill ? 'on' : 'off') + '</button>') + h +
+      legend('Mission control', [['Tab', 'next slot'], ['← →', 'the dock'], ['Enter', 'put it in the slot'], ['f', 'auto-fill'], ['y n', 'allow / deny'], ['1 2 3', 'answer'], ['t l p', 'try · good · problem']]);
+  }
+
+  /* ================= 5 Test Bench ================= */
+  var GLYPH = { ok: ['c-ok', '✓'], bad: ['c-bad', '✕'], run: ['c-run', '◌'], stale: ['c-stale', '↻'], '': ['c-none', '·'] };
+  function nextStep(s) {
+    var n = need(s);
+    if (n === 'failed') return ['t-bad', 'Fix the failure: ' + s.act.replace('The session stopped: ', '')];
+    if (n === 'approve') return ['t-attn', 'Approve ' + s.ask.cmd];
+    if (n === 'question') return ['t-attn', 'Answer its question'];
+    if (n === 'review') return ['t-busy', 'Read its finished turn'];
+    if (n === 'try') return ['t-calm', s.checks.tried === 'stale' ? 'Try it again: the code changed' : 'Try it'];
+    if (s.state === 'working') return ['t-busy', 'Wait: ' + s.act];
+    if (s.checks.tried === 'ok' && !s.checks.pr) return ['t-ok', 'Ship it'];
+    if (s.checks.ci === 'run') return ['t-faint', 'Checks are running'];
+    if (s.checks.ci === 'bad') return ['t-bad', 'Checks failed'];
+    if (s.checks.merged === 'ok') return ['t-faint', 'Done'];
+    if (s.checks.pr === 'ok') return ['t-ok', 'Merge the PR'];
+    return ['t-faint', '—'];
+  }
+  function viewTb() {
+    var p = pool(), f = st.bench;
+    var count = {}; CHECKS.forEach(function (c) { count[c[0]] = p.filter(function (s) { return s.checks[c[0]] === 'bad' || s.checks[c[0]] === 'stale' || (c[0] === 'tried' && need(s) === 'try'); }).length; });
+    var h = '<div class="tb"><table><thead><tr><th class="l">Session</th>';
+    CHECKS.forEach(function (c) {
+      h += '<th class="' + (c[0] === 'tried' ? 'try' : '') + '"><button data-bench="' + c[0] + '" class="' + (f === c[0] ? 'on' : '') + '" title="Show only the sessions with something to do here">' + c[1] + '<span class="cnt2">' + (count[c[0]] ? count[c[0]] + (c[0] === 'tried' ? ' to try' : ' to fix') : '&nbsp;') + '</span></button></th>';
+    });
+    h += '<th class="l">Next step</th></tr></thead><tbody>';
+    WS_ORDER.forEach(function (w) {
+      var rows = p.filter(function (s) { return s.ws === w; });
+      if (f) rows = rows.filter(function (s) { var v = s.checks[f]; return v === 'bad' || v === 'stale' || (f === 'tried' && need(s) === 'try'); });
+      if (!rows.length) return;
+      h += '<tr class="wsrow"><td colspan="10"><span class="wsdot" style="display:inline-block;margin-right:6px;background:' + WS[w].c + '"></span>' + WS[w].name + '</td></tr>';
+      rows.forEach(function (s) {
+        var ns = nextStep(s);
+        h += '<tr class="' + (need(s) ? 'need ' : '') + (st.sel === s.id ? 'sel' : '') + justC(s) + '" data-pick="' + s.id + '"><td class="l"><div class="who" style="--wsc:' + wsc(s) + '">' + (s.state === 'working' ? '<i class="spin"></i>' : '<i class="dot" style="background:' + (need(s) ? 'var(--c-attn)' : 'var(--c-line)') + '"></i>') + '<span class="tkey">' + s.key + '</span><span class="ttl trunc" style="max-width:250px">' + esc(s.title) + '</span></div></td>';
+        CHECKS.forEach(function (c) {
+          var v = s.checks[c[0]], g = GLYPH[v];
+          if (c[0] === 'tried' && need(s) === 'try') h += '<td class="try"><button class="cell c-ready" data-act="' + (s.app === 'up' ? 'good' : 'try') + '" data-id="' + s.id + '">' + (s.app === 'up' ? 'Mark ✓' : 'Try ▸') + '</button></td>';
+          else h += '<td class="' + (c[0] === 'tried' ? 'try' : '') + '"><span class="cell ' + g[0] + '" title="' + c[1] + ': ' + (v || 'not yet') + '">' + (v === 'run' ? '<i class="spin" style="border-color:var(--c-busy);border-right-color:transparent"></i>' : g[1]) + '</span></td>';
+        });
+        h += '<td class="next ' + ns[0] + '">' + esc(ns[1]) + (need(s) && need(s) !== 'try' ? ' <span class="wait">' + ago(waited(s)) + '</span>' : '') + '</td></tr>';
+        if (st.expanded === s.id) h += '<tr class="xrow"><td colspan="10">' + quickPanel(s) + '</td></tr>';
+      });
+    });
+    h += '</tbody></table></div>';
+    return appbar(f ? '<button class="act" style="margin-left:10px" data-bench="">Showing: ' + esc(CHECKS.find(function (c) { return c[0] === f; })[1]) + ' · ' + kc('Esc') + 'all</button>' : '') + h +
+      legend('Test bench', [['↑ ↓', 'rows'], ['Space', 'expand'], ['a', 'next that needs you'], ['t', 'try it'], ['l p', 'looks good / problem'], ['↻', 'out of date: the code changed after it'], ['y n', 'allow / deny']]);
+  }
+
+  /* ================= ideas and compare ================= */
+  var VIEWS = [
+    { id: 'you', n: 1, name: 'Your Move', render: viewYou, order: orderYou,
+      thesis: 'Group by whose turn it is, never by stage.',
+      facts: [
+        ['What’s important', 'The top band is everything waiting on you, oldest wait first, with the answer buttons right on the card. An empty top band means you’re free. Approvals waiting 10 minutes or more get an amber border.'],
+        ['When things change', 'There are only three bands. A card changes band only when the turn changes hands, which is the moment you want to notice, and it glows as it moves. The stage is a small marker on the card.'],
+        ['Smoke testing', 'Ready to try is one of the things a session can need from you: Start the app, Open it, then Looks good or Found a problem. A problem goes back to Claude as a message, and the card drops to Claude’s move.'],
+        ['Trade-offs', 'Cards still move, but only between three bands, and for a reason anyone can read. Parked work can be forgotten, so parked chips show how long they’ve been idle. The simplest to explain to non-developers.'],
+      ] },
+    { id: 'atc', n: 2, name: 'Air Traffic', render: viewAtc, order: orderAtc,
+      thesis: 'Each session is a fixed row, and time flows left to right. The right edge is now.',
+      facts: [
+        ['What’s important', 'While a session waits on you, an amber bar grows toward now, so the longest wait is the longest amber bar. Scan the right edge: a pulsing dot means it’s blocked on you, blue means an unread turn, purple means ready to try.'],
+        ['When things change', 'Rows never move. A status is just where the line is now. The last 90 minutes of working, waiting and failing stay visible, so a session that keeps bouncing back is easy to spot.'],
+        ['Smoke testing', 'App runs draw as a purple line under the row, and your tries as green-headed ticks. You can see whether you tried it before or after the latest change.'],
+        ['Trade-offs', 'The densest view, and it needs width. A non-developer needs a minute to learn it. It’s the best at 10–20 sessions, and the best at showing you’ve left something sitting for an hour.'],
+      ] },
+    { id: 'tri', n: 3, name: 'Triage', render: viewTri, order: function () { return needers(); },
+      thesis: 'Treat sessions like conversations, and the things they need like mail.',
+      facts: [
+        ['What’s important', 'The middle column, Up next, is each thing a session needs from you, one per row, with its answer keys. Work it down to zero. A finished turn you haven’t looked at counts as unread and shows bold in the roster.'],
+        ['When things change', 'The roster on the left never reorders. The list is worked out from the sessions, so nothing belongs to a column. New items join at the bottom and leave when you act.'],
+        ['Smoke testing', 'A finished turn with a runnable app becomes a Try it item: Start, Open, Looks good, Found a problem. It stays in Up next until you’ve tried it.'],
+        ['Trade-offs', 'Three panes, and one session’s detail at a time. Less of a bird’s-eye view, but the fastest way through a pile. Everyone already knows how an inbox works.'],
+      ] },
+    { id: 'mc', n: 4, name: 'Mission Control', render: viewMc, order: function () { return pool(); },
+      thesis: 'Size is priority. The sessions you are driving are big; every other one is a puck in the dock.',
+      facts: [
+        ['What’s important', 'Three slots show live sessions with their chat, their question and a message box. With auto-fill on, a slot whose session goes quiet takes the next one that needs you. Pucks pulse amber when blocked, and their ring fills as the work moves along.'],
+        ['When things change', 'The dock is fixed like a taskbar, and pucks never move. Only the slots change, and only by your choice (pin) or by auto-fill. You decide how much it rearranges itself.'],
+        ['Smoke testing', 'Each slot has a Try it strip under the chat, with the app’s address and big Looks good / Found a problem buttons. Try one session while watching the next.'],
+        ['Trade-offs', 'The closest thing to replacing a stack of terminals. You see three sessions in depth, and the rest only as a ring and a badge.'],
+      ] },
+    { id: 'tb', n: 5, name: 'Test Bench', render: viewTb, order: orderAtc,
+      thesis: 'A card has no status. It has evidence.',
+      facts: [
+        ['What’s important', 'Each row is a session, and each column a piece of evidence: plan, code, tests, app runs, you tried it, PR, checks, merged. The Next step column names the one thing to do. Column counts show where work piles up; a click shows only those rows.'],
+        ['When things change', 'Evidence can go out of date: new code turns You tried it into ↻. Going backwards is shown plainly, and no card is locked anywhere. A fully green row is safe to ship.'],
+        ['Smoke testing', 'The You tried it column is the smoke test queue. Cells that are ready glow purple: one click starts the app, the next marks it tried.'],
+        ['Trade-offs', 'A table, and less warm. Great for a lead or for shipping day; the conversation is one step away (Space). It answers "what’s safe to ship" better than any other layout.'],
+      ] },
+  ];
+  function viewOf(id) { return VIEWS.find(function (v) { return v.id === id; }); }
+
+  function compareHtml() {
+    var rows = [
+      ['What to do next, at a glance', [5, 3, 5, 3, 4]],
+      ['Cards stay put', [3, 5, 4, 5, 5]],
+      ['Copes with flux', [4, 5, 4, 3, 5]],
+      ['Smoke testing', [3, 3, 4, 4, 5]],
+      ['Holds up at 20 sessions', [4, 5, 4, 2, 4]],
+      ['Clear to a non-developer', [5, 2, 4, 4, 3]],
+      ['Fast from the keyboard', [4, 3, 5, 3, 3]],
+      ['Driving several at once', [3, 2, 3, 5, 2]],
+    ];
+    var d = function (n) { return '<span class="dots">' + '●'.repeat(n) + '<i>' + '●'.repeat(5 - n) + '</i></span>'; };
+    return '<div class="idea" style="grid-template-columns:1fr"><div><h2>How they compare</h2><p class="thesis">Scored for the jobs you named: switching sessions, seeing what matters, and smoke testing, without locking a card into a status.</p></div></div>' +
+      '<div class="cmp"><table><thead><tr><th></th>' + VIEWS.map(function (v) { return '<th>' + v.n + ' ' + v.name + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      rows.map(function (r) { return '<tr><td>' + r[0] + '</td>' + r[1].map(function (n) { return '<td>' + d(n) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>' +
+      '<div class="read"><h3>My read</h3><p>Two of these answer "what should I focus on" without putting cards back in columns: <b>Your Move</b> and <b>Triage</b>. They share the same idea, sorting by <i>whose turn it is</i>, which changes constantly and is always true, unlike a stage.</p>' +
+      '<ul><li><b>Build Your Move as the home page.</b> Three bands is about as much structure as a person can take in at a glance, it explains itself to business folk, and the answer keys sit on the card.</li>' +
+      '<li><b>Take two ideas from the others into it:</b> unread turns from Triage (a finished turn you haven’t seen is your move), and the evidence row from Test Bench, as a small strip on each card that shows ↻ once your try is out of date.</li>' +
+      '<li><b>Keep Air Traffic as a second view behind one key</b> for heavy days. It’s the only layout that shows you left something sitting for an hour, and it costs little once the timeline data exists.</li>' +
+      '<li><b>Mission Control is a different product:</b> a replacement for a stack of terminals. It would make a good full-screen mode later, not a home page.</li></ul>' +
+      '<p>All five keep the keys visible, keep the stage as data, and use the same actions (<span class="kc">y</span> <span class="kc">n</span> <span class="kc">1</span>–<span class="kc">9</span> <span class="kc">t</span> <span class="kc">o</span> <span class="kc">s</span>), so whichever you pick, the canvas code from §125 isn’t wasted.</p></div>';
+  }
+
+  /* ================= render ================= */
+  function tabs() {
+    document.getElementById('tabs').innerHTML = VIEWS.map(function (v) { return '<button class="tab" role="tab" aria-selected="' + (st.view === v.id) + '" data-view="' + v.id + '"><span class="n">' + v.n + '</span>' + v.name + '</button>'; }).join('') +
+      '<button class="tab" role="tab" aria-selected="' + (st.view === 'cmp') + '" data-view="cmp"><span class="n">=</span>Compare</button>';
+  }
+  function flipBefore() { var m = {}; document.querySelectorAll('#stage [data-flip]').forEach(function (el) { m[el.dataset.flip] = el.getBoundingClientRect(); }); return m; }
+  function flipAfter(m) {
+    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    document.querySelectorAll('#stage [data-flip]').forEach(function (el) {
+      var a = m[el.dataset.flip]; if (!a) return; var b = el.getBoundingClientRect();
+      var dx = a.left - b.left, dy = a.top - b.top; if (!dx && !dy) return;
+      el.animate([{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.2,.7,.2,1)' });
+    });
+  }
+  function render() {
+    tabs();
+    var focusId = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.say;
+    var scroller = document.querySelector('#stage .ym, #stage .atc, #stage .queue, #stage .tb');
+    var scroll = scroller ? scroller.scrollTop : 0;
+    var before = flipBefore();
+    var idea = document.getElementById('idea'), stage = document.getElementById('stage');
+    if (st.view === 'cmp') {
+      idea.innerHTML = ''; idea.hidden = true;
+      stage.innerHTML = compareHtml();
+      document.getElementById('ticker').hidden = true; document.getElementById('hint').hidden = true;
+      return;
+    }
+    idea.hidden = false; document.getElementById('ticker').hidden = false; document.getElementById('hint').hidden = false;
+    var v = viewOf(st.view);
+    idea.innerHTML = '<div><div class="eyebrow">Layout ' + v.n + ' of 5</div><h2>' + v.name + '</h2><p class="thesis">' + v.thesis + '</p></div><div class="facts">' + v.facts.map(function (f) { return '<div><b>' + f[0] + '</b><p>' + f[1] + '</p></div>'; }).join('') + '</div>';
+    stage.innerHTML = '<div class="frame"><div class="mock">' + v.render() + '</div></div>';
+    var sc = document.querySelector('#stage .ym, #stage .atc, #stage .queue, #stage .tb'); if (sc) sc.scrollTop = scroll;
+    flipAfter(before);
+    if (focusId) { var inp = document.getElementById('say-' + focusId); if (inp) inp.focus(); }
+    document.getElementById('ticker').innerHTML = '<b>Changes</b>' + (st.log.length ? st.log.map(function (l, i) { return '<span class="' + (l.at === st.step ? 'new' : '') + '">' + esc(l.t) + (i < st.log.length - 1 ? ' ·' : '') + '</span>'; }).join('') : '<span>None yet. Press Play changes or Step, or act on a session.</span>');
+  }
+
+  /* ================= events ================= */
+  var timer = null;
+  document.getElementById('play').addEventListener('click', function () {
+    st.play = !st.play; this.classList.toggle('on', st.play); this.setAttribute('aria-pressed', st.play); this.textContent = st.play ? '❚❚ Pause changes' : '▶ Play changes';
+    clearInterval(timer); if (st.play) timer = setInterval(simulate, 2600);
+  });
+  document.getElementById('step').addEventListener('click', simulate);
+  document.getElementById('load').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return; st.load = +b.dataset.v;
+    this.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); }); render();
+  });
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-view],[data-act],[data-pick],[data-puck],[data-slot],[data-pin],[data-bench],#autofill');
+    if (!t) return;
+    if (t.dataset.view) { st.view = t.dataset.view; st.expanded = null; try { localStorage.setItem('cc-layouts-view', st.view); } catch (err) {} render(); return; }
+    if (t.dataset.act) {
+      e.stopPropagation();
+      if (t.dataset.act === 'expand') { st.sel = t.dataset.id; st.expanded = st.expanded === t.dataset.id ? null : t.dataset.id; render(); return; }
+      doAct(t.dataset.act, t.dataset.id, t.dataset.x !== undefined ? +t.dataset.x : undefined); return;
+    }
+    if (t.dataset.pin !== undefined) { var sl = st.slots[+t.dataset.pin]; sl.pin = !sl.pin; render(); return; }
+    if (t.id === 'autofill') { st.autofill = !st.autofill; render(); return; }
+    if (t.dataset.bench !== undefined) { st.bench = st.bench === t.dataset.bench ? '' : t.dataset.bench; render(); return; }
+    if (t.dataset.puck) { st.sel = t.dataset.puck; var cur = st.slots.findIndex(function (x) { return x.id === t.dataset.puck; }); if (cur >= 0) st.slot = cur; else { st.slots[st.slot].id = t.dataset.puck; st.slots[st.slot].pin = true; st.changed[t.dataset.puck] = ++st.step; } render(); return; }
+    if (t.dataset.slot !== undefined) { if (e.target.closest('input')) return; st.slot = +t.dataset.slot; var sid = st.slots[st.slot].id; if (sid) st.sel = sid; render(); return; }
+    if (t.dataset.pick) {
+      if (e.target.closest('input')) return;
+      var id = t.dataset.pick;
+      if ((st.view === 'atc' || st.view === 'tb') && st.sel === id) st.expanded = st.expanded === id ? null : id;
+      st.sel = id; render();
+    }
+  });
+  function selected() {
+    if (st.view === 'mc') { var sl = st.slots[st.slot]; return sl && byId(sl.id); }
+    return byId(st.sel);
+  }
+  document.addEventListener('keydown', function (e) {
+    var t = e.target;
+    if (t.dataset && t.dataset.say) {
+      if (e.key === 'Enter' && t.value.trim()) { doAct('send', t.dataset.say, t.value.trim()); }
+      if (e.key === 'Escape') t.blur();
+      return;
+    }
+    if (st.view === 'cmp' || e.ctrlKey || e.metaKey || e.altKey || /INPUT|TEXTAREA/.test(t.tagName)) return;
+    var v = viewOf(st.view), s = selected(), k = e.key, done = true;
+    var order = st.view === 'tri' && (k === 'ArrowUp' || k === 'ArrowDown') ? orderAtc() : v.order();
+    if (k === 'ArrowDown' || k === 'j' || k === 'ArrowUp' || k === 'k' || (st.view === 'mc' && (k === 'ArrowLeft' || k === 'ArrowRight'))) {
+      var d = (k === 'ArrowDown' || k === 'j' || k === 'ArrowRight') ? 1 : -1, ids = order.map(function (x) { return x.id; }), i = ids.indexOf(st.sel);
+      if (ids.length) st.sel = ids[Math.max(0, Math.min(ids.length - 1, i < 0 ? 0 : i + d))];
+      render();
+    }
+    else if (k === 'Tab' && st.view === 'mc') { st.slot = (st.slot + (e.shiftKey ? 2 : 1)) % 3; var sid = st.slots[st.slot].id; if (sid) st.sel = sid; render(); }
+    else if (k === 'Enter' && st.view === 'mc' && st.sel && !st.slots.some(function (x) { return x.id === st.sel; })) { st.slots[st.slot] = { id: st.sel, pin: true }; render(); }
+    else if (k === 'a') { var q = needers().sort(function (a, b) { return prio(b) - prio(a); }); if (!q.length) toast('Nothing needs you'); else { var j = q.findIndex(function (x) { return x.id === st.sel; }); st.sel = q[(j + 1) % q.length].id; if (st.view === 'mc') { var at = st.slots.findIndex(function (x) { return x.id === st.sel; }); if (at >= 0) st.slot = at; else st.slots[st.slot] = { id: st.sel, pin: false }; } if (st.view === 'atc' || st.view === 'tb') st.expanded = st.sel; render(); } }
+    else if (k === ' ' && (st.view === 'atc' || st.view === 'tb')) { st.expanded = st.expanded === st.sel ? null : st.sel; render(); }
+    else if (k === 'Escape') { if (st.bench) st.bench = ''; st.expanded = null; render(); }
+    else if (k === 'f' && st.view === 'mc') { st.autofill = !st.autofill; render(); }
+    else if (!s) done = false;
+    else if (k === 'y' || k === 'n') doAct(k === 'y' ? 'allow' : 'deny', s.id);
+    else if (/^[1-3]$/.test(k) && s.ask && s.ask.k === 'question') doAct('answer', s.id, +k - 1);
+    else if (k === 't') doAct('try', s.id);
+    else if (k === 'o') doAct('open', s.id);
+    else if (k === 'l') doAct('good', s.id);
+    else if (k === 'p') doAct('problem', s.id);
+    else if (k === 's') doAct('seen', s.id);
+    else if (k === 'r') doAct('retry', s.id);
+    else if (k === 'Enter') doAct('full', s.id);
+    else done = false;
+    if (done) e.preventDefault();
+  });
+
+  try { var saved = localStorage.getItem('cc-layouts-view'); if (saved && (saved === 'cmp' || viewOf(saved))) st.view = saved; } catch (err) {}
+  render();
+})();
+</script>
+</body>
+</html>

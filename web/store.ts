@@ -10,6 +10,7 @@ import type { QaState } from './questions.ts';
 import type { Flags } from './home-model.ts';
 import { applyTheme, loadTheme, type ThemePref } from './theme.ts';
 import { asDraft, hasWork, type CardPanel, type Composer, type LineFilter } from './line-model.ts';
+import { pruneSeen, seenNow, type Seen } from './your-move.ts';
 import type { Pasted } from './say-images.ts';
 
 /** Where keys go inside the session view. Esc steps outward: composer → number pad → the line. */
@@ -94,6 +95,8 @@ interface State {
   permissions: Record<string, PermissionRequest>;
   /** Sessions that finished a turn while you weren't looking, with the time it happened. */
   unread: Record<string, number>;
+  /** §126: when you last saw each card, so a turn that finished after it is unread (your move). null until this browser has a record. */
+  seen: Seen | null;
   lastError: string | null;
   /** The server predates this page ('server': restart it) or the page predates the server ('page': reload). */
   outdated: 'server' | 'page' | null;
@@ -128,7 +131,7 @@ interface State {
    * The board: the focused card, the card open in the drawer and its tab, the workspace shown, and
    * the text filter (/).
    */
-  line: { focus: string | null; drawer: string | null; /** The open card's dock panel (§81), kept from card to card; `at`: the file chosen in Changes. */ panel: CardPanel | null; at: number; /** Bumped when a card's Try it pick changes (it lives in localStorage), so the panel redraws. */ pickTick?: number; /** The panel's width in px (dragged or [ ]; remembered per browser). */ panelW: number; filter: LineFilter; q: string; searching: boolean; /** The Inbox's view (v): yours, or ready for QA. */ view: InboxView };
+  line: { focus: string | null; drawer: string | null; /** The open card's dock panel (§81), kept from card to card; `at`: the file chosen in Changes. */ panel: CardPanel | null; at: number; /** Bumped when a card's Try it pick changes (it lives in localStorage), so the panel redraws. */ pickTick?: number; /** The panel's width in px (dragged or [ ]; remembered per browser). */ panelW: number; filter: LineFilter; q: string; searching: boolean; /** The Inbox's view (v): yours, or ready for QA. */ view: InboxView; /** §126: the tickets strip above the bands is folded (i), and the Done group is open. */ ticketsFolded: boolean; doneOpen: boolean; /** The cards' order when one was opened: ← → follow it, so a card leaving Your move as you read it doesn't reshuffle them (§126). */ order?: string[] };
   /** What the tracker's search found for the new-card screen's search box (other people's tickets too). */
   found: Found;
   /** The new-card screen, while it is open. */
@@ -188,6 +191,7 @@ export const useStore = create<State>(() => ({
   activity: {},
   permissions: {},
   unread: {},
+  seen: loadSeen(),
   lastError: null,
   outdated: null,
   flash: null,
@@ -208,7 +212,7 @@ export const useStore = create<State>(() => ({
   ticketProjects: [],
   ticketSources: null,
   doneStatuses: DONE_STATUSES,
-  line: { focus: null, drawer: null, panel: null, at: 0, panelW: loadPanelW(), filter: loadFilter(), q: '', searching: false, view: loadView() },
+  line: { focus: null, drawer: null, panel: null, at: 0, panelW: loadPanelW(), filter: loadFilter(), q: '', searching: false, view: loadView(), ticketsFolded: loadFlag('cc-control.ticketsFolded'), doneOpen: false },
   found: NO_FOUND,
   composer: null,
   draft: loadDraft(),
@@ -336,6 +340,46 @@ export function setInboxView(view: InboxView): void {
 
 function loadView(): InboxView {
   try { return localStorage.getItem('cc-control.inboxView') === 'qa' ? 'qa' : 'mine'; } catch { return 'mine'; }
+}
+
+const SEEN_KEY = 'cc-control.seen.v1';
+
+function loadSeen(): Seen | null {
+  try { const raw = localStorage.getItem(SEEN_KEY); return raw ? JSON.parse(raw) as Seen : null; } catch { return null; }
+}
+function saveSeen(seen: Seen): void {
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen)); } catch { /* storage off: unread lasts until a reload */ }
+}
+
+/** A card was looked at (opened, its session shown, or m): its finished turn is no longer unread. */
+export function markSeen(id: string): void {
+  const s = get();
+  const card = s.cards.find((c) => c.id === id);
+  const at = Math.max(card?.live?.at ?? 0, Date.now());
+  if (s.seen && (s.seen[id] ?? 0) >= (card?.live?.at ?? 0)) return;
+  const seen = { ...(s.seen ?? {}), [id]: at };
+  set({ seen });
+  saveSeen(seen);
+}
+
+/** The cards arrived: a browser with no record yet starts with everything seen; gone cards drop out. */
+export function syncSeen(cards: Card[]): void {
+  const s = get();
+  const seen = s.seen ? pruneSeen(s.seen, cards) : seenNow(cards);
+  if (s.seen && Object.keys(seen).length === Object.keys(s.seen).length) return;
+  set({ seen });
+  saveSeen(seen);
+}
+
+function loadFlag(key: string): boolean {
+  try { return localStorage.getItem(key) === '1'; } catch { return false; }
+}
+
+/** i: fold or show the tickets strip above the bands; remembered per browser. */
+export function toggleTicketsFolded(): void {
+  const ticketsFolded = !get().line.ticketsFolded;
+  set({ line: { ...get().line, ticketsFolded } });
+  try { localStorage.setItem('cc-control.ticketsFolded', ticketsFolded ? '1' : '0'); } catch { /* ignore */ }
 }
 
 /** The session that takes the session keys: the one open full screen. */

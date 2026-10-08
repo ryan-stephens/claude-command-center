@@ -3039,3 +3039,63 @@ No code changed. Not run: the walks (a docs-only change); `pnpm typecheck` and `
 - Whether the stage strip (Plan · Build · Try · Ship) earns its space on each tile.
 
 Checked: the mock in headless Chromium, in light and dark, at 1440 and 1024 px, and empty, with the screenshots looked at and no console errors. A script drove it: `Space` opens the quick view under the focused tile's row with its notch on the tile; `a` moves to the next card that needs you; a digit answers a question; and `↓` from the last row reaches Done and closes the quick view. No app code changed, so the walks weren't run.
+
+## 126. Your Move: the home page sorts cards by whose turn it is
+
+2026-10-08. The owner used the canvas mock (§125) and found it jumbled: with many cards, nothing said which ones to focus on. Five more layouts were mocked side by side on the same sessions, with a simulator that changes their states over time. They are in `docs/futures/home-layouts.html`: Your Move, Air Traffic (a timeline row per session), Triage (an inbox of what each session needs), Mission Control (three live slots and a dock) and Test Bench (columns of evidence). The owner chose **Your Move**: "Oh man I fucking love Option #1".
+
+**The idea:** a card's place comes from whose turn it is, never from its stage. That is always true and needs no explaining, and a card changes band only when the turn changes hands, which is the moment worth noticing. The stage stays as data and as a small marker on the tile.
+
+**What the home page is now** (`web/your-move.ts` for the bands, `web/components/YourMove.tsx` for the page; the board's columns are gone):
+- **Your move**, the longest wait first, a queue a newcomer joins at the end. It holds a card that:
+  - asks (a tool to allow, a plan to approve, a question form, a turn that ended on a question, a prompt only its terminal can answer);
+  - failed to start, or whose Try it failed;
+  - finished a turn you haven't seen.
+
+  Each tile carries the answer:
+  - `y` / `n` (or the buttons) allow or deny, and approve the plan or keep planning;
+  - a digit picks the answer to a single plain question;
+  - other forms, and a question to reply to, open the card;
+  - a finished turn shows what Claude said, with *Seen* (`m`);
+  - waiting 10 minutes or more turns an ask's border amber.
+- **Claude's move:** cards working on their own, newest first, each with what it is doing, its turn's time and its app line.
+- **Parked:** nobody is waiting on these. One chip each, newest first, with the app's address (the front door's, §123) or the PR, and Try it's buttons on cards in Try it or Ship, the chosen card, and any card whose app runs.
+- **Tickets to start** (the Inbox) are a strip above the bands. `i` folds it, `v` switches yours / Ready for QA, `n` starts one.
+- **Done** is a folded group at the end, holding finished tickets without a card too. `Enter` or a click opens it.
+- **The bar** counts *your move* and *Claude working*.
+
+**Unread turns.** The page keeps when you last saw each card, in this browser (`cc-control.seen.v1`). A turn that ended after that is unread. Opening the card, its session full screen, or `m` marks it seen. A browser with no record starts with every card seen, so old cards don't all arrive as unread. It is page-only, so it reaches the owner's app with `pnpm build` and a reload, with no server restart.
+
+**Keys.**
+- New: `a` (the next card that needs you, round again), `m`, `y` / `n` and the digits on a tile, `i`, and `Enter` / `Space` on Done.
+- The arrows move across the wrapping bands by where the tiles are (`stepBox`: ← → in reading order, ↑ ↓ to the nearest tile of the row above or below).
+- Every board key keeps its meaning.
+- `?` and the legend (hidden by `SLIM.legend`, still kept right) list them.
+
+**← → on an open card** follow the order the cards had when it was opened (`line.order`). Opening an unread card marks it seen, which moves it to Parked. Without the snapshot, → would skip the next card. `walk-perf` caught it.
+
+**Not done yet:**
+- *Ready to try* as one of Your move's needs, with *Looks good* / *Found a problem*. It needs a record of having tried it.
+- The rename of *Lane* to *Workspace* (§125).
+- The quick view under a tile (§124). Your Move answers on the tile instead, so it may not be wanted.
+- New README screenshots: `docs/screenshots/line*.png` still show the board.
+
+Seen in the layouts and worth keeping for later: Test Bench's ↻ when a try is out of date, and Air Traffic as a second view for heavy days.
+
+**Checked** on isolated servers, never :7777:
+- `pnpm typecheck`, `npx tsc --noUnusedLocals -p .`, and `pnpm test` (410: `your-move.test.ts` is new; the board's column and arrow tests went with `lanes` and `moveFocus`).
+- `walk-card` 66/66, light and dark. The Done card is opened from its group now.
+- `walk-hub` 37/37 (a real Haiku card).
+- `walk-perf` 25/25, every budget line OK (a key paints in 4–9 ms, p95, against 16).
+- `walk-board-try` 19/19: the chips needed Try it's buttons to pass.
+- `walk-two-cards` 26/26, light and dark: the chips needed the front door's address.
+- The new `walk-your-move` 24/24, light and dark. It covers:
+  - the bands, the order, `a` and `m`;
+  - opening a card marking it seen;
+  - → on an open card skipping none;
+  - Done, the tickets strip with `i` and `v`, `0`, and `?`;
+  - 1024 px without sideways scrolling.
+
+  Screenshots looked at.
+
+:7788 was already taken by another cc-control server, running since 2026-09-30. It isn't this session's, so it was left alone, and these tests used :7826.

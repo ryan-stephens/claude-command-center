@@ -17,13 +17,13 @@ import { repoName } from '../../shared/workspaces.ts';
 import { CARD_PANELS, type CardPanel } from '../line-model.ts';
 import { booting, cardActivity, elapsed, needsYou, progress, shortPath, stepCard } from '../line-model.ts';
 import { QuestionForm } from './QuestionForm.tsx';
-import { answerAsk, attachToSay, boardOf, changeHooks, editRecipe, goToTab, lastPick, openAddComposer, openApp, openNeighbour, openOutput, openWorktrees, pickSayImage, popOutChanges, rememberPick, saySubmit, setChangeCount, setSayImages, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
+import { answerAsk, attachToSay, changeHooks, editRecipe, goToTab, lastPick, openAddComposer, openApp, openNeighbour, openOrder, openOutput, openWorktrees, pickSayImage, popOutChanges, rememberPick, saySubmit, setChangeCount, setSayImages, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
 import { IMAGE_TYPES, type Pasted } from '../say-images.ts';
 import { fitSay, SAY_DEFAULT, setSayHeight, useSayHeight } from '../say-size.ts';
 
 const NO_IMAGES: Pasted[] = [];
 import { openSession } from '../keys.ts';
-import { get, set, setPanelW, useStore } from '../store.ts';
+import { get, markSeen, set, setPanelW, useStore } from '../store.ts';
 import { cardChanges, openTranscript, send, stackPlan } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { RunLog } from './RunLog.tsx';
@@ -59,7 +59,11 @@ export function CardView({ id }: { id: string }) {
   useStore((s) => s.line.filter);
   useStore((s) => s.line.q);
   useStore((s) => s.cards);
-  const place = stepCard(boardOf(get()), id, 0);
+  useStore((s) => s.seen);
+  const place = stepCard([{ cards: openOrder(get()) }], id, 0);
+  // §126: a card you have open is seen, and so is each turn that finishes while it is open.
+  const liveAt = card?.live?.at;
+  useEffect(() => { markSeen(id); }, [id, liveAt]);
   if (!card) return null;
   return (
     <section data-card className="absolute inset-0 z-20 flex bg-bg" aria-label={`${card.key} ${card.title}`}>

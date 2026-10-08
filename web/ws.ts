@@ -9,7 +9,7 @@ import type { PromptContext } from '../shared/prompts.ts';
 import type { EnvCheck, LookupResult, SetInfo, VerifyEnv } from '../shared/verify.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
 import { haveOf, mergeTranscript } from './transcript-merge.ts';
-import { activeSession, flash, get, groupKeyOf, set, setFilter } from './store.ts';
+import { activeSession, flash, get, groupKeyOf, set, setFilter, syncSeen } from './store.ts';
 
 let socket: WebSocket | null = null;
 let retryMs = 1000;
@@ -489,6 +489,7 @@ function receive(msg: ServerMsg): void {
       const before = new Map(get().cards.map((c) => [c.id, c]));
       set({ cards: msg.cards, nextKey: msg.nextKey, cardModel: msg.model ?? null, userModel: msg.userModel ?? null, cardsInTerminal: msg.inTerminal === true });
       for (const c of msg.cards) onCardChange(before.get(c.id), c);
+      syncSeen(msg.cards);
       return;
     }
     case 'tickets':

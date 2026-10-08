@@ -11,16 +11,17 @@ import { repoName } from '../shared/workspaces.ts';
 import { finishedTickets, inbox, INBOX_VIEWS, type Ticket } from '../shared/tickets.ts';
 import { exportWorkspace, importWorkspace } from './commands.ts';
 import { openSession } from './keys.ts';
-import { closeComposer, currentWorkspace, flash, get, set, setFilter, setInboxView, setPanelW, takeDraft, type WorkspaceAction } from './store.ts';
+import { closeComposer, currentWorkspace, flash, get, markSeen, set, setFilter, setInboxView, setPanelW, takeDraft, toggleTicketsFolded, type WorkspaceAction } from './store.ts';
+import { homeCards, homeOf, nextNeeding, stepBox, type Box, type Home } from './your-move.ts';
 import {
-  addComposer, additionOf, cardFolders, type CardPanel, stepCard, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, newComposer, packetRows, PANES, pickTicket,
+  addComposer, additionOf, cardFolders, type CardPanel, stepCard, cardHasRepo, composerKey, cycleKind, cycleModel, draftOf, nextTab, dropTicket, focusedTicket, goRows, keepForWorkspace, lineSessions, matches, newComposer, packetRows, PANES, pickTicket,
   sources, stepOption, ticketFocus, ticketSources, togglePacketRow, toggleSource, editingKey,
   type Composer,
 } from './line-model.ts';
 import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
 import { withSimple } from './simple-model.ts';
 import { armProd, cycleEnv, openPage, refreshSets, runCheck, runLookup, runVerify, toggleAdvanced } from './verify-state.ts';
-import { addCardContext, answerCard, focusCardTab, sayToCard, send, showDoor, startCard, stopRun, tryCard } from './ws.ts';
+import { addCardContext, answerCard, answerQuestionCard, focusCardTab, sayToCard, send, showDoor, startCard, stopRun, tryCard } from './ws.ts';
 import { IMAGE_ONLY_TEXT, MAX_IMAGES, pickImages, readImage, type Pasted } from './say-images.ts';
 import { fitSay, nudgeSay } from './say-size.ts';
 
@@ -28,11 +29,17 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
     title: 'Ticket Line',
     keys: [
-      ['← → ↑ ↓', 'Move between cards'],
+      ['← → ↑ ↓', 'Move between cards: the tickets to start, then the three bands (Your move, Claude’s move, Parked), then Done. A card sits in a band by whose turn it is, never by stage'],
+      ['a', 'The next card that needs you: Your move, the longest wait first, round again'],
+      ['y / n (a card asking)', 'Allow or deny what it asks, or approve its plan / keep planning, right on its tile'],
+      ['1–9 (a card asking one plain question)', 'Pick that answer, right on its tile. Anywhere else the digits pick the lane'],
+      ['m', 'Seen: a turn that finished while you were elsewhere leaves Your move (opening the card does the same)'],
+      ['i', 'Fold or show the tickets to start'],
+      ['Enter / Space (Done)', 'Open or fold the Done group'],
       ['Enter', 'Open the card: its chat (the session the app runs for it, streaming as Claude writes, with the message box and what it is asking) and a dock on the left whose panels open beside it'],
-      ['n / Enter (a ticket in the Inbox)', 'Start work on it: the new-card screen, with the ticket as its context'],
-      ['v', 'Inbox: your tickets, or every ticket Ready for QA in your projects'],
-      ['Delete (a ticket in the Inbox)', 'Hide it from the Inbox (nothing changes in Jira or Trello; Shift+T shows it again)'],
+      ['n / Enter (a ticket to start)', 'Start work on it: the new-card screen, with the ticket as its context'],
+      ['v', 'Tickets to start: yours, or every ticket Ready for QA in your projects'],
+      ['Delete (a ticket to start)', 'Hide it (nothing changes in Jira or Trello; Shift+T shows it again)'],
       ['Shift+T', 'Tickets: demo tickets (D), Jira and Trello (R refreshes), which lane each project goes to, and tickets you hid'],
       ['Ctrl+Enter', 'The card’s session full screen, in the app’s session view (Esc comes back)'],
       ['c', 'New card: build its context and start work; Claude runs in the app. A card you left half-built (Esc, Alt+L) is picked up again; Shift+C starts a fresh one'],
@@ -49,7 +56,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
       ['Esc (card open)', 'While Claude is working: stop it, as Esc does in Claude Code. Otherwise back to the board, the card still focused; on the board, clear the filter'],
-      ['← → (card open)', 'The previous / next card on the board, in column order'],
+      ['← → (card open)', 'The previous / next card, in the home page’s order'],
       ['Enter (card open)', 'The message box under the chat: Enter sends to the session at once, Shift+Enter is a new line, Esc leaves the box. A session that isn’t running (the server restarted, or it ended) is resumed by the send itself'],
       ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts: n keeps it planning)'],
       ['1–9  ·  Tab / Shift+Tab  ·  y (a question on the card)', 'Claude’s question form, drawn as it is in the tab: a digit picks an option (a single choice moves on to the next question; boxes toggle), the digit after the options is Type something  ·  the next / previous question, or Submit at the end  ·  submit the answers. A message from the box instead goes in as the next turn'],
@@ -140,26 +147,47 @@ export function doneTicketsOf(s: ReturnType<typeof get>): Ticket[] {
   return finishedTickets(s.tickets, new Set(s.cards.map((c) => c.key)), s.line.filter, s.line.view, s.doneStatuses);
 }
 
-/** v: the Inbox's other view. The focus moves to the first card or ticket it shows. */
+/** v: the tickets strip's other view (yours, or Ready for QA). A focused ticket it no longer shows hands the focus on. */
 export function switchInbox(): void {
   const s = get();
   const at = INBOX_VIEWS.findIndex((v) => v.id === s.line.view);
   const next = INBOX_VIEWS[(at + 1) % INBOX_VIEWS.length];
   setInboxView(next.id);
-  set({ line: { ...get().line, focus: moveFocus(boardOf(get()), null, 1, 0) } });
-  flash(`Inbox: ${next.name}`);
+  const now = get();
+  if (!homeIds(now).includes(now.line.focus ?? '')) set({ line: { ...now.line, focus: firstFocus(now) } });
+  flash(`Tickets to start: ${next.name}`);
 }
 
-/** The board's columns, with the Inbox's tickets. */
-export function boardOf(s: ReturnType<typeof get>) {
-  return lanes(s.cards, s.line.filter, s.line.q, inboxOf(s), doneTicketsOf(s));
+/** The home page's bands (§126): the cards the line shows, by whose turn it is. */
+export function homeNow(s: ReturnType<typeof get>): Home {
+  return homeOf(s.cards, s.runs, s.seen ?? {}, s.line.filter, s.line.q);
+}
+
+/** The cards in reading order (what ← → walk with a card open, and Alt+↑ ↓ from a session). */
+export function lineCards(s: ReturnType<typeof get>) {
+  return homeCards(homeNow(s), s.line.doneOpen);
+}
+
+/** The Done group's header, focused like a card (Enter or Space opens it). */
+export const DONE_FOCUS = 'g:done';
+
+/** Everything the arrows reach, in reading order: the tickets strip (unless folded), the cards, the Done group. */
+export function homeIds(s: ReturnType<typeof get>): string[] {
+  const h = homeNow(s);
+  const tickets = s.line.ticketsFolded ? [] : inboxOf(s).filter((t) => matches(s.line.q, `${t.key} ${t.title}`)).map((t) => ticketFocus(t.key));
+  const done = h.done.length || doneTicketsOf(s).length ? [DONE_FOCUS] : [];
+  return [...tickets, ...homeCards(h).map((c) => c.id), ...done, ...(s.line.doneOpen ? h.done.map((c) => c.id) : [])];
+}
+
+/** Where the focus lands on arriving: the first card that needs you, else the first card, else a ticket. */
+export function firstFocus(s: ReturnType<typeof get>): string | null {
+  const h = homeNow(s);
+  return h.you[0]?.card.id ?? homeCards(h)[0]?.id ?? homeIds(s)[0] ?? null;
 }
 
 export function openLine(): void {
   const s = get();
-  const cols = boardOf(s);
-  const known = cols.some((l) => l.cards.some((c) => c.id === s.line.focus) || l.tickets.some((t) => ticketFocus(t.key) === s.line.focus));
-  const focus = known ? s.line.focus : moveFocus(cols, null, 1, 0);
+  const focus = homeIds(s).includes(s.line.focus ?? '') ? s.line.focus : firstFocus(s);
   set({ screen: 'line', line: { ...s.line, focus }, modal: null });
 }
 
@@ -179,7 +207,7 @@ export function goHome(): void {
 /** The cards' sessions, in column order (what Alt+↑ ↓ walk from a session). Ctrl+K finds any other session. */
 export function lineSessionIds(): string[] {
   const s = get();
-  return lineSessions(lanes(s.cards, s.line.filter, s.line.q));
+  return lineSessions([{ cards: lineCards(s) }]);
 }
 
 /** The expand key on the line: the focused card's session full screen. */
@@ -191,6 +219,7 @@ export function expandFromLine(): void {
   if (focusedTicket(id)) { flash(`${focusedTicket(id)} has no session yet: n starts work on it`); return; }
   if (!card) { flash('Pick a card first'); return; }
   if (!card.sessionId) { flash(`${card.key} has no session yet`); return; }
+  markSeen(card.id);
   openSession(card.sessionId);
 }
 
@@ -527,7 +556,16 @@ export function editRecipe(id: string): void {
 }
 
 export function openCard(id: string): void {
-  set({ line: { ...get().line, focus: id, drawer: id } });
+  const s = get();
+  set({ line: { ...s.line, focus: id, drawer: id, order: lineCards(s).map((c) => c.id) } });
+}
+
+/** The cards ← → step through on an open card: the order when it was opened, less any since removed. */
+export function openOrder(s: ReturnType<typeof get>) {
+  // A card opened another way (a new card, Try it) isn't in it: the order as it is now.
+  if (!s.line.order || !s.line.order.includes(s.line.drawer ?? '')) return lineCards(s);
+  const byId = new Map(s.cards.map((c) => [c.id, c]));
+  return s.line.order.map((id) => byId.get(id)).filter((c): c is NonNullable<typeof c> => Boolean(c));
 }
 
 /** A dock key on the open card (§81): opens that panel beside the chat, or closes it when it is the one open. */
@@ -784,13 +822,15 @@ function boardKeys(e: KeyboardEvent): boolean {
   const s = get();
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
   const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code);
+  // A digit on a card asking one plain question picks that answer (§126); otherwise it picks the workspace.
+  if (digit && !e.shiftKey && answerOnTile(s.line.focus, Number(digit[1]))) return true;
   if (digit && !e.shiftKey) {
     const n = Number(digit[1]);
     const ws = s.workspaces[n - 1];
     if (n && !ws) { flash(s.workspaces.length ? `There is no lane ${n}` : 'No lanes yet. W makes one.'); return true; }
     const filter = n === 0 ? 'all' : ws.id;
     setFilter(filter);
-    set({ line: { ...get().line, focus: moveFocus(boardOf(get()), null, 1, 0) } });
+    set({ line: { ...get().line, focus: firstFocus(get()) } });
     flash(n === 0 ? 'Every lane' : ws.name);
     return true;
   }
@@ -798,20 +838,28 @@ function boardKeys(e: KeyboardEvent): boolean {
   if (e.key === '/' && !e.shiftKey) { set({ line: { ...s.line, searching: true } }); focusField('line-q'); return true; }
   if (e.key === 'T') { set({ modal: { kind: 'tickets' } }); return true; }
   if (e.key === 'v') { switchInbox(); return true; }
-  const cols = boardOf(s);
-  const focused = cols.some((l) => l.cards.some((c) => c.id === s.line.focus) || l.tickets.some((t) => ticketFocus(t.key) === s.line.focus)) ? s.line.focus : null;
-  const ticket = cols[0].tickets.find((t) => ticketFocus(t.key) === focused);
+  if (e.key === 'i') { toggleTicketsFolded(); const now = get(); if (!homeIds(now).includes(now.line.focus ?? '')) set({ line: { ...now.line, focus: firstFocus(now) } }); return true; }
+  const ids = homeIds(s);
+  const known = ids.includes(s.line.focus ?? '') ? s.line.focus : null;
+  if (known === DONE_FOCUS) {
+    if (e.key === 'Enter' || e.key === ' ') { set({ line: { ...s.line, doneOpen: !s.line.doneOpen } }); return true; }
+  }
+  const ticket = inboxOf(s).find((t) => ticketFocus(t.key) === known);
   if (ticket) {
     if (e.key === 'Enter' || e.key === 'n') { openComposer(ticket); return true; }
-    if (e.key === 'Delete') { hideTicket(ticket.key, cols); return true; }
+    if (e.key === 'Delete') { hideTicket(ticket.key, ids); return true; }
   }
+  const focused = known && known !== DONE_FOCUS && !ticket ? known : null;
   const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   if (arrows[e.key]) {
     const [dx, dy] = arrows[e.key];
-    set({ line: { ...s.line, focus: moveFocus(cols, focused, dx, dy) } });
+    set({ line: { ...s.line, focus: stepBox(boxesOf(ids), known, dx, dy) } });
     return true;
   }
   switch (e.key) {
+    case 'a': { const next = nextNeeding(homeNow(s), focused); if (next) set({ line: { ...s.line, focus: next } }); else flash('Nothing is waiting on you'); return true; }
+    case 'm': if (focused) { markSeen(focused); flash('Marked as seen'); } else flash('Pick a card first'); return true;
+    case 'y': if (focused) answerAsk(focused, 'allow'); else flash('Pick a card first'); return true;
     case 'Enter': if (focused) openCard(focused); return true;
     case 't': if (focused) tryIt(focused); else flash('Pick a card first'); return true;
     case 'R': if (focused) restartApp(focused); else flash('Pick a card first'); return true;
@@ -823,7 +871,7 @@ function boardKeys(e: KeyboardEvent): boolean {
     case 'e': if (focused) editRecipe(focused); else workspaceKey('edit'); return true;
     case 'c': openComposer(); return true;
     case 'C': openComposer(null, true); return true;
-    case 'n': flash('n starts work on a ticket in the Inbox; c makes a card without one'); return true;
+    case 'n': if (focused && askOf(get().cards.find((c) => c.id === focused) ?? { live: undefined })) answerAsk(focused, 'deny'); else flash('n denies what a card asks, or starts work on a ticket; c makes a card without one'); return true;
     case 'Delete': if (focused) set({ modal: { kind: 'deleteCard', id: focused } }); return true;
     case 'X': if (focused) openWorktrees(focused); else flash('Pick a card first'); return true;
     case 'Escape': if (s.line.q) set({ line: { ...s.line, q: '' } }); return true;
@@ -1012,22 +1060,41 @@ export function lineKeys(e: KeyboardEvent, typing: boolean): boolean {
   return boardKeys(e);
 }
 
-/** Delete on a ticket in the Inbox: hide it there (the tracker is untouched), and move to the next one. */
-function hideTicket(key: string, cols: ReturnType<typeof boardOf>): void {
+/** Delete on a ticket to start: hide it (the tracker is untouched), and move to the next one. */
+function hideTicket(key: string, ids: string[]): void {
   const s = get();
-  const ids = cols[0].tickets.map((t) => ticketFocus(t.key));
   const at = ids.indexOf(ticketFocus(key));
-  const next = ids[at + 1] ?? ids[at - 1] ?? cols[0].cards[0]?.id ?? null;
+  const next = ids[at + 1] ?? ids[at - 1] ?? null;
   send({ type: 'tickets.hide', key, hidden: true });
   set({ line: { ...s.line, focus: next } });
-  flash(`Hid ${key} from the Inbox. Shift+T shows hidden tickets again.`);
+  flash(`Hid ${key} from the tickets to start. Shift+T shows hidden tickets again.`);
+}
+
+/** Where each thing the arrows reach is on screen (its element is #card-<id>), in reading order. */
+function boxesOf(ids: string[]): Box[] {
+  const out: Box[] = [];
+  for (const id of ids) {
+    const r = document.getElementById(`card-${id}`)?.getBoundingClientRect();
+    if (r && r.width) out.push({ id, x: r.left, y: r.top, w: r.width, h: r.height });
+  }
+  return out;
+}
+
+/** A digit on a tile asking one question with plain options: send that answer (§126). False when it isn't one. */
+function answerOnTile(id: string | null, d: number): boolean {
+  const card = id ? get().cards.find((c) => c.id === id) : undefined;
+  const ask = card && card.live?.phase === 'needs' ? askOf(card) : undefined;
+  const q = ask?.kind === 'question' && ask.questions?.length === 1 ? ask.questions[0] : undefined;
+  if (!card || !q || q.multiSelect || d < 1 || d > q.options.length) return false;
+  answerQuestionCard(card.id, [{ picks: [d - 1] }]).then(() => flash(`${card.key}: ${q.options[d - 1].label}`), (e: Error) => flash(e.message));
+  return true;
 }
 
 /** ← → with a card open: the next card the board shows opens in its place, on the same tab. */
 export function openNeighbour(id: string, delta: number): void {
   const s = get();
-  const next = stepCard(boardOf(s), id, delta);
-  if (!next.id) { flash(delta > 0 ? 'That is the last card on the board' : 'That is the first card on the board'); return; }
+  const next = stepCard([{ cards: openOrder(s) }], id, delta);
+  if (!next.id) { flash(delta > 0 ? 'That is the last card' : 'That is the first card'); return; }
   set({ line: { ...s.line, focus: next.id, drawer: next.id } });
 }
 
@@ -1035,6 +1102,8 @@ export function openNeighbour(id: string, delta: number): void {
 export function deleteCard(id: string): void {
   send({ type: 'card.delete', id });
   const s = get();
-  const cols = lanes(s.cards.filter((c) => c.id !== id), s.line.filter, s.line.q, inboxOf(s), doneTicketsOf(s));
-  set({ line: { ...s.line, drawer: s.line.drawer === id ? null : s.line.drawer, focus: s.line.focus === id ? moveFocus(cols, null, 1, 0) : s.line.focus } });
+  const ids = homeIds(s);
+  const at = ids.indexOf(id);
+  const next = s.line.focus === id ? ids[at + 1] ?? ids[at - 1] ?? null : s.line.focus;
+  set({ line: { ...s.line, drawer: s.line.drawer === id ? null : s.line.drawer, focus: next === id ? null : next } });
 }

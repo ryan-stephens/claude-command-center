@@ -1,10 +1,10 @@
-// The Ticket Line's pure logic: which card sits where on the board, how arrows move between them,
-// and the new-card screen's state (its three panels and what each key does to them).
+// The Ticket Line's pure logic: the filter, a card's activity line, stepping between cards, and
+// the new-card screen's state (the home page's bands are your-move.ts) (its three panels and what each key does to them).
 // Tested in line-model.test.ts; the components only draw it.
 
 import {
-  branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, homeOf, includedRepos, kindDefaults, kindForTicket, LAUNCH_MODES, modelName, STAGES, TESTING_NOTES, WORKSPACE_NOTES,
-  type BranchChoice, type Card, type CardDraft, type CardFolder, type CardKind, type Packet, type PacketItem, type PrTarget, type Stage,
+  branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, homeOf, includedRepos, kindDefaults, kindForTicket, LAUNCH_MODES, modelName, TESTING_NOTES, WORKSPACE_NOTES,
+  type BranchChoice, type Card, type CardDraft, type CardFolder, type CardKind, type Packet, type PacketItem, type PrTarget,
 } from '../shared/cards.ts';
 import type { RepoInfo, Workspace } from '../shared/protocol.ts';
 import { recipeFor, recipeLabel, recipeText, wsRecipeKey, type RunRecipe } from '../shared/recipes.ts';
@@ -30,48 +30,18 @@ export function matches(q: string, hay: string): boolean {
   return q.trim().toLowerCase().split(/\s+/).every((w) => !w || h.includes(w));
 }
 
-/** A column of the board: its cards, and for the Inbox, the tickets no card has started yet. */
-export interface Lane { stage: Stage; name: string; cards: Card[]; tickets: Ticket[] }
-
-/** `done`: tickets without a card whose status is past the work, shown in the Done column (§100). */
-export function lanes(cards: Card[], filter: LineFilter, q = '', inbox: Ticket[] = [], done: Ticket[] = []): Lane[] {
-  return STAGES.map((s) => ({
-    stage: s.id,
-    name: s.name,
-    cards: cards.filter((c) => c.stage === s.id && (filter === 'all' || c.workspaceId === filter) && matches(q, `${c.key} ${c.title} ${c.branchName ?? ''}`)),
-    tickets: (s.id === 'inbox' ? inbox : s.id === 'done' ? done : []).filter((t) => matches(q, `${t.key} ${t.title}`)),
-  }));
-}
-
-/** A ticket in the Inbox has the board's focus as "t:SHOP-155". */
+/** A ticket to start has the home page's focus as "t:SHOP-155". */
 export const ticketFocus = (key: string) => `t:${key}`;
 export const focusedTicket = (focus: string | null) => (focus?.startsWith('t:') ? focus.slice(2) : null);
 
-/** What arrows walk in a column: its tickets, then its cards. */
-const laneIds = (l: { cards: { id: string }[]; tickets?: { key: string }[] }) => [...(l.tickets ?? []).map((t) => ticketFocus(t.key)), ...l.cards.map((c) => c.id)];
-
-/** The cards' sessions, column by column: what Alt+↑ ↓ walk. */
+/** The cards' sessions, in the order given: what Alt+↑ ↓ walk. */
 export function lineSessions(cols: { cards: Card[] }[]): string[] {
   return [...new Set(cols.flatMap((l) => l.cards.map((c) => c.sessionId).filter((id): id is string => Boolean(id))))];
 }
 
-/** Arrows on the board: ↑ ↓ within a column, ← → to the nearest column that has cards, keeping the row. */
-export function moveFocus(cols: { cards: Card[]; tickets?: Ticket[] }[], focus: string | null, dx: number, dy: number): string | null {
-  const ids = cols.map(laneIds);
-  let ci = -1;
-  let ri = 0;
-  ids.forEach((c, i) => { const j = c.indexOf(focus ?? ''); if (j >= 0) { ci = i; ri = j; } });
-  if (ci < 0) return ids.find((c) => c.length)?.[0] ?? null;
-  if (dy) return ids[ci][Math.max(0, Math.min(ids[ci].length - 1, ri + dy))];
-  for (let c = ci + dx; c >= 0 && c < ids.length; c += dx) {
-    if (ids[c].length) return ids[c][Math.min(ri, ids[c].length - 1)];
-  }
-  return focus;
-}
-
 /**
- * ← → with a card open: the previous or next card the board shows, column by column (Inbox
- * tickets aren't cards, so they are skipped). Where it is among them, for "3 of 7".
+ * ← → with a card open: the previous or next card the home page shows, in reading order (§126).
+ * Where it is among them, for "3 of 7".
  */
 export function stepCard(cols: { cards: Card[] }[], id: string, delta: number): { id: string | null; at: number; total: number } {
   const ids = cols.flatMap((l) => l.cards.map((c) => c.id));

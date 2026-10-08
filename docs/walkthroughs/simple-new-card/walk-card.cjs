@@ -232,7 +232,7 @@ async function ask(page, msg) {
   await page.keyboard.press('D');
   await sleep(300);
 
-  // Working, idle, done: by their tiles (the board orders cards by column, so → from a Needs-you card goes to Try it).
+  // Working, idle, done: by their tiles (the page orders cards by whose move it is, so → from one that asks goes to the next that asks).
   await page.keyboard.press('Escape');
   await sleep(300);
   await page.locator(`#card-${ids.working}`).click();
@@ -293,6 +293,8 @@ async function ask(page, msg) {
   await page.evaluate(() => localStorage.removeItem('cc-control.sayHeight'));
   await page.keyboard.press('Escape');
   await sleep(300);
+  // §126: Done cards fold into the Done group at the end of the page; open it first.
+  if (!(await page.locator(`#card-${ids.done}`).count())) await page.locator('[id="card-g:done"]').click();
   await page.locator(`#card-${ids.done}`).click();
   await sleep(900);
   check('done: the session ended, so the box says sending resumes it', /session ended/.test(await view().getByRole('note').innerText()));

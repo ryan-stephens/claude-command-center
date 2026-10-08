@@ -4,10 +4,10 @@ import { packetText, type Card } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
 import type { Ticket } from '../shared/tickets.ts';
 import {
-  addComposer, additionOf, cardActivity, composerKey, ticketSources, cycleModel, draftOf, dropTicket, pickTicket, ticketFocus, elapsed, goRows, keepForWorkspace, lanes, lineSessions, moveFocus, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin,
+  addComposer, additionOf, cardActivity, composerKey, ticketSources, cycleModel, draftOf, dropTicket, pickTicket, elapsed, goRows, keepForWorkspace, lineSessions, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin,
   setWorkspace, sources, stepOption, togglePacketRow, toggleSource,
   hasWork, asDraft, type Composer,
-  addSource, cardFolders, looksLikePath, removeSource, sourceOf, sourceRows, type RepoSource, editingKey,
+  addSource, cardFolders, looksLikePath, matches, removeSource, sourceOf, sourceRows, type RepoSource, editingKey,
 } from './line-model.ts';
 
 const W1: Workspace = { id: 'w1', name: 'Storefront', color: 'blue', repos: ['D:\\r\\web-app', 'D:\\r\\tokens'], home: 'D:\\r\\tokens' };
@@ -30,23 +30,6 @@ test('a new-card screen is worth keeping once it has a title, a ticket, a note o
   assert.deepEqual([back.starting, back.error, back.preview, back.q, back.title], [false, null, false, '', 'Size guide']);
 });
 
-test('lanes put cards in their stage, and the filter keeps one workspace', () => {
-  const cs = [card('a', 'plan'), card('b', 'build', 'w2'), card('c', 'plan')];
-  const all = lanes(cs, 'all');
-  assert.equal(all.length, 7);
-  assert.deepEqual(all.find((l) => l.stage === 'plan')!.cards.map((c) => c.id), ['a', 'c']);
-  assert.deepEqual(lanes(cs, 'w2').flatMap((l) => l.cards.map((c) => c.id)), ['b']);
-});
-
-test('arrows walk the board and skip empty columns, keeping the row where they can', () => {
-  const cols = lanes([card('a', 'plan'), card('c', 'plan'), card('b', 'try')], 'all');
-  assert.equal(moveFocus(cols, null, 1, 0), 'a', 'no focus: the first card');
-  assert.equal(moveFocus(cols, 'a', 0, 1), 'c');
-  assert.equal(moveFocus(cols, 'c', 0, 1), 'c', 'stops at the bottom');
-  assert.equal(moveFocus(cols, 'c', 1, 0), 'b', 'jumps over the empty Build and Needs you');
-  assert.equal(moveFocus(cols, 'b', 1, 0), 'b', 'nothing further right');
-  assert.equal(moveFocus(cols, 'b', -1, 0), 'a');
-});
 
 test('a new card starts with its workspace’s repos, from the workspace’s home', () => {
   const c = newComposer(W1, 'CARD-3');
@@ -175,15 +158,15 @@ test('progress, elapsed time and short paths', () => {
   assert.equal(shortPath('D:\\other\\b.ts', 'C:\\repos\\web-app-card-1', folders), 'D:\\other\\b.ts');
 });
 
-test('the / filter narrows the board by key, title or branch, every word', () => {
-  const cs = [{ ...card('CARD-1', 'plan'), title: 'Gift card field' }, { ...card('CARD-2', 'build'), title: 'Footer links' }];
-  assert.deepEqual(lanes(cs, 'all', 'gift').flatMap((l) => l.cards.map((c) => c.id)), ['CARD-1']);
-  assert.deepEqual(lanes(cs, 'all', 'card-2').flatMap((l) => l.cards.map((c) => c.id)), ['CARD-2']);
-  assert.deepEqual(lanes(cs, 'all', 'links gift').flatMap((l) => l.cards.map((c) => c.id)), []);
+test('the / filter matches every word, anywhere in the text', () => {
+  assert.equal(matches('gift', 'CARD-1 Gift card field'), true);
+  assert.equal(matches('card-2', 'CARD-2 Footer links'), true);
+  assert.equal(matches('links gift', 'CARD-2 Footer links'), false);
+  assert.equal(matches('  ', 'anything'), true);
 });
 
 test('Alt+arrows walk the cards’ sessions, once each', () => {
-  const cols = lanes([{ ...card('a', 'plan'), sessionId: 's1' }, card('b', 'plan'), { ...card('c', 'try'), sessionId: 's2' }], 'all');
+  const cols = [{ cards: [{ ...card('a', 'plan'), sessionId: 's1' }, card('b', 'plan'), { ...card('c', 'try'), sessionId: 's2' }, { ...card('d', 'try'), sessionId: 's1' }] }];
   assert.deepEqual(lineSessions(cols), ['s1', 's2']);
 });
 
@@ -222,13 +205,6 @@ const ticket = (key: string, over: Partial<Ticket> = {}): Ticket => ({
   comments: [], attachments: [], links: [], status: 'To Do', done: false, updatedAt: 0, workspaceId: 'w2', ...over,
 });
 
-test('Inbox tickets come first in their column for the arrows', () => {
-  const cols = lanes([card('a', 'inbox'), card('b', 'plan')], 'all', '', [ticket('SHOP-1'), ticket('SHOP-2')]);
-  assert.equal(moveFocus(cols, null, 1, 0), ticketFocus('SHOP-1'));
-  assert.equal(moveFocus(cols, ticketFocus('SHOP-1'), 0, 1), ticketFocus('SHOP-2'));
-  assert.equal(moveFocus(cols, ticketFocus('SHOP-2'), 1, 0), 'b');
-  assert.deepEqual(lanes([], 'all', 'shop-2', [ticket('SHOP-1'), ticket('SHOP-2')])[0].tickets.map((t) => t.key), ['SHOP-2'], 'the filter reaches tickets');
-});
 
 test('picking tickets: the first is the card’s (its title, parts and mapped workspace), later ones related', () => {
   const c = newComposer(W1, 'CARD-3');
@@ -295,14 +271,6 @@ test('the workspace layer carries the home repo’s run recipe, and Claude is to
   const off = togglePacketRow(c, c.packet.workspace.indexOf(recipe)) as Composer;
   assert.doesNotMatch(packetText({ ...off, title: 'x' }, 'CARD-3'), /Running the app/, 'Space leaves it out');
   assert.equal(setWorkspace(c, W2, recipes).packet.workspace.some((i) => i.kind === 'recipe'), false, 'Payments has no recipe');
-});
-
-test('tickets past the work sit in the Done column, before its cards; the arrows reach them (§100)', () => {
-  const cols = lanes([card('d', 'done')], 'all', '', [ticket('SHOP-1')], [ticket('SHOP-9', { status: 'Ready for Prod' })]);
-  assert.deepEqual(cols.find((l) => l.stage === 'inbox')!.tickets.map((t) => t.key), ['SHOP-1']);
-  assert.deepEqual(cols.find((l) => l.stage === 'done')!.tickets.map((t) => t.key), ['SHOP-9']);
-  assert.equal(moveFocus(cols, ticketFocus('SHOP-1'), 1, 0), ticketFocus('SHOP-9'));
-  assert.equal(moveFocus(cols, ticketFocus('SHOP-9'), 0, 1), 'd');
 });
 
 test('editingKey: the box keeps paste, copy, undo and word delete; the app keeps Ctrl+Enter, Ctrl+arrows and Alt', () => {

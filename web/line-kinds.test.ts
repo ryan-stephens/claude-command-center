@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { PrTarget } from '../shared/cards.ts';
 import type { Workspace } from '../shared/protocol.ts';
 import type { Ticket } from '../shared/tickets.ts';
-import { lanes, stepCard } from './line-model.ts';
+import { stepCard } from './line-model.ts';
 import { addFolder, branchOpts, cardFolders, cycleKind, draftOf, goRows, gotPr, newComposer, nextTab, pickOption, pickTicket, setKind, ticketSources, wantsPr } from './line-model.ts';
 
 const W: Workspace = { id: 'w1', name: 'Workspaces', color: 'blue', repos: ['D:/r/ui', 'D:/r/api'], home: 'D:/r/ui', notes: 'Proxy to Okteto.', testing: 'Scenarios come from the scenario tool.' };
@@ -86,16 +86,16 @@ test('Folders: any folder goes in like an extra repo, once; the tab lists the on
   assert.deepEqual(cardFolders(c, [{ path: 'D:/specs/loans', name: 'loans' }]), [], 'a library repo shows under Repos instead');
 });
 
-test('← → with a card open step through the cards the board shows, column by column, and stop at the ends', () => {
+test('← → with a card open step through the cards in the order given, and stop at the ends', () => {
   const card = (id: string, stage: 'plan' | 'build' | 'ship', workspaceId = 'w1') => ({
     id, key: id, title: id, workspaceId, stage, createdAt: 0, boot: [],
     packet: { workspace: [], ticket: [], card: [], note: '' }, launch: { home: '', branch: 'new' as const, mode: 'plan' as const, message: '' },
   });
-  const cols = lanes([card('s1', 'ship'), card('p1', 'plan'), card('b1', 'build'), card('p2', 'plan'), card('x', 'plan', 'w2')], 'w1');
+  const cols = [{ cards: [card('p1', 'plan'), card('p2', 'plan'), card('b1', 'build'), card('s1', 'ship')] }];
   assert.deepEqual(stepCard(cols, 'p1', 1), { id: 'p2', at: 0, total: 4 });
-  assert.equal(stepCard(cols, 'p2', 1).id, 'b1', 'on to the next column');
+  assert.equal(stepCard(cols, 'p2', 1).id, 'b1', 'in the order the page shows them');
   assert.equal(stepCard(cols, 'b1', 1).id, 's1');
   assert.equal(stepCard(cols, 's1', 1).id, null, 'the last card');
   assert.equal(stepCard(cols, 'p1', -1).id, null, 'the first card');
-  assert.equal(stepCard(cols, 'x', 1).at, -1, 'a card the board doesn’t show');
+  assert.equal(stepCard(cols, 'x', 1).at, -1, 'a card the page doesn’t show');
 });
