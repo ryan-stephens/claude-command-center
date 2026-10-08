@@ -357,7 +357,7 @@ function GoPane({ c, keyName }: { c: Composer; keyName: string }) {
             className={`grid gap-1.5 rounded-xl border border-transparent px-2.5 py-2 ${focused && i === gi ? 'is-focus' : ''}`}>
             <div className="eyebrow">{r.label}</div>
             {r.id === 'msg'
-              ? <input id="cp-msg" type="text" autoComplete="off" value={c.launch.message}
+              ? <input id="cp-msg" type="text" autoComplete="off" value={c.launch.message} placeholder={c.ticket ? undefined : 'What should Claude do? The first line names the card'}
                   onChange={(e) => updateComposer((x) => ({ ...x, msgTouched: true, launch: { ...x.launch, message: e.target.value } }))}
                   className="w-full rounded-lg border border-line bg-bg px-2.5 py-1.5 text-[13.5px] outline-none focus:border-ring" />
               : <div className="flex flex-wrap gap-1.5">

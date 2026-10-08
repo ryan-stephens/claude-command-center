@@ -124,6 +124,9 @@ const idle = async (page) => { const c = await cardNow(page); return c?.live?.ph
   await page.locator('#cp-title').fill('Hub walk: contributing note');
   await page.locator('#cp-note').fill('This is a quick test. Plan: create CONTRIBUTING.md containing the one line "Be kind." Present that plan with ExitPlanMode straight away, without reading anything first. Once approved, only write the file: run no commands, and don’t commit.');
   await page.locator('#cp-msg').fill('Plan CARD-1.');
+  // A card without a ticket starts as a plain session (§131); this one plans first, in a worktree of its own.
+  await page.getByRole('button', { name: /^New worktree/ }).click();
+  await page.getByRole('button', { name: 'Plan first', exact: true }).click();
   const what = await page.getByText('What happens').locator('..').innerText();
   check('the new-card screen says Claude starts in the app, not a tab', /claude in the app/.test(what) && !/wt -w 0/.test(what), what.replace(/\n/g, ' | ').slice(0, 160));
   await shot(page, 'new-card');

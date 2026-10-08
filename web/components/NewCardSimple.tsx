@@ -161,7 +161,7 @@ function TicketBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; o
         className={`field text-[15px] ${focused && !sp.adding ? 'blk-focus' : ''}`} />
       {sp.adding === 'ticket' && <Picker c={c} embedded />}
       {found.problem && sp.adding !== 'ticket' && <div className="text-[12.5px] text-attn">{found.problem}</div>}
-      <label htmlFor="cp-title" className="text-[13px] text-faint">No ticket? Say what the card should do instead.</label>
+      <label htmlFor="cp-title" className="text-[13px] text-faint">No ticket? Then it’s a plain session: a title if you like, or the opening message’s first line names it.</label>
       <input id="cp-title" type="text" autoComplete="off" value={c.title} placeholder="e.g. Add a size guide to product pages"
         onChange={(e) => updateComposer((x) => ({ ...x, title: e.target.value }))}
         className="field text-[14px]" />
@@ -348,7 +348,7 @@ function MessageBlock({ c, focused, onFocus }: { c: Composer; focused: boolean; 
             })}
           </div>
         )}
-        <textarea id="cp-msg" ref={box} rows={9} value={c.launch.message} placeholder="What should Claude do first? Pick a saved prompt above, or type rough words and have Claude write it." readOnly={Boolean(sp.writing)}
+        <textarea id="cp-msg" ref={box} rows={9} value={c.launch.message} placeholder={c.ticket ? 'What should Claude do first? Pick a saved prompt above, or type rough words and have Claude write it.' : 'What should Claude do? Just say it: the first line names the card. Or pick a saved prompt above.'} readOnly={Boolean(sp.writing)}
           onChange={(e) => updateComposer((x) => ({ ...x, msgTouched: true, launch: { ...x.launch, message: e.target.value } }))}
           className="field min-h-[200px] resize-none overflow-hidden rounded-none border-0 bg-transparent text-[14px] leading-relaxed focus:ring-0" spellCheck={false} />
         <div className="border-t border-line/60 px-4 py-2 text-[12.5px] text-faint">{note}</div>

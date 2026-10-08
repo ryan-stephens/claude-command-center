@@ -92,13 +92,14 @@ export function chips(c: Composer, library: RepoInfo[]): Chip[] {
 
 /**
  * The option rows behind the How it starts sentence: the full screen's, without the kind (the
- * control at the top), where it runs (always a tab), and, for a Develop card, the branch: it
- * always works in a worktree of each repo, so cards on the same repos never touch each other
- * and Try it can run each one on its own ports. (The full look still offers the older choices.)
+ * control at the top), where it runs (always a tab), and, for a Develop card with a ticket, the
+ * branch: it always works in a worktree of each repo, so cards on the same repos never touch each
+ * other and Try it can run each one on its own ports. Without a ticket the branch is a choice: a
+ * plain session starts in the repo as it is (§131). (The full look still offers the older choices.)
  */
 export function howRows(c: Composer, workspaces: Workspace[], key: string, models: ModelDefaults = {}): GoRow[] {
   // The opening message has a block of its own on this screen (§62), so its row is not here either.
-  return goRows(c, workspaces, key, models).filter((r) => r.id !== 'kind' && r.id !== 'where' && r.id !== 'msg' && !(r.id === 'branch' && c.kind === 'build'));
+  return goRows(c, workspaces, key, models).filter((r) => r.id !== 'kind' && r.id !== 'where' && r.id !== 'msg' && !(r.id === 'branch' && c.kind === 'build' && c.ticket));
 }
 
 /** One settings row as the closed block shows it: the label the opened row has, its value, and what it means. */
@@ -115,7 +116,8 @@ export function howFacts(c: Composer, workspaces: Workspace[], key: string, mode
     { id: 'ws', label: 'Workspace', value: ws?.name ?? 'None', note: ws ? 'its repos and notes are part of the context' : undefined },
     { id: 'home', label: 'Starts in', value: homeName, note: repos.length > 1 ? `Claude’s working folder; the other ${repos.length - 1 === 1 ? 'repo is' : 'repos are'} added beside it` : undefined },
   ];
-  if (c.kind === 'build') out.push({ id: 'branch', label: 'Branch', value: branch, note: `a new worktree of ${repos.length > 1 ? 'each repo' : 'the repo'}, so nothing else you have open is touched` });
+  if (c.kind === 'build' && c.launch.branch === 'worktree') out.push({ id: 'branch', label: 'Branch', value: branch, note: `a new worktree of ${repos.length > 1 ? 'each repo' : 'the repo'}, so nothing else you have open is touched` });
+  else if (c.kind === 'build' && c.launch.branch === 'new') out.push({ id: 'branch', label: 'Branch', value: branch, note: 'a new branch in the repo’s own folder' });
   else out.push({ id: 'branch', label: 'Branch', value: c.launch.branch === 'pr' ? (c.pr ? `PR #${c.pr.number}’s branch, in a copy` : 'the PR’s branch') : 'the current checkout', note: c.launch.branch === 'pr' ? 'a detached worktree: your own checkout stays as it is' : 'works on whatever the repo’s folder is on' });
   const mode = c.launch.mode === 'plan' ? { v: 'Plan first', n: 'Claude writes a plan and waits for your approval before changing anything' }
     : c.launch.mode === 'auto' ? { v: 'Auto', n: 'Claude edits and runs tools without asking (not offered on every model)' }

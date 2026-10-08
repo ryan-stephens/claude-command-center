@@ -416,8 +416,12 @@ export function defaultMessage(key: string, mode: LaunchMode, kind: CardKind = '
   return mode === 'plan' ? `Plan ${key}.` : `Work on ${key}.`;
 }
 
-/** The mode and branch each kind starts with: QA and review don't make a branch of their own. */
-export function kindDefaults(kind: CardKind, pr?: PrTarget | null): Pick<CardLaunch, 'mode' | 'branch'> {
+/**
+ * The mode and branch each kind starts with: QA and review don't make a branch of their own. A
+ * development card without a ticket is a plain session (§131): the repo as it is, asking first.
+ */
+export function kindDefaults(kind: CardKind, pr?: PrTarget | null, ticket = true): Pick<CardLaunch, 'mode' | 'branch'> {
+  if (kind === 'build' && !ticket) return { mode: 'default', branch: 'current' };
   // Development works in worktrees of its own (§54): several cards in one repo never touch each other's files.
   if (kind === 'build') return { mode: 'plan', branch: 'worktree' };
   // A review stays read-only in plan mode; QA plans its checks first, then sets up data and tests.

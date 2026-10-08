@@ -6,7 +6,7 @@ import type { Ticket } from '../shared/tickets.ts';
 import {
   addComposer, additionOf, cardActivity, composerKey, ticketSources, cycleModel, draftOf, dropTicket, pickTicket, elapsed, goRows, keepForWorkspace, lineSessions, needsYou, progress, shortPath, newComposer, packetRows, pickOption, repoOrigin,
   setWorkspace, sources, stepOption, togglePacketRow, toggleSource,
-  hasWork, asDraft, type Composer,
+  hasWork, asDraft, titleFromMessage, type Composer,
   addSource, cardFolders, looksLikePath, matches, removeSource, sourceOf, sourceRows, type RepoSource, editingKey,
 } from './line-model.ts';
 
@@ -35,7 +35,8 @@ test('a new card starts with its workspace’s repos, from the workspace’s hom
   const c = newComposer(W1, 'CARD-3');
   assert.deepEqual(c.packet.workspace.map((i) => i.label), ['web-app', 'tokens']);
   assert.equal(c.launch.home, 'D:\\r\\tokens');
-  assert.equal(c.launch.message, 'Plan CARD-3.');
+  assert.equal(c.launch.message, '', 'no ticket: nothing to say yet ("Plan CARD-3." told Claude nothing, §131)');
+  assert.deepEqual([c.launch.mode, c.launch.branch], ['default', 'current'], 'no ticket: a plain session, the repo as it is, asking first (§131)');
   const none = newComposer(null, 'CARD-3');
   assert.deepEqual(none.packet.workspace, []);
 });
@@ -114,7 +115,9 @@ test('launch options: arrows skip what is not offered yet, the mode rewrites an 
   assert.equal(stepOption(c, where, 1, [W1, W2], 'CARD-3'), c, 'only the terminal tab is offered');
   const auto = pickOption(c, 'mode', 2, [W1, W2], 'CARD-3');
   assert.equal(auto.launch.mode, 'auto');
-  assert.equal(auto.launch.message, 'Work on CARD-3.');
+  assert.equal(auto.launch.message, '', 'no ticket: the mode has no message to rewrite');
+  const fromTicket = newComposer(W2, 'CARD-3', ticket('PAY-9'));
+  assert.equal(pickOption(fromTicket, 'mode', 2, [W1, W2], 'CARD-3').launch.message, 'Work on PAY-9.', 'a ticket card: the mode rewrites its untouched message');
   const typed = pickOption({ ...c, msgTouched: true, launch: { ...c.launch, message: 'Mine' } }, 'mode', 1, [W1, W2], 'CARD-3');
   assert.equal(typed.launch.message, 'Mine');
   const moved = stepOption(c, rows.find((r) => r.id === 'ws')!, 1, [W1, W2], 'CARD-3');
@@ -126,7 +129,16 @@ test('launch options: arrows skip what is not offered yet, the mode rewrites an 
 
 test('start work needs a title and a repo', () => {
   const c = newComposer(W1, 'CARD-3');
-  assert.match(String(draftOf(c)), /title/);
+  assert.match(String(draftOf(c)), /Say what Claude should do/);
+  // §131: no ticket and no title: what you asked names the card.
+  const asked = draftOf({ ...c, msgTouched: true, launch: { ...c.launch, message: '\n  Fix the flaky login test\nand explain what was wrong' } }) as { title: string; launch: { message: string } };
+  assert.equal(asked.title, 'Fix the flaky login test');
+  assert.match(asked.launch.message, /explain what was wrong/);
+  assert.ok(titleFromMessage('word '.repeat(30)).endsWith('…'), 'a long first line is cut at a word');
+  assert.ok(titleFromMessage('word '.repeat(30)).length <= 81);
+  // A title and no message: the title is what Claude is asked.
+  const titled = draftOf({ ...c, title: 'Add a size guide' }) as { launch: { message: string } };
+  assert.equal(titled.launch.message, 'Add a size guide');
   assert.match(String(draftOf({ ...newComposer(null, 'K'), title: 'x' })), /at least one repo/);
   const d = draftOf({ ...c, title: ' Size guide ' });
   assert.equal(typeof d, 'object');
@@ -216,6 +228,7 @@ test('picking tickets: the first is the card’s (its title, parts and mapped wo
   assert.deepEqual(r.packet.workspace.map((i) => i.label), ['pay']);
   assert.deepEqual(r.packet.ticket.map((i) => i.kind), ['desc', 'ac']);
   assert.equal(r.launch.message, 'Plan PAY-9.');
+  assert.deepEqual([r.launch.mode, r.launch.branch], ['plan', 'worktree'], 'a ticket card starts as one does (§131)');
   assert.equal(composerKey(r, 'CARD-3'), 'PAY-9');
   assert.match(String(pickTicket(r, ticket('PAY-9'), [W1, W2], new Set())), /this card’s ticket/);
   const rel = pickTicket(r, ticket('SHOP-4'), [W1, W2], new Set()) as Composer;
@@ -228,7 +241,8 @@ test('picking tickets: the first is the card’s (its title, parts and mapped wo
   const back = dropTicket(r, 'CARD-3');
   assert.equal(back.ticket, null);
   assert.equal(back.packet.ticket.length, 0);
-  assert.equal(back.launch.message, 'Plan CARD-3.');
+  assert.equal(back.launch.message, '');
+  assert.deepEqual([back.launch.mode, back.launch.branch], ['default', 'current'], 'the ticket off: a plain session again');
   const order = ticketSources(c, [ticket('A-1', { done: true, updatedAt: 9 }), ticket('A-2', { updatedAt: 1 }), ticket('A-3', { updatedAt: 5 }), ticket('A-4', { updatedAt: 8 })], new Set(['A-4']));
   assert.deepEqual(order.map((t) => t.key), ['A-3', 'A-2', 'A-4', 'A-1'], 'open first, then on the line, then done');
   const fromTicket = newComposer(W2, 'CARD-3', ticket('PAY-9'));

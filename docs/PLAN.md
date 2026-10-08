@@ -3223,3 +3223,38 @@ An unread turn comes first; once it is seen, the card stays in Your move as *Rea
   - End and a click going back and following;
   - a turn ending at the bottom leaving no ↓.
 - Screenshots of the ↓ looked at, light and dark.
+
+## 131. A card without a ticket is a plain session
+
+2026-10-08. The owner: "I think we should be able to start a new card without a jira card attached, these are just claude session's we're managing afterall."
+
+**What was there:** a card could already start without a ticket (`draftOf` took a typed title), but the screen was built ticket-first:
+- the ticket search came first and had the focus, and the title was a box under it;
+- the opening message defaulted to *"Plan CARD-1."*, which tells Claude nothing without a ticket;
+- so you typed your ask twice, and `Ctrl+Enter` with only a message refused (*"Give the card a title first"*).
+
+**Asked, and chosen:** keep the layout and take the friction out; and a card without a ticket starts lighter, in the repo's current checkout and asking first.
+
+**Now:**
+- **No ticket, no made-up message.** The opening message starts empty and asks *"What should Claude do? Just say it: the first line names the card."* (`openingFor`). With a ticket it is as before (*"Plan SHOP-160."*).
+- **Say it once.** `Ctrl+Enter` with only a message takes the card's title from its first line, cut at a word past 80 characters (`titleFromMessage`); a title and no message sends the title as the message. With neither, it says *"Say what Claude should do (the opening message), or pick a ticket."*
+- **Lighter defaults.** A Develop card without a ticket starts in the repo's current checkout (no worktree, no branch) and in Ask before edits (`kindDefaults(kind, pr, ticket)`). Picking a ticket brings back a ticket card's defaults (a worktree, Plan first); taking it off goes back.
+- The simple look forced a worktree for every Develop card. It now does so only with a ticket (`develop`), shows the Branch row behind Change without one, and its settings say what the branch really is (*"the current checkout"*).
+- The no-ticket title box says it is optional: *"No ticket? Then it's a plain session: a title if you like, or the opening message's first line names it."*
+
+**Walks changed:** `walk-hub` and `walk-perf` start a card without a ticket that has to plan in a worktree of its own, so they now pick *New worktree* and *Plan first* on the screen, as a person would.
+
+**Checked:**
+- `pnpm typecheck`, `npx tsc --noUnusedLocals -p .`, `pnpm test` (414; the composer's tests now cover the empty message, the title from the message, a title as the message, and the defaults flipping with a ticket). One run failed §119's 300 ms timing test; it passed again.
+- `walk-card` 66/66, light and dark; `walk-hub` 41/41; `walk-perf` 25/25, every line OK (a key paints in 4–10 ms, p95); `walk-your-move` 32/32, light and dark; `walk-simple` 43/43.
+- The new `walk-no-ticket` 10/10, light and dark, on its own server (:7829) with a real Haiku card in the simple look. It checks:
+  - the empty message and its question;
+  - the current checkout and Ask before edits in the settings;
+  - `Ctrl+Enter` with nothing saying what is missing;
+  - a message alone starting the card, titled by its first line, with no worktree made;
+  - Claude's own reply.
+
+  Screenshots looked at.
+- `walk-simple` failed five checks on a server cluttered by earlier tests. On fresh servers it passed 43/43, both on the page before this change and with it.
+
+**Seen, not changed:** the simple look's settings say *"Runs in a Windows Terminal tab"* even though cards now run in the app (§93); that line is hard-coded in `howFacts`.

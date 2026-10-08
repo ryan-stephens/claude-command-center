@@ -9,9 +9,13 @@ import { foundFor, keepRepo, leaveComposer, startWork, updateComposer } from './
 import { chips, howRows, ownMessage, promptContext, promptRows, simpleOf, stepBlock, usePrompt, withSimple } from './simple-model.ts';
 import { listFolder, peekRepoSource, pickFolderOnDisk, send, writeMessageWithClaude } from './ws.ts';
 
-/** The simple look has no branch choice for Develop: a worktree of each repo, always, so cards never share a checkout. */
+/**
+ * The simple look has no branch choice for a Develop card with a ticket: a worktree of each repo,
+ * always, so cards never share a checkout. Without a ticket it is a plain session in the repo as it
+ * is (§131), and the branch is a choice behind Change.
+ */
 export function develop(c: Composer): Composer {
-  return c.kind === 'build' && c.launch.branch !== 'worktree' ? { ...c, launch: { ...c.launch, branch: 'worktree' } } : c;
+  return c.kind === 'build' && c.ticket && c.launch.branch !== 'worktree' ? { ...c, launch: { ...c.launch, branch: 'worktree' } } : c;
 }
 
 /** Is the new-card screen in its simple look right now? (Adding to a running card is then the + Context popup over the chat, §88.) */

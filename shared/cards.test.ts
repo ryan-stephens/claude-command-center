@@ -20,6 +20,8 @@ const draft = (over: Partial<CardDraft> = {}): CardDraft => ({
 
 test('development starts in worktrees; QA and review on what is there', () => {
   assert.deepEqual(kindDefaults('build'), { mode: 'plan', branch: 'worktree' });
+  assert.deepEqual(kindDefaults('build', null, false), { mode: 'default', branch: 'current' }, 'no ticket: a plain session, the repo as it is, asking first (§131)');
+  assert.deepEqual(kindDefaults('qa', null, false), { mode: 'plan', branch: 'current' }, 'QA without a ticket is as before');
   assert.deepEqual(kindDefaults('qa'), { mode: 'plan', branch: 'current' });
   assert.equal(kindDefaults('review', { number: 1, title: '', url: 'http://x', host: 'github', source: 'a', target: 'b', repo: 'r' }).branch, 'pr');
 });

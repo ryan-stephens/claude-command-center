@@ -341,6 +341,9 @@ async function wsWindow(page, fn) {
     // A first message no other session has, so Ctrl+K finds this one (walk-hub's cards are all "Plan CARD-1.").
     const RUN = `perf${Date.now().toString(36)}`;
     await page.locator('#cp-msg').fill(`Plan CARD-1 (${RUN}).`);
+    // A card without a ticket starts as a plain session (§131); this one plans first, in a worktree of its own.
+    await page.getByRole('button', { name: /^New worktree/ }).click();
+    await page.getByRole('button', { name: 'Plan first', exact: true }).click();
     await page.locator('#cp-title').focus();
     await page.screenshot({ path: path.join(OUT, '04-new-card.png') });
     await page.evaluate(() => { window.__partialAt = undefined; window.__t0 = undefined; const on = (e) => { if (e.key === 'Enter' && e.ctrlKey) { window.__t0 = e.timeStamp; window.removeEventListener('keydown', on, true); } }; window.addEventListener('keydown', on, true); clearInterval(window.__pw); window.__pw = setInterval(() => { if (window.__partialAt === undefined && document.querySelector('[data-partial]')) window.__partialAt = performance.now(); }, 10); });

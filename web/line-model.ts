@@ -4,7 +4,7 @@
 
 import {
   branchFor, CARD_KINDS, CARD_MODELS, cardRepos, defaultMessage, homeOf, includedRepos, kindDefaults, kindForTicket, LAUNCH_MODES, modelName, TESTING_NOTES, WORKSPACE_NOTES,
-  type BranchChoice, type Card, type CardDraft, type CardFolder, type CardKind, type Packet, type PacketItem, type PrTarget,
+  type BranchChoice, type Card, type CardDraft, type CardFolder, type CardKind, type LaunchMode, type Packet, type PacketItem, type PrTarget,
 } from '../shared/cards.ts';
 import type { RepoInfo, Workspace } from '../shared/protocol.ts';
 import { recipeFor, recipeLabel, recipeText, wsRecipeKey, type RunRecipe } from '../shared/recipes.ts';
@@ -280,9 +280,9 @@ export function asDraft(c: Composer): Composer {
   return { ...c, starting: false, error: null, preview: false, q: '', prLooking: false };
 }
 
-export function newComposer(ws: Workspace | null, key: string, ticket: Ticket | null = null, recipes: Recipes = {}): Composer {
+export function newComposer(ws: Workspace | null, _key: string, ticket: Ticket | null = null, recipes: Recipes = {}): Composer {
   const kind = kindForTicket(ticket);
-  const { mode, branch } = kindDefaults(kind);
+  const { mode, branch } = kindDefaults(kind, null, Boolean(ticket));
   return {
     ticket,
     // From a ticket, the ticket is settled, so panel 1 opens on the repos; otherwise on the tickets.
@@ -290,7 +290,7 @@ export function newComposer(ws: Workspace | null, key: string, ticket: Ticket | 
     title: ticket?.title ?? '',
     workspaceId: ws?.id ?? null,
     packet: { workspace: workspaceLayer(ws, recipes, kind), ticket: ticket ? ticketItems(ticket) : [], card: [], note: '' },
-    launch: { home: (ws && homeRepo(ws)) ?? '', branch, mode, message: defaultMessage(ticket?.key ?? key, mode, kind) },
+    launch: { home: (ws && homeRepo(ws)) ?? '', branch, mode, message: openingFor(ticket, mode, kind) },
     pane: 'src', si: 0, pi: 0, gi: 0, preview: false, q: '', msgTouched: false, starting: false, error: null,
     kind, kindTouched: false,
   };
@@ -300,16 +300,32 @@ export function newComposer(ws: Workspace | null, key: string, ticket: Ticket | 
  * k, or the Kind row: Develop, QA or Code review. The mode and branch follow the kind, the
  * opening message too unless you typed one, and a QA card gets the workspace's testing notes.
  */
-export function setKind(c: Composer, kind: CardKind, key: string, workspaces: Workspace[], recipes: Recipes = {}, touched = true): Composer {
+export function setKind(c: Composer, kind: CardKind, _key: string, workspaces: Workspace[], recipes: Recipes = {}, touched = true): Composer {
   if (c.addTo) return c;
   const ws = workspaces.find((w) => w.id === c.workspaceId) ?? null;
-  const { mode, branch } = kindDefaults(kind, c.pr);
+  const { mode, branch } = kindDefaults(kind, c.pr, Boolean(c.ticket));
   const workspace = ws ? keepSwitches(c.packet.workspace, workspaceLayer(ws, recipes, kind)) : c.packet.workspace;
   return {
     ...c, kind, kindTouched: c.kindTouched || touched,
     packet: { ...c.packet, workspace },
-    launch: { ...c.launch, mode, branch, ...(branch === 'pr' && c.pr ? { home: c.pr.repo } : {}), message: c.msgTouched ? c.launch.message : defaultMessage(c.ticket?.key ?? key, mode, kind) },
+    launch: { ...c.launch, mode, branch, ...(branch === 'pr' && c.pr ? { home: c.pr.repo } : {}), message: c.msgTouched ? c.launch.message : openingFor(c.ticket, mode, kind) },
   };
+}
+
+/**
+ * The opening message a card starts with: from its ticket ("Plan SHOP-160."), or nothing without
+ * one, since "Plan CARD-3." tells Claude nothing (§131); the box asks what Claude should do instead.
+ */
+export function openingFor(ticket: Pick<Ticket, 'key'> | null, mode: LaunchMode, kind: CardKind): string {
+  return ticket ? defaultMessage(ticket.key, mode, kind) : '';
+}
+
+/** A card's title from the first line of what you asked, when it has no ticket and no title (§131). */
+export function titleFromMessage(message: string): string {
+  const line = message.split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? '';
+  if (line.length <= 80) return line;
+  const cut = line.slice(0, 80);
+  return `${cut.slice(0, cut.lastIndexOf(' ') > 40 ? cut.lastIndexOf(' ') : 80).trimEnd()}…`;
 }
 
 /** A rebuilt layer keeps what you switched off in the old one. */
@@ -415,8 +431,9 @@ export function pickTicket(c: Composer, t: Ticket, workspaces: Workspace[], star
       ...base, ticket: t, title: t.title, packet: { ...base.packet, ticket: ticketItems(t) },
       launch: { ...base.launch, message: c.msgTouched ? c.launch.message : defaultMessage(t.key, c.launch.mode, c.kind) },
     };
-    // The ticket says what kind of work it is, unless you already chose.
-    return c.kindTouched ? picked : setKind(picked, kindForTicket(t), t.key, workspaces, recipes, false);
+    // The ticket says what kind of work it is, unless you already chose; either way a ticket card starts
+    // as one does (a worktree, Plan first), not as the plain session it was without one (§131).
+    return setKind(picked, c.kindTouched ? c.kind : kindForTicket(t), t.key, workspaces, recipes, false);
   }
   const id = relatedItem(t).id;
   const has = c.packet.card.some((i) => i.id === id);
@@ -424,12 +441,12 @@ export function pickTicket(c: Composer, t: Ticket, workspaces: Workspace[], star
 }
 
 /** x on the card's ticket in panel 1: a card without a ticket again. */
-export function dropTicket(c: Composer, nextKey: string): Composer {
+export function dropTicket(c: Composer, _nextKey: string): Composer {
   if (!c.ticket) return c;
   const { pr: _pr, prFor: _for, prNotes: _notes, ...rest } = c;
   return {
     ...rest, ticket: null, title: '', packet: { ...c.packet, ticket: [] },
-    launch: { ...c.launch, branch: c.launch.branch === 'pr' ? 'current' : c.launch.branch, message: c.msgTouched ? c.launch.message : defaultMessage(nextKey, c.launch.mode, c.kind) },
+    launch: { ...c.launch, ...kindDefaults(c.kind, null, false), message: c.msgTouched ? c.launch.message : '' },
   };
 }
 
@@ -603,7 +620,7 @@ export function pickOption(c: Composer, id: GoRow['id'], at: number, workspaces:
     }
     case 'mode': {
       const mode = LAUNCH_MODES[at]?.id ?? 'plan';
-      return { ...c, launch: { ...c.launch, mode, message: c.msgTouched ? c.launch.message : defaultMessage(key, mode, c.kind) } };
+      return { ...c, launch: { ...c.launch, mode, message: c.msgTouched ? c.launch.message : openingFor(c.ticket, mode, c.kind) } };
     }
     default: return c;
   }
@@ -611,12 +628,15 @@ export function pickOption(c: Composer, id: GoRow['id'], at: number, workspaces:
 
 /** What Ctrl+Enter sends, or why it can't yet. */
 export function draftOf(c: Composer): CardDraft | string {
-  const title = (c.ticket?.title ?? c.title).trim();
-  if (!title) return 'Give the card a title first, or pick a ticket.';
+  // §131: no ticket is fine. The title can come from what you asked, and a title alone is what you ask.
+  const typed = c.launch.message.trim();
+  const title = (c.ticket?.title ?? c.title).trim() || titleFromMessage(typed);
+  if (!title) return 'Say what Claude should do (the opening message), or pick a ticket.';
+  const launch = typed ? c.launch : { ...c.launch, message: title };
   if (!includedRepos(c.packet).length) return 'A card needs at least one repo.';
   if (c.launch.branch === 'pr' && !c.pr) return 'No pull request was found for this ticket: pick Current branch.';
   return {
-    title, workspaceId: c.workspaceId, packet: c.packet, launch: { ...c.launch, home: homeOf(c.packet, c.launch)! }, ...(c.ticket ? { ticketKey: c.ticket.key } : {}),
+    title, workspaceId: c.workspaceId, packet: c.packet, launch: { ...launch, home: homeOf(c.packet, launch)! }, ...(c.ticket ? { ticketKey: c.ticket.key } : {}),
     ...(c.kind !== 'build' ? { kind: c.kind } : {}), ...(c.kind !== 'build' && c.pr ? { pr: c.pr } : {}),
   };
 }
