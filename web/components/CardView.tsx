@@ -4,7 +4,7 @@
 // and the chat and stays open from card to card. Nothing else is on the page. Keys: web/line-keys.ts
 // (drawerKeys); the legend and ? list them.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { askOf, cardRepos, fmtK, itemTokens, logsText, memoryPct, modelName, ownFolders, packetText, reachable as canReach, tokens, waiting, type Card, type PacketItem } from '../../shared/cards.ts';
@@ -20,6 +20,7 @@ import { QuestionForm } from './QuestionForm.tsx';
 import { answerAsk, attachToSay, cardMode, changeHooks, cycleCardMode, editRecipe, goToTab, lastPick, openAddComposer, openApp, openNeighbour, openOrder, openOutput, openWorktrees, pickSayImage, popOutChanges, rememberPick, saySubmit, setChangeCount, setSayImages, setTryRows, shipKey, stopService, togglePanel, toggleTryRow, tryIt, tryService } from '../line-keys.ts';
 import { IMAGE_TYPES, type Pasted } from '../say-images.ts';
 import { fitSay, SAY_DEFAULT, setSayHeight, useSayHeight } from '../say-size.ts';
+import { useStickToBottom } from '../stick.ts';
 
 const NO_IMAGES: Pasted[] = [];
 import { openSession } from '../keys.ts';
@@ -27,6 +28,7 @@ import { get, markSeen, set, setPanelW, useStore } from '../store.ts';
 import { cardChanges, openTranscript, send, stackPlan } from '../ws.ts';
 import { useNow } from './ActivityBar.tsx';
 import { RunLog } from './RunLog.tsx';
+import { JumpDown } from './JumpDown.tsx';
 import { ModeChip } from './ModeChip.tsx';
 import { SessionMeter } from './SessionMeter.tsx';
 import { DoorChip, KindPill, useExpandKey } from './TicketLine.tsx';
@@ -71,15 +73,15 @@ export function CardView({ id }: { id: string }) {
       <Dock card={card} panel={panel} />
       {panel && <Panel card={card} panel={panel} />}
       <div className="relative flex min-w-0 flex-1 flex-col bg-surface">
-        <div className="flex items-center gap-2.5 border-b border-line px-5 py-2.5">
+        <div className="@container flex items-center gap-2.5 border-b border-line px-5 py-2.5">
           <TicketKey k={card.key} source={card.ticket?.source} />
           <h2 className="min-w-0 truncate text-[17px] font-bold leading-snug tracking-tight">{card.title}</h2>
           <Pill tone={needsYou(card) ? 'amber' : 'grey'}>{STAGE[card.stage]}</Pill>
           {card.kind && card.kind !== 'build' && <KindPill card={card} />}
           <span className="grow" />
           {card.sessionId && <SessionMeter s={session} branch={card.branchName} className="mr-1" />}
-          {card.sessionId && card.runner === 'app' && <span className="flex shrink-0 items-center gap-1"><ModeChip mode={cardMode(card, session)} onClick={() => cycleCardMode(card.id)} /><Key k="⇧Tab" size="sm" /></span>}
-          {card.cwd && card.sessionId && <button className="btn py-0.5 text-[13px]" onClick={() => goToTab(card.id)} title={card.runner === 'app' ? 'Open the session in a Windows Terminal tab (claude --resume), between turns; the card follows it there' : 'Bring its Windows Terminal tab to the front'}><Key k="g" size="sm" />{card.runner === 'app' ? 'In a terminal' : 'Its tab'}</button>}
+          {card.sessionId && card.runner === 'app' && <span className="flex shrink-0 items-center gap-1"><ModeChip mode={cardMode(card, session)} onClick={() => cycleCardMode(card.id)} /><span className="@max-3xl:hidden"><Key k="⇧Tab" size="sm" /></span></span>}
+          {card.cwd && card.sessionId && <button className="btn py-0.5 text-[13px]" onClick={() => goToTab(card.id)} title={card.runner === 'app' ? 'Open the session in a Windows Terminal tab (claude --resume), between turns; the card follows it there' : 'Bring its Windows Terminal tab to the front'}><Key k="g" size="sm" /><span className="@max-3xl:hidden">{card.runner === 'app' ? 'In a terminal' : 'Its tab'}</span></button>}
           {place.at >= 0 && place.total > 1 && (
             <div className="ml-1 flex shrink-0 items-center gap-1.5 text-[12.5px] text-faint">
               <button className="hover:text-ink disabled:opacity-40" disabled={place.at === 0} onClick={() => openNeighbour(id, -1)} title="The previous card on the board" aria-label="The previous card"><Key k="←" size="sm" /></button>
@@ -225,14 +227,17 @@ function saveSeen(id: string, count: number): void {
   } catch { /* storage off */ }
 }
 
-/** The conversation, kept at the newest line unless you scrolled up; what came since you last looked is marked. */
+/**
+ * The conversation, kept at the newest line unless you scrolled up (§130: then it stays put while
+ * Claude writes, with a ↓ back to the newest); what came since you last looked is marked.
+ */
 function Chat({ card }: { card: Card }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const pinned = useRef(true);
   const items = useStore((s) => (card.sessionId ? s.transcripts[card.sessionId] : undefined));
   // Whether Claude is writing right now (§93); what it writes is Streaming's, so a token doesn't re-render the chat (§96).
   const writing = useStore((s) => Boolean(card.sessionId && s.partials[card.sessionId]));
   const count = items?.length ?? 0;
+  const said = useMemo(() => items?.reduce((n, i) => n + (i.kind === 'assistant' ? 1 : 0), 0) ?? 0, [items]);
+  const { ref, toBottom, jump, away, fresh } = useStickToBottom(count, said, card.id);
   const [seen, setSeen] = useState(() => loadSeen()[card.id] ?? 0);
   const latest = useRef(count);
   latest.current = count;
@@ -244,14 +249,8 @@ function Chat({ card }: { card: Card }) {
   // Opening a card reads where you left it; leaving it (or moving to the next) remembers where it was.
   useEffect(() => {
     setSeen(loadSeen()[card.id] ?? 0);
-    pinned.current = true;
     return () => saveSeen(card.id, latest.current);
   }, [card.id]);
-  const toBottom = useCallback(() => {
-    const el = ref.current;
-    if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, []);
-  useLayoutEffect(toBottom, [count, card.id, toBottom]);
   // The two sides of the "new since you last looked" line, the same arrays while nothing changes (the transcript is memoised).
   const before = useMemo(() => items?.slice(0, seen), [items, seen]);
   const since = useMemo(() => items?.slice(seen), [items, seen]);
@@ -259,7 +258,8 @@ function Chat({ card }: { card: Card }) {
   const now = useNow(act.state === 'go');
   const mark = seen > 0 && seen < count;
   return (
-    <div ref={ref} data-chat className="min-h-0 flex-1 overflow-y-auto px-5 py-4" onScroll={(e) => { const el = e.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
+    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div ref={ref} data-chat className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
       {/* §120: one column that never grows past the chat (an auto grid track takes its widest content, so a long line made the whole chat scroll sideways). */}
       <div className="mx-auto grid max-w-[880px] grid-cols-[minmax(0,1fr)] gap-3">
         {booting(card) && <BootLines card={card} />}
@@ -281,6 +281,8 @@ function Chat({ card }: { card: Card }) {
           </div>
         )}
       </div>
+    </div>
+    {away && <JumpDown fresh={fresh} writing={writing} onClick={jump} />}
     </div>
   );
 }

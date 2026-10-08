@@ -26,6 +26,7 @@ import { armProd, cycleEnv, openPage, refreshSets, runCheck, runLookup, runVerif
 import { addCardContext, answerCard, answerQuestionCard, focusCardTab, sayToCard, send, showDoor, startCard, stopRun, tryCard } from './ws.ts';
 import { IMAGE_ONLY_TEXT, MAX_IMAGES, pickImages, readImage, type Pasted } from './say-images.ts';
 import { fitSay, nudgeSay } from './say-size.ts';
+import { chatJump } from './stick.ts';
 
 export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
@@ -62,6 +63,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['← → (card open)', 'The previous / next card, in the home page’s order'],
       ['Enter (card open)', 'The message box under the chat: Enter sends to the session at once, Shift+Enter is a new line, Esc leaves the box. A session that isn’t running (the server restarted, or it ended) is resumed by the send itself'],
       ['y / n (card open)', 'Allow or deny what Claude is asking to do (a plan to approve counts: n keeps it planning)'],
+      ['End (card open)', 'To the newest message. Scrolled up, the chat stays where you are while Claude writes, and a ↓ over the message box says how many messages came since; End or a click goes back down and follows again. In the message box, End is the end of the line'],
       ['Shift+Tab (card open)', 'Switch its session’s mode, as in Claude Code, in the message box too: asks first → accepts edits → plan first → auto. The chip in the chat’s header shows the mode, and a click switches it as well. Auto isn’t offered on Haiku, so the cycle goes past it there and says so. While Claude’s question form is up, Shift+Tab is its previous question'],
       ['1–9  ·  Tab / Shift+Tab  ·  y (a question on the card)', 'Claude’s question form, drawn as it is in the tab: a digit picks an option (a single choice moves on to the next question; boxes toggle), the digit after the options is Type something  ·  the next / previous question, or Submit at the end  ·  submit the answers. A message from the box instead goes in as the next turn'],
       ['g (a card)', 'Open it in a terminal: between turns, the app lets go of the session and a Windows Terminal tab resumes it (claude --resume), the card following it there. A card already in a tab: brings that tab forward'],
@@ -827,6 +829,8 @@ function drawerKeys(e: KeyboardEvent): boolean {
       if (s.line.panel === 'changes' && s.line.drawer) { popOutChanges(s.line.drawer); return true; }
       if (s.line.panel === 'try' && s.line.drawer) { openOutput(s.line.drawer, tryRowService()); return true; }
       return false;
+    // §130: to the newest message, following it again (the ↓ over the chat).
+    case 'End': chatJump.current?.(); return true;
     case 'Delete': if (s.line.drawer) set({ modal: { kind: 'deleteCard', id: s.line.drawer } }); return true;
     case 'X': if (s.line.drawer) openWorktrees(s.line.drawer); return true;
     case 'Enter': if (s.line.drawer) focusSay(s.line.drawer); return true;

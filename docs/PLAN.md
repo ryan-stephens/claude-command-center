@@ -3183,3 +3183,43 @@ An unread turn comes first; once it is seen, the card stays in Your move as *Rea
 - `walk-hub` 41/41 on a real Haiku card, four new checks: the header shows Asks first after the approved plan; `Shift+Tab` → Accepts edits as the session reports it; in the box → Plan first, the box keeping the focus; again → past Auto back to Asks first, with the message. One earlier run failed an unrelated step (Haiku answered that no logs existed yet); run again, it passed.
 - `walk-card` 66/66, light and dark; `walk-perf` 25/25, every line OK; `walk-your-move` 32/32.
 - The header looked at in light and dark (`shots-hub/mode-header*.png`).
+
+## 130. The chat's scrolling: it stays where you read while Claude writes, follows the box's size, and a ↓ back to the newest
+
+2026-10-08. Three items from the owner's list, done together:
+- *"As the user increases/decreases the chat input height, the chat should grow above that top border so the user doesn't have to scroll through chat after changing the input size."*
+- *"As the chat is being written to, the user should be able to scroll and maintain their scroll position without being constantly brought to the bottom of the chat while the chat is being written still."*
+- *"If the user scrolls up in the chat, we should give them a down arrow to go to the bottom of the chat so they can see the most recent messages."*
+
+**Reproduced first** (a seeded card streaming through `perf.stream`, a real mouse wheel in Chromium):
+- Scrolling up in 20 px steps, as a trackpad or Chrome's smooth wheel does, never got away from the bottom: 15 steps, still 0 px from it. The chat counted as pinned while within 80 px of the bottom, each step was under that, and the next streamed word scrolled back down. Setting `scrollTop` also cancels a smooth scroll mid-way.
+- One 120 px step got away, which is why it seemed to work sometimes.
+- The message box growing left `scrollTop` alone, so the chat's bottom slid under the box.
+
+**Now** one hook does it for the card chat and the full-screen session (`useStickToBottom` in `web/stick.ts`; the old copies are gone):
+- **Any move up lets go at once:** a scroll that moves up, or a wheel, touch or ↑ / PageUp / Home key up, which also holds following for 300 ms so a smooth scroll can start. Only reaching the bottom yourself pins it again.
+- The follow checks too, since a scroll event comes a frame late, so a key's or scrollbar's move up isn't undone before it is seen.
+- **The browser's scroll anchoring is off on the chat.** When a turn ended, the streamed text was swapped for the message, and anchoring moved the chat up about 400 px to keep a line in place. That read as you scrolling up and left a ↓ at the bottom. The walk caught it now and then; it has a check of its own now.
+- **The box's size:** when the chat gets shorter or taller (the box dragged, `Ctrl+Shift+↑ / ↓`, typed lines, emptied by a send), the chat moves by the same amount, so the line at its bottom stays just above the box. At the bottom, it stays at the bottom.
+- **The ↓** (`JumpDown`) floats over the chat's bottom while you are away from it:
+  - it counts Claude's messages that landed since (*1 new message*), else says *Newest*;
+  - it has a spinner while Claude writes and its `End` keycap;
+  - a click or `End` goes to the newest and follows again.
+
+  `End` works on the open card (out of the message box, where End is the end of the line) and in the full-screen session, also when its box has lost the focus. `?` and the card's legend (*End Newest*) list it.
+
+**Also:** the open card's header ran out of room at 1024 px with a panel open once §129's mode chip was in it (`walk-chat-width` caught it: the page scrolled 11 px sideways). The header is a container now, and below 768 px of its own width the `⇧Tab` keycap and the words *In a terminal* hide. The mode chip and the `g` keycap stay.
+
+**Checked:**
+- `pnpm typecheck`, `npx tsc --noUnusedLocals -p .`, `pnpm test` (414).
+- `walk-card` 66/66, light and dark; `walk-hub` 41/41; `walk-perf` 25/25, every line OK (a key paints in 3–10 ms, p95; the open card streaming 9 ms).
+- `walk-your-move` 32/32, light and dark; `walk-chat-width` 6/6, light and dark.
+- The new `walk-chat-scroll` 26/26, light and dark, six runs in a row clean after the anchoring fix. On its own server (:7828), with a seeded card streaming, it checks the card chat and the full-screen session for:
+  - following at the bottom;
+  - eight 15 px wheel steps up staying put while it streams;
+  - the ↓ showing and counting a message that lands;
+  - the box taller, shorter, typed into and emptied keeping the distance from the bottom (300 → 300 px);
+  - the box resized at the bottom keeping the newest line;
+  - End and a click going back and following;
+  - a turn ending at the bottom leaving no ↓.
+- Screenshots of the ↓ looked at, light and dark.

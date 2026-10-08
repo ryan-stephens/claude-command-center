@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FileHit, ModelChoice, SessionSummary, SlashInfo, Todo, TranscriptItem, Workspace } from '../../shared/protocol.ts';
 import { repoName, samePath, workspacesFor } from '../../shared/workspaces.ts';
 import { turnClock } from '../activity-label.ts';
@@ -8,7 +8,9 @@ import { bindingsFor, displayCombo } from '../bindings.ts';
 import { statusLabel } from '../home-model.ts';
 import { askStop, backToLine, cycleMode, hop } from '../keys.ts';
 import { MODE_LABEL } from '../questions.ts';
+import { JumpDown } from './JumpDown.tsx';
 import { ModeChip } from './ModeChip.tsx';
+import { useStickToBottom } from '../stick.ts';
 import { startVoice, stopVoice, voiceSupported } from '../voice.ts';
 import { activeSession, flash, NO_BINDINGS, set, setDraft, toggleFold, useFlags, useStore } from '../store.ts';
 import { searchFiles, send } from '../ws.ts';
@@ -55,18 +57,10 @@ export function SessionView() {
   const expandTools = useStore((s) => s.expandTools);
   const padFolded = useStore((s) => s.folds.pad);
   const ws = useStore((s) => (session ? workspacesFor(session.cwd, s.workspaces)[0] ?? null : null));
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
-
-  // A different session starts at its newest message.
-  useLayoutEffect(() => { stick.current = true; }, [id]);
-
-  // Follow the output while the user is at the bottom.
-  const toBottom = useCallback(() => {
-    const el = scrollRef.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, []);
-  useLayoutEffect(toBottom, [items, permission, toBottom]);
+  // Follow the output while you are at the bottom; scrolled up, it stays put (§130). A different session starts at its newest.
+  const said = useMemo(() => items.reduce((n, i) => n + (i.kind === 'assistant' ? 1 : 0), 0), [items]);
+  const { ref: scrollRef, toBottom, jump, away, fresh } = useStickToBottom(items.length, said, id);
+  useLayoutEffect(toBottom, [permission, toBottom]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -84,14 +78,11 @@ export function SessionView() {
               <Icon name="warn" size={16} />Open in a terminal: you’re watching it live, and it updates here as it goes. Sending from here makes a copy, so the two don’t write over each other.
             </div>
           )}
+          <div className="relative flex min-h-0 flex-1 flex-col">
           <div
             id="transcript"
             ref={scrollRef}
             tabIndex={-1}
-            onScroll={(e) => {
-              const el = e.currentTarget;
-              stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-            }}
             className="min-h-0 flex-1 overflow-y-auto outline-none"
           >
             <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-5 md:px-6">
@@ -100,6 +91,8 @@ export function SessionView() {
               <Streaming id={id} onGrow={toBottom} />
               {permission && <ApprovalCard p={permission} cwd={session?.cwd} />}
             </div>
+          </div>
+          {away && <JumpDown fresh={fresh} writing={writing} onClick={jump} />}
           </div>
           <TodoPanel id={id} />
           <ActivityBar id={id} />

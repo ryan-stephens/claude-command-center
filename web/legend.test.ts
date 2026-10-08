@@ -63,6 +63,7 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.ok(labels({ view: 'drawer', hasSession: true, bindings: {} }).includes('Its session'));
   assert.deepEqual(labels({ view: 'drawer', canSay: true, asking: true, bindings: {} }).slice(0, 3), ['Back to the board', 'Allow / deny', 'Type to it'], 'a channel: y / n first while it asks, then Enter');
   assert.ok(labels({ view: 'drawer', canSay: true, inApp: true, bindings: {} }).includes('Mode') && !labels({ view: 'drawer', canSay: true, bindings: {} }).includes('Mode'), 'a session the app runs: ⇧Tab switches its mode (§129)');
+  assert.ok(labels({ view: 'drawer', canSay: true, bindings: {} }).includes('Newest'), 'a chat: End goes to the newest message (§130)');
   assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Type to it'), 'no session yet: no message box (a card with one can always be typed to, §85)');
   assert.deepEqual(labels({ view: 'drawer', ship: 'merge', canDone: true, hasPr: true, bindings: {} }).slice(7, 10), ['Open the PR', 'Merge', 'Done'], 'a card in Ship: o opens the PR, d is done by hand (after the five dock keys)');
   assert.deepEqual(labels({ view: 'drawer', question: true, asking: false, canSay: true, bindings: {} }).slice(1, 4), ['Pick', 'Next question', 'Submit answers'], 'Claude’s question form up (§91): digits, Tab, y');

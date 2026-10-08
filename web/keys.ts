@@ -13,6 +13,7 @@ import {
   activeSession, attention, currentGroup, currentWorkspace, flash, get, markRead, pendingFor, sessionById, set, toggleFold, toggleSound,
 } from './store.ts';
 import { lastPermissionAt, openTranscript, send } from './ws.ts';
+import { chatJump } from './stick.ts';
 import { answersFor, enterOnRow, firstOpen, freshQa, goTo, MODE_LABEL, modeAfter, pick } from './questions.ts';
 import { explainPermission } from './plain.ts';
 import { expandFromLine, goHome, LINE_SECTIONS, lineKeys, lineSessionIds, openLine } from './line-keys.ts';
@@ -402,6 +403,8 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
     }
     // Tab reaches the number pad and any approval card without stopping Claude.
     if (e.key === 'Tab' && !e.shiftKey) { set({ zone: 'board' }); return true; }
+    // §130: out of the box (a click on the conversation, say), End still goes to the newest.
+    if (!typing && e.key === 'End' && chatJump.current) { chatJump.current(); return true; }
     return false; // Enter/Shift+Enter live on the composer itself
   }
   if (typing) return false;
@@ -415,7 +418,7 @@ function sessionKeys(e: KeyboardEvent, typing: boolean): boolean {
     case 'PageUp': scrollTranscript(-window.innerHeight * 0.8); return true;
     case 'PageDown': scrollTranscript(window.innerHeight * 0.8); return true;
     case 'Home': scrollTranscript('top'); return true;
-    case 'End': scrollTranscript('bottom'); return true;
+    case 'End': if (chatJump.current) chatJump.current(); else scrollTranscript('bottom'); return true;
     case '+': case '=': if (s.openId) set({ modal: { kind: 'repoPicker', target: { kind: 'session', id: s.openId } } }); return true;
     case '-': if (s.openId) set({ modal: { kind: 'repoRemove', target: { kind: 'session', id: s.openId } } }); return true;
   }
