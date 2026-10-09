@@ -20,8 +20,8 @@ import { parseStep } from '../shared/recipes.ts';
 import { needsUiPort, stackWarnings } from '../shared/stack.ts';
 import { envNamesIn } from '../shared/stack-detect.ts';
 import { DB_PATH, Store } from '../server/store.ts';
-import { readVerifyFile } from '../server/verify.ts';
-import { VERIFY_ENVS, setUrl } from '../shared/verify.ts';
+import { FIELD_LISTS_FILE, readFieldLists, readVerifyFile } from '../server/verify.ts';
+import { VERIFY_ENVS, cleanUrl, isLoopback, setUrl } from '../shared/verify.ts';
 import { findQaField, jiraConfig, jiraProblem } from '../server/tickets.ts';
 import { repoName } from '../shared/workspaces.ts';
 
@@ -83,11 +83,28 @@ line('info', 'Database', DB_PATH);
 const vf = readVerifyFile();
 const vc = vf.config;
 if (vf.problem) line('bad', 'Verify file', vf.problem, 'Fix it, or delete it; the Verify panel shows the change at once.');
-else if (!vc.set && !vc.lookup) line('info', 'Verify file', `none at ${vf.file}`, 'Optional, for the Verify panel: README’s Verify row shows what goes in it.');
+else if (!vc.set && !vc.lookup && !vc.builder && !rawBuilderUrl()) line('info', 'Verify file', `none at ${vf.file}`, 'Optional, for the Verify panel: README’s Verify row shows what goes in it.');
 else {
   const envs = VERIFY_ENVS.filter((e) => setUrl(vc, e));
-  line('ok', 'Verify file', `${vf.file}: ${[vc.set ? `${vc.set.name ?? 'the set tool'} (${envs.join(', ') || 'no addresses'})` : '', vc.lookup ? `${vc.lookup.name ?? 'the record lookup'}` : ''].filter(Boolean).join(', ')}`);
+  line('ok', 'Verify file', `${vf.file}: ${[vc.set ? `${vc.set.name ?? 'the set tool'} (${envs.join(', ') || 'no addresses'})` : '', vc.lookup ? `${vc.lookup.name ?? 'the record lookup'}` : '', vc.builder ? `${vc.builder.name ?? 'the test-data tool'}` : ''].filter(Boolean).join(', ')}`);
   if (vc.lookup && !vc.lookup.recordField) line('warn', `${vc.lookup.name ?? 'Record lookup'}`, 'no "recordField"', 'Add the form’s name for the record id box (its <input name="…">) to the Verify file.');
+  // §132: the lookup's own page, where o and Shift+L open.
+  if (vc.lookup?.url) line(vc.lookup.page ? 'ok' : 'info', `${vc.lookup.name ?? 'Record lookup'}: its page`, vc.lookup.page ? 'set' : 'none: o opens the form’s post address', vc.lookup.page ? '' : 'Add "page" to the lookup in the Verify file: the address you open in the browser.');
+  // §133: the scenario runner, on this machine only.
+  const raw = rawBuilderUrl();
+  if (vc.builder?.url) line('ok', `${vc.builder.name ?? 'Test data'}`, `${vc.builder.url}${vc.builder.ui ? `, its page ${vc.builder.ui}` : ''}`, vc.builder.ui ? '' : 'Add "ui" (its web page) to the builder in the Verify file for o.');
+  else if (raw && !isLoopback(raw)) line('warn', 'Test data', `"builder.url" isn’t on this machine (${raw})`, 'The scenario runner is only ever reached on localhost, 127.0.0.1 or [::1]; Verify ignores any other host.');
+  else if (vc.builder) line('warn', `${vc.builder.name ?? 'Test data'}`, 'no "url"', 'Add the API’s address on this machine (http://localhost:…) to the builder in the Verify file.');
+}
+{
+  const fl = readFieldLists();
+  if (fl.problem) line('bad', 'Field lists', fl.problem, 'Fix it, or delete it; the lookup’s Save as list writes it again.');
+  else if (fl.lists.length) line('ok', 'Field lists', `${FIELD_LISTS_FILE}: ${fl.lists.length} list${fl.lists.length === 1 ? '' : 's'}`);
+}
+
+/** builder.url as the file has it, before cleaning drops one that isn't on this machine. */
+function rawBuilderUrl(): string | undefined {
+  try { return cleanUrl((JSON.parse(readFileSync(vf.file, 'utf8').replace(/^﻿/, '')) as { builder?: { url?: string } })?.builder?.url); } catch { return undefined; }
 }
 
 section('Tickets');

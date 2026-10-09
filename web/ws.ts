@@ -246,6 +246,16 @@ export async function verifyLookup(env: VerifyEnv, recordId: string, ids: string
   return (await request((reqId) => ({ type: 'verify.lookup', reqId, env, recordId, ids, advanced }), 120_000) as Extract<ServerMsg, { type: 'verify.found' }>).result;
 }
 
+/** Save the Fields box as a named list for the lookup (§132); the lists come back to every page as verify.lists. */
+export async function verifyListSave(name: string, ids: string[]): Promise<void> {
+  await request((reqId) => ({ type: 'verify.lists.save', reqId, name, ids }), 10_000);
+}
+
+/** Delete a saved field list. */
+export async function verifyListDelete(name: string): Promise<void> {
+  await request((reqId) => ({ type: 'verify.lists.delete', reqId, name }), 10_000);
+}
+
 /** Stop the card's run (every service and the session), or one service alone. */
 export function stopRun(id: string, service?: string): void {
   send({ type: 'card.stopRun', id, ...(service ? { service } : {}) });
@@ -527,6 +537,9 @@ function receive(msg: ServerMsg): void {
       return; // answered to the screen that asked, which waits on it
     case 'verify.config':
       set({ verify: msg.verify });
+      return;
+    case 'verify.lists':
+      set({ verifyLists: msg.lists });
       return;
     case 'workspace.file':
       pendingWorkspaceFiles.get(msg.reqId)?.(msg.file);

@@ -22,7 +22,7 @@ import {
 } from './line-model.ts';
 import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
 import { withSimple } from './simple-model.ts';
-import { armProd, cycleEnv, openPage, refreshSets, runCheck, runLookup, runVerify, toggleAdvanced } from './verify-state.ts';
+import { armProd, copyFields, currentSection, cycleEnv, cycleSection, deleteList, openPage, refreshSets, runCheck, runLookup, saveList, setField, startSaveList, stepRecent, toggleAdvanced, toggleOnlyEmpty } from './verify-state.ts';
 import { addCardContext, answerCard, answerQuestionCard, focusCardTab, sayToCard, send, showDoor, startCard, stopRun, tryCard } from './ws.ts';
 import { IMAGE_ONLY_TEXT, MAX_IMAGES, pickImages, readImage, type Pasted } from './say-images.ts';
 import { fitSay, nudgeSay } from './say-size.ts';
@@ -53,10 +53,13 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['j / k  ·  Space  ·  f (Changes panel)', 'The next / previous file  ·  open or close its diff under it (several can be open; a click on a file does the same)  ·  pop every repo’s changes out full width, on the chosen file (Pop out in the panel’s title)'],
       ['z  ·  Z (Changes panel, and popped out)', 'Fold or unfold the chosen file’s repo (its files go under the header, which keeps the count)  ·  fold every repo, or unfold them all. A header click does the same with the mouse; a second click on the chosen file folds its diff'],
       ['j / k  ·  Space  ·  r  ·  q (Try it panel, a workspace with a stack)', 'The environment row and each service (the UI first: it always starts)  ·  change the environment, or tick an API to run here too  ·  start the highlighted service, or start it again after a fix while the others keep running  ·  stop it alone. t starts every ticked service at once, or stops them all'],
-      ['e  ·  Shift+P (Verify panel)', 'Dev ↔ UAT for the lookup and the tools’ pages  ·  Prod for the lookup, after a second press (it reads production; nothing is written). The field check always shows Dev and UAT side by side, and where they differ'],
-      ['i  ·  l  ·  Enter (Verify panel)', 'The field ids box (filled from ids the ticket and your notes name; Ctrl+Enter checks from there)  ·  the record id box (Enter looks it up)  ·  check the ids in every environment, and look the record up when one is named'],
-      ['r  ·  a (Verify panel)', 'Read the current field set again (kept ten minutes otherwise)  ·  Advanced fetch on the lookup, slower (off by default)'],
-      ['o  ·  Shift+O  ·  Shift+L (Verify panel)', 'The field set tool’s page for the environment  ·  its add-to-set page, to add a field there yourself  ·  the record lookup’s page, in the browser. Only opened: nothing is written to either tool from the app. Where the tools are, and their names, come from this machine’s Verify file (~/.cc-control/verify.json), never the repo'],
+      ['Alt+← / Alt+→ (Verify panel)', 'The previous / next section: one per tool (Test data, Record lookup, Field set, or the names this machine’s Verify file gives them). A dot on each tab says whether this machine sets it up. Where the tools are, and their names, come from ~/.cc-control/verify.json, never the repo'],
+      ['e  ·  Shift+P  ·  Shift+L (Verify panel)', 'Dev ↔ UAT for the lookup and the tools’ pages  ·  Prod for the lookup, after a second press (it reads production; nothing is written)  ·  the record lookup’s page, in the browser'],
+      ['i  ·  Enter  ·  r  ·  o  ·  Shift+O (Verify: field set)', 'The field ids box (filled from ids the ticket and your notes name; Ctrl+Enter checks from there)  ·  check the ids, Dev and UAT side by side, and where they differ  ·  read the current set again (kept ten minutes otherwise)  ·  the tool’s page for the environment  ·  its add-to-set page, to add a field there yourself. Only read and opened from the app'],
+      ['l  ·  i  ·  Enter  ·  a  ·  o (Verify: record lookup)', 'The record id box (Enter looks it up; ↑ ↓ there go through the records fetched lately, also chips under it)  ·  the Fields box, one id per line as it is (an id may have spaces; empty: the field set’s ids box)  ·  look the record up  ·  Advanced fetch, slower: read-only and missing fields marked, and a field’s options  ·  the tool’s page. Read only: values stay in the page'],
+      ['f  ·  Shift+S  ·  Shift+F (Verify: record lookup)', 'Choose a saved list of field ids for the Fields box (↑ ↓ choose, Esc leaves)  ·  save the Fields box as a list (a name, Enter)  ·  delete the chosen list, after a second press. Lists are kept in ~/.cc-control/field-lists.json, nowhere else'],
+      ['/  ·  Shift+M  ·  Shift+Y (Verify: record lookup)', 'Filter the values by field or value  ·  only the fields that are empty or don’t exist  ·  copy the rows shown as field=value lines'],
+      ['o (Verify: test data)', 'The scenario runner’s own page, in the browser'],
       ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
       ['Esc (card open)', 'While Claude is working: stop it, as Esc does in Claude Code. Otherwise back to the board, the card still focused; on the board, clear the filter'],
@@ -792,8 +795,8 @@ function drawerKeys(e: KeyboardEvent): boolean {
   const s = get();
   // §118: Ctrl+Shift+↑ / ↓ make the message box taller or shorter, in it or not.
   if (e.ctrlKey && e.shiftKey && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { nudgeSay(e.key === 'ArrowUp' ? 1 : -1); return true; }
-  if (e.ctrlKey || e.altKey || e.metaKey) return false;
   if (s.line.panel === 'verify' && verifyKeys(e)) return true;
+  if (e.ctrlKey || e.altKey || e.metaKey) return false;
   // Claude's question form (§91) takes digits, Tab and y first while it is up.
   if (questionHooks.on) {
     if (e.key === 'Tab') { if (e.shiftKey) questionHooks.prev(); else questionHooks.next(); return true; }
@@ -937,25 +940,62 @@ function boardKeys(e: KeyboardEvent): boolean {
   return false;
 }
 
-/** The Verify panel's keys (§105), ahead of the card's own while it is open. */
+/**
+ * The Verify panel's keys (§105, §132), ahead of the card's own while it is open. Alt+← / Alt+→ move
+ * between its sections (`[` `]` size the panel); e, Shift+P and Shift+L work in every section, the
+ * rest are the section's own. Keys the card already uses for something you'd still want with the
+ * panel open (m More, c add context, s ship, x take back, X worktrees, y / n answer) aren't taken.
+ */
 function verifyKeys(e: KeyboardEvent): boolean {
+  if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { cycleSection(e.key === 'ArrowRight' ? 1 : -1); return true; }
+  if (e.ctrlKey || e.altKey || e.metaKey) return false;
+  // f's picker is a select: Esc leaves it (the arrows choose, as a select does).
+  if (e.key === 'Escape' && document.activeElement?.id === 'verify-list') { (document.activeElement as HTMLElement).blur(); return true; }
   switch (e.key) {
     case 'e': cycleEnv(); return true;
     case 'P': armProd(); return true;
-    case 'i': focusField('verify-ids'); return true;
-    case 'l': focusField('verify-record'); return true;
-    case 'Enter': runVerify(); return true;
-    case 'r': void refreshSets(); return true;
-    case 'a': toggleAdvanced(); return true;
-    case 'o': openPage('set'); return true;
-    case 'O': openPage('add'); return true;
     case 'L': openPage('lookup'); return true;
+  }
+  const section = currentSection();
+  if (section === 'set') {
+    switch (e.key) {
+      case 'i': focusField('verify-ids'); return true;
+      case 'Enter': void runCheck(); return true;
+      case 'r': void refreshSets(); return true;
+      case 'o': openPage('set'); return true;
+      case 'O': openPage('add'); return true;
+    }
+  }
+  if (section === 'lookup') {
+    switch (e.key) {
+      case 'l': focusField('verify-record'); return true;
+      case 'i': focusField('verify-fields'); return true;
+      case 'Enter': void runLookup(); return true;
+      case 'a': toggleAdvanced(); return true;
+      case 'o': openPage('lookup'); return true;
+      case 'f': focusField('verify-list'); return true;
+      case 'S': startSaveList(); return true;
+      case 'F': void deleteList(); return true;
+      case '/': focusField('verify-filter'); return true;
+      case 'M': toggleOnlyEmpty(); return true;
+      case 'Y': copyFields(); return true;
+    }
+  }
+  if (section === 'builder') {
+    switch (e.key) {
+      case 'o': openPage('builder'); return true;
+    }
   }
   return false;
 }
 
-/** Typing in the Verify panel: Esc leaves a box, Enter in the record box looks it up, Ctrl+Enter checks or looks up. */
+/** Typing in the Verify panel: Esc leaves a box; Enter in the record box looks it up (↑ ↓ the recent records); Ctrl+Enter checks or looks up. */
 function verifyFieldKeys(e: KeyboardEvent, el: HTMLElement): boolean {
+  if (el.id === 'verify-listname') {
+    if (e.key === 'Escape') { setField({ listName: null }); return true; }
+    if (e.key === 'Enter') { void saveList(); return true; }
+    return false;
+  }
   if (e.key === 'Escape') { el.blur(); return true; }
   if (e.key === 'Enter' && e.ctrlKey) {
     if (el.id === 'verify-ids') void runCheck();
@@ -963,6 +1003,8 @@ function verifyFieldKeys(e: KeyboardEvent, el: HTMLElement): boolean {
     return true;
   }
   if (e.key === 'Enter' && el.id === 'verify-record') { el.blur(); void runLookup(); return true; }
+  if (e.key === 'Enter' && el.id === 'verify-filter') { el.blur(); return true; }
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && el.id === 'verify-record') { stepRecent(e.key === 'ArrowUp' ? 1 : -1); return true; }
   // The rest types; Ctrl+V and the other editing keys must reach the box (ids are pasted here).
   return false;
 }

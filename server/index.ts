@@ -7,8 +7,8 @@ import { existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { MAX_IDS, VERIFY_ENVS, setUrl, type EnvCheck, type FieldCheck, type VerifyEnv, type VerifyFile } from '../shared/verify.ts';
-import { explain, LookupTool, Requester, SetTool, VerifyFileWatch } from './verify.ts';
+import { MAX_IDS, VERIFY_ENVS, setUrl, splitFieldLines, type EnvCheck, type FieldCheck, type FieldListsFile, type VerifyEnv, type VerifyFile } from '../shared/verify.ts';
+import { deleteFieldList, explain, FIELD_LISTS_FILE, FileWatch, LookupTool, readFieldLists, Requester, saveFieldList, SetTool, VerifyFileWatch } from './verify.ts';
 import { KEY_HINTS, NEW_CARD_LOOKS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
 import { TRACKED_EVENTS, type HookInput } from './card-events.ts';
@@ -352,7 +352,15 @@ function verifyNow(): VerifyFile {
   return v;
 }
 const verifyConfig = () => verifyNow().config;
-setInterval(verifyNow, 3000).unref();
+// The lookup's saved field lists (§132): their own file, watched the same way.
+const fieldLists = new FileWatch<FieldListsFile>(FIELD_LISTS_FILE, readFieldLists);
+const listsMsg = (v: FieldListsFile) => ({ type: 'verify.lists' as const, lists: { file: v.file, lists: v.lists, ...(v.problem ? { problem: v.problem } : {}) } });
+function listsNow(): FieldListsFile {
+  const v = fieldLists.now();
+  if (v.changed) broadcast(listsMsg(v));
+  return v;
+}
+setInterval(() => { verifyNow(); listsNow(); }, 3000).unref();
 const verifyRequests = new Requester(verifyConfig);
 const setTool = new SetTool(verifyConfig, verifyRequests);
 const lookupTool = new LookupTool(verifyConfig, verifyRequests);
@@ -974,9 +982,19 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     }
     case 'verify.lookup': {
       const env = VERIFY_ENVS.includes(msg.env) ? msg.env : 'dev';
-      const ids = (Array.isArray(msg.ids) ? msg.ids : []).map(String).filter((x) => /^[\w.#-]{1,64}$/.test(x)).slice(0, MAX_IDS);
+      // Lookup ids are one per line as they are (an id may have a space in it, §132), up to LOOKUP_MAX_IDS.
+      const ids = splitFieldLines((Array.isArray(msg.ids) ? msg.ids : []).map(String).join('\n'));
       // The values are a record's data: they go to this page only, and nothing here logs them.
       try { send(ws, { type: 'verify.found', reqId: msg.reqId, result: await lookupTool.fetch(env, String(msg.recordId ?? ''), ids, msg.advanced === true) }); } catch (e) { throw new Error(explain(e, verifyConfig().lookup?.name ?? 'The record lookup')); }
+      return;
+    }
+    case 'verify.lists.save':
+    case 'verify.lists.delete': {
+      // The lists file only: names and field ids, nothing else on disk.
+      if (msg.type === 'verify.lists.save') saveFieldList(String(msg.name ?? ''), Array.isArray(msg.ids) ? msg.ids.map(String) : []);
+      else deleteFieldList(String(msg.name ?? ''));
+      listsNow();
+      send(ws, { type: 'ok', reqId: msg.reqId });
       return;
     }
     case 'card.changes': {
@@ -1209,6 +1227,7 @@ wss.on('connection', (ws) => {
   });
   send(ws, { type: 'hello', protocol: PROTOCOL });
   { const v = verifyNow(); send(ws, { type: 'verify.config', verify: { file: v.file, config: v.config, ...(v.problem ? { problem: v.problem } : {}) } }); }
+  send(ws, listsMsg(listsNow()));
   send(ws, snapshot());
   send(ws, { type: 'settings', settings: store.loadSettings() });
   send(ws, { type: 'prompts', prompts: store.loadPrompts() });

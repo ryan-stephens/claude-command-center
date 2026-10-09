@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { guard, LookupTool, parseLookup, readSet, readValidate, readVerifyFile, Requester, SET_TTL_MS, SetTool, unwrap, htmlText, VerifyFileWatch, type Transport, type VerifyRequest } from './verify.ts';
-import type { VerifyConfig } from '../shared/verify.ts';
+import { deleteFieldList, FileWatch, guard, LookupTool, parseLookup, readFieldLists, readSet, readValidate, readVerifyFile, Requester, saveFieldList, SET_TTL_MS, SetTool, unwrap, htmlText, VerifyFileWatch, type Transport, type VerifyRequest } from './verify.ts';
+import { LOOKUP_MAX_IDS, MAX_IDS, MAX_LISTS, type VerifyConfig } from '../shared/verify.ts';
+import { lookupPage } from './verify.fixture.ts';
 
 // Made-up tools: nothing here is a real host, field or value.
 const CFG: VerifyConfig = {
@@ -190,4 +191,63 @@ test('every request the tools make passes the guard: nothing but reads and the l
     assert.ok(!/save|update|add/i.test(r.url), r.url);
     for (const [k] of r.form ?? []) assert.ok(!/update|new/i.test(k), k);
   }
+});
+
+test('parseLookup on a page shaped like the real one: hidden inputs after each row, options in order, an id with a space, read-only, missing', () => {
+  const r = parseLookup(lookupPage());
+  assert.equal(r.found, true);
+  assert.deepEqual(r.fields, [
+    { id: '1000', value: '1,250.00', exists: true, readOnly: false },
+    { id: 'CX.SAMPLE.ONE', value: 'Yes', exists: true, readOnly: false, options: ['Yes', 'No'] },
+    { id: 'Group.Name.Role Name', value: 'Tom & Jerry', exists: true, readOnly: false },
+    { id: '2000', value: 'Locked', exists: true, readOnly: true },
+    { id: 'CX.MADE.UP', value: '', exists: false },
+  ]);
+  assert.deepEqual(parseLookup(lookupPage({ advanced: false })).fields.map((f) => f.readOnly), [undefined, undefined, undefined, undefined], 'without Advanced: no read-only information');
+});
+
+test('the lookup reads up to LOOKUP_MAX_IDS ids, one per line as they are; the check stays at MAX_IDS', async () => {
+  const t = tools(() => ({ status: 200, body: PAGE(FOUND) }));
+  const many = Array.from({ length: 450 }, (_, i) => (i === 3 ? 'Group.Name.Role Name' : `CX.F${i}`));
+  await t.lookup.fetch('dev', '5001', many);
+  const sent = t.seen[0].form!.find(([k]) => k === 'FieldsToFetch')![1].split('\r\n');
+  assert.equal(sent.length, LOOKUP_MAX_IDS);
+  assert.equal(sent[3], 'Group.Name.Role Name', 'an id with a space goes as it is');
+  const s = tools(() => ({ status: 200, body: ok(SET) }));
+  assert.equal((await s.set.has('dev', many)).length, MAX_IDS);
+});
+
+test('saved field lists: read, saved (replacing by name in any case), deleted; capped and validated; only that file is written', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cc-lists-'));
+  const f = join(dir, 'sub', 'field-lists.json');
+  assert.deepEqual(readFieldLists(f), { file: f, lists: [] }, 'no file: no lists');
+  saveFieldList('  Basics  ', ['1000', 'Group.Name.Role Name', 'bad id!', '1000'], f);
+  assert.deepEqual(readFieldLists(f).lists, [{ name: 'Basics', ids: ['1000', 'Group.Name.Role Name'] }]);
+  saveFieldList('basics', ['2000'], f);
+  assert.deepEqual(readFieldLists(f).lists, [{ name: 'basics', ids: ['2000'] }], 'the same name in another case replaces it');
+  assert.throws(() => saveFieldList('', ['1'], f), /Name the list/);
+  assert.throws(() => saveFieldList('Empty', ['bad id!'], f), /no field ids/);
+  saveFieldList('x'.repeat(90), Array.from({ length: 450 }, (_, i) => `F${i}`), f);
+  const long = readFieldLists(f).lists[1];
+  assert.equal(long.name.length, 60);
+  assert.equal(long.ids.length, LOOKUP_MAX_IDS);
+  for (let i = 2; i < MAX_LISTS; i++) saveFieldList(`L${i}`, ['1'], f);
+  assert.throws(() => saveFieldList('One more', ['1'], f), /50 lists/);
+  deleteFieldList('BASICS', f);
+  assert.equal(readFieldLists(f).lists.length, MAX_LISTS - 1);
+  assert.throws(() => deleteFieldList('nope', f), /no list/);
+  assert.deepEqual(readdirSync(join(dir, 'sub')), ['field-lists.json'], 'no temporary file left behind');
+  writeFileSync(f, '{ nope');
+  assert.match(readFieldLists(f).problem ?? '', /isn’t JSON/);
+  assert.throws(() => saveFieldList('A', ['1'], f), /isn’t JSON/, 'a broken file isn’t overwritten');
+});
+
+test('FileWatch takes any reader: the lists file is read again only when it changes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cc-lists-'));
+  const f = join(dir, 'field-lists.json');
+  const w = new FileWatch(f, readFieldLists);
+  assert.equal(w.now().changed, false);
+  saveFieldList('A', ['1'], f);
+  assert.deepEqual(w.now().lists, [{ name: 'A', ids: ['1'] }]);
+  assert.equal(w.now().changed, false);
 });

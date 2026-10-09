@@ -15,9 +15,9 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  */
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
-import type { EnvCheck, LookupResult, SetInfo, VerifyEnv, VerifyFile } from './verify.ts';
+import type { EnvCheck, FieldListsFile, LookupResult, SetInfo, VerifyEnv, VerifyFile } from './verify.ts';
 
-export const PROTOCOL = 29;
+export const PROTOCOL = 30;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -394,6 +394,10 @@ export type ClientMsg =
   | { type: 'verify.refresh'; reqId: string; env: VerifyEnv }
   /** A record's fields from the record lookup (one POST of its form); answered with verify.found. Values never logged or kept. */
   | { type: 'verify.lookup'; reqId: string; env: VerifyEnv; recordId: string; ids: string[]; advanced: boolean }
+  /** Save a list of field ids for the lookup under a name (§132), in the machine's lists file only; answered with ok, and verify.lists to every page. */
+  | { type: 'verify.lists.save'; reqId: string; name: string; ids: string[] }
+  /** Delete a saved list by name; answered with ok, and verify.lists to every page. */
+  | { type: 'verify.lists.delete'; reqId: string; name: string }
   /** Bring the card's Windows Terminal tab to the front (g). Answered with ok or an error. */
   | { type: 'card.focusTab'; reqId: string; id: string }
   /** Answer the permission prompt the terminal relayed (card.live.ask.requestId). Answered with ok or an error. */
@@ -502,6 +506,8 @@ export type ServerMsg =
   | { type: 'verify.config'; verify: VerifyFile }
   | { type: 'verify.set'; reqId: string; env: VerifyEnv; set: SetInfo }
   | { type: 'verify.found'; reqId: string; result: LookupResult }
+  /** The lookup's saved field lists (§132): on connect, and again whenever the file changes. */
+  | { type: 'verify.lists'; lists: FieldListsFile }
   | { type: 'card.worktrees'; reqId: string; id: string; worktrees: CardWorktree[] }
   | { type: 'card.worktreesRemoved'; reqId: string; id: string; removed: CardWorktree[]; kept: CardWorktree[] }
   /** The picker's rows for a card's stack, and the APIs to tick when nothing was picked before. */

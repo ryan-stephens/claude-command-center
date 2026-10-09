@@ -135,6 +135,8 @@ export interface LineLegendInput {
   /** Drawer: the dock panel open beside the chat (§81), if any; `hasStack`: the lane has a stack, so Try it is a list of services (§82). */
   panel?: CardPanel | null;
   hasStack?: boolean;
+  /** Drawer, the Verify panel open: the section shown (§132), whose keys the bar lists. */
+  verifySection?: 'builder' | 'lookup' | 'set' | null;
   /** New-card screen: which panel, and whether panel 2 shows the exact text. */
   pane?: 'src' | 'pkt' | 'go';
   preview?: boolean;
@@ -223,12 +225,17 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
   }
   const full: LegendItem = { keys: [k(x.bindings, 'expand')], label: 'Its session' };
   if (x.view === 'drawer') {
-    // The Verify panel (§105) takes Enter, e, o, r, a and its own keys while it is open.
+    // The Verify panel (§105, §132) takes Enter, e, o and its section's own keys while it is open.
     const verify = x.panel === 'verify';
+    const verifyItems: LegendItem[] = !verify ? []
+      : x.verifySection === 'lookup' ? [{ keys: ['Enter'], label: 'Look up', tone: 'acc' }, { keys: ['l', 'i'], label: 'Record / fields' }, { keys: ['a'], label: 'Advanced' }, { keys: ['f', '⇧S'], label: 'List / save' }, { keys: ['/'], label: 'Filter' }, { keys: ['⇧M'], label: 'Only empty' }, { keys: ['⇧Y'], label: 'Copy' }, { keys: ['o'], label: 'Its page' }]
+      : x.verifySection === 'builder' ? [{ keys: ['o'], label: 'Its page' }]
+      : x.verifySection === 'set' ? [{ keys: ['Enter'], label: 'Check', tone: 'acc' }, { keys: ['i'], label: 'Ids' }, { keys: ['r'], label: 'Refresh set' }, { keys: ['o', '⇧O'], label: 'Open a tool' }]
+      : [];
     return [
       { keys: ['Esc'], label: x.working ? 'Stop Claude' : 'Back to the board' },
       ...(x.question ? [{ keys: ['1', '9'], label: 'Pick', tone: 'attn' as const }, { keys: ['Tab'], label: 'Next question' }, { keys: ['y'], label: 'Submit answers', tone: 'attn' as const }] : x.asking ? [{ keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' as const }] : []),
-      ...(verify ? [{ keys: ['Enter'], label: 'Check', tone: 'acc' as const }, { keys: ['i', 'l'], label: 'Ids / record' }, { keys: ['e'], label: 'Dev / UAT' }, { keys: ['⇧P'], label: 'Prod' }, { keys: ['r'], label: 'Refresh set' }, { keys: ['a'], label: 'Advanced' }, { keys: ['o', '⇧O', '⇧L'], label: 'Open a tool' }]
+      ...(verify ? [...verifyItems, { keys: ['Alt ←', '→'], label: 'Section' }, { keys: ['e'], label: 'Dev / UAT' }, { keys: ['⇧P'], label: 'Prod' }]
         : x.canSay ? [{ keys: ['Enter'], label: x.inApp ? 'Message' : 'Type to it', tone: x.asking ? undefined : 'acc' as const }, ...(x.inApp ? [{ keys: ['⇧I'], label: 'Image' }] : []), { keys: ['Ctrl⇧↑', '↓'], label: 'Box size' }, ...(x.inApp ? [{ keys: ['⇧Tab'], label: 'Mode' }] : []), { keys: ['End'], label: 'Newest' }] : []),
       ...(x.hasTab ? [{ keys: ['g'], label: x.inApp ? 'In a terminal' : x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab && !x.inApp ? { tone: 'attn' as const } : {}) }] : []),
       { keys: ['←', '→'], label: 'Previous / next card' },

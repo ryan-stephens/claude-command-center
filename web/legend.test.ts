@@ -70,9 +70,13 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   assert.deepEqual(labels({ view: 'drawer', panel: 'changes', bindings: {} }).slice(2, 7), ['File', 'Open / close diff', 'Fold repo', 'Pop out', 'Close Changes'], 'the Changes panel open: j k walk files, Space opens or closes a diff (§103), z folds (§90), f is the full sheet, its key closes it');
   assert.deepEqual(labels({ view: 'drawer', panel: 'try', hasStack: true, canTry: true, bindings: {} }).slice(2, 8), ['Service', 'Tick / environment', 'Start this one', 'Stop this one', 'Output', 'Changes'], 'the Try it panel with a stack: the service keys, then f for the output');
   assert.ok(!labels({ view: 'drawer', panel: 'try', bindings: {} }).includes('Output'), 'nothing to run: no output key');
-  const verify = labels({ view: 'drawer', panel: 'verify', canSay: true, canTry: true, appUp: true, appRunning: true, bindings: {} });
-  assert.deepEqual(verify.slice(1, 9), ['Check', 'Ids / record', 'Dev / UAT', 'Prod', 'Refresh set', 'Advanced', 'Open a tool', 'Previous / next card'], 'the Verify panel (§105): its keys, Enter checks');
+  const verify = labels({ view: 'drawer', panel: 'verify', verifySection: 'set', canSay: true, canTry: true, appUp: true, appRunning: true, bindings: {} });
+  assert.deepEqual(verify.slice(1, 9), ['Check', 'Ids', 'Refresh set', 'Open a tool', 'Section', 'Dev / UAT', 'Prod', 'Previous / next card'], 'the Verify panel’s field set section (§105, §132): its keys, Enter checks');
   assert.ok(!verify.includes('Message') && !verify.includes('How it runs') && !verify.includes('Open the app'), 'Enter, e and o are the panel’s while it is open');
+  const lookup = labels({ view: 'drawer', panel: 'verify', verifySection: 'lookup', bindings: {} });
+  assert.deepEqual(lookup.slice(1, 12), ['Look up', 'Record / fields', 'Advanced', 'List / save', 'Filter', 'Only empty', 'Copy', 'Its page', 'Section', 'Dev / UAT', 'Prod'], 'the record lookup section (§132): Enter looks up; lists, filter, only empty, copy');
+  assert.ok(lookup.includes('More'), 'm stays the More panel: the lookup’s "only empty" is Shift+M');
+  assert.deepEqual(labels({ view: 'drawer', panel: 'verify', verifySection: 'builder', bindings: {} }).slice(1, 3), ['Its page', 'Section'], 'the test-data section');
   assert.deepEqual(labels({ view: 'drawer', canAdd: true, hasWaiting: true, bindings: {} }).slice(7, 10), ['How it runs', 'Add context', 'Take back']);
   assert.deepEqual(labels({ view: 'drawer', hasWorktrees: true, bindings: {} }).slice(-2), ['Worktrees', 'Remove card'], 'a worktree card: Shift+X before Delete');
   assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Worktrees'));

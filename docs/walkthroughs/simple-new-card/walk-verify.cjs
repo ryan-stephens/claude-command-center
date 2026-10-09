@@ -1,12 +1,15 @@
-// The Verify panel (PLAN §105, §107) on an isolated server (PORT, default 7805) against the stand-in
-// tools (standins/verify-tools.cjs on 18900 to 18902, logging to STANDIN_LOG): the machine's Verify
-// file written while the panel is open (it shows at once, the tools by name), ids checked in Dev and
-// UAT side by side, Add on a field a set lacks, the set refreshed, a record looked up (found, missing
-// field, no record, Advanced), the tools' pages, Prod behind a second press, paste into the boxes;
-// and that the server sent the tools nothing but the two reads and the lookup form, and logged no value.
+// The Verify panel (PLAN §105, §107, §132) on an isolated server (PORT, default 7805) against the
+// stand-in tools (standins/verify-tools.cjs on 18900 to 18902, logging to STANDIN_LOG): the machine's
+// Verify file written while the panel is open (tabs appear, the tools by name), Alt+← → between the
+// sections; ids checked in Dev and UAT side by side, Add on a field a set lacks, the set refreshed;
+// a record looked up (found, an id with a space, missing field, no record, Advanced), a saved list,
+// the filter, only empty, copy, recent chips; the tools' pages, Prod behind a second press, paste
+// into the boxes; and that the server sent the tools nothing but the reads and the lookup form, and
+// logged no value.
 // Start the stand-ins first: node standins/verify-tools.cjs 18900 %TEMP%\verify-standin.log
-// The server runs with CC_CONTROL_VERIFY_FILE=VERIFY_FILE (default %TEMP%/cc-verify-walk.json; the
-// walk deletes and writes it). SERVER_LOG: the server's log, checked for values. DARK=1 for dark mode.
+// The server runs with CC_CONTROL_VERIFY_FILE=VERIFY_FILE (default %TEMP%/cc-verify-walk.json) and
+// CC_CONTROL_FIELD_LISTS_FILE=LISTS_FILE (default %TEMP%/cc-lists-walk.json); the walk deletes and
+// writes both. SERVER_LOG: the server's log, checked for values. DARK=1 for dark mode.
 const { chromium } = require('C:/Users/ryans/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -16,10 +19,11 @@ const TMP = (process.env.TEMP || process.env.TMP).replace(/\\/g, '/');
 const STANDIN_LOG = process.env.STANDIN_LOG || `${TMP}/verify-standin.log`;
 const SERVER_LOG = process.env.SERVER_LOG || `${TMP}/cc-test-105.log`;
 const VERIFY_FILE = process.env.VERIFY_FILE || `${TMP}/cc-verify-walk.json`;
+const LISTS_FILE = process.env.LISTS_FILE || `${TMP}/cc-lists-walk.json`;
 const OUT = path.join(__dirname, dark ? 'shots-verify-dark' : 'shots-verify');
 fs.mkdirSync(OUT, { recursive: true });
 const DEMO = `${TMP}/cc-demo`;
-const DEV = 'http://127.0.0.1:18900', UAT = 'http://127.0.0.1:18901', LOOKUP = 'http://127.0.0.1:18902/Lookup';
+const DEV = 'http://127.0.0.1:18900', UAT = 'http://127.0.0.1:18901', LOOKUP = 'http://127.0.0.1:18902/Lookup', LOOKUP_PAGE = 'http://127.0.0.1:18902/LookupPage';
 let n = 0; const results = [];
 const check = (name, ok, extra = '') => { results.push([ok ? 'PASS' : 'FAIL', name, extra]); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${extra}`); };
 const shot = async (page, name) => { n += 1; await page.screenshot({ path: path.join(OUT, `${String(n).padStart(2, '0')}-${name}.png`) }); };
@@ -40,6 +44,7 @@ async function ask(page, msg) {
 (async () => {
   if (fs.existsSync(STANDIN_LOG)) fs.writeFileSync(STANDIN_LOG, '');
   fs.rmSync(VERIFY_FILE, { force: true });
+  fs.rmSync(LISTS_FILE, { force: true });
   const browser = await chromium.launch({ executablePath: 'C:/Users/ryans/AppData/Local/ms-playwright/chromium-1223/chrome-win64/chrome.exe' });
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, colorScheme: dark ? 'dark' : 'light' });
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `http://127.0.0.1:${PORT}` });
@@ -57,29 +62,38 @@ async function ask(page, msg) {
   await page.locator(`#card-${card.id}`).click();
   await sleep(600);
   const view = page.locator('section[aria-label^="LOAN-77"]').first();
+  const focused = () => page.evaluate(() => document.activeElement?.id);
   check('the card opens', await view.isVisible());
 
-  // v: the panel; no Verify file on this machine yet, so it says where the file goes.
+  // v: the panel; no Verify file on this machine yet, so it says where the file goes, and there are no tabs.
   await page.keyboard.press('v');
   await sleep(400);
   check('v opens Verify, which says where the machine’s file goes', await view.getByText(/from a file on this machine/).isVisible() && await view.getByText(VERIFY_FILE.split('/').pop(), { exact: false }).first().isVisible());
-  check('no setup form', (await page.locator('#verify-setup').count()) === 0);
-  check('the ids box starts with the ids the card names', (await page.locator('#verify-ids').inputValue()) === 'CX.SAMPLE.ONE\n1000', JSON.stringify(await page.locator('#verify-ids').inputValue()));
-  await page.keyboard.press('Enter');
-  check('Enter with no file says so', await until(async () => /has no address in this machine’s Verify file/.test(await view.innerText())));
+  check('no setup form, and no tabs until something is set up', (await page.locator('#verify-setup').count()) === 0 && (await view.getByRole('tablist', { name: 'Verify tools' }).count()) === 0);
   await shot(page, 'no-file');
 
-  // The file, written while the panel is open: the tools show by name, no restart, no form.
+  // The file, written while the panel is open: the tabs show by name, the lookup first (the test-data tool isn't set up).
   fs.writeFileSync(VERIFY_FILE, JSON.stringify({
     set: { name: 'Sample set', urls: { dev: DEV, uat: UAT }, addPage: 'Home/AddToSet' },
-    lookup: { name: 'Sample lookup', url: LOOKUP, recordField: 'RecordId' },
+    lookup: { name: 'Sample lookup', url: LOOKUP, page: LOOKUP_PAGE, recordField: 'RecordId' },
   }, null, 2));
-  check('the file shows within seconds: the tools by name', await until(async () => /Is it in Sample set\?/.test(await view.innerText()) && /Look up in Sample lookup/.test(await view.innerText()), 10000));
+  const tabs = view.getByRole('tablist', { name: 'Verify tools' });
+  check('the file shows within seconds: a tab per tool, by name', await until(async () => (await tabs.getByRole('tab').allInnerTexts()).join('|') === 'Test data|Sample lookup|Sample set', 10000), (await tabs.getByRole('tab').allInnerTexts().catch(() => [])).join('|'));
+  const selected = async () => (await tabs.getByRole('tab', { selected: true }).innerText()).trim();
+  check('it opens on the first tool set up (the lookup)', await selected() === 'Sample lookup' && /Look up in Sample lookup/.test(await view.innerText()));
   check('the note about the file goes', !(await view.getByText(/from a file on this machine/).count()));
 
-  // i, a made-up id typed in, Esc, Enter: Dev and UAT side by side.
+  // Alt+→: the field set. i, a made-up id, Esc, Enter: Dev and UAT side by side.
+  await page.keyboard.press('Alt+ArrowRight');
+  check('Alt+→ goes to the next section', await until(async () => await selected() === 'Sample set'));
+  await page.keyboard.press('Alt+ArrowRight');
+  check('…round to the first', await until(async () => await selected() === 'Test data') && /isn’t set up on this machine/.test(await view.innerText()));
+  await shot(page, 'builder-not-set-up');
+  await page.keyboard.press('Alt+ArrowLeft');
+  check('Alt+← goes back', await until(async () => await selected() === 'Sample set'));
+  check('the ids box starts with the ids the card names', (await page.locator('#verify-ids').inputValue()) === 'CX.SAMPLE.ONE\n1000', JSON.stringify(await page.locator('#verify-ids').inputValue()));
   await page.keyboard.press('i');
-  check('i puts the cursor in the ids box', await until(async () => (await page.evaluate(() => document.activeElement?.id)) === 'verify-ids'));
+  check('i puts the cursor in the ids box', await until(async () => (await focused()) === 'verify-ids'));
   await page.keyboard.press('Control+End');
   await page.keyboard.type('\nMADEUP');
   await page.keyboard.press('Escape');
@@ -101,52 +115,115 @@ async function ask(page, msg) {
   await page.keyboard.press('r');
   check('r reads each environment’s set again', await until(async () => setReads() === before + 2), `${before} → ${setReads()}`);
 
-  // l, a record, Enter: the values; a field the record lacks; then a record that isn't there.
+  // Alt+←: the lookup. l, a record, Enter: the Fields box is empty, so the ids box's ids are read.
+  await page.keyboard.press('Alt+ArrowLeft');
+  await until(async () => await selected() === 'Sample lookup');
   await page.keyboard.press('l');
-  check('l puts the cursor in the record box', await until(async () => (await page.evaluate(() => document.activeElement?.id)) === 'verify-record'));
+  check('l puts the cursor in the record box', await until(async () => (await focused()) === 'verify-record'));
   await page.keyboard.type('5001');
   await page.keyboard.press('Enter');
   const values = view.getByRole('table', { name: 'Record values' });
   const looked = await until(async () => (await values.locator('tbody tr').count()) === 3);
-  check('Enter in the record box looks it up', looked, looked ? '' : `${await page.locator('#verify-record').inputValue()} | ${(await view.innerText()).replace(/\s+/g, ' ').slice(-500)}`);
+  check('Enter in the record box looks it up (the ids box’s ids, the Fields box being empty)', looked, looked ? '' : `${await page.locator('#verify-record').inputValue()} | ${(await view.innerText()).replace(/\s+/g, ' ').slice(-500)}`);
   if (!looked) { await shot(page, 'lookup-failed'); throw new Error('stop'); }
   check('found values show, entities decoded, read-only marked', /12\.50/.test(await values.innerText()) && /Yes & no/.test(await values.innerText()) && /read-only/.test(await values.innerText()));
   check('a field the record lacks says it does not exist', /does not exist/.test(await values.locator('tbody tr', { hasText: 'MADEUP' }).innerText()));
-  const post = standin().filter((r) => r.tool === 'lookup').at(-1);
+  const post = standin().filter((r) => r.tool === 'lookup' && r.method === 'POST').at(-1);
   check('the lookup posted Dev with Advanced off', post?.env === 'Dev' && post?.advanced === 'false', JSON.stringify(post));
-  await shot(page, 'record');
+  check('a chip for the record fetched, with its environment', /5001\s*Dev/.test(await view.getByLabel('Recent records').innerText()));
+
+  // i: the Fields box, ids one per line, one with a space; Shift+S saves them as a list.
+  await page.keyboard.press('i');
+  check('i in the lookup puts the cursor in the Fields box', await until(async () => (await focused()) === 'verify-fields'));
+  await page.keyboard.type('1000\nGroup.Name.Role Name\nCX.EMPTY\nCX.GONE');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+S');
+  check('Shift+S asks for the list’s name', await until(async () => (await focused()) === 'verify-listname'));
+  await page.keyboard.type('Sample basics');
+  await page.keyboard.press('Enter');
+  const savedList = await until(async () => fs.existsSync(LISTS_FILE) && JSON.parse(fs.readFileSync(LISTS_FILE, 'utf8')).lists?.[0]?.name === 'Sample basics');
+  check('Enter saves it to the machine’s lists file, the id with a space whole', savedList && JSON.stringify(JSON.parse(fs.readFileSync(LISTS_FILE, 'utf8')).lists[0].ids) === JSON.stringify(['1000', 'Group.Name.Role Name', 'CX.EMPTY', 'CX.GONE']), savedList ? fs.readFileSync(LISTS_FILE, 'utf8').replace(/\s+/g, ' ') : 'none');
+  check('the picker offers it', await until(async () => (await page.locator('#verify-list option').allInnerTexts()).includes('Sample basics (4)')));
+  // A list written into the file by hand shows too (the file is watched).
+  fs.writeFileSync(LISTS_FILE, JSON.stringify({ lists: [...JSON.parse(fs.readFileSync(LISTS_FILE, 'utf8')).lists, { name: 'By hand', ids: ['1000'] }] }));
+  check('a list added to the file by hand shows within seconds', await until(async () => (await page.locator('#verify-list option').allInnerTexts()).includes('By hand (1)'), 10000));
+
+  // The Fields box emptied, then f and the arrows choose the list again; Enter looks it up.
+  await page.locator('#verify-fields').fill('');
+  await page.keyboard.press('Escape');
+  await page.locator('#verify-list').selectOption('');
+  await page.keyboard.press('f');
+  check('f puts the cursor on the list picker', await until(async () => (await focused()) === 'verify-list'));
+  await page.locator('#verify-list').selectOption('Sample basics');
+  check('choosing a list fills the Fields box', await until(async () => (await page.locator('#verify-fields').inputValue()) === '1000\nGroup.Name.Role Name\nCX.EMPTY\nCX.GONE'));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Enter');
+  check('Enter looks the list up: an id with a space is read as one', await until(async () => (await values.locator('tbody tr').count()) === 4 && /Sample role/.test(await values.innerText())), (await values.innerText().catch(() => '')).replace(/\s+/g, ' '));
+  const listPost = standin().filter((r) => r.tool === 'lookup' && r.method === 'POST').at(-1);
+  check('the form carried the ids one per line, the space kept', listPost?.ids?.join('|') === '1000|Group.Name.Role Name|CX.EMPTY|CX.GONE', JSON.stringify(listPost?.ids));
+  await shot(page, 'record-list');
+
+  // / filters; Shift+M only the empty or missing; Shift+Y copies the rows shown.
+  await page.keyboard.press('/');
+  check('/ puts the cursor in the filter', await until(async () => (await focused()) === 'verify-filter'));
+  await page.keyboard.type('role');
+  check('the filter leaves the matching row', await until(async () => (await values.locator('tbody tr').count()) === 1));
+  await page.keyboard.press('Enter');
+  await page.locator('#verify-filter').fill('');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+M');
+  check('Shift+M leaves only the empty and missing fields', await until(async () => (await values.locator('tbody tr').count()) === 2 && /CX\.EMPTY/.test(await values.innerText()) && /CX\.GONE/.test(await values.innerText())));
+  await page.keyboard.press('Shift+Y');
+  // Windows' clipboard hands lines back with CRLF.
+  check('Shift+Y copies the rows shown as field=value lines', await until(async () => (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n') === 'CX.EMPTY=\nCX.GONE='),JSON.stringify(await page.evaluate(() => navigator.clipboard.readText())));
+  await shot(page, 'only-empty');
+  await page.keyboard.press('Shift+M');
+
+  // a: Advanced; a record that isn't there.
   await page.keyboard.press('a');
   await page.keyboard.press('l');
-  await until(async () => (await page.evaluate(() => document.activeElement?.id)) === 'verify-record');
+  await until(async () => (await focused()) === 'verify-record');
   await page.keyboard.press('Control+a');
   await page.keyboard.type('9999');
   await page.keyboard.press('Enter');
   check('a record that isn’t there: No record found', await until(async () => /No record found: 9999/.test(await view.innerText())));
-  check('a turns Advanced on for the lookup', standin().filter((r) => r.tool === 'lookup').at(-1)?.advanced === 'true');
+  check('a turns Advanced on for the lookup', standin().filter((r) => r.tool === 'lookup' && r.method === 'POST').at(-1)?.advanced === 'true');
+  check('no chip for a record not found', !/9999/.test(await view.getByLabel('Recent records').innerText()));
 
   // e: UAT, and the lookup follows; Shift+P twice: Prod.
   await page.keyboard.press('e');
   check('e switches to UAT', await until(async () => (await view.getByRole('radio', { name: 'UAT' }).getAttribute('aria-checked')) === 'true'));
+  // The record box: ↑ brings back the record fetched lately, with its environment.
+  await page.keyboard.press('l');
+  await until(async () => (await focused()) === 'verify-record');
+  await page.keyboard.press('ArrowUp');
+  check('↑ in the record box: the recent record and its environment', await until(async () => (await page.locator('#verify-record').inputValue()) === '5001' && (await view.getByRole('radio', { name: 'Dev' }).getAttribute('aria-checked')) === 'true'));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('e');
+  await view.getByLabel('Recent records').getByRole('button', { name: /5001/ }).click();
+  check('a chip fills the box and sets its environment', await until(async () => (await view.getByRole('radio', { name: 'Dev' }).getAttribute('aria-checked')) === 'true'));
   await page.keyboard.press('Shift+P');
   await sleep(150);
   check('one Shift+P only asks', (await view.getByRole('radio', { name: 'Prod' }).getAttribute('aria-checked')) === 'false');
   await page.keyboard.press('Shift+P');
   check('a second Shift+P chooses Prod', await until(async () => (await view.getByRole('radio', { name: 'Prod' }).getAttribute('aria-checked')) === 'true'));
   await page.keyboard.press('Enter');
-  check('a lookup on Prod posts Prod', await until(async () => standin().filter((r) => r.tool === 'lookup').at(-1)?.env === 'Prod'));
+  check('a lookup on Prod posts Prod', await until(async () => standin().filter((r) => r.tool === 'lookup' && r.method === 'POST').at(-1)?.env === 'Prod'));
+  check('…and adds no chip (Prod stays two presses away)', !/Prod/.test(await view.getByLabel('Recent records').innerText()));
   await shot(page, 'prod');
   await page.keyboard.press('Shift+P');
   await page.keyboard.press('e');
   check('Shift+P on Prod goes back to Dev, then e to UAT', await until(async () => (await view.getByRole('radio', { name: 'UAT' }).getAttribute('aria-checked')) === 'true'));
 
-  // o, Shift+O, Shift+L: the tools' pages in the browser (UAT now).
-  const opens = [];
-  for (const k of ['o', 'Shift+O', 'Shift+L']) {
-    const [tab] = await Promise.all([context.waitForEvent('page', { timeout: 5000 }).catch(() => null), page.keyboard.press(k)]);
-    opens.push(tab ? tab.url() : 'none');
-    if (tab) await tab.close();
-  }
-  check('o opens the set tool for UAT, Shift+O its add-to-set page, Shift+L the lookup', opens[0] === `${UAT}/` && opens[1] === `${UAT}/Home/AddToSet` && opens[2] === LOOKUP, opens.join(' | '));
+  // o in the lookup, Shift+L anywhere: the lookup's own page; o and Shift+O in the field set: its pages (UAT now).
+  const opened = async (k) => { const [tab] = await Promise.all([context.waitForEvent('page', { timeout: 5000 }).catch(() => null), page.keyboard.press(k)]); const u = tab ? tab.url() : 'none'; if (tab) await tab.close(); return u; };
+  const lookupO = await opened('o');
+  await page.keyboard.press('Alt+ArrowRight');
+  await until(async () => await selected() === 'Sample set');
+  const setO = await opened('o');
+  const addO = await opened('Shift+O');
+  const lookupL = await opened('Shift+L');
+  check('o opens the lookup’s own page (not where it posts); in the set, o and Shift+O open UAT’s pages; Shift+L the lookup’s page', lookupO === LOOKUP_PAGE && setO === `${UAT}/` && addO === `${UAT}/Home/AddToSet` && lookupL === LOOKUP_PAGE, [lookupO, setO, addO, lookupL].join(' | '));
   check('Shift+O copied the ids UAT’s set lacks, to paste there', (await page.evaluate(() => navigator.clipboard.readText())) === 'CX.SAMPLE.ONE', await page.evaluate(() => navigator.clipboard.readText()));
 
   // Add on a field a set lacks: that environment's add-to-set page, the id copied.
@@ -165,6 +242,17 @@ async function ask(page, msg) {
   await page.keyboard.press('Control+v');
   check('Ctrl+V pastes into the ids box', (await page.locator('#verify-ids').inputValue()).endsWith('PASTED.ID'));
   await page.keyboard.press('Escape');
+
+  // Shift+F twice deletes the chosen list.
+  await page.keyboard.press('Alt+ArrowLeft');
+  await until(async () => await selected() === 'Sample lookup');
+  await page.keyboard.press('Shift+F');
+  await sleep(150);
+  check('one Shift+F only asks', JSON.parse(fs.readFileSync(LISTS_FILE, 'utf8')).lists.length === 2);
+  await page.keyboard.press('Shift+F');
+  check('a second Shift+F deletes the chosen list from the file', await until(async () => JSON.stringify(JSON.parse(fs.readFileSync(LISTS_FILE, 'utf8')).lists.map((l) => l.name)) === '["By hand"]'));
+  await shot(page, 'lookup-tab');
+
   await page.keyboard.press('v');
   await sleep(200);
   const say = page.locator('#card-say');
@@ -179,7 +267,7 @@ async function ask(page, msg) {
   // The ? overlay has the panel's rows.
   await page.keyboard.press('Shift+Slash');
   await sleep(400);
-  check('the ? overlay has the Verify rows', (await page.getByText(/Verify panel: The field set tool’s page/).count()) > 0);
+  check('the ? overlay has the Verify rows, a set per section', (await page.getByText(/Verify: record lookup/).count()) > 0 && (await page.getByText(/Verify: field set/).count()) > 0 && (await page.getByText(/Verify panel: The previous \/ next section/).count()) > 0);
   await page.keyboard.press('Escape');
 
   // What the app's server sent the tools: only the reads and the lookup form, never a Save or update.
@@ -189,7 +277,7 @@ async function ask(page, msg) {
   check('every lookup POST carried only the four form fields', fromServer.filter((r) => r.tool === 'lookup').every((r) => r.fields.every((f) => ['Environment', 'RecordId', 'AdvancedFetch', 'FieldsToFetch'].includes(f))));
   check('nothing reached a Save or an update', !standin().some((r) => /save|update/i.test(r.path)));
   const serverLog = fs.existsSync(SERVER_LOG) ? fs.readFileSync(SERVER_LOG, 'utf8') : '';
-  check('the server log has no looked-up value', serverLog.length >= 0 && !/12\.50|Yes & no/.test(serverLog));
+  check('the server log has no looked-up value, record id or field id', !/12\.50|Yes & no|Sample role|5001|Group\.Name/.test(serverLog));
 
   check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   await browser.close();

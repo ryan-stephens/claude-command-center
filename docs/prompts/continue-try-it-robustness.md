@@ -40,7 +40,7 @@ On the work laptop the owner compared cc-control with another team's tool that s
 5. **The stand-ins** in `docs/walkthroughs/simple-new-card/standins/` (`okteto-up.cjs`, `down.cjs`, `okteto-helper.cjs`, `api.cjs`, `ui.cjs`, `nx-serve.cjs`, `ui-compile.cjs`). Also the walks that drive Try it: `walk-deps`, `walk-two-cards`, `walk-board-try`, `walk-try-compile`, `walk-stack`.
 
 ## The phases
-Each phase gets its own PLAN section (the next is **§132**; run `git fetch` first) and its own commit. A PLAN section that defers something says so in its own **Not yet:** line, as earlier sections do; there is no single list. Before building each phase, check the code still looks the way described above, and say so if it doesn't.
+Each phase gets its own PLAN section (the next is **§135**; run `git fetch` first) and its own commit. A PLAN section that defers something says so in its own **Not yet:** line, as earlier sections do; there is no single list. Before building each phase, check the code still looks the way described above, and say so if it doesn't.
 
 1. **A run manifest (highest value).**
    - Per card, keep a small JSON file under the runs folder, written as each service starts and updated on every step and on failure. It holds:

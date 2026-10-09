@@ -36,13 +36,13 @@ function lookup(req, res) {
   req.on('data', (d) => { body += d; });
   req.on('end', () => {
     const form = new URLSearchParams(body);
-    log({ tool: 'lookup', method: req.method, path: new URL(req.url, 'http://x').pathname, fields: [...form.keys()], advanced: form.get('AdvancedFetch'), env: form.get('Environment'), agent: req.headers['user-agent'] ?? '' });
+    log({ tool: 'lookup', method: req.method, path: new URL(req.url, 'http://x').pathname, fields: [...form.keys()], advanced: form.get('AdvancedFetch'), env: form.get('Environment'), ids: (form.get('FieldsToFetch') ?? '').split('\r\n').filter(Boolean), agent: req.headers['user-agent'] ?? '' });
     res.setHeader('content-type', 'text/html');
     const page = (table) => `<html><body><form method="post"><select name="Environment"><option>Dev</option><option>Uat</option><option>Prod</option></select><input name="RecordId" />${table}</form></body></html>`;
     if (req.method !== 'POST' || form.get('RecordId') !== '5001') return res.end(page('<p>Enter a record.</p>'));
     const ids = (form.get('FieldsToFetch') ?? '').split('\r\n').filter(Boolean);
     const rows = ids.map((id) => {
-      const v = { '1000': '12.50', 'CX.SAMPLE.ONE': 'Yes & no' }[id.toUpperCase()];
+      const v = { '1000': '12.50', 'CX.SAMPLE.ONE': 'Yes & no', 'GROUP.NAME.ROLE NAME': 'Sample role', 'CX.EMPTY': '' }[id.toUpperCase()];
       if (v === undefined) return `<tr style="background-color: salmon"><td>${id}</td><td>(Field does not exist)</td><td></td></tr>`;
       const e = v.replace(/&/g, '&amp;');
       return `<tr><td>${id}</td><td>${e}</td><td><input type="hidden" name="Fields[${id}].Value" value="${e}" /><input type="hidden" name="Fields[${id}].Exists" value="True" /><input type="hidden" name="Fields[${id}].ReadOnly" value="${id === '1000' ? 'True' : 'False'}" /><input type="checkbox" name="Fields[${id}].Update" /><input name="Fields[${id}].NewValue" /></td></tr>`;

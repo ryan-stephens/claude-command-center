@@ -9,18 +9,19 @@
 // else: the add-to-set page's Save, the lookup's update boxes or any other address are never
 // reached from here. Redirects aren't followed (a followed POST becomes a GET elsewhere).
 //
-// Values a lookup returns are a record's data: never logged, never kept here.
+// Values a lookup returns are a record's data: never logged, never kept here. Saved lists of field
+// ids (§132) are the one thing written: their own file, only by the panel's Save and Delete.
 //
 // Where the tools are, and what they're called, is a file on each machine (§107), never the repo:
 // ~/.cc-control/verify.json, or the file CC_CONTROL_VERIFY_FILE names. Read again when it changes.
 
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
-  DEFAULT_ENV_VALUES, DEFAULT_ID_PARAM, MAX_IDS, cleanUrl, cleanVerify, setUrl, type VerifyFile,
-  type FieldCheck, type LookupField, type LookupResult, type SetInfo, type VerifyConfig, type VerifyEnv,
+  DEFAULT_ENV_VALUES, DEFAULT_ID_PARAM, LIST_NAME_MAX, MAX_IDS, MAX_LISTS, cleanLists, cleanUrl, cleanVerify, setUrl, splitFieldLines,
+  type FieldList, type FieldListsFile, type VerifyFile, type FieldCheck, type LookupField, type LookupResult, type SetInfo, type VerifyConfig, type VerifyEnv,
 } from '../shared/verify.ts';
 
 // ---- The machine's file -----------------------------------------------------
@@ -39,16 +40,18 @@ export function readVerifyFile(file = VERIFY_FILE): VerifyFile {
   }
 }
 
-/** The file, read again only when it changed (its size and time). */
-export class VerifyFileWatch {
+/** A file, read again only when it changed (its size and time). */
+export class FileWatch<T> {
   private file: string;
+  private read: (file: string) => T;
   private seen: string;
-  private last: VerifyFile;
+  private last: T;
 
-  constructor(file = VERIFY_FILE) {
+  constructor(file: string, read: (file: string) => T) {
     this.file = file;
+    this.read = read;
     this.seen = this.stamp();
-    this.last = readVerifyFile(file);
+    this.last = read(file);
   }
 
   private stamp(): string {
@@ -56,13 +59,69 @@ export class VerifyFileWatch {
   }
 
   /** What the file says now; `changed` when it was read again since the last call. */
-  now(): VerifyFile & { changed: boolean } {
+  now(): T & { changed: boolean } {
     const stamp = this.stamp();
     if (stamp === this.seen) return { ...this.last, changed: false };
     this.seen = stamp;
-    this.last = readVerifyFile(this.file);
+    this.last = this.read(this.file);
     return { ...this.last, changed: true };
   }
+}
+
+/** The machine's Verify file, watched. */
+export class VerifyFileWatch extends FileWatch<VerifyFile> {
+  constructor(file = VERIFY_FILE) { super(file, readVerifyFile); }
+}
+
+// ---- Saved field lists (§132) -------------------------------------------------
+
+/** The lookup's saved lists of field ids: a file of their own next to the Verify file, written only by the panel's Save and Delete. */
+export const FIELD_LISTS_FILE = process.env.CC_CONTROL_FIELD_LISTS_FILE || join(homedir(), '.cc-control', 'field-lists.json');
+
+/** The lists file read and cleaned (`cleanLists`). A missing file is no lists. Never throws. */
+export function readFieldLists(file = FIELD_LISTS_FILE): FieldListsFile {
+  if (!existsSync(file)) return { file, lists: [] };
+  try {
+    const text = readFileSync(file, 'utf8');
+    if (text.includes('\u0000')) return { file, lists: [], problem: `${file} is saved as UTF-16; save it as UTF-8.` };
+    return { file, lists: cleanLists((JSON.parse(text.replace(/^﻿/, '')) as { lists?: unknown } | null)?.lists) };
+  } catch (e) {
+    return { file, lists: [], problem: `${file} isn’t JSON: ${(e as Error).message.slice(0, 200)}` };
+  }
+}
+
+/** Write the lists, whole, through a temporary file (a reader never sees half of one). Nothing else is written. */
+function writeFieldLists(file: string, lists: FieldList[]): void {
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify({ lists: cleanLists(lists) }, null, 2)}\n`);
+  renameSync(tmp, file);
+}
+
+/** Save a list under a name (a list of that name, in any case, is replaced). */
+export function saveFieldList(name: string, ids: string[], file = FIELD_LISTS_FILE): FieldList[] {
+  const n = String(name ?? '').trim().slice(0, LIST_NAME_MAX);
+  if (!n) throw new Error('Name the list.');
+  const clean = splitFieldLines((Array.isArray(ids) ? ids : []).map(String).join('\n'));
+  if (!clean.length) throw new Error('The list has no field ids in it.');
+  const had = readFieldLists(file);
+  if (had.problem) throw new Error(had.problem);
+  const at = had.lists.findIndex((l) => l.name.toLowerCase() === n.toLowerCase());
+  if (at < 0 && had.lists.length >= MAX_LISTS) throw new Error(`There are ${MAX_LISTS} lists already: delete one first.`);
+  const lists = at < 0 ? [...had.lists, { name: n, ids: clean }] : had.lists.map((l, i) => (i === at ? { name: n, ids: clean } : l));
+  writeFieldLists(file, lists);
+  return lists;
+}
+
+/** Delete a list by name (case-insensitive). */
+export function deleteFieldList(name: string, file = FIELD_LISTS_FILE): FieldList[] {
+  const had = readFieldLists(file);
+  if (had.problem) throw new Error(had.problem);
+  const n = String(name ?? '').trim().toLowerCase();
+  const lists = had.lists.filter((l) => l.name.toLowerCase() !== n);
+  if (lists.length === had.lists.length) throw new Error('There is no list by that name.');
+  writeFieldLists(file, lists);
+  return lists;
 }
 
 // ---- Requests ---------------------------------------------------------------
@@ -350,13 +409,18 @@ export function parseLookup(html: string): { found: boolean; fields: LookupField
     if (cells.length < 2) continue;
     const hidden: Record<string, string> = {};
     let hiddenId: string | undefined;
+    const options: [number, string][] = [];
     for (const m of row.matchAll(/<input\b[^>]*>/gi)) {
       const a = attrs(m[0]);
+      const o = /^Fields\[([^\]]+)\]\.Options\[(\d+)\]$/i.exec(a.name ?? '');
+      if (o) { options.push([Number(o[2]), a.value ?? '']); continue; }
       const n = /^Fields\[([^\]]+)\]\.(Value|Exists|ReadOnly)$/i.exec(a.name ?? '');
       if (!n) continue;
       hiddenId ??= n[1];
       hidden[n[2].toLowerCase()] = a.value ?? '';
     }
+    // The options in their order; the empty first one is the tool's "clear", not a value to show.
+    const opts = options.sort((x, y) => x[0] - y[0]).map(([, v]) => v).filter((v, i) => i > 0 || v !== '');
     const id = htmlText(cells[0]) || hiddenId || '';
     if (!id) continue;
     const shown = htmlText(cells[1]);
@@ -367,6 +431,7 @@ export function parseLookup(html: string): { found: boolean; fields: LookupField
       value: exists ? (hidden.value ?? shown) : '',
       exists,
       ...(hidden.readonly !== undefined ? { readOnly: /^true$/i.test(hidden.readonly) } : {}),
+      ...(options.length ? { options: opts } : {}),
     });
   }
   return { found: true, fields };
@@ -390,7 +455,8 @@ export class LookupTool {
     if (!field) throw new Error(`${cfg.lookup?.name ?? 'The record lookup'} needs "recordField" in this machine’s Verify file: the form’s name for the record id box.`);
     const rid = recordId.trim();
     if (!/^[\w.{}-]{1,80}$/.test(rid)) throw new Error('That record id doesn’t look like one.');
-    const list = ids.slice(0, MAX_IDS);
+    // Lookup ids go one per line as they are: an id may have a space in it (§132).
+    const list = splitFieldLines(ids.join('\n'));
     if (!list.length) throw new Error('Name a field or two to read.');
     const envValue = cfg.lookup?.envValues?.[env]?.trim() || DEFAULT_ENV_VALUES[env];
     const res = await this.req.send({

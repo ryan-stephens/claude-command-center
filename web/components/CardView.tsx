@@ -127,7 +127,7 @@ function Dock({ card, panel }: { card: Card; panel: CardPanel | null }) {
   };
   const icons: Record<CardPanel, IconName> = { changes: 'diff', try: 'window', verify: 'clipboard', context: 'book', more: 'dots' };
   const titles: Record<CardPanel, string> = {
-    changes: 'What it changed, by repo, with the diffs', try: 'Its app, or its services: start them, open them, read their output', verify: 'Is a field in the set, in Dev and UAT; a record’s field values; the tools’ own pages',
+    changes: 'What it changed, by repo, with the diffs', try: 'Its app, or its services: start them, open them, read their output', verify: 'The team’s tools, a section each (Alt+← →): test loans from a scenario, a record’s field values, is a field in the set',
     context: 'How it started, what Claude was given, what was added since', more: 'Steps, where it runs, the pull request, the report, worktrees',
   };
   return (

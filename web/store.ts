@@ -4,7 +4,7 @@ import type { CardRun, LogLine, RunRecipe } from '../shared/recipes.ts';
 import { DONE_STATUSES, type InboxView, type Ticket, type TicketProject, type TicketSources } from '../shared/tickets.ts';
 import type { Command, CommandGroup, ModelChoice, PermissionRequest, RepoInfo, SessionActivity, SessionSummary, Settings, SlashInfo, Todo, TranscriptItem, Workspace } from '../shared/protocol.ts';
 import type { SavedPrompt } from '../shared/prompts.ts';
-import type { VerifyFile } from '../shared/verify.ts';
+import type { FieldListsFile, VerifyFile } from '../shared/verify.ts';
 import { loadFolds, saveFolds, toggled, type FoldKey, type Folds } from './folds.ts';
 import type { QaState } from './questions.ts';
 import type { Flags } from './home-model.ts';
@@ -162,6 +162,8 @@ interface State {
   settings: Settings;
   /** This machine's Verify file (§107): where the team's tools are and their names. Null until the server says. */
   verify: VerifyFile | null;
+  /** The lookup's saved field lists (§132), from the machine's lists file. */
+  verifyLists: FieldListsFile | null;
   /** Phones: number pad panel shown under the composer. */
   mobileBoard: boolean;
   /** Collapsible sections the viewer folded away (remembered per browser). */
@@ -233,6 +235,7 @@ export const useStore = create<State>(() => ({
   voice: null,
   settings: {},
   verify: null,
+  verifyLists: null,
   mobileBoard: false,
   folds: loadFolds(),
   qa: null,

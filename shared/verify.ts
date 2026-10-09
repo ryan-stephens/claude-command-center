@@ -1,11 +1,11 @@
-// Verify (PLAN §105): two of the team's web tools, reached from a card's Verify panel. The set tool
-// says whether a field is in the current field set (and its format and options), per environment;
-// the record lookup reads a record's current field values. Both are read-only from here: the set
-// tool's add-to-set page and the lookup's update boxes write, and the app never calls them.
+// Verify (PLAN §105, §132): the team's tools, reached from a card's Verify panel, one sub-section
+// each. The set tool says whether a field is in the current field set (and its format and options),
+// per environment; the record lookup reads a record's current field values. Both are read-only from
+// here: the set tool's add-to-set page and the lookup's update boxes write, and the app never calls
+// them. The scenario runner (the "test data" tool, §133) runs on this machine and creates test loans.
 //
-// Where the tools are is per machine (Settings.verify), entered in the panel; nothing real is in
-// the repo. Lookup values are a record's data: they stay in the page's memory, never in a log, a
-// card or a transcript.
+// Where the tools are is a file per machine (§107); nothing real is in the repo. Lookup values are
+// a record's data: they stay in the page's memory, never in a log, a card or a transcript.
 
 export type VerifyEnv = 'dev' | 'uat' | 'prod';
 export const VERIFY_ENVS: VerifyEnv[] = ['dev', 'uat', 'prod'];
@@ -36,6 +36,23 @@ export interface VerifyConfig {
     envValues?: Partial<Record<VerifyEnv, string>>;
     /** How it signs in: auto (try without, then as you on Windows), windows (as you), none. Unset: auto. */
     auth?: VerifyAuth;
+    /** Its page, where o and Shift+L open (the form's own page, not where it posts). Unset: `url`. */
+    page?: string;
+    /** The update form's address (§134), on the same host as `url`. */
+    updateUrl?: string;
+    /** Updates through the lookup, in Dev and UAT only: only the literal true counts. */
+    allowUpdate?: boolean;
+  };
+  /** The scenario runner on this machine (§133): an API that creates test loans in Dev or UAT. */
+  builder?: {
+    /** What the panel calls it. Unset: "Test data". */
+    name?: string;
+    /** The API's base, on this machine only (localhost, 127.0.0.1 or [::1]). */
+    url?: string;
+    /** Its web UI, opened by o. */
+    ui?: string;
+    /** A short hint for starting it, shown when it isn't running. Never run. */
+    start?: string;
   };
 }
 
@@ -94,6 +111,8 @@ export interface LookupField {
   value: string;
   exists: boolean;
   readOnly?: boolean;
+  /** The values it may take (Advanced only), in the tool's order, the empty "clear" choice left out. */
+  options?: string[];
 }
 
 export interface LookupResult {
@@ -103,8 +122,64 @@ export interface LookupResult {
   fields: LookupField[];
 }
 
-/** At most this many ids in one check or lookup. */
+/** At most this many ids in one check. */
 export const MAX_IDS = 40;
+
+/** At most this many ids in one lookup: the tool's own default list is about 290. */
+export const LOOKUP_MAX_IDS = 400;
+
+/**
+ * Field ids for the record lookup: one per line, as they are (inner spaces kept: `Group.Name.Role
+ * Name` is one id). A text with no line break is split on commas and semicolons instead. Duplicates
+ * go case-insensitively (the first's case kept), and so does anything that can't be an id.
+ */
+export function splitFieldLines(text: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const parts = /\r?\n/.test(text) ? text.split(/\r?\n/) : text.split(/[,;]/);
+  for (const raw of parts) {
+    const id = raw.trim();
+    if (!/^[A-Za-z0-9][\w .#-]{0,79}$/.test(id) || seen.has(id.toUpperCase())) continue;
+    seen.add(id.toUpperCase());
+    out.push(id);
+    if (out.length === LOOKUP_MAX_IDS) break;
+  }
+  return out;
+}
+
+/** A saved list of field ids for the lookup (§132), from ~/.cc-control/field-lists.json. */
+export interface FieldList { name: string; ids: string[] }
+
+export interface FieldListsFile {
+  file: string;
+  lists: FieldList[];
+  /** Why it couldn't be read. A missing file is no lists. */
+  problem?: string;
+}
+
+export const MAX_LISTS = 50;
+export const LIST_NAME_MAX = 60;
+
+/** Untrusted lists: names trimmed and unique (case-insensitive), ids through splitFieldLines, at most MAX_LISTS. */
+export function cleanLists(raw: unknown): FieldList[] {
+  const out: FieldList[] = [];
+  const seen = new Set<string>();
+  for (const l of Array.isArray(raw) ? raw : []) {
+    const name = typeof l?.name === 'string' ? l.name.trim().slice(0, LIST_NAME_MAX) : '';
+    const ids = Array.isArray(l?.ids) ? splitFieldLines(l.ids.filter((x: unknown) => typeof x === 'string').join('\n')) : [];
+    if (!name || !ids.length || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push({ name, ids });
+    if (out.length === MAX_LISTS) break;
+  }
+  return out;
+}
+
+/** localhost, 127.0.0.1 or [::1]: the scenario runner is only ever reached on this machine. */
+export function isLoopback(url: string | undefined): boolean {
+  if (!url) return false;
+  try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname.toLowerCase()); } catch { return false; }
+}
 
 /**
  * Field ids in text: pasted lists (one per line, or split by commas, spaces, semicolons) as they are.
@@ -172,10 +247,25 @@ export function cleanVerify(raw: unknown): VerifyConfig | undefined {
   const rf = s(r.lookup?.recordField, 60); if (rf && /^[\w.\[\]-]+$/.test(rf)) lookup.recordField = rf;
   const ev = words(r.lookup?.envValues); if (Object.keys(ev).length) lookup.envValues = ev;
   if (r.lookup?.auth && VERIFY_AUTHS.includes(r.lookup.auth)) lookup.auth = r.lookup.auth;
+  const lp = cleanUrl(s(r.lookup?.page, 500)); if (lp) lookup.page = lp;
+  // The update form must be on the lookup's own host: nothing else is ever written to.
+  const uu = cleanUrl(s(r.lookup?.updateUrl, 500)); if (uu && lu && sameHost(uu, lu)) lookup.updateUrl = uu;
+  if (r.lookup?.allowUpdate === true) lookup.allowUpdate = true;
+  const builder: NonNullable<VerifyConfig['builder']> = {};
+  const bn = s(r.builder?.name, 60); if (bn) builder.name = bn;
+  const bu = cleanUrl(s(r.builder?.url, 500)); if (bu && isLoopback(bu)) builder.url = bu;
+  const bi = cleanUrl(s(r.builder?.ui, 500)); if (bi) builder.ui = bi;
+  const bs = s(r.builder?.start, 200); if (bs) builder.start = bs;
   const out: VerifyConfig = {};
   if (Object.keys(set).length) out.set = set;
   if (Object.keys(lookup).length) out.lookup = lookup;
+  if (Object.keys(builder).length) out.builder = builder;
   return Object.keys(out).length ? out : undefined;
+}
+
+/** Two addresses on the same scheme, host and port. */
+export function sameHost(a: string, b: string): boolean {
+  try { return new URL(a).origin === new URL(b).origin; } catch { return false; }
 }
 
 /** An http(s) URL without a trailing slash, or undefined. */
