@@ -23,7 +23,7 @@ import {
 import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
 import { withSimple } from './simple-model.ts';
 import { copyRunIds, fetchRunLoan, loadScenarios, moveScenario, runScenarioKey } from './verify-builder.ts';
-import { armProd, cap, copyFields, currentSection, cycleEnv, cycleSection, deleteList, openPage, refreshSets, runCheck, runLookup, saveList, setField, startSaveList, stepRecent, toggleAdvanced, toggleOnlyEmpty, toolName } from './verify-state.ts';
+import { armProd, cancelEdit, cap, clearRow, commitEdit, copyFields, currentSection, editRow, moveRow, openWatch, sendKey, unstageRow, cycleEnv, cycleSection, deleteList, openPage, refreshSets, runCheck, runLookup, saveList, setField, startSaveList, stepRecent, toggleAdvanced, toggleOnlyEmpty, toolName } from './verify-state.ts';
 import { addCardContext, answerCard, answerQuestionCard, focusCardTab, sayToCard, send, showDoor, startCard, stopRun, tryCard } from './ws.ts';
 import { IMAGE_ONLY_TEXT, MAX_IMAGES, pickImages, readImage, type Pasted } from './say-images.ts';
 import { fitSay, nudgeSay } from './say-size.ts';
@@ -60,6 +60,8 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['l  ·  i  ·  Enter  ·  a  ·  o (Verify: record lookup)', 'The record id box (Enter looks it up; ↑ ↓ there go through the records fetched lately, also chips under it)  ·  the Fields box, one id per line as it is (an id may have spaces; empty: the field set’s ids box)  ·  look the record up  ·  Advanced fetch, slower: read-only and missing fields marked, and a field’s options  ·  the tool’s page. Read only: values stay in the page'],
       ['f  ·  Shift+S  ·  Shift+F (Verify: record lookup)', 'Choose a saved list of field ids for the Fields box (↑ ↓ choose, Esc leaves)  ·  save the Fields box as a list (a name, Enter)  ·  delete the chosen list, after a second press. Lists are kept in ~/.cc-control/field-lists.json, nowhere else'],
       ['/  ·  Shift+M  ·  Shift+Y (Verify: record lookup)', 'Filter the values by field or value  ·  only the fields that are empty or don’t exist  ·  copy the rows shown as field=value lines'],
+      ['↑ ↓ / j k  ·  u  ·  z  ·  Backspace (Verify: record lookup, updates on)', 'Only when this machine’s Verify file allows updates, in Dev or UAT: choose a row  ·  edit it (a box, or its options; Enter stages it as old → new, Esc cancels, an empty edit is no change)  ·  take a staged change back  ·  stage a clear of the field (old → empty). Read-only and missing fields can’t be edited, and say why'],
+      ['Shift+U  ·  w (Verify: record lookup, updates on)', 'Send the staged changes, after a second Shift+U within 4 s (never in Prod). The tool applies them in a couple of minutes: the page fetches the changed rows again every 10 s for 3 minutes and marks each pending, applied or differs  ·  the tool’s progress page for the update. To change more, fetch again'],
       ['↑ ↓ / j k  ·  /  ·  r (Verify: test data)', 'Choose a scenario of the scenario runner on this machine  ·  filter them by name, version or tag  ·  read the list again. Not running? The section says so, with how to start it when the Verify file has a start hint'],
       ['Enter  ·  f  ·  Shift+Y  ·  o (Verify: test data)', 'Run the scenario in Dev or UAT (e), after a second Enter within 4 s: it creates a test loan there; its steps follow as it runs (never Prod: Shift+P does nothing here)  ·  fetch the loan it made in the record lookup (its environment, the chosen list)  ·  copy the loan id  ·  the tool’s own page. Loan ids and step messages stay in the page'],
       ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
@@ -953,6 +955,11 @@ function verifyKeys(e: KeyboardEvent): boolean {
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
   // f's picker is a select: Esc leaves it (the arrows choose, as a select does).
   if (e.key === 'Escape' && document.activeElement?.id === 'verify-list') { (document.activeElement as HTMLElement).blur(); return true; }
+  // §134: a row's edit as a select of its options: Enter stages, Esc cancels (the arrows choose).
+  if (document.activeElement?.id === 'verify-edit') {
+    if (e.key === 'Enter') { commitEdit(); return true; }
+    if (e.key === 'Escape') { cancelEdit(); return true; }
+  }
   const section = currentSection();
   switch (e.key) {
     case 'e': cycleEnv(); return true;
@@ -982,6 +989,14 @@ function verifyKeys(e: KeyboardEvent): boolean {
       case '/': focusField('verify-filter'); return true;
       case 'M': toggleOnlyEmpty(); return true;
       case 'Y': copyFields(); return true;
+      // §134: changes, when this machine allows them (Dev and UAT): rows, edit, take back, clear, send, progress.
+      case 'ArrowUp': case 'k': return moveRow(-1);
+      case 'ArrowDown': case 'j': return moveRow(1);
+      case 'u': editRow(); return true;
+      case 'z': unstageRow(); return true;
+      case 'Backspace': clearRow(); return true;
+      case 'U': void sendKey(); return true;
+      case 'w': openWatch(); return true;
     }
   }
   if (section === 'builder') {
@@ -1004,6 +1019,11 @@ function verifyFieldKeys(e: KeyboardEvent, el: HTMLElement): boolean {
   if (el.id === 'verify-listname') {
     if (e.key === 'Escape') { setField({ listName: null }); return true; }
     if (e.key === 'Enter') { void saveList(); return true; }
+    return false;
+  }
+  if (el.id === 'verify-edit') {
+    if (e.key === 'Enter') { commitEdit(); return true; }
+    if (e.key === 'Escape') { cancelEdit(); return true; }
     return false;
   }
   if (e.key === 'Escape') { el.blur(); return true; }

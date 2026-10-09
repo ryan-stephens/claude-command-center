@@ -4,58 +4,69 @@ Paste this into a new Claude Code session on the **VU work laptop**, opened in t
 
 ---
 
-You're helping the owner try the **Verify panel** in **cc-control** for the first time against the team's two real tools. cc-control is a local web app over Claude Code sessions (the Ticket Line board: a card per ticket, its session in the card, panels beside the chat). Verify (`v` on an open card) was built on the owner's personal laptop and tested there only against made-up stand-ins. This session is its first contact with the real hosts.
+You're helping the owner try the **Verify panel** in **cc-control** against the team's real tools. cc-control is a local web app over Claude Code sessions (the Ticket Line board: a card per ticket, its session in the card, panels beside the chat). Verify (`v` on an open card) was built on the owner's personal laptop and tested there only against made-up stand-ins. Since §132 to §134 it has **a tab per tool** (`Alt+←` / `Alt+→`), and this session is the first contact of that version with the real hosts.
 
-The two tools, as the code and PLAN call them (their real names are in this machine's Verify file, never in the repo):
-- **The field set tool**: a host per environment (dev, uat). Fields have to be in its set for the sync to work. Verify reads it (`GET <base>/Home/SetVersion`, the whole set, cached ten minutes; `GET <base>/Home/ValidateField?<idParam>=<id>`) and opens its add-to-set page for you to add a field there.
-- **The record lookup**: one host for every environment, an MVC form. Verify posts the form once (Environment, the record id field, AdvancedFetch, FieldsToFetch) and reads `table#FieldResults` out of the page it answers with.
+The tools, as the code and PLAN call them (their real names are in this machine's Verify file, never in the repo):
+- **Test data** (§133): the owner's scenario runner, an ASP.NET API plus a web UI, both on this machine. Verify lists its scenarios (`GET api/scenarios`), starts a run (`POST api/scenarios/{id}/versions/{n}/runs` with exactly `{ "environment": "dev" | "uat" }`), and reads the run (`GET api/runs/{runId}`). Nothing else. **A run creates real test loans in Dev or UAT.**
+- **The record lookup** (§105, §132, §134): one host for every environment, an MVC form. Verify posts the fetch form (Environment, the record id field, AdvancedFetch, FieldsToFetch) and reads `table#FieldResults`. With updates switched on in the file, it can also post the page's **update form** (Dev and UAT only); never the role or move forms.
+- **The field set tool** (§105): a host per environment. Unchanged by this work: read only (`GET <base>/Home/SetVersion`, `GET <base>/Home/ValidateField?<idParam>=<id>`).
 
 ## This laptop doesn't edit or commit
 See `CLAUDE.md`, *Two laptops*: development happens on the personal laptop only. Here you **diagnose and write a handoff** in the shape of `docs/prompts/vu-handoff-template.md`. Don't change code or commit, even for a one-line fix: describe it instead.
 
 ## Tokens are tight on this machine
-- Read only: `CLAUDE.md`; `docs/PLAN.md` §105, §106, §107 (search for `## 105.`; don't read the whole file); `docs/prompts/vu-handoff-template.md`.
-- Open `server/verify.ts` (the clients, the guard, the parser) or `shared/verify.ts` (types, `idsInText`, `cleanVerify`) only when something fails and you need to know why.
+- Read only: `CLAUDE.md`; `docs/PLAN.md` §132, §133, §134 (search for `## 132.`; don't read the whole file; §105 and §107 only if you need the older background); `docs/prompts/vu-handoff-template.md`.
+- Open `server/verify.ts` (the guard, the lookup, the parser), `server/verify-update.ts` (the update form, sessions, the success reader) or `server/verify-builder.ts` (the scenario runner) only when something fails and you need to know why.
 - Don't run Playwright walkthroughs here. The owner presses the keys; ask what the screen says.
 
 ## Facts
-- **The Verify file:** `%USERPROFILE%\.cc-control\verify.json` (or the file `CC_CONTROL_VERIFY_FILE` names). It says where the two tools are and what they're called. The owner has a PowerShell line that writes it; it holds the real addresses, so it never goes in the repo or the handoff. Its shape: `{ "set": { "name", "urls": { "dev", "uat" }, "addPage", "idParam"?, "idKey"? }, "lookup": { "name", "url", "recordField", "envValues"?, "auth"? } }`. `lookup.url` is the address the form **posts to**. The server reads the file again within 3 s of a change: **no restart for edits to it.**
-- **`recordField`** is the form's own name for the record id box (its `<input name="…">`, next to Environment and FieldsToFetch). The owner fills it in. To find it: open the lookup's page in the browser, then View source, or DevTools on that box.
-- **Certificates:** the server already trusts the certificates Windows trusts (`server/config.ts`, the *Certificates* line in `pnpm run doctor`), so the internal CA should be fine for it. A plain `node` script doesn't do that, which is why an earlier probe failed with `SELF_SIGNED_CERT_IN_CHAIN`. Fallback: `CC_CONTROL_CA_FILE` = the company root as PEM, in `config.env`, then a restart.
-- **Windows sign-in:** Node's fetch can't sign in as you. With `"auth": "auto"` (the default), a 401 asking for Negotiate or NTLM is retried through PowerShell's `Invoke-WebRequest -UseDefaultCredentials`; `"windows"` always goes that way; `"none"` never does. Not tried for real yet.
-- **The guard:** the server only ever sends those two GETs and the one lookup POST. Anything else throws (*Verify refused a request*) before it leaves the machine. Redirects aren't followed.
+- **The Verify file:** `%USERPROFILE%\.cc-control\verify.json` (or the file `CC_CONTROL_VERIFY_FILE` names). It holds the real addresses, so it never goes in the repo or the handoff. Its shape now:
+  `{ "set": { "name", "urls": { "dev", "uat" }, "addPage", "idParam"?, "idKey"? }, "lookup": { "name", "url", "page", "recordField", "updateUrl", "allowUpdate", "updateFields", "envValues"?, "auth"? }, "builder": { "name", "url", "ui", "start" } }`.
+  - `lookup.url` is where the fetch form **posts**; `lookup.page` is the page you open in the browser (`o` in the lookup, `Shift+L` anywhere).
+  - `lookup.updateUrl` is the update form's action address (same host as `url`, or it is dropped). `lookup.allowUpdate` must be the literal `true` for updates; anything else is off. `lookup.updateFields` names the update form's other plain hidden fields (the record's number and folder): an update sends no name it isn't told of, and if the form has one it doesn't know, the lookup says so and sends nothing.
+  - `builder.url` is the scenario runner's API base and **must be localhost, 127.0.0.1 or [::1]**, or it is ignored. `builder.ui` is its web UI (`o` in Test data). `builder.start` is a hint shown when it isn't running; it is never run.
+  - The server reads the file again within 3 s of a change: **no restart for edits to it.**
+- **Saved field lists:** `%USERPROFILE%\.cc-control\field-lists.json`, written only by the lookup's *Save as list* (`Shift+S`) and *Delete list* (`Shift+F` twice).
+- **The guard** (`server/verify.ts`): three allowlists. Reads (the set tool's two GETs, the lookup's fetch POST); the scenario runner's three calls on its loopback base; and one write: a POST to exactly `updateUrl`, only with `allowUpdate`, only with the update form's names. Anything else throws (*Verify refused a request*) before it leaves the machine. Redirects aren't followed.
+- **An update is asynchronous.** Success means the tool said *sent* (its SuccessMessage paragraph, with the count sent), not *applied*. The page then fetches the changed rows every 10 s for 3 minutes and marks each pending, applied or differs. `w` opens the tool's progress page (Pending, Completed, Failed); the app never calls that page's API host.
+- **Keys** (the legend and `?` list them): `Alt+←` `→` tabs; `e` Dev / UAT; `Shift+P` twice Prod (not in Test data). Lookup: `l` record, `i` fields, `Enter`, `a` Advanced, `f` list, `Shift+S` save list, `Shift+F` delete list, `/` filter, `Shift+M` only empty or missing, `Shift+Y` copy, `o` its page; with updates on: `↑ ↓` row, `u` edit, `z` take back, `Backspace` clear, `Shift+U` twice send, `w` progress page. Test data: `↑ ↓`, `/`, `r`, `Enter` twice, `f` fetch the loan in the lookup, `Shift+Y` copy, `o`. The handoff's `m`, `c`, `s`, `x` and `Shift+X` were already the card's (More, add context, ship, take back, worktrees), so the shifted keys and `z` / `Backspace` stand in.
 - **Server log:** `%USERPROFILE%\.cc-control\server.log`. The owner's server runs on :7777. **Ask before restarting it.** A restart stops the sessions the app runs; stop any Try it apps first (`t` on their cards).
 
-## How to go about it
-1. **Check the machine and the code.** `git log --oneline -3` should show the §107 commit (*tools by name from a machine file*). If not, have the owner `git pull`.
-2. **Restart the server**, after asking (§105 and §107 changed server code). The way it's been restarted is in `docs/prompts/continue.md`, *How to work here*.
-3. **The Verify file.** Have the owner run their PowerShell line, then put the real `recordField` in it. Then `pnpm run doctor`. Its *Settings* section should say *Verify file: … the two names (dev, uat), …*, with no warning about `recordField`.
-4. **On a card, `v`.** Then go through these, asking the owner what the screen shows each time:
-   1. The panel's sections name the two tools (*Is it in ‹name›?*, *Look up in ‹name› · Dev*), and there is no note about where the file goes.
-   2. **The field check.** Put one field id the owner knows is in the set and one made-up id in the box (`i`, type, `Esc`), then `Enter`:
-      - the known id shows *in set* (or *not in set*) with its format, in a Dev column and a UAT column;
-      - the made-up id shows *unknown* in both;
-      - under the table, each environment's set shows as *set v… (…), N fields, read just now*.
-   3. **Drift.** A field that's in Dev's set but not UAT's (the owner may know one) should be marked *differs: in the set in one only*, with **Add in UAT ↗** under the UAT cell. Click it: the add-to-set page for UAT opens, and the id is on the clipboard. **Don't submit that page** unless the owner means to add the field for real.
-   4. `r` reads both sets again. The flash should say *Read the set again: Dev v… (N fields), UAT v…*.
-   5. `o`, `Shift+O` and `Shift+L` open the set tool for the chosen environment, its add-to-set page, and the lookup's page. `e` switches Dev ↔ UAT for these.
-   6. **The lookup.** `l`, then a dev record id the owner knows, with two real field ids and one made-up in *Fields to read*, then `Enter`. Expect two values and one *does not exist* row. A wrong record id should give *No record found*. `a` turns Advanced on (slower).
-   7. **Prod** (only if the owner wants to): `Shift+P` once only asks, and twice chooses Prod for the lookup.
-   8. **Paste (§106):** `Ctrl+V` into the card's message box and into the ids box both paste.
-   9. **The server log** has no lookup values and no lines about Verify requests at all.
-5. **When something fails**, find out why, in this order:
-   - **A certificate error** (*its certificate isn't trusted here (CODE)*): check the doctor's *Certificates* line, then the `CC_CONTROL_CA_FILE` fallback above.
-   - **The set tool answers 404, or *didn't answer with JSON*:** the base address is likely wrong. The file's guess is the tool's own page address (the one you'd open in the browser), with `/Home/SetVersion` and `/Home/ValidateField` under it. Have the owner open `<base>/Home/ValidateField?<idParam>=<a known id>` in the browser (a read-only GET) to find the base that answers `{ "Successful": true, … }`, and fix the file. No restart needed.
-   - ***in set* never shows, though the tool says it is:** the payload's flag isn't a key starting `ExistsIn`, or the id parameter isn't `encompassId` (`set.idParam` in the file). Ask the owner to describe the JSON keys, not the values.
-   - **The lookup wants a sign-in, or PowerShell fails:** try `"auth": "windows"`. Then capture the error message.
-   - **The lookup *answered with a redirect*:** `lookup.url` isn't where the form posts. Look at the form's `action` in the page's source.
-   - ***No record found* for a real record:** `recordField` is wrong, or the dropdown's values aren't *Dev / Uat / Prod* (`lookup.envValues` in the file).
-   - **Values in the wrong columns, or missing:** the page's table differs from what `parseLookup` expects. Describe its shape (columns, hidden inputs, how a missing field is marked) with made-up values.
-   - **Allowed probes:** only the read-only GETs above, in the browser or with `Invoke-WebRequest -UseDefaultCredentials`, and the lookup through the app. **Never** POST to the add-to-set page, a Save, or the lookup's update boxes.
-6. **Write the handoff** in the template's shape: what worked, what failed (with the messages), the cause and how sure, what to change, how to check it back here, and the open items. Settings fixed in the Verify file go under *What happened* as "fixed in the machine's file: the base address had to be …" (in words, not the address).
+## How to check it
+1. **The code and the server.** `git pull`, then `git log --oneline -4` should show the §132, §133 and §134 commits. **Ask before restarting** the server on :7777 (server code changed), and stop any Try it apps first. The way it's been restarted is in `docs/prompts/continue.md`, *How to work here*.
+2. **The Verify file.** The owner adds the new keys (`lookup.page`, `builder`, `lookup.updateUrl`, `lookup.allowUpdate`, `lookup.updateFields`) and runs `pnpm run doctor`. Its *Settings* section should show the test-data tool's line, no warning about the lookup's `recordField`, and *updates: on, for Dev and UAT only*. A warning about `updateFields` means the record's number and folder field names are still missing: find them in the page source of a fetched record's update form (the `<input type="hidden" name="…">` near the record id, inside the form that holds the results table).
+3. **On a card, `v`.** The tabs show the owner's names, the dots say which are set up (Test data's goes red if the tool doesn't answer), and `Alt+←` / `Alt+→` move between them.
+4. **Record lookup.** `l`, a known Dev record id, `f` to pick a list (or `i`, paste the tool's default list, `Shift+S` to save it), `Enter`.
+   - With the tool's default list (about 296 ids) **every row appears, including the ids with spaces**.
+   - `/` filters; `Shift+M` shows only empty or missing; `Shift+Y` copies `field=value` lines.
+   - `o` opens the form's own page, not the POST target.
+   - With Advanced (`a`): a field with options shows its option count (the options in its tooltip); read-only and non-existent rows are marked.
+5. **Test data.** The scenario list shows; `r` re-reads; choose one; `Enter` only arms (the line under the button names the environment and scenario); `Enter` again runs it. The run goes Running → Succeeded with its steps; `f` fetches that loan in the lookup (its environment, the chosen list). Stop the local tool and press `r`: the section says it isn't running (with the `start` hint). `Shift+P` in this section does nothing.
+6. **Updates** (pick a Dev **test** record, and one harmless field):
+   - Fetch with Advanced; `↑ ↓` to the field; `u`; type a value (or choose an option); `Enter` (it shows old → new); `Shift+U` twice.
+   - Expect *Sent 1 field(s)*, then *pending*, then *applied* within about three minutes. `w` opens the progress page.
+   - A read-only field: `u` says it is read-only, no edit. An empty edit with `Enter`: no change.
+   - `Shift+P` twice to Prod and fetch: no edit, and `Shift+U` says no.
+   - Remove `allowUpdate` from the file (no restart) and fetch again: the edit UI is gone.
+7. **The server log** has no values, record ids, field names or step messages, and no lines about Verify requests.
+
+## When something fails
+- **A certificate error, a sign-in, a redirect, *No record found*:** as before: the doctor's *Certificates* line and `CC_CONTROL_CA_FILE`; `"auth": "windows"`; `lookup.url` must be the fetch form's `action`; `recordField` and `envValues`.
+- **Rows missing from a long list, or an id with a space split in two:** the lookup reads ids one per line as they are (`splitFieldLines`, up to 400). Say how many rows came back and which kind of id was missing (with a made-up example of its shape).
+- **Updates say *"The page had no update form at the update address"*:** `updateUrl` isn't the update form's `action` (compare paths: the app matches the form whose action has the same path).
+- **Updates say *"The update form has a field Verify doesn't send: …"*:** a hidden field the app wasn't told of. If it is the record's own (number, folder), add its name to `updateFields`. If it is something else (an anti-forgery token, say), **don't add it**: describe it in the handoff (its name and kind, not its value); sending it may need a change in the app.
+- **An update says *"The tool didn't confirm the update"*:** the answer had no SuccessMessage paragraph, or its count differed. Check the progress page (`w` shows nothing then; open the watcher page by hand) and describe what the tool showed, without values. This is the open item below.
+- **Test data says it isn't running** while it is: compare `builder.url` with the address the tool's API listens on (scheme, port; `localhost` vs `127.0.0.1`).
+- **Allowed probes:** read-only GETs in the browser, the lookup's fetch through the app, and an update only on a Dev test record the owner chose. **Never** post the role or move forms, and never update Prod.
 
 ## Rules
-- **Never put in the handoff, the chat or the repo:** host names, URLs, the tools' real names, field values, record ids or loan numbers, tokens, ticket contents. Say "the field set tool's dev host", "a known dev record", "a field id in the set".
-- Lookup values are loan data: don't ask the owner to paste them. "Two values showed" is enough.
-- **Ask first before:** restarting the owner's server; anything that writes to either tool (the add-to-set page's Save, the lookup's update boxes); changing global npm, pnpm or git config.
+- **Never put in the handoff, the chat or the repo:** host names, URLs, the tools' real names, field values, record ids or loan numbers, scenario names, tokens, ticket contents. Say "the record lookup", "a known Dev test record", "a harmless text field".
+- Lookup values and loan ids are loan data: don't ask the owner to paste them. "Two values showed", "the loan id appeared" is enough.
+- **Ask first before:** restarting the owner's server; running a scenario (it makes loans); sending an update; anything that writes to the field set tool.
 - **Report plainly** what worked against the real tools and what didn't.
+
+## Open items to keep an eye on
+- What the tool shows when an update **fails**: not seen yet. For now a missing SuccessMessage is *"didn't confirm"*, and the progress page shows Failed. Describe one if you see it.
+- A *re-fetch the whole list* key after *applied* (calculated fields may change others): a candidate for later.
+- A Start button for the scenario runner: not now; the `start` hint covers it.
+- Prod updates stay off; a different decision needs its own handoff.

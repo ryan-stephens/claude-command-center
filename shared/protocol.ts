@@ -15,9 +15,9 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  */
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
-import type { BuilderEnv, BuilderRun, BuilderScenario, EnvCheck, FieldListsFile, LookupResult, SetInfo, VerifyEnv, VerifyFile } from './verify.ts';
+import type { BuilderEnv, BuilderRun, BuilderScenario, EnvCheck, FieldChange, FieldListsFile, LookupResult, SetInfo, UpdateSent, VerifyEnv, VerifyFile } from './verify.ts';
 
-export const PROTOCOL = 31;
+export const PROTOCOL = 32;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -393,7 +393,9 @@ export type ClientMsg =
   /** Read the environment's current set again; answered with verify.set. */
   | { type: 'verify.refresh'; reqId: string; env: VerifyEnv }
   /** A record's fields from the record lookup (one POST of its form); answered with verify.found. Values never logged or kept. */
-  | { type: 'verify.lookup'; reqId: string; env: VerifyEnv; recordId: string; ids: string[]; advanced: boolean }
+  | { type: 'verify.lookup'; reqId: string; env: VerifyEnv; recordId: string; ids: string[]; advanced: boolean; /** §134: false for the checks after an update, which keep no update session. */ session?: boolean }
+  /** §134: send staged changes from a fetch's update session (Dev or UAT, updates on); answered with verify.updated. */
+  | { type: 'verify.update'; reqId: string; token: string; changes: FieldChange[] }
   /** Save a list of field ids for the lookup under a name (§132), in the machine's lists file only; answered with ok, and verify.lists to every page. */
   | { type: 'verify.lists.save'; reqId: string; name: string; ids: string[] }
   /** Delete a saved list by name; answered with ok, and verify.lists to every page. */
@@ -512,6 +514,7 @@ export type ServerMsg =
   | { type: 'verify.config'; verify: VerifyFile }
   | { type: 'verify.set'; reqId: string; env: VerifyEnv; set: SetInfo }
   | { type: 'verify.found'; reqId: string; result: LookupResult }
+  | ({ type: 'verify.updated'; reqId: string } & UpdateSent)
   /** The lookup's saved field lists (§132): on connect, and again whenever the file changes. */
   | { type: 'verify.lists'; lists: FieldListsFile }
   | { type: 'builder.scenarios'; reqId: string; scenarios: BuilderScenario[] }

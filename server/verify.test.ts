@@ -131,7 +131,8 @@ test('parseLookup: hidden inputs win, entities decode, a salmon row is missing, 
 test('lookup: one POST of the form fields, CRLF between ids, Advanced off by default; never the raw page', async () => {
   const t = tools(() => ({ status: 200, body: PAGE(FOUND) }));
   const r = await t.lookup.fetch('dev', ' 5001 ', ['1000', 'CX.SAMPLE.ONE', 'CX.MADE.UP']);
-  assert.deepEqual(Object.keys(r).sort(), ['env', 'fields', 'found', 'recordId']);
+  assert.deepEqual(Object.keys(r).sort(), ['env', 'fields', 'found', 'recordId', 'updatable'], 'updates off (§134): no token, nothing of the page');
+  assert.equal(r.updatable, false);
   assert.equal(r.recordId, '5001');
   assert.equal(t.seen.length, 1);
   assert.deepEqual(t.seen[0], { method: 'POST', url: 'https://lookup.example.invalid/Lookup', form: [['Environment', 'Dev'], ['RecordId', '5001'], ['AdvancedFetch', 'false'], ['FieldsToFetch', '1000\r\nCX.SAMPLE.ONE\r\nCX.MADE.UP']] });

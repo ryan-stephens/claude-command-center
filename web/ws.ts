@@ -6,7 +6,7 @@ import type { TicketTransition } from '../shared/tickets.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ImageAttachment, type RepoInfo, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import type { PromptContext } from '../shared/prompts.ts';
-import type { BuilderEnv, BuilderRun, BuilderScenario, EnvCheck, LookupResult, SetInfo, VerifyEnv } from '../shared/verify.ts';
+import type { BuilderEnv, BuilderRun, BuilderScenario, EnvCheck, FieldChange, LookupResult, SetInfo, UpdateSent, VerifyEnv } from '../shared/verify.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
 import { haveOf, mergeTranscript } from './transcript-merge.ts';
 import { activeSession, flash, get, groupKeyOf, set, setFilter, syncSeen } from './store.ts';
@@ -242,8 +242,14 @@ export async function verifyRefresh(env: VerifyEnv): Promise<SetInfo> {
 }
 
 /** A record's fields from the record lookup. The values stay in this page's memory. */
-export async function verifyLookup(env: VerifyEnv, recordId: string, ids: string[], advanced: boolean): Promise<LookupResult> {
-  return (await request((reqId) => ({ type: 'verify.lookup', reqId, env, recordId, ids, advanced }), 120_000) as Extract<ServerMsg, { type: 'verify.found' }>).result;
+export async function verifyLookup(env: VerifyEnv, recordId: string, ids: string[], advanced: boolean, session = true): Promise<LookupResult> {
+  return (await request((reqId) => ({ type: 'verify.lookup', reqId, env, recordId, ids, advanced, ...(session ? {} : { session: false }) }), 120_000) as Extract<ServerMsg, { type: 'verify.found' }>).result;
+}
+
+/** §134: send staged changes through the record lookup's update form. Success means sent, not applied. */
+export async function verifyUpdate(token: string, changes: FieldChange[]): Promise<UpdateSent> {
+  const m = await request((reqId) => ({ type: 'verify.update', reqId, token, changes }), 120_000) as Extract<ServerMsg, { type: 'verify.updated' }>;
+  return { sent: m.sent, ...(m.watchUrl ? { watchUrl: m.watchUrl } : {}) };
 }
 
 /** Save the Fields box as a named list for the lookup (§132); the lists come back to every page as verify.lists. */
@@ -552,6 +558,7 @@ function receive(msg: ServerMsg): void {
     case 'builder.scenarios':
     case 'builder.started':
     case 'builder.run':
+    case 'verify.updated':
       return; // answered to the screen that asked, which waits on it
     case 'verify.config':
       set({ verify: msg.verify });

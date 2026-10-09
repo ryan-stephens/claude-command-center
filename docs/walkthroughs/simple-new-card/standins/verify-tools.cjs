@@ -34,23 +34,79 @@ function setTool(env) {
   };
 }
 
+// The record lookup (§105, §134), shaped like the real page: a fetch form; for a record, a role form,
+// a move form and the update form around table#FieldResults, each repeating the record's hidden
+// values; hidden Fields[<id>].* inputs after each row; a text box or a select of options and a
+// ShouldUpdate checkbox (with its hidden "false" twin) per editable row; 1000 read-only (salmon
+// cells, no inputs); an unknown id all salmon. An update is logged by field ids and count only, is
+// answered with the success paragraph and a progress link, and shows after two later fetches.
+const enc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const START = { '1000': '12.50', 'CX.SAMPLE.ONE': 'Yes & no', 'GROUP.NAME.ROLE NAME': 'Sample role', 'CX.EMPTY': '', 'CX.AMOUNT': '1,250.00' };
+const OPTIONS = { 'CX.SAMPLE.ONE': ['', 'Yes & no', 'No'] };
+const RECORDS = new Map();
+const recordOf = (id) => { if (!RECORDS.has(id)) RECORDS.set(id, { values: { ...START }, pending: [] }); return RECORDS.get(id); };
+// "1,250.00"-style for amounts, as the tool shows them.
+const shown = (id, v) => (id === 'CX.AMOUNT' && /^-?\d+(\.\d+)?$/.test(v) ? Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v);
+const isRecord = (id) => /^(5001|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.test(id ?? '');
+
+function lookupPage({ record, env, ids, advanced, success, info }) {
+  const hiddenRecord = `<input type="hidden" name="RecordId" value="${enc(record)}" /><input type="hidden" name="RecordNumber" value="SAMPLE-0001" /><input type="hidden" name="RecordFolder" value="Sample Folder" />`;
+  const roles = '<input type="hidden" name="AssignedRoles[Sample Role].Id" value="7" /><input type="hidden" name="AssignedRoles[Sample Role].Name" value="Sample Person" />';
+  const r = recordOf(record);
+  const rows = ids.map((id) => {
+    const key = id.toUpperCase();
+    const v = r.values[key];
+    if (v === undefined) return `<tr style="background-color: salmon"><td>${enc(id)}</td><td>(Field does not exist)</td><td></td><td></td></tr><input type="hidden" name="Fields[${enc(id)}].Value" value="" /><input type="hidden" name="Fields[${enc(id)}].Exists" value="False" />`;
+    const ro = key === '1000';
+    const opts = OPTIONS[key];
+    const box = opts ? `<select name="FieldsToUpdate[${enc(id)}].Value" disabled>${opts.map((o) => `<option value="${enc(o)}">${enc(o)}</option>`).join('')}</select>` : `<input type="text" name="FieldsToUpdate[${enc(id)}].Value" value="" disabled />`;
+    const cells = ro ? '<td style="background-color: salmon"></td><td style="background-color: salmon"></td>' : `<td>${box}</td><td><input type="checkbox" name="FieldsToUpdate[${enc(id)}].ShouldUpdate" value="true" /><input type="hidden" name="FieldsToUpdate[${enc(id)}].ShouldUpdate" value="false" /></td>`;
+    return `<tr><td>${enc(id)}</td><td>${enc(v)}</td>${cells}</tr><input type="hidden" name="Fields[${enc(id)}].Value" value="${enc(v)}" /><input type="hidden" name="Fields[${enc(id)}].Exists" value="True" /><input type="hidden" name="Fields[${enc(id)}].ReadOnly" value="${ro ? 'True' : 'False'}" />${advanced && opts ? opts.map((o, i) => `<input type="hidden" name="Fields[${enc(id)}].Options[${i}]" value="${enc(o)}" />`).join('') : ''}`;
+  }).join('\n');
+  return `<html><body>
+<form action="/Lookup" method="post"><select name="Environment"><option>Dev</option><option>Uat</option><option>Prod</option></select><input name="RecordId" /><textarea name="FieldsToFetch"></textarea><button>Fetch</button></form>
+${success ? `<p id="SuccessMessage">${success}</p>` : ''}${info ? `<div id="InfoMessage">${info}</div>` : ''}
+<form action="/AssignRole" method="post"><input type="hidden" name="Environment" value="${enc(env)}" />${hiddenRecord}${roles}<select name="RoleToAssign"><option>Sample Role</option></select><button>Assign</button></form>
+<form action="/MoveRecord" method="post"><input type="hidden" name="Environment" value="${enc(env)}" />${hiddenRecord}<select name="TargetFolder"><option>Other Folder</option></select><button>Move</button></form>
+<form action="/LookupUpdate" method="post"><p>Leave the update value empty to clear a field.</p>
+<table id="FieldResults"><tr><th>Field ID</th><th>Field Value</th><th>Update Field Value</th><th>Update Field?</th></tr>
+${rows}
+</table>
+${hiddenRecord}<input type="hidden" name="Environment" value="${enc(env)}" /><input type="hidden" name="FieldsToFetch" value="${enc(ids.join('\r\n'))}" />${roles}
+<button type="submit">Update</button></form>
+</body></html>`;
+}
+
 function lookup(req, res) {
   let body = '';
   req.on('data', (d) => { body += d; });
   req.on('end', () => {
     const form = new URLSearchParams(body);
-    log({ tool: 'lookup', method: req.method, path: new URL(req.url, 'http://x').pathname, fields: [...form.keys()], advanced: form.get('AdvancedFetch'), env: form.get('Environment'), ids: (form.get('FieldsToFetch') ?? '').split('\r\n').filter(Boolean), agent: req.headers['user-agent'] ?? '' });
+    const path = new URL(req.url, 'http://x').pathname;
     res.setHeader('content-type', 'text/html');
-    const page = (table) => `<html><body><form method="post"><select name="Environment"><option>Dev</option><option>Uat</option><option>Prod</option></select><input name="RecordId" />${table}</form></body></html>`;
-    if (req.method !== 'POST' || !/^(5001|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.test(form.get('RecordId') ?? '')) return res.end(page('<p>Enter a record.</p>'));
-    const ids = (form.get('FieldsToFetch') ?? '').split('\r\n').filter(Boolean);
-    const rows = ids.map((id) => {
-      const v = { '1000': '12.50', 'CX.SAMPLE.ONE': 'Yes & no', 'GROUP.NAME.ROLE NAME': 'Sample role', 'CX.EMPTY': '' }[id.toUpperCase()];
-      if (v === undefined) return `<tr style="background-color: salmon"><td>${id}</td><td>(Field does not exist)</td><td></td></tr>`;
-      const e = v.replace(/&/g, '&amp;');
-      return `<tr><td>${id}</td><td>${e}</td><td><input type="hidden" name="Fields[${id}].Value" value="${e}" /><input type="hidden" name="Fields[${id}].Exists" value="True" /><input type="hidden" name="Fields[${id}].ReadOnly" value="${id === '1000' ? 'True' : 'False'}" /><input type="checkbox" name="Fields[${id}].Update" /><input name="Fields[${id}].NewValue" /></td></tr>`;
-    }).join('');
-    res.end(page(`<table id="FieldResults"><tr><th>Field</th><th>Value</th><th>Update</th></tr>${rows}</table>`));
+    // The walk's fresh start: every record back to its first values (not a tool's endpoint; not logged).
+    if (path === '/__reset') { RECORDS.clear(); return res.end('reset'); }
+    // Writes: the update form logs only field ids and a count; the role and move forms are flagged.
+    if (path === '/AssignRole' || path === '/MoveRecord') { log({ tool: 'lookup-other', flagged: true, method: req.method, path, agent: req.headers['user-agent'] ?? '' }); return res.end('<p>never meant to be reached</p>'); }
+    if (path === '/LookupUpdate') {
+      const ticked = [...new Set([...form.entries()].filter(([k, v]) => /^FieldsToUpdate\[.+\]\.ShouldUpdate$/.test(k) && v === 'true').map(([k]) => k.slice(15, k.lastIndexOf(']'))))];
+      log({ tool: 'lookup-update', method: req.method, path, ids: ticked, count: ticked.length, names: [...new Set([...form.keys()].map((k) => k.replace(/\[.*\]/, '[]')))], env: form.get('Environment'), agent: req.headers['user-agent'] ?? '' });
+      const record = form.get('RecordId');
+      if (req.method !== 'POST' || !isRecord(record) || !['Dev', 'Uat'].includes(form.get('Environment'))) return res.end('<p>Not sent.</p>');
+      const r = recordOf(record);
+      for (const id of ticked) r.pending.push({ id: id.toUpperCase(), value: shown(id.toUpperCase(), form.get(`FieldsToUpdate[${id}].Value`) ?? ''), after: 2 });
+      const ids = (form.get('FieldsToFetch') ?? '').split('\r\n').filter(Boolean);
+      return res.end(lookupPage({ record, env: form.get('Environment'), ids, advanced: false, success: `Update request was successfully sent to the sample writer. ${ticked.length} field(s) to update were sent. Please allow a couple minutes for the update to apply.`, info: `Follow it on <a href="/Watch/${encodeURIComponent(record)}">its progress page</a>.` }));
+    }
+    log({ tool: 'lookup', method: req.method, path, fields: [...form.keys()], advanced: form.get('AdvancedFetch'), env: form.get('Environment'), ids: (form.get('FieldsToFetch') ?? '').split('\r\n').filter(Boolean), agent: req.headers['user-agent'] ?? '' });
+    if (path.startsWith('/Watch/')) return res.end('<h1>stand-in progress page</h1>');
+    const record = form.get('RecordId');
+    if (req.method !== 'POST' || !isRecord(record)) return res.end('<html><body><form action="/Lookup" method="post"><input name="RecordId" /><p>Enter a record.</p></form></body></html>');
+    // A change sent shows after two later fetches.
+    const r = recordOf(record);
+    for (const p of r.pending) { p.after -= 1; if (p.after === 0) r.values[p.id] = p.value; }
+    r.pending = r.pending.filter((p) => p.after > 0);
+    res.end(lookupPage({ record, env: form.get('Environment'), ids: (form.get('FieldsToFetch') ?? '').split('\r\n').filter(Boolean), advanced: form.get('AdvancedFetch') === 'true' }));
   });
 }
 

@@ -1,10 +1,13 @@
 // The Verify panel's record lookup section (PLAN §105, §132): a record's field values, by a saved
 // list of field ids or a pasted one; a filter, only the empty or missing ones, and a copy as
-// field=value lines. Read-only. The values live in this page's memory only (web/verify-state.ts).
+// field=value lines. With updates on (§134), in Dev and UAT: a row edited, staged, sent after a
+// second Shift+U and checked by fetching again. The values live in this page's memory only.
 
-import { ENV_NAME, splitFieldLines } from '../../shared/verify.ts';
+import { useEffect, useRef } from 'react';
+import { ENV_NAME, splitFieldLines, updatesOn } from '../../shared/verify.ts';
 import { useStore } from '../store.ts';
-import { cap, copyFields, deleteList, lookupIds, openPage, pickList, pickRecent, runLookup, saveList, setField, shownFields, startSaveList, toggleAdvanced, toggleOnlyEmpty, toolName, useVerify } from '../verify-state.ts';
+import { ARM_MS, shortId, type AfterMark } from '../verify-model.ts';
+import { cancelEdit, cap, copyFields, deleteList, lookupIds, openPage, openWatch, pickList, pickRecent, rowBlock, runLookup, saveList, selectedField, selectRow, sendKey, setEditValue, setField, shownFields, stagedLine, startSaveList, toggleAdvanced, toggleOnlyEmpty, toolName, updateBlock, useVerify } from '../verify-state.ts';
 import { Key } from './ui.tsx';
 import { NotSetUp, primary, Sec, small } from './verify-ui.tsx';
 
@@ -66,7 +69,7 @@ export function VerifyLookup({ file }: { file?: string }) {
         <button className={primary} disabled={v.looking || !v.record.trim()} onClick={() => void runLookup()}>
           {v.looking && <span className="spinner" />}Look up<Key k="Enter" size="sm" />
         </button>
-        <span className="text-[12px] text-faint">Values stay on this page: not saved, not given to Claude. {cap(name)} is only read from here.</span>
+        <span className="text-[12px] text-faint">Values stay on this page: not saved, not given to Claude. {updatesOn(config) ? `Changes go to ${name} in Dev and UAT only, after a second Shift+U.` : `${cap(name)} is only read from here.`}</span>
       </div>
       {v.lookError && <p role="alert" className="text-[12.5px] text-bad">{v.lookError}</p>}
       {v.found && !v.found.found && <p className="text-[13px] font-semibold text-attn">No record found: {v.found.recordId} in {ENV_NAME[v.found.env]}.</p>}
@@ -80,10 +83,28 @@ export function VerifyLookup({ file }: { file?: string }) {
             <span className="text-[12px] text-faint">{shown.length} of {v.found.fields.length}</span>
             <button className={small} onClick={() => copyFields()} title="The rows shown, as field=value lines, to the clipboard">Copy<Key k="⇧Y" size="sm" /></button>
           </div>
+          {updatesOn(config) && <UpdateNote />}
           <FoundTable />
+          <ReviewStrip />
         </>
       )}
+      <SentLine />
+      <ChangedLog />
     </Sec>
+  );
+}
+
+/** With updates on: how to change a field, or why this fetch can't be changed from. */
+function UpdateNote() {
+  const v = useVerify();
+  const why = updateBlock(v);
+  if (why) return <p className="text-[12px] text-faint">{why}.</p>;
+  const plain = v.found!.fields.every((f) => f.readOnly === undefined);
+  return (
+    <p className="text-[12px] text-faint">
+      <Key k="↑" size="sm" inline /> <Key k="↓" size="sm" inline /> a row, <Key k="u" size="sm" inline /> edit it, <Key k="z" size="sm" inline /> take it back, <Key k="⌫" size="sm" inline /> clear the field; <Key k="⇧U" size="sm" inline /> twice sends.
+      {plain && <span className="block text-attn">Fetched without Advanced: fetch with Advanced (a) to see read-only fields and options.</span>}
+    </p>
   );
 }
 
@@ -91,23 +112,119 @@ function FoundTable() {
   const v = useVerify();
   const found = v.found!;
   const rows = shownFields(v);
+  const can = !updateBlock(v);
+  const sel = can ? selectedField(v)?.id : undefined;
+  const after = v.after && v.after.record === found.recordId && v.after.env === found.env ? v.after : undefined;
+  const selRef = useRef<HTMLTableRowElement | null>(null);
+  useEffect(() => { selRef.current?.scrollIntoView({ block: 'nearest' }); }, [sel]);
   return (
     <table className="w-full text-left text-[12.5px]" aria-label="Record values">
       <thead><tr className="text-[11.5px] uppercase tracking-wide text-faint"><th className="py-1 font-semibold">Field</th><th className="py-1 font-semibold">Value · {found.recordId}</th></tr></thead>
       <tbody>
-        {rows.map((f) => (
-          <tr key={f.id} className={`border-t border-line align-top ${f.exists ? '' : 'bg-bad/10'}`}>
-            <td className="py-1.5 pr-2 font-mono">{f.id}</td>
-            <td className="py-1.5 pr-2">{f.exists
-              ? <span className="break-all font-mono">{f.value || <span className="italic text-faint">empty</span>}
-                {f.readOnly && <span className="ml-1.5 font-sans text-[11px] text-faint" title="Read-only field">read-only</span>}
-                {f.options?.length ? <span className="ml-1.5 font-sans text-[11px] text-faint" title={f.options.join('\n')}>{f.options.length} option{f.options.length === 1 ? '' : 's'}</span> : null}
-              </span>
-              : <span className="font-semibold text-bad">does not exist</span>}</td>
-          </tr>
-        ))}
+        {rows.map((f) => {
+          const st = v.staged[f.id];
+          const editing = v.editing?.id === f.id;
+          const mark = after?.marks[f.id];
+          const no = can ? rowBlock(f, v) : undefined;
+          return (
+            <tr key={f.id} ref={f.id === sel ? selRef : undefined} onClick={can ? () => selectRow(f.id) : undefined} aria-selected={can ? f.id === sel : undefined} title={can && no ? no : undefined}
+              className={`border-t border-line align-top ${f.exists ? '' : 'bg-bad/10'} ${f.id === sel ? 'outline outline-2 -outline-offset-2 outline-acc/60' : ''} ${can ? 'cursor-pointer' : ''}`}>
+              <td className="py-1.5 pr-2 font-mono">{f.id}</td>
+              <td className="py-1.5 pr-2">{!f.exists
+                ? <span className="font-semibold text-bad">does not exist</span>
+                : editing ? <EditControl options={f.options} />
+                : (
+                  <span className="break-all font-mono">
+                    {st
+                      ? <span className={`font-semibold ${st.clear ? 'text-bad' : 'text-attn'}`} data-staged>{st.old || '(empty)'} → {st.clear ? '(empty)' : st.value}</span>
+                      // After an update, the value the last check saw (the fetch above it is from before).
+                      : (mark && after!.seen[f.id] !== undefined ? after!.seen[f.id] : f.value) || <span className="italic text-faint">empty</span>}
+                    {f.readOnly && <span className="ml-1.5 font-sans text-[11px] text-faint" title="Read-only field">read-only</span>}
+                    {f.options?.length ? <span className="ml-1.5 font-sans text-[11px] text-faint" title={f.options.join('\n')}>{f.options.length} option{f.options.length === 1 ? '' : 's'}</span> : null}
+                    {mark && <AfterBadge mark={mark} />}
+                  </span>
+                )}</td>
+            </tr>
+          );
+        })}
         {!rows.length && <tr><td colSpan={2} className="py-2 text-[12.5px] italic text-faint">No field matches.</td></tr>}
       </tbody>
     </table>
+  );
+}
+
+/** u on a row: a box, or a select of the field's options. Enter stages, Esc cancels. */
+function EditControl({ options }: { options?: string[] }) {
+  const e = useVerify((s) => s.editing)!;
+  if (options?.length) {
+    return (
+      <select id="verify-edit" autoFocus value={options.includes(e.value) ? e.value : ''} onChange={(x) => setEditValue(x.target.value)} onBlur={() => cancelEdit()} className="field w-full py-0.5 font-mono text-[12.5px]">
+        {!options.includes(e.value) && <option value="">(choose)</option>}
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    );
+  }
+  return <input id="verify-edit" type="text" autoFocus spellCheck={false} autoComplete="off" value={e.value} onChange={(x) => setEditValue(x.target.value)} onBlur={() => cancelEdit()} className="field w-full py-0.5 font-mono text-[12.5px]" />;
+}
+
+/** After an update: the row still has its old value (pending), the one sent (applied), or a third (differs, shown as the value). */
+function AfterBadge({ mark }: { mark: AfterMark }) {
+  const tone = mark === 'applied' ? 'border-ok text-ok' : mark === 'differs' ? 'border-bad text-bad' : 'border-line text-faint';
+  return <span className={`ml-1.5 rounded-full border px-1.5 font-sans text-[10.5px] font-semibold ${tone}`} data-after={mark} title={mark === 'differs' ? 'Neither the old value nor the one sent' : undefined}>{mark === 'differs' ? 'differs from what was sent' : mark}</span>;
+}
+
+/** Under the table: what is staged, where, and Shift+U. */
+function ReviewStrip() {
+  const v = useVerify();
+  const ids = Object.keys(v.staged);
+  if (!ids.length || updateBlock(v)) return null;
+  const armed = Date.now() - v.sendArmed < ARM_MS;
+  return (
+    <div className="grid gap-1.5 rounded-xl border border-attn/60 bg-attn-bg px-3 py-2" aria-label="Staged changes">
+      <div className="flex items-center gap-2">
+        <span className="grow text-[12.5px] font-semibold text-attn">{stagedLine(v)}</span>
+        <button className={`${primary} ${armed ? '!border-attn !text-attn' : ''}`} disabled={v.sending} onClick={() => void sendKey()}>
+          {v.sending && <span className="spinner" />}{armed ? 'Send: press again' : 'Send'}<Key k="⇧U" size="sm" />
+        </button>
+      </div>
+      <ul className="grid gap-0.5 text-[12px]">
+        {ids.map((id) => <li key={id} className="break-all font-mono"><span className="text-sub">{id}</span>: {v.staged[id].old || '(empty)'} → <span className={v.staged[id].clear ? 'text-bad' : 'text-attn'}>{v.staged[id].clear ? '(empty)' : v.staged[id].value}</span></li>)}
+      </ul>
+      {armed && <p className="text-[12.5px] font-semibold text-attn">Shift+U again to send {ids.length} field(s) to {ENV_NAME[v.env]}</p>}
+    </div>
+  );
+}
+
+/** After a send: what the tool said, and how the checks are going. */
+function SentLine() {
+  const v = useVerify();
+  if (!v.sent) return null;
+  const a = v.after;
+  const counts = a ? Object.values(a.marks).reduce((m, k) => ({ ...m, [k]: (m[k] ?? 0) + 1 }), {} as Record<string, number>) : {};
+  return (
+    <div className="grid gap-1 text-[12.5px]" role="status" aria-label="Update sent">
+      <p>Sent {v.sent.sent} field(s) to {ENV_NAME[v.sent.env]}. The tool applies these in a couple of minutes.</p>
+      {a && <p className={a.phase === 'applied' ? 'font-semibold text-ok' : a.phase === 'timeout' ? 'font-semibold text-attn' : 'text-faint'}>
+        {a.phase === 'applied' ? 'Applied.' : a.phase === 'timeout' ? 'Not applied after 3 minutes: see the tool’s progress page (w).' : `Checking every 10 s: ${counts.applied ?? 0} applied, ${counts.pending ?? 0} pending${counts.differs ? `, ${counts.differs} differ` : ''}.`}
+      </p>}
+      {v.sent.watchUrl && <button className={`${small} justify-self-start`} onClick={() => openWatch()}>The tool’s progress page<Key k="w" size="sm" /></button>}
+    </div>
+  );
+}
+
+/** Changes sent in this page's life: memory only, gone on reload. */
+function ChangedLog() {
+  const changed = useVerify((s) => s.changed);
+  if (!changed.length) return null;
+  return (
+    <details className="text-[12px]" open>
+      <summary className="cursor-pointer font-semibold text-sub">Changed this session ({changed.length})</summary>
+      <ul className="mt-1 grid gap-0.5">
+        {changed.map((c, i) => (
+          <li key={i} className="break-all font-mono"><span className="font-sans text-faint">{new Date(c.at).toLocaleTimeString()} · {ENV_NAME[c.env]} · {shortId(c.record)}</span> {c.id}: {c.old || '(empty)'} → {c.clear ? '(empty)' : c.value}</li>
+        ))}
+      </ul>
+      <p className="mt-1 text-faint">Kept in this page only: not saved, not given to Claude.</p>
+    </details>
   );
 }

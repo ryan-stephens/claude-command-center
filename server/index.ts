@@ -987,7 +987,13 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       // Lookup ids are one per line as they are (an id may have a space in it, §132), up to LOOKUP_MAX_IDS.
       const ids = splitFieldLines((Array.isArray(msg.ids) ? msg.ids : []).map(String).join('\n'));
       // The values are a record's data: they go to this page only, and nothing here logs them.
-      try { send(ws, { type: 'verify.found', reqId: msg.reqId, result: await lookupTool.fetch(env, String(msg.recordId ?? ''), ids, msg.advanced === true) }); } catch (e) { throw new Error(explain(e, verifyConfig().lookup?.name ?? 'The record lookup')); }
+      try { send(ws, { type: 'verify.found', reqId: msg.reqId, result: await lookupTool.fetch(env, String(msg.recordId ?? ''), ids, msg.advanced === true, { session: msg.session !== false }) }); } catch (e) { throw new Error(explain(e, verifyConfig().lookup?.name ?? 'The record lookup')); }
+      return;
+    }
+    // §134: an update through the record lookup; nothing about it (ids, values, the record) is logged.
+    case 'verify.update': {
+      const changes = (Array.isArray(msg.changes) ? msg.changes : []).slice(0, 51).map((c) => ({ id: String(c?.id ?? ''), value: typeof c?.value === 'string' ? c.value : '', ...(c?.clear === true ? { clear: true } : {}) }));
+      try { send(ws, { type: 'verify.updated', reqId: msg.reqId, ...(await lookupTool.update(String(msg.token ?? ''), changes)) }); } catch (e) { throw new Error(explain(e, verifyConfig().lookup?.name ?? 'The record lookup')); }
       return;
     }
     // The scenario runner (§133): its errors go to the page that asked; loan ids and step messages aren't logged.

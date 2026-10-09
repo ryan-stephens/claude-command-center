@@ -42,6 +42,8 @@ export interface VerifyConfig {
     updateUrl?: string;
     /** Updates through the lookup, in Dev and UAT only: only the literal true counts. */
     allowUpdate?: boolean;
+    /** The update form's other plain hidden fields, by name (the record's number and folder): an update sends no name it isn't told of. */
+    updateFields?: string[];
   };
   /** The scenario runner on this machine (§133): an API that creates test loans in Dev or UAT. */
   builder?: {
@@ -120,6 +122,25 @@ export interface LookupResult {
   recordId: string;
   found: boolean;
   fields: LookupField[];
+  /** §134: fields can be changed from this fetch (updates on, Dev or UAT, an update form on the page). */
+  updatable?: boolean;
+  /** The fetch's update session, to send changes with. */
+  token?: string;
+  /** The rows that can be changed (a checkbox on the page). */
+  editable?: string[];
+  /** Why not, when updates are on but this fetch can't be updated from. */
+  updateNote?: string;
+}
+
+/** One field to change through the lookup (§134): a new value, or an explicit clear. */
+export interface FieldChange { id: string; value: string; clear?: boolean }
+
+/** What an update came to: the count the tool confirmed, and its progress page when it gave one. */
+export interface UpdateSent { sent: number; watchUrl?: string }
+
+/** Updates are on for this machine: the literal true, and the update form's address. */
+export function updatesOn(cfg: VerifyConfig | undefined): boolean {
+  return cfg?.lookup?.allowUpdate === true && Boolean(cfg.lookup.updateUrl);
 }
 
 /** At most this many ids in one check. */
@@ -277,6 +298,8 @@ export function cleanVerify(raw: unknown): VerifyConfig | undefined {
   // The update form must be on the lookup's own host: nothing else is ever written to.
   const uu = cleanUrl(s(r.lookup?.updateUrl, 500)); if (uu && lu && sameHost(uu, lu)) lookup.updateUrl = uu;
   if (r.lookup?.allowUpdate === true) lookup.allowUpdate = true;
+  const uf = (Array.isArray(r.lookup?.updateFields) ? r.lookup.updateFields : []).map((x) => s(x, 60)).filter((x): x is string => Boolean(x && /^[\w.-]+$/.test(x))).slice(0, 5);
+  if (uf.length) lookup.updateFields = uf;
   const builder: NonNullable<VerifyConfig['builder']> = {};
   const bn = s(r.builder?.name, 60); if (bn) builder.name = bn;
   const bu = cleanUrl(s(r.builder?.url, 500)); if (bu && isLoopback(bu)) builder.url = bu;

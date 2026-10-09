@@ -76,6 +76,10 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   const lookup = labels({ view: 'drawer', panel: 'verify', verifySection: 'lookup', bindings: {} });
   assert.deepEqual(lookup.slice(1, 12), ['Look up', 'Record / fields', 'Advanced', 'List / save', 'Filter', 'Only empty', 'Copy', 'Its page', 'Section', 'Dev / UAT', 'Prod'], 'the record lookup section (§132): Enter looks up; lists, filter, only empty, copy');
   assert.ok(lookup.includes('More'), 'm stays the More panel: the lookup’s "only empty" is Shift+M');
+  assert.ok(!lookup.includes('Edit') && !lookup.includes('Send (twice)'), 'updates off: no edit keys');
+  const upd = labels({ view: 'drawer', panel: 'verify', verifySection: 'lookup', verifyUpdatable: true, verifyWatch: true, bindings: {} });
+  assert.deepEqual(upd.slice(9, 15), ['Row', 'Edit', 'Take back', 'Clear', 'Send (twice)', 'Progress page'], 'updates on (§134): rows, edit, take back, clear, send twice, the progress page');
+  assert.ok(upd.includes('Remove card'), 'Delete is still the card’s; x and Shift+X aren’t taken');
   const builder = labels({ view: 'drawer', panel: 'verify', verifySection: 'builder', bindings: {} });
   assert.deepEqual(builder.slice(1, 10), ['Run (twice)', 'Scenario', 'Filter', 'Re-read', 'Fetch the loan', 'Copy', 'Its page', 'Section', 'Dev / UAT'], 'the test-data section (§133): Enter twice runs');
   assert.ok(!builder.includes('Prod'), 'no Prod for the test-data tool');

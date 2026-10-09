@@ -137,6 +137,9 @@ export interface LineLegendInput {
   hasStack?: boolean;
   /** Drawer, the Verify panel open: the section shown (§132), whose keys the bar lists. */
   verifySection?: 'builder' | 'lookup' | 'set' | null;
+  /** §134: the lookup's fetch can be changed from (rows, edit, send); an update sent has a progress page (w). */
+  verifyUpdatable?: boolean;
+  verifyWatch?: boolean;
   /** New-card screen: which panel, and whether panel 2 shows the exact text. */
   pane?: 'src' | 'pkt' | 'go';
   preview?: boolean;
@@ -228,7 +231,9 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     // The Verify panel (§105, §132) takes Enter, e, o and its section's own keys while it is open.
     const verify = x.panel === 'verify';
     const verifyItems: LegendItem[] = !verify ? []
-      : x.verifySection === 'lookup' ? [{ keys: ['Enter'], label: 'Look up', tone: 'acc' }, { keys: ['l', 'i'], label: 'Record / fields' }, { keys: ['a'], label: 'Advanced' }, { keys: ['f', '⇧S'], label: 'List / save' }, { keys: ['/'], label: 'Filter' }, { keys: ['⇧M'], label: 'Only empty' }, { keys: ['⇧Y'], label: 'Copy' }, { keys: ['o'], label: 'Its page' }]
+      : x.verifySection === 'lookup' ? [{ keys: ['Enter'], label: 'Look up', tone: 'acc' }, { keys: ['l', 'i'], label: 'Record / fields' }, { keys: ['a'], label: 'Advanced' }, { keys: ['f', '⇧S'], label: 'List / save' }, { keys: ['/'], label: 'Filter' }, { keys: ['⇧M'], label: 'Only empty' }, { keys: ['⇧Y'], label: 'Copy' }, { keys: ['o'], label: 'Its page' },
+        ...(x.verifyUpdatable ? [{ keys: ['↑', '↓'], label: 'Row' }, { keys: ['u'], label: 'Edit' }, { keys: ['z'], label: 'Take back' }, { keys: ['⌫'], label: 'Clear' }, { keys: ['⇧U'], label: 'Send (twice)', tone: 'attn' as const }] : []),
+        ...(x.verifyWatch ? [{ keys: ['w'], label: 'Progress page' }] : [])]
       : x.verifySection === 'builder' ? [{ keys: ['Enter'], label: 'Run (twice)', tone: 'acc' }, { keys: ['↑', '↓'], label: 'Scenario' }, { keys: ['/'], label: 'Filter' }, { keys: ['r'], label: 'Re-read' }, { keys: ['f'], label: 'Fetch the loan' }, { keys: ['⇧Y'], label: 'Copy' }, { keys: ['o'], label: 'Its page' }]
       : x.verifySection === 'set' ? [{ keys: ['Enter'], label: 'Check', tone: 'acc' }, { keys: ['i'], label: 'Ids' }, { keys: ['r'], label: 'Refresh set' }, { keys: ['o', '⇧O'], label: 'Open a tool' }]
       : [];

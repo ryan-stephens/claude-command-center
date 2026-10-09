@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ARM_MS, armed, fieldLines, POLL_MAX_ERRORS, POLL_MAX_MS, POLL_MS, pushRecent, RECENT_MAX, runPhase, SECTIONS, sectionName, sectionShown, stepSection, visibleFields, visibleScenarios } from './verify-model.ts';
+import { AFTER_EVERY_MS, AFTER_FOR_MS, afterMark, afterPhase, ARM_MS, armed, fieldLines, sameValue, shortId, stageEdit, POLL_MAX_ERRORS, POLL_MAX_MS, POLL_MS, pushRecent, RECENT_MAX, runPhase, SECTIONS, sectionName, sectionShown, stepSection, visibleFields, visibleScenarios } from './verify-model.ts';
 
 test('sections: the first set up opens; Alt+← → go round all three; the file’s names win', () => {
   assert.deepEqual(SECTIONS.map((s) => s.id), ['builder', 'lookup', 'set']);
@@ -64,4 +64,38 @@ test('scenarios filter by name, version or tag; a two-step key fires only on the
   assert.ok(!armed({ key: 'a', at: 0 }, 'a', ARM_MS), 'too late');
   assert.ok(!armed({ key: 'a', at: 0 }, 'b', 10), 'another scenario');
   assert.ok(!armed(null, 'a', 0));
+});
+
+test('staging: a value, a select’s option, a clear; an empty edit, the same value or a value outside the options is no change', () => {
+  const text = { id: '1000', value: '1,250.00' };
+  const sel = { id: 'CX.SAMPLE.ONE', value: 'Yes', options: ['Yes', 'No'] };
+  let s = stageEdit({}, text, '2000').staged;
+  assert.deepEqual(s, { 1000: { old: '1,250.00', value: '2000' } });
+  s = stageEdit(s, sel, 'No').staged;
+  assert.deepEqual(Object.keys(s), ['1000', 'CX.SAMPLE.ONE']);
+  assert.deepEqual(stageEdit(s, sel, 'Maybe'), { staged: s, note: 'Maybe isn’t one of CX.SAMPLE.ONE’s options' });
+  const empty = stageEdit(s, text, '  ');
+  assert.deepEqual(Object.keys(empty.staged), ['CX.SAMPLE.ONE'], 'an empty edit unstages, it isn’t a change');
+  assert.match(empty.note!, /Backspace clears/);
+  assert.equal(stageEdit({}, text, '1250').note, '1000 has that value already', 'commas aside');
+  assert.deepEqual(stageEdit({}, text, '', true).staged, { 1000: { old: '1,250.00', value: '', clear: true } }, 'a clear');
+  assert.equal(stageEdit({}, { id: 'X', value: '' }, '', true).note, 'X is empty already');
+});
+
+test('after an update: pending, applied (trimmed, commas aside), differs; stop when all applied or after three minutes', () => {
+  assert.equal(afterMark({ old: '1,250.00', value: '2500' }, '2,500'), 'applied');
+  assert.equal(afterMark({ old: '1,250.00', value: '2500' }, ' 2500.00 '), 'applied');
+  assert.equal(afterMark({ old: '1,250.00', value: '2500' }, '1250'), 'pending');
+  assert.equal(afterMark({ old: '1,250.00', value: '2500' }, '99'), 'differs');
+  assert.equal(afterMark({ old: 'Yes', value: '', clear: true }, ''), 'applied');
+  assert.equal(afterMark({ old: 'Yes', value: '', clear: true }, 'Yes'), 'pending');
+  assert.equal(afterMark({ old: 'Tom', value: 'Jerry' }, 'jerry'), 'differs', 'text compares exactly');
+  assert.ok(sameValue('-1,000.5', '-1000.50') && !sameValue('1,000', '1.000') && !sameValue('A1', 'A1 '.repeat(2)));
+  const t0 = 5_000;
+  assert.equal(afterPhase(['pending', 'applied'], t0, t0 + AFTER_EVERY_MS), 'poll');
+  assert.equal(afterPhase(['applied', 'applied'], t0, t0 + AFTER_EVERY_MS), 'applied');
+  assert.equal(afterPhase(['differs'], t0, t0 + AFTER_FOR_MS), 'timeout');
+  assert.equal(afterPhase(['applied'], t0, t0 + AFTER_FOR_MS), 'applied', 'applied at the last check still counts');
+  assert.equal(shortId('{00000000-0000-4000-8000-000000000001}'), '00000000…');
+  assert.equal(shortId('5001'), '5001');
 });

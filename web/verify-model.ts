@@ -87,3 +87,52 @@ export function visibleScenarios<T extends { name: string; version: number; tags
 export function armed(arm: { key: string; at: number } | null, key: string, now: number): boolean {
   return Boolean(arm && arm.key === key && now - arm.at < ARM_MS);
 }
+
+// ---- Updates through the record lookup (§134) ----
+
+/** A change staged on a row: the value it had, the one to send, or an explicit clear. */
+export interface Staged { old: string; value: string; clear?: boolean }
+
+/** The same value as the tool shows it: trimmed, and numbers alike with or without thousands commas. */
+export function sameValue(a: string, b: string): boolean {
+  const x = a.trim(), y = b.trim();
+  if (x === y) return true;
+  const num = (s: string) => (/^-?[\d,]*\.?\d+$/.test(s) && /\d/.test(s) ? Number(s.replace(/,/g, '')) : NaN);
+  const nx = num(x), ny = num(y);
+  return !Number.isNaN(nx) && nx === ny;
+}
+
+/**
+ * Enter on an edit: the row's change staged, or why not. An empty edit is no change (a clear is
+ * Backspace); a value the field already has is no change; a field with options takes one of them.
+ */
+export function stageEdit(staged: Record<string, Staged>, f: { id: string; value: string; options?: string[] }, value: string, clear = false): { staged: Record<string, Staged>; note?: string } {
+  const rest = Object.fromEntries(Object.entries(staged).filter(([k]) => k !== f.id));
+  if (clear) return f.value === '' ? { staged: rest, note: `${f.id} is empty already` } : { staged: { ...rest, [f.id]: { old: f.value, value: '', clear: true } } };
+  if (value.trim() === '') return { staged: rest, note: 'An empty edit is no change (Backspace clears a field)' };
+  if (f.options?.length && !f.options.includes(value)) return { staged, note: `${value} isn’t one of ${f.id}’s options` };
+  if (sameValue(value, f.value)) return { staged: rest, note: `${f.id} has that value already` };
+  return { staged: { ...rest, [f.id]: { old: f.value, value } } };
+}
+
+export type AfterMark = 'pending' | 'applied' | 'differs';
+
+/** A row after an update: still the old value, the one sent, or a third. */
+export function afterMark(s: Staged, seen: string): AfterMark {
+  if (sameValue(seen, s.clear ? '' : s.value)) return 'applied';
+  if (sameValue(seen, s.old)) return 'pending';
+  return 'differs';
+}
+
+export const AFTER_EVERY_MS = 10_000;
+export const AFTER_FOR_MS = 3 * 60_000;
+
+/** The checks after an update: stop when every row is applied, or after AFTER_FOR_MS. */
+export function afterPhase(marks: AfterMark[], startedAt: number, now: number): 'poll' | 'applied' | 'timeout' {
+  if (marks.length && marks.every((m) => m === 'applied')) return 'applied';
+  if (now - startedAt >= AFTER_FOR_MS) return 'timeout';
+  return 'poll';
+}
+
+/** A record id, shortened for a line: the first 8 characters. */
+export const shortId = (id: string): string => (id.length > 12 ? `${id.replace(/^\{/, '').slice(0, 8)}…` : id);

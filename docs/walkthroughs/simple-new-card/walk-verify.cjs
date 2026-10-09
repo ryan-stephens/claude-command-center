@@ -46,6 +46,7 @@ async function ask(page, msg) {
   if (fs.existsSync(STANDIN_LOG)) fs.writeFileSync(STANDIN_LOG, '');
   fs.rmSync(VERIFY_FILE, { force: true });
   fs.rmSync(LISTS_FILE, { force: true });
+  await fetch('http://127.0.0.1:18902/__reset', { method: 'POST' }).catch(() => {});
   const browser = await chromium.launch({ executablePath: 'C:/Users/ryans/AppData/Local/ms-playwright/chromium-1223/chrome-win64/chrome.exe' });
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, colorScheme: dark ? 'dark' : 'light' });
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `http://127.0.0.1:${PORT}` });
@@ -248,10 +249,10 @@ async function ask(page, msg) {
   await page.keyboard.press('Alt+ArrowLeft');
   await until(async () => await selected() === 'Sample lookup');
   await page.keyboard.press('Shift+F');
-  await sleep(150);
-  check('one Shift+F only asks', JSON.parse(fs.readFileSync(LISTS_FILE, 'utf8')).lists.length === 2);
+  const asked = await until(async () => (await page.getByText(/Shift\+F again to delete the list “Sample basics”/).count()) > 0, 3000);
+  check('one Shift+F only asks', asked && JSON.parse(fs.readFileSync(LISTS_FILE, 'utf8')).lists.length === 2, `${asked} ${await focused()} ${await page.locator('#verify-list').inputValue().catch(() => '?')}`);
   await page.keyboard.press('Shift+F');
-  check('a second Shift+F deletes the chosen list from the file', await until(async () => JSON.stringify(JSON.parse(fs.readFileSync(LISTS_FILE, 'utf8')).lists.map((l) => l.name)) === '["By hand"]'));
+  check('a second Shift+F deletes the chosen list from the file', await until(async () => JSON.stringify(JSON.parse(fs.readFileSync(LISTS_FILE, 'utf8')).lists.map((l) => l.name)) === '["By hand"]'), fs.readFileSync(LISTS_FILE, 'utf8').replace(/\s+/g, ' ').slice(0, 200));
   await shot(page, 'lookup-tab');
 
   // For the test-data part's f below: a list chosen (the one left), and Advanced on (f turns it off).
@@ -331,6 +332,107 @@ async function ask(page, msg) {
   const bbad = bfrom.filter((r) => r.flagged || r.query || !((r.method === 'GET' && (r.path === '/api/scenarios' || /^\/api\/runs\/[\w-]+$/.test(r.path))) || (r.method === 'POST' && /^\/api\/scenarios\/[\w-]+\/versions\/\d+\/runs$/.test(r.path) && JSON.stringify(r.body) === '["environment"]')));
   check('the server sent the test-data tool only the list, a run’s start ({ environment }) and its status', bfrom.length > 0 && bbad.length === 0, `${bfrom.length} requests, ${bbad.length} others ${JSON.stringify(bbad.slice(0, 2))}`);
 
+  // ---- Updates through the lookup (§134) ----
+  const flashed = async (re) => until(async () => (await page.getByText(re).count()) > 0, 3000);
+  const fieldsBox = '1000\nCX.SAMPLE.ONE\nGroup.Name.Role Name\nCX.EMPTY\nCX.AMOUNT\nCX.GONE';
+  const lookUp = async (record) => {
+    await page.locator('#verify-fields').fill(fieldsBox);
+    await page.locator('#verify-record').fill(record);
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('Enter');
+    await until(async () => (await values.locator('tbody tr').count()) === 6);
+  };
+  const advancedOn = async () => { if (!(await view.getByLabel(/Advanced/).isChecked())) await page.keyboard.press('a'); };
+  // With allowUpdate off: no edit UI; u says why.
+  await advancedOn();
+  await lookUp('5001');
+  await page.keyboard.press('u');
+  check('updates off: no edit UI, and u says they are off', (await page.locator('#verify-edit').count()) === 0 && await flashed(/Updates through Sample lookup are off on this machine/) && !(await view.getByLabel('Staged changes').count()));
+  // Switched on in the file (no restart): the update form's address, allowUpdate, the record's own fields.
+  fs.writeFileSync(VERIFY_FILE, JSON.stringify({ ...JSON.parse(fs.readFileSync(VERIFY_FILE, 'utf8')), lookup: { ...cfg.lookup, updateUrl: 'http://127.0.0.1:18902/LookupUpdate', allowUpdate: true, updateFields: ['RecordNumber', 'RecordFolder'] } }, null, 2));
+  await sleep(3500);
+  await lookUp('5001');
+  check('updates on: the lookup says how to change a row', await until(async () => /a row, .*edit it/.test((await view.innerText()).replace(/\s+/g, ' '))));
+  const row = (id) => values.locator('tbody tr', { hasText: id });
+  const select = async (id) => { for (let i = 0; i < 8 && (await row(id).getAttribute('aria-selected')) !== 'true'; i++) await page.keyboard.press('ArrowDown'); };
+  await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
+  check('↑ ↓ choose a row', (await row('1000').getAttribute('aria-selected')) === 'true');
+  await page.keyboard.press('u');
+  check('a read-only row can’t be edited, and says so', (await page.locator('#verify-edit').count()) === 0 && await flashed(/1000 is read-only/));
+  await select('CX.SAMPLE.ONE');
+  await page.keyboard.press('u');
+  check('u on a field with options: a select of them', await until(async () => (await page.locator('select#verify-edit').count()) === 1) && JSON.stringify(await page.locator('select#verify-edit option').allInnerTexts()) === JSON.stringify(['Yes & no', 'No']));
+  await page.locator('select#verify-edit').selectOption('No');
+  await page.keyboard.press('Enter');
+  check('Enter stages it: old → new', await until(async () => /Yes & no → No/.test(await row('CX.SAMPLE.ONE').innerText())));
+  await select('Group.Name.Role Name');
+  await page.keyboard.press('Backspace');
+  check('Backspace stages a clear: old → (empty)', await until(async () => /Sample role → \(empty\)/.test(await row('Group.Name.Role Name').innerText())));
+  await page.keyboard.press('z');
+  check('z takes it back', await until(async () => !/→/.test(await row('Group.Name.Role Name').innerText())));
+  await page.keyboard.press('u');
+  await until(async () => (await focused()) === 'verify-edit');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' two');
+  await page.keyboard.press('Enter');
+  check('u on a text field: a box; Enter stages', await until(async () => /Sample role → Sample role two/.test(await row('Group.Name.Role Name').innerText())));
+  await select('CX.EMPTY');
+  await page.keyboard.press('u');
+  await until(async () => (await focused()) === 'verify-edit');
+  await page.keyboard.press('Enter');
+  check('an empty edit is no change', await flashed(/An empty edit is no change/) && !/→/.test(await row('CX.EMPTY').innerText()));
+  await select('CX.AMOUNT');
+  await page.keyboard.press('u');
+  await until(async () => (await focused()) === 'verify-edit');
+  await page.keyboard.press('Control+a');
+  await page.keyboard.type('2500');
+  await page.keyboard.press('Enter');
+  await select('CX.GONE');
+  await page.keyboard.press('u');
+  check('a missing field can’t be edited, and says so', await flashed(/CX\.GONE does not exist/));
+  const strip = view.getByLabel('Staged changes');
+  check('the review strip: 3 staged in Dev for the record, each old → new', await until(async () => /3 staged in Dev for 5001/.test(await strip.innerText())) && /CX\.AMOUNT: 1,250\.00 → 2500/.test((await strip.innerText()).replace(/\s+/g, ' ')));
+  await shot(page, 'update-staged');
+  const updates = () => standin().filter((r) => r.tool === 'lookup-update');
+  await page.keyboard.press('Shift+U');
+  check('the first Shift+U only arms, naming the count and Dev', await until(async () => /Shift\+U again to send 3 field\(s\) to Dev/.test(await strip.innerText())) && updates().length === 0);
+  await page.keyboard.press('Shift+U');
+  check('the second sends: one request to the update form, the three fields ticked', await until(async () => updates().length === 1) && JSON.stringify(updates()[0].ids) === JSON.stringify(['CX.SAMPLE.ONE', 'Group.Name.Role Name', 'CX.AMOUNT']) && updates()[0].env === 'Dev', JSON.stringify(updates()[0]));
+  const allowedNames = new Set(['Environment', 'RecordId', 'RecordNumber', 'RecordFolder', 'FieldsToFetch', 'AssignedRoles[].Id', 'AssignedRoles[].Name', 'Fields[].Value', 'Fields[].Exists', 'Fields[].ReadOnly', 'Fields[]', 'FieldsToUpdate[].Value', 'FieldsToUpdate[].ShouldUpdate']);
+  check('…carrying only the update form’s names', updates()[0]?.names.every((k) => allowedNames.has(k)), JSON.stringify(updates()[0]?.names));
+  const sentBox = view.getByLabel('Update sent');
+  check('Sent 3 field(s): the tool applies them in a couple of minutes', await until(async () => /Sent 3 field\(s\) to Dev\. The tool applies these in a couple of minutes/.test(await sentBox.innerText())));
+  check('the rows go pending first', await until(async () => (await values.locator('[data-after="pending"]').count()) === 3, 15000));
+  await shot(page, 'update-pending');
+  check('…then applied (the amount’s commas aside), and it says Applied', await until(async () => (await values.locator('[data-after="applied"]').count()) === 3 && /Applied\./.test(await sentBox.innerText()), 40000), (await values.innerText()).replace(/\s+/g, ' '));
+  check('…each row showing the value now there', /^CX\.SAMPLE\.ONE\s+No/.test((await row('CX.SAMPLE.ONE').innerText()).trim()) && /Sample role two/.test(await row('Group.Name.Role Name').innerText()) && /2,500\.00/.test(await row('CX.AMOUNT').innerText()), (await values.innerText()).replace(/\s+/g, ' '));
+  await shot(page, 'update-applied');
+  const checks = standin().filter((r) => r.tool === 'lookup' && r.method === 'POST' && r.ids.join('|') === 'CX.SAMPLE.ONE|Group.Name.Role Name|CX.AMOUNT');
+  check('the checks fetched only the changed rows, without Advanced', checks.length >= 2 && checks.every((r) => r.advanced === 'false'), `${checks.length}`);
+  const [watch] = await Promise.all([context.waitForEvent('page', { timeout: 5000 }).catch(() => null), page.keyboard.press('w')]);
+  check('w opens the tool’s progress page for the record', watch?.url() === 'http://127.0.0.1:18902/Watch/5001', watch?.url() ?? 'none');
+  if (watch) await watch.close();
+  check('Changed this session lists the three, old → new', /Changed this session \(3\)/.test(await view.innerText()) && /CX\.SAMPLE\.ONE: Yes & no → No/.test(await view.innerText()));
+  await page.keyboard.press('u');
+  check('to change more, fetch again', await flashed(/To change more, fetch the record again/));
+  // Prod: nothing to edit, and Shift+U says no.
+  await page.keyboard.press('Shift+P'); await page.keyboard.press('Shift+P');
+  await until(async () => (await view.getByRole('radio', { name: 'Prod' }).getAttribute('aria-checked')) === 'true');
+  await lookUp('5001');
+  await page.keyboard.press('u');
+  check('Prod: no edit, u says no', (await page.locator('#verify-edit').count()) === 0 && await flashed(/No updates in Prod/));
+  await page.keyboard.press('Shift+U');
+  check('Prod: Shift+U says no, and no strip', await flashed(/No updates in Prod/) && !(await strip.count()) && updates().length === 1);
+  await shot(page, 'update-prod');
+  await page.keyboard.press('Shift+P');
+  // allowUpdate removed (no restart): the edit UI goes.
+  fs.writeFileSync(VERIFY_FILE, JSON.stringify({ ...JSON.parse(fs.readFileSync(VERIFY_FILE, 'utf8')), lookup: { ...cfg.lookup, updateUrl: 'http://127.0.0.1:18902/LookupUpdate', updateFields: ['RecordNumber', 'RecordFolder'] } }, null, 2));
+  await sleep(3500);
+  await lookUp('5001');
+  await page.keyboard.press('u');
+  check('allowUpdate removed: the edit UI is gone', (await page.locator('#verify-edit').count()) === 0 && await flashed(/are off on this machine/) && !/a row, .*edit it/.test((await view.innerText()).replace(/\s+/g, ' ')));
+  check('the role and move forms were never reached', !standin().some((r) => r.tool === 'lookup-other'));
+
   await page.keyboard.press('v');
   await sleep(200);
   const say = page.locator('#card-say');
@@ -350,11 +452,12 @@ async function ask(page, msg) {
   await page.keyboard.press('Escape');
 
   // What the app's server sent the tools: only the reads and the lookup form, never a Save or update.
-  const fromServer = standin().filter((r) => r.tool !== 'builder' && !/Chrome|Mozilla/.test(r.agent));
+  const fromServer = standin().filter((r) => r.tool !== 'builder' && r.tool !== 'lookup-update' && !/Chrome|Mozilla/.test(r.agent));
   const bad = fromServer.filter((r) => !((r.method === 'GET' && /^\/Home\/(SetVersion|ValidateField)$/.test(r.path)) || (r.method === 'POST' && r.path === '/Lookup')));
   check('the server sent only SetVersion, ValidateField and the lookup form', fromServer.length > 0 && bad.length === 0, `${fromServer.length} requests, ${bad.length} others ${JSON.stringify(bad.slice(0, 2))}`);
   check('every lookup POST carried only the four form fields', fromServer.filter((r) => r.tool === 'lookup').every((r) => r.fields.every((f) => ['Environment', 'RecordId', 'AdvancedFetch', 'FieldsToFetch'].includes(f))));
-  check('nothing reached a Save or an update', !standin().some((r) => /save|update/i.test(r.path)));
+  check('nothing reached a Save; the one update is the one sent with updates on', !standin().some((r) => /save/i.test(r.path)) && standin().filter((r) => /update/i.test(r.path)).length === 1);
+  check('the server log has no update’s field, value or record', !/Sample role two|CX\.AMOUNT|2500|LookupUpdate/.test(fs.existsSync(SERVER_LOG) ? fs.readFileSync(SERVER_LOG, 'utf8') : ''));
   const serverLog = fs.existsSync(SERVER_LOG) ? fs.readFileSync(SERVER_LOG, 'utf8') : '';
   check('the server log has no looked-up value, record id or field id', !/12\.50|Yes & no|Sample role|5001|Group\.Name/.test(serverLog));
   check('…nor a loan id or a step message', !/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}|Sample step failed|Sample run failed/.test(serverLog));

@@ -21,7 +21,7 @@ import { needsUiPort, stackWarnings } from '../shared/stack.ts';
 import { envNamesIn } from '../shared/stack-detect.ts';
 import { DB_PATH, Store } from '../server/store.ts';
 import { FIELD_LISTS_FILE, readFieldLists, readVerifyFile } from '../server/verify.ts';
-import { VERIFY_ENVS, cleanUrl, isLoopback, setUrl } from '../shared/verify.ts';
+import { VERIFY_ENVS, cleanUrl, isLoopback, setUrl, updatesOn } from '../shared/verify.ts';
 import { findQaField, jiraConfig, jiraProblem } from '../server/tickets.ts';
 import { repoName } from '../shared/workspaces.ts';
 
@@ -90,6 +90,15 @@ else {
   if (vc.lookup && !vc.lookup.recordField) line('warn', `${vc.lookup.name ?? 'Record lookup'}`, 'no "recordField"', 'Add the form’s name for the record id box (its <input name="…">) to the Verify file.');
   // §132: the lookup's own page, where o and Shift+L open.
   if (vc.lookup?.url) line(vc.lookup.page ? 'ok' : 'info', `${vc.lookup.name ?? 'Record lookup'}: its page`, vc.lookup.page ? 'set' : 'none: o opens the form’s post address', vc.lookup.page ? '' : 'Add "page" to the lookup in the Verify file: the address you open in the browser.');
+  // §134: updates through the lookup: off unless the file says so, Dev and UAT only.
+  if (vc.lookup?.url) {
+    const ln = vc.lookup.name ?? 'Record lookup';
+    if (vc.lookup.allowUpdate && !vc.lookup.updateUrl) line('warn', `${ln}: updates`, '"allowUpdate" is true but there is no "updateUrl" on the lookup’s own host, so updates stay off', 'Add the update form’s address (its action) as "updateUrl"; it must be on the same host as "url".');
+    else if (updatesOn(vc)) {
+      line('ok', `${ln}: updates`, 'on, for Dev and UAT only (never Prod), each sent after a second Shift+U');
+      if (!vc.lookup.updateFields?.length) line('warn', `${ln}: updates`, 'no "updateFields"', 'The update form also carries the record’s own hidden fields (its number and folder): name them in "updateFields" (their <input name="…">), or an update says which field it doesn’t send and sends nothing.');
+    } else line('info', `${ln}: updates`, 'off (read only)', vc.lookup.updateUrl ? 'Set "allowUpdate": true to change fields in Dev and UAT.' : '');
+  }
   // §133: the scenario runner, on this machine only.
   const raw = rawBuilderUrl();
   if (vc.builder?.url) line('ok', `${vc.builder.name ?? 'Test data'}`, `${vc.builder.url}${vc.builder.ui ? `, its page ${vc.builder.ui}` : ''}`, vc.builder.ui ? '' : 'Add "ui" (its web page) to the builder in the Verify file for o.');

@@ -13,8 +13,13 @@
 // endpoints or any other address are never reached from here. Redirects aren't followed (a
 // followed POST becomes a GET elsewhere).
 //
-// Values a lookup returns are a record's data: never logged, never kept here. Saved lists of field
-// ids (§132) are the one thing written: their own file, only by the panel's Save and Delete.
+// Values a lookup returns are a record's data: never logged. They are kept here only briefly and
+// only in memory, for an update (§134, server/verify-update.ts): the update form of a Dev or UAT
+// fetch, for ten minutes or one use; nothing else. Saved lists of field ids (§132) are the one thing
+// written to disk: their own file, only by the panel's Save and Delete.
+//
+// Updates (§134) are the one write to a tool: off unless the machine's file says allowUpdate, Dev
+// and UAT only, to exactly lookup.updateUrl, with only the update form's names (guard's own list).
 //
 // Where the tools are, and what they're called, is a file on each machine (§107), never the repo:
 // ~/.cc-control/verify.json, or the file CC_CONTROL_VERIFY_FILE names. Read again when it changes.
@@ -25,8 +30,9 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   DEFAULT_ENV_VALUES, DEFAULT_ID_PARAM, LIST_NAME_MAX, MAX_IDS, MAX_LISTS, cleanLists, cleanUrl, cleanVerify, isLoopback, setUrl, splitFieldLines,
-  type FieldList, type FieldListsFile, type VerifyFile, type FieldCheck, type LookupField, type LookupResult, type SetInfo, type VerifyConfig, type VerifyEnv,
+  updatesOn, type FieldChange, type FieldList, type FieldListsFile, type VerifyFile, type FieldCheck, type LookupField, type LookupResult, type SetInfo, type UpdateSent, type VerifyConfig, type VerifyEnv,
 } from '../shared/verify.ts';
+import { composeUpdate, parseUpdateForm, readUpdateAnswer, updateNameAllowed, UpdateSessions } from './verify-update.ts';
 
 // ---- The machine's file -----------------------------------------------------
 
@@ -139,6 +145,8 @@ export interface VerifyRequest {
   form?: [string, string][];
   /** A POST's JSON body (the scenario runner only). */
   json?: unknown;
+  /** §134: an update through the record lookup. Only LookupTool.update sets it; the guard lets no write through without it. */
+  kind?: 'write';
 }
 
 export interface VerifyResponse {
@@ -175,6 +183,14 @@ export function guard(req: VerifyRequest, cfg: VerifyConfig): void {
     return;
   }
   if (req.method === 'POST') {
+    // §134: a write has its own allowlist: one address, only when updates are on, only the update form's names.
+    if (req.kind === 'write') {
+      const to = cleanUrl(cfg.lookup?.updateUrl);
+      if (cfg.lookup?.allowUpdate !== true || !to) refuse('updates through the record lookup are off on this machine');
+      if (req.url !== to) refuse('a write goes only to the record lookup’s update form');
+      for (const [k] of req.form ?? []) if (!updateNameAllowed(k, cfg)) refuse(`the form field ${k} isn’t one an update sends`);
+      return;
+    }
     const at = cleanUrl(cfg.lookup?.url);
     if (!at || req.url !== at) refuse('a POST goes only to the record lookup’s form');
     const allowed = new Set(lookupFields(cfg));
@@ -409,22 +425,26 @@ export class SetTool {
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: '\'', nbsp: ' ', '#39': '\'' };
 
-/** HTML text to plain text: entities decoded, tags dropped, white space folded. */
-export function htmlText(s: string): string {
-  return s
-    .replace(/<[^>]*>/g, '')
-    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+|#39);/gi, (m, e: string) => {
-      if (e[0] === '#') { const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return Number.isFinite(n) ? String.fromCodePoint(n) : m; }
-      return ENTITIES[e.toLowerCase()] ?? m;
-    })
-    .replace(/\s+/g, ' ')
-    .trim();
+/** Entities decoded, nothing else touched. */
+export function decodeEntities(s: string): string {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+|#39);/gi, (m, e: string) => {
+    if (e[0] === '#') { const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return Number.isFinite(n) ? String.fromCodePoint(n) : m; }
+    return ENTITIES[e.toLowerCase()] ?? m;
+  });
 }
 
-/** A tag's attributes, by lower-case name (values decoded). */
-export function attrs(tag: string): Record<string, string> {
+/** HTML text to plain text: entities decoded, tags dropped, white space folded. */
+export function htmlText(s: string): string {
+  return decodeEntities(s.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
+}
+
+/** A tag's attributes, by lower-case name (values decoded; `raw`: white space kept, as a form sends it). */
+export function attrs(tag: string, raw = false): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const m of tag.matchAll(/([\w:.[\]-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g)) out[m[1].toLowerCase()] = htmlText(m[3] ?? m[4] ?? m[5] ?? '');
+  for (const m of tag.matchAll(/([\w:.[\]-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g)) {
+    const v = m[3] ?? m[4] ?? m[5] ?? '';
+    out[m[1].toLowerCase()] = raw ? decodeEntities(v) : htmlText(v);
+  }
   return out;
 }
 
@@ -477,14 +497,21 @@ export function parseLookup(html: string): { found: boolean; fields: LookupField
 export class LookupTool {
   private cfg: () => VerifyConfig;
   private req: Requester;
+  private sessions: UpdateSessions;
 
-  constructor(cfg: () => VerifyConfig, req: Requester) {
+  constructor(cfg: () => VerifyConfig, req: Requester, sessions = new UpdateSessions()) {
     this.cfg = cfg;
     this.req = req;
+    this.sessions = sessions;
   }
 
-  /** Look a record up: the form posted once, the page read into fields. Values are never logged or kept. */
-  async fetch(env: VerifyEnv, recordId: string, ids: string[], advanced = false): Promise<LookupResult> {
+  /**
+   * Look a record up: the form posted once, the page read into fields. Values are never logged.
+   * With updates on (§134), a Dev or UAT fetch also keeps the page's update form, briefly and in
+   * memory only, under a token the page sends changes with; `session: false` (the checks after an
+   * update) keeps nothing.
+   */
+  async fetch(env: VerifyEnv, recordId: string, ids: string[], advanced = false, opts: { session?: boolean } = {}): Promise<LookupResult> {
     const cfg = this.cfg();
     const url = cleanUrl(cfg.lookup?.url);
     const field = cfg.lookup?.recordField?.trim();
@@ -503,6 +530,34 @@ export class LookupTool {
     if (res.status === 401) throw new Error(`${cfg.lookup?.name ?? 'The record lookup'} wants a sign-in: set "auth": "windows" for it in this machine’s Verify file.`);
     if (res.status >= 300 && res.status < 400) throw new Error(`The record lookup answered with a redirect (${res.status}): is its address the form’s?`);
     if (res.status >= 400) throw new Error(`The record lookup answered ${res.status}.`);
-    return { env, recordId: rid, ...parseLookup(res.body) };
+    const read = parseLookup(res.body);
+    const result: LookupResult = { env, recordId: rid, ...read, updatable: false };
+    if (!updatesOn(cfg) || opts.session === false || !read.found) return result;
+    if (env !== 'dev' && env !== 'uat') return result;
+    const form = parseUpdateForm(res.body, cfg);
+    if (!form) return { ...result, updateNote: 'The page had no update form at the update address in the Verify file.' };
+    if (form.problem) return { ...result, updateNote: form.problem };
+    const token = this.sessions.add({ env, recordId: rid, form });
+    return { ...result, updatable: true, token, editable: form.editable };
+  }
+
+  /**
+   * §134: send changes from a fetch's session to the update form: Dev or UAT, only fields the page
+   * let you change, only their options. One use: to change more, fetch again. Success is what the
+   * tool says it sent; applied is for the page to check by fetching again.
+   */
+  async update(token: string, changes: FieldChange[]): Promise<UpdateSent> {
+    const cfg = this.cfg();
+    const name = cfg.lookup?.name ?? 'The record lookup';
+    if (!updatesOn(cfg)) throw new Error(`Updates through ${name} are off on this machine.`);
+    const s = this.sessions.get(token);
+    if (!s) throw new Error('That fetch is gone (ten minutes, or used): fetch the record again.');
+    const form = composeUpdate(s, changes, cfg);
+    // Used: the next change needs a new fetch (the page it came from is out of date once this is sent).
+    this.sessions.drop(token);
+    const res = await this.req.send({ kind: 'write', method: 'POST', url: cleanUrl(cfg.lookup!.updateUrl)!, form }, cfg.lookup?.auth ?? 'auto');
+    if (res.status === 401) throw new Error(`${name} wants a sign-in: set "auth": "windows" for it in this machine’s Verify file.`);
+    if (res.status !== 200) throw new Error('The tool didn’t confirm the update.');
+    return readUpdateAnswer(res.body, changes.length, cfg, s.recordId);
   }
 }
