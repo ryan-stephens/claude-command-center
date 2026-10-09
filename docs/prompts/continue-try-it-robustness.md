@@ -40,7 +40,7 @@ On the work laptop the owner compared cc-control with another team's tool that s
 5. **The stand-ins** in `docs/walkthroughs/simple-new-card/standins/` (`okteto-up.cjs`, `down.cjs`, `okteto-helper.cjs`, `api.cjs`, `ui.cjs`, `nx-serve.cjs`, `ui-compile.cjs`). Also the walks that drive Try it: `walk-deps`, `walk-two-cards`, `walk-board-try`, `walk-try-compile`, `walk-stack`.
 
 ## The phases
-Each phase gets its own PLAN section (the next is **§135**; run `git fetch` first) and its own commit. A PLAN section that defers something says so in its own **Not yet:** line, as earlier sections do; there is no single list. Before building each phase, check the code still looks the way described above, and say so if it doesn't.
+Each phase gets its own PLAN section (the next is **§137**; run `git fetch` first) and its own commit. A PLAN section that defers something says so in its own **Not yet:** line, as earlier sections do; there is no single list. Before building each phase, check the code still looks the way described above, and say so if it doesn't.
 
 1. **A run manifest (highest value).**
    - Per card, keep a small JSON file under the runs folder, written as each service starts and updated on every step and on failure. It holds:
@@ -95,14 +95,11 @@ Each phase gets its own PLAN section (the next is **§135**; run `git fetch` fir
   - :7788 is another cc-control server, running since 2026-09-30; it isn't yours, so leave it alone;
   - :7826 and up have worked;
   - walks that need a running server take `PORT=`.
-- **Before each commit:**
-  - `pnpm typecheck`, `npx tsc --noUnusedLocals -p .`, `pnpm test` (414 at §131);
-  - `walk-card` (66, light and dark; needs a server, `PORT=`);
-  - `walk-hub` (41, a real Haiku card, `PORT=7794`, starts its own server);
-  - `walk-perf` (25, the speed budget, starts its own);
-  - `walk-your-move` (32, light and dark, starts its own);
-  - the Try it walks you touch: `walk-deps`, `walk-two-cards`, `walk-board-try`, `walk-try-compile`;
-  - a new walk for the leftovers and the health (light and dark, with screenshots you look at).
+- **Before each commit** (MVP pace, PLAN §136):
+  - `pnpm typecheck`, `pnpm test` (452 at §135);
+  - the Try it walks you touch: `walk-deps`, `walk-two-cards`, `walk-board-try`, `walk-try-compile`, in one theme;
+  - a new walk for the leftovers and the health (screenshots only where the UI changes).
+  - `walk-card`, `walk-hub`, `walk-perf` and `walk-your-move` only when the change reaches those areas.
   - Build `dist/web-test` first: `pnpm exec vite build --outDir ../dist/web-test --emptyOutDir`.
 - **Pushing verified work to main is pre-approved.**
   - These phases are mostly server changes, and a server change reaches the owner's app only with a restart. **Ask first.**
