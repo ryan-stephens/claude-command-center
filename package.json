@@ -13,7 +13,10 @@
     "start": "node scripts/check-node.mjs && vite build && node server/index.ts",
     "typecheck": "tsc",
     "doctor": "node scripts/check-node.mjs && node scripts/doctor.ts",
-    "test": "node --test \"web/**/*.test.ts\" \"server/**/*.test.ts\" \"shared/**/*.test.ts\"",
+    "test": "node --test \"web/**/*.test.ts\" \"server/**/*.test.ts\" \"shared/**/*.test.ts\" \"v2/**/*.test.ts\"",
+    "v2": "node scripts/check-node.mjs && vite build --config v2/vite.config.ts && node v2/server/main.ts",
+    "v2:build": "vite build --config v2/vite.config.ts",
+    "v2:server": "node v2/server/main.ts",
     "spike": "node spike/sdk-spike.mjs",
     "spike:voice": "node spike/voice-server.mjs"
   },

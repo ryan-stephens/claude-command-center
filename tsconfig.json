@@ -15,5 +15,5 @@
     "noUnusedParameters": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["server", "shared", "web", "scripts", "vite.config.ts"]
+  "include": ["server", "shared", "web", "scripts", "vite.config.ts", "v2"]
 }
