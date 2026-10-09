@@ -229,13 +229,13 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
     const verify = x.panel === 'verify';
     const verifyItems: LegendItem[] = !verify ? []
       : x.verifySection === 'lookup' ? [{ keys: ['Enter'], label: 'Look up', tone: 'acc' }, { keys: ['l', 'i'], label: 'Record / fields' }, { keys: ['a'], label: 'Advanced' }, { keys: ['f', '⇧S'], label: 'List / save' }, { keys: ['/'], label: 'Filter' }, { keys: ['⇧M'], label: 'Only empty' }, { keys: ['⇧Y'], label: 'Copy' }, { keys: ['o'], label: 'Its page' }]
-      : x.verifySection === 'builder' ? [{ keys: ['o'], label: 'Its page' }]
+      : x.verifySection === 'builder' ? [{ keys: ['Enter'], label: 'Run (twice)', tone: 'acc' }, { keys: ['↑', '↓'], label: 'Scenario' }, { keys: ['/'], label: 'Filter' }, { keys: ['r'], label: 'Re-read' }, { keys: ['f'], label: 'Fetch the loan' }, { keys: ['⇧Y'], label: 'Copy' }, { keys: ['o'], label: 'Its page' }]
       : x.verifySection === 'set' ? [{ keys: ['Enter'], label: 'Check', tone: 'acc' }, { keys: ['i'], label: 'Ids' }, { keys: ['r'], label: 'Refresh set' }, { keys: ['o', '⇧O'], label: 'Open a tool' }]
       : [];
     return [
       { keys: ['Esc'], label: x.working ? 'Stop Claude' : 'Back to the board' },
       ...(x.question ? [{ keys: ['1', '9'], label: 'Pick', tone: 'attn' as const }, { keys: ['Tab'], label: 'Next question' }, { keys: ['y'], label: 'Submit answers', tone: 'attn' as const }] : x.asking ? [{ keys: ['y', 'n'], label: 'Allow / deny', tone: 'attn' as const }] : []),
-      ...(verify ? [...verifyItems, { keys: ['Alt ←', '→'], label: 'Section' }, { keys: ['e'], label: 'Dev / UAT' }, { keys: ['⇧P'], label: 'Prod' }]
+      ...(verify ? [...verifyItems, { keys: ['Alt ←', '→'], label: 'Section' }, { keys: ['e'], label: 'Dev / UAT' }, ...(x.verifySection === 'builder' ? [] : [{ keys: ['⇧P'], label: 'Prod' }])]
         : x.canSay ? [{ keys: ['Enter'], label: x.inApp ? 'Message' : 'Type to it', tone: x.asking ? undefined : 'acc' as const }, ...(x.inApp ? [{ keys: ['⇧I'], label: 'Image' }] : []), { keys: ['Ctrl⇧↑', '↓'], label: 'Box size' }, ...(x.inApp ? [{ keys: ['⇧Tab'], label: 'Mode' }] : []), { keys: ['End'], label: 'Newest' }] : []),
       ...(x.hasTab ? [{ keys: ['g'], label: x.inApp ? 'In a terminal' : x.needsTab ? 'Answer in its tab' : 'Its tab', ...(x.needsTab && !x.inApp ? { tone: 'attn' as const } : {}) }] : []),
       { keys: ['←', '→'], label: 'Previous / next card' },

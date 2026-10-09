@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { MAX_IDS, VERIFY_ENVS, setUrl, splitFieldLines, type EnvCheck, type FieldCheck, type FieldListsFile, type VerifyEnv, type VerifyFile } from '../shared/verify.ts';
+import { BuilderTool } from './verify-builder.ts';
 import { deleteFieldList, explain, FIELD_LISTS_FILE, FileWatch, LookupTool, readFieldLists, Requester, saveFieldList, SetTool, VerifyFileWatch } from './verify.ts';
 import { KEY_HINTS, NEW_CARD_LOOKS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
@@ -364,6 +365,7 @@ setInterval(() => { verifyNow(); listsNow(); }, 3000).unref();
 const verifyRequests = new Requester(verifyConfig);
 const setTool = new SetTool(verifyConfig, verifyRequests);
 const lookupTool = new LookupTool(verifyConfig, verifyRequests);
+const builderTool = new BuilderTool(verifyConfig);
 
 /** One environment's answer: each id through ValidateField (four at a time), with the cached set's version beside it. */
 async function checkEnv(env: VerifyEnv, ids: string[]): Promise<EnvCheck> {
@@ -988,6 +990,19 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
       try { send(ws, { type: 'verify.found', reqId: msg.reqId, result: await lookupTool.fetch(env, String(msg.recordId ?? ''), ids, msg.advanced === true) }); } catch (e) { throw new Error(explain(e, verifyConfig().lookup?.name ?? 'The record lookup')); }
       return;
     }
+    // The scenario runner (§133): its errors go to the page that asked; loan ids and step messages aren't logged.
+    case 'builder.list':
+      send(ws, { type: 'builder.scenarios', reqId: msg.reqId, scenarios: await builderTool.scenarios() });
+      return;
+    case 'builder.start': {
+      const env = msg.env === 'uat' ? 'uat' : msg.env === 'dev' ? 'dev' : null;
+      if (!env) throw new Error(`${verifyConfig().builder?.name ?? 'The test-data tool'} runs in Dev or UAT only.`);
+      send(ws, { type: 'builder.started', reqId: msg.reqId, runId: await builderTool.start(env, String(msg.scenarioId ?? ''), Number(msg.version)) });
+      return;
+    }
+    case 'builder.status':
+      send(ws, { type: 'builder.run', reqId: msg.reqId, run: await builderTool.run(String(msg.runId ?? '')) });
+      return;
     case 'verify.lists.save':
     case 'verify.lists.delete': {
       // The lists file only: names and field ids, nothing else on disk.

@@ -6,7 +6,7 @@ import type { TicketTransition } from '../shared/tickets.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ImageAttachment, type RepoInfo, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import type { PromptContext } from '../shared/prompts.ts';
-import type { EnvCheck, LookupResult, SetInfo, VerifyEnv } from '../shared/verify.ts';
+import type { BuilderEnv, BuilderRun, BuilderScenario, EnvCheck, LookupResult, SetInfo, VerifyEnv } from '../shared/verify.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
 import { haveOf, mergeTranscript } from './transcript-merge.ts';
 import { activeSession, flash, get, groupKeyOf, set, setFilter, syncSeen } from './store.ts';
@@ -254,6 +254,21 @@ export async function verifyListSave(name: string, ids: string[]): Promise<void>
 /** Delete a saved field list. */
 export async function verifyListDelete(name: string): Promise<void> {
   await request((reqId) => ({ type: 'verify.lists.delete', reqId, name }), 10_000);
+}
+
+/** The scenario runner's scenarios (§133). */
+export async function builderList(): Promise<BuilderScenario[]> {
+  return (await request((reqId) => ({ type: 'builder.list', reqId }), 20_000) as Extract<ServerMsg, { type: 'builder.scenarios' }>).scenarios;
+}
+
+/** Start a run in Dev or UAT: it creates test loans there. */
+export async function builderStart(env: BuilderEnv, scenarioId: string, version: number): Promise<string> {
+  return (await request((reqId) => ({ type: 'builder.start', reqId, env, scenarioId, version }), 20_000) as Extract<ServerMsg, { type: 'builder.started' }>).runId;
+}
+
+/** How a run is going. Its loan ids and messages stay in this page's memory. */
+export async function builderStatus(runId: string): Promise<BuilderRun> {
+  return (await request((reqId) => ({ type: 'builder.status', reqId, runId }), 20_000) as Extract<ServerMsg, { type: 'builder.run' }>).run;
 }
 
 /** Stop the card's run (every service and the session), or one service alone. */
@@ -534,6 +549,9 @@ function receive(msg: ServerMsg): void {
     case 'verify.checked':
     case 'verify.set':
     case 'verify.found':
+    case 'builder.scenarios':
+    case 'builder.started':
+    case 'builder.run':
       return; // answered to the screen that asked, which waits on it
     case 'verify.config':
       set({ verify: msg.verify });

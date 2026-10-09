@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { fieldLines, pushRecent, RECENT_MAX, SECTIONS, sectionName, sectionShown, stepSection, visibleFields } from './verify-model.ts';
+import { ARM_MS, armed, fieldLines, POLL_MAX_ERRORS, POLL_MAX_MS, POLL_MS, pushRecent, RECENT_MAX, runPhase, SECTIONS, sectionName, sectionShown, stepSection, visibleFields, visibleScenarios } from './verify-model.ts';
 
 test('sections: the first set up opens; Alt+← → go round all three; the file’s names win', () => {
   assert.deepEqual(SECTIONS.map((s) => s.id), ['builder', 'lookup', 'set']);
@@ -41,4 +41,27 @@ test('recent records: newest first, one per record and environment, at most eigh
   for (let i = 0; i < 12; i++) r = pushRecent(r, { record: `R${i}`, env: 'dev' });
   assert.equal(r.length, RECENT_MAX);
   assert.equal(r[0].record, 'R11');
+});
+
+test('a run is polled while it runs, stops when it ends, after 15 minutes, or three failed polls in a row', () => {
+  const t0 = 1_000_000;
+  assert.equal(runPhase('running', 0, t0, t0 + POLL_MS), 'poll');
+  assert.equal(runPhase(undefined, 2, t0, t0 + POLL_MS), 'poll', 'two failed polls: still asking');
+  assert.equal(runPhase('succeeded', 0, t0, t0 + 6000), 'succeeded');
+  assert.equal(runPhase('failed', 0, t0, t0 + 6000), 'failed');
+  assert.equal(runPhase('running', 0, t0, t0 + POLL_MAX_MS), 'timeout');
+  assert.equal(runPhase(undefined, POLL_MAX_ERRORS, t0, t0 + 6000), 'error');
+  assert.equal(runPhase('succeeded', POLL_MAX_ERRORS, t0, t0 + POLL_MAX_MS), 'succeeded', 'an ended run wins');
+});
+
+test('scenarios filter by name, version or tag; a two-step key fires only on the same thing within four seconds', () => {
+  const list = [{ name: 'Sample purchase', version: 3, tags: ['fha'] }, { name: 'Sample refinance', version: 1, tags: ['va', 'smoke'] }];
+  assert.equal(visibleScenarios(list, '').length, 2);
+  assert.deepEqual(visibleScenarios(list, 'refi').map((s) => s.version), [1]);
+  assert.deepEqual(visibleScenarios(list, 'v3').map((s) => s.name), ['Sample purchase']);
+  assert.deepEqual(visibleScenarios(list, 'SMOKE').map((s) => s.name), ['Sample refinance']);
+  assert.ok(armed({ key: 'a', at: 0 }, 'a', ARM_MS - 1));
+  assert.ok(!armed({ key: 'a', at: 0 }, 'a', ARM_MS), 'too late');
+  assert.ok(!armed({ key: 'a', at: 0 }, 'b', 10), 'another scenario');
+  assert.ok(!armed(null, 'a', 0));
 });

@@ -24,6 +24,7 @@ const OUT = path.join(__dirname, dark ? 'shots-verify-dark' : 'shots-verify');
 fs.mkdirSync(OUT, { recursive: true });
 const DEMO = `${TMP}/cc-demo`;
 const DEV = 'http://127.0.0.1:18900', UAT = 'http://127.0.0.1:18901', LOOKUP = 'http://127.0.0.1:18902/Lookup', LOOKUP_PAGE = 'http://127.0.0.1:18902/LookupPage';
+const BUILDER = 'http://127.0.0.1:18903', BUILDER_UI = 'http://127.0.0.1:18903/ui';
 let n = 0; const results = [];
 const check = (name, ok, extra = '') => { results.push([ok ? 'PASS' : 'FAIL', name, extra]); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${extra}`); };
 const shot = async (page, name) => { n += 1; await page.screenshot({ path: path.join(OUT, `${String(n).padStart(2, '0')}-${name}.png`) }); };
@@ -253,10 +254,88 @@ async function ask(page, msg) {
   check('a second Shift+F deletes the chosen list from the file', await until(async () => JSON.stringify(JSON.parse(fs.readFileSync(LISTS_FILE, 'utf8')).lists.map((l) => l.name)) === '["By hand"]'));
   await shot(page, 'lookup-tab');
 
+  // For the test-data part's f below: a list chosen (the one left), and Advanced on (f turns it off).
+  await page.locator('#verify-list').selectOption('By hand');
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press('a');
+
+  // ---- Test data (§133): the scenario runner on this machine (stand-in on 18903) ----
+  // First set up at a port where nothing listens: the section says the tool isn't running, with the start hint.
+  const cfg = JSON.parse(fs.readFileSync(VERIFY_FILE, 'utf8'));
+  fs.writeFileSync(VERIFY_FILE, JSON.stringify({ ...cfg, builder: { name: 'Sample data', url: 'http://127.0.0.1:18909', ui: BUILDER_UI, start: 'run the sample tool' } }, null, 2));
+  await until(async () => (await tabs.getByRole('tab').allInnerTexts()).includes('Sample data'), 10000);
+  // Prod chosen in the lookup gives way to Dev on entering the test-data section.
+  await page.keyboard.press('Shift+P');
+  await page.keyboard.press('Shift+P');
+  await until(async () => (await view.getByRole('radio', { name: 'Prod' }).getAttribute('aria-checked')) === 'true');
+  await page.keyboard.press('Alt+ArrowRight');
+  await page.keyboard.press('Alt+ArrowRight');
+  check('the test-data tab, by its name', await until(async () => await selected() === 'Sample data'));
+  check('entering it on Prod switches to Dev, and there is no Prod pill', await until(async () => (await view.getByRole('radio', { name: 'Dev' }).getAttribute('aria-checked')) === 'true' && !(await view.getByRole('radio', { name: 'Prod' }).count())));
+  check('a tool that isn’t running says so, with the start hint', await until(async () => /Sample data isn’t running here\. To start it: run the sample tool/.test(await view.innerText())));
+  check('…and its tab’s dot says it isn’t running', (await tabs.getByRole('tab', { name: 'Sample data' }).getAttribute('title')) === 'Not running here');
+  await shot(page, 'builder-not-running');
+  fs.writeFileSync(VERIFY_FILE, JSON.stringify({ ...cfg, builder: { name: 'Sample data', url: BUILDER, ui: BUILDER_UI, start: 'run the sample tool' } }, null, 2));
+  await sleep(3500);
+  await page.keyboard.press('r');
+  const scen = view.getByRole('listbox', { name: 'Scenarios' });
+  check('r reads the scenarios: name, tags, a lock, the version', await until(async () => (await scen.getByRole('option').count()) === 3) && /Sample failing[\s\S]*locked[\s\S]*v2/.test(await scen.innerText()), (await scen.innerText().catch(() => '')).replace(/\s+/g, ' '));
+  await page.keyboard.press('Shift+P');
+  await sleep(150);
+  check('Shift+P here does nothing (no Prod for test data)', (await view.getByRole('radio', { name: 'Dev' }).getAttribute('aria-checked')) === 'true' && (await page.getByText(/no Prod here/).count()) > 0);
+  await page.keyboard.press('/');
+  check('/ puts the cursor in the scenario filter', await until(async () => (await focused()) === 'verify-bfilter'));
+  await page.keyboard.type('refi');
+  check('the filter leaves the matching scenario', await until(async () => (await scen.getByRole('option').count()) === 1 && /Sample refinance/.test(await scen.innerText())));
+  await page.locator('#verify-bfilter').fill('');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  check('↓ chooses the next scenario', await until(async () => /Sample failing/.test(await scen.getByRole('option', { selected: true }).innerText())));
+  const builderPosts = () => standin().filter((r) => r.tool === 'builder' && r.method === 'POST').length;
+  await page.keyboard.press('Enter');
+  check('the first Enter only arms, naming the environment and the scenario', await until(async () => /Enter again to create a loan in Dev with Sample failing/.test(await view.innerText())) && builderPosts() === 0);
+  await shot(page, 'builder-armed');
+  await page.keyboard.press('Enter');
+  check('the second Enter starts the run in Dev', await until(async () => builderPosts() === 1 && standin().filter((r) => r.tool === 'builder' && r.method === 'POST').at(-1).env === 'dev'));
+  const runBox = view.getByLabel('Run');
+  check('a failing run: the chip says Failed, the step its message (no stack trace)', await until(async () => /Failed/.test(await runBox.getByRole('status').innerText()) && /Sample step failed: the made-up service said no/.test(await runBox.innerText()), 20000) && !/Secret/.test(await runBox.innerText()));
+  await shot(page, 'builder-failed');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  check('Sample purchase runs: Running, then Succeeded after three polls', await until(async () => /Running/.test(await runBox.getByRole('status').innerText())) && await until(async () => /Succeeded/.test(await runBox.getByRole('status').innerText()), 20000));
+  const loan = standin().filter((r) => r.tool === 'builder' && r.method === 'GET' && r.path.startsWith('/api/runs/')).length >= 3;
+  check('the page polled the run (every 2 s) until it ended', loan);
+  const guidText = (await runBox.innerText()).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0];
+  check('the loan it made shows', Boolean(guidText), (await runBox.innerText()).replace(/\s+/g, ' '));
+  await shot(page, 'builder-succeeded');
+  await page.keyboard.press('Shift+Y');
+  check('Shift+Y copies the loan id', await until(async () => (await page.evaluate(() => navigator.clipboard.readText())).trim() === guidText));
+  const [uiTab] = await Promise.all([context.waitForEvent('page', { timeout: 5000 }).catch(() => null), page.keyboard.press('o')]);
+  check('o opens the tool’s own page', uiTab?.url() === BUILDER_UI, uiTab?.url() ?? 'none');
+  if (uiTab) await uiTab.close();
+  // f: the loan, fetched in the lookup: its environment, the chosen list (By hand, chosen above), Advanced off.
+  await page.keyboard.press('Alt+ArrowLeft');
+  await until(async () => await selected() === 'Sample set');
+  await page.keyboard.press('Alt+ArrowRight');
+  check('the run is still there after moving between sections', await until(async () => await selected() === 'Sample data') && /Succeeded/.test(await runBox.getByRole('status').innerText()));
+  await page.keyboard.press('f');
+  check('f: the lookup, with the loan in the record box, in Dev', await until(async () => await selected() === 'Sample lookup' && (await page.locator('#verify-record').inputValue()) === guidText && (await view.getByRole('radio', { name: 'Dev' }).getAttribute('aria-checked')) === 'true'));
+  const fetched = await until(async () => standin().filter((r) => r.tool === 'lookup' && r.method === 'POST').some((r) => r.ids.join('|') === '1000' && r.advanced === 'false'));
+  check('…and it fetched with the chosen list, Advanced off', fetched, JSON.stringify(standin().filter((r) => r.tool === 'lookup' && r.method === 'POST').at(-1)));
+  check('…and a chip names the scenario', await until(async () => /Sample purchase/.test(await view.getByLabel('Recent records').innerText())));
+  await shot(page, 'builder-fetched');
+  const bfrom = standin().filter((r) => r.tool === 'builder' && !/Chrome|Mozilla/.test(r.agent));
+  const bbad = bfrom.filter((r) => r.flagged || r.query || !((r.method === 'GET' && (r.path === '/api/scenarios' || /^\/api\/runs\/[\w-]+$/.test(r.path))) || (r.method === 'POST' && /^\/api\/scenarios\/[\w-]+\/versions\/\d+\/runs$/.test(r.path) && JSON.stringify(r.body) === '["environment"]')));
+  check('the server sent the test-data tool only the list, a run’s start ({ environment }) and its status', bfrom.length > 0 && bbad.length === 0, `${bfrom.length} requests, ${bbad.length} others ${JSON.stringify(bbad.slice(0, 2))}`);
+
   await page.keyboard.press('v');
   await sleep(200);
   const say = page.locator('#card-say');
   if (await say.count()) {
+    await page.evaluate(() => navigator.clipboard.writeText('PASTED.ID'));
     await say.focus();
     await page.keyboard.press('Control+v');
     check('Ctrl+V pastes into the message box', (await say.inputValue()).includes('PASTED.ID'), JSON.stringify(await say.inputValue()));
@@ -271,13 +350,14 @@ async function ask(page, msg) {
   await page.keyboard.press('Escape');
 
   // What the app's server sent the tools: only the reads and the lookup form, never a Save or update.
-  const fromServer = standin().filter((r) => !/Chrome|Mozilla/.test(r.agent));
+  const fromServer = standin().filter((r) => r.tool !== 'builder' && !/Chrome|Mozilla/.test(r.agent));
   const bad = fromServer.filter((r) => !((r.method === 'GET' && /^\/Home\/(SetVersion|ValidateField)$/.test(r.path)) || (r.method === 'POST' && r.path === '/Lookup')));
   check('the server sent only SetVersion, ValidateField and the lookup form', fromServer.length > 0 && bad.length === 0, `${fromServer.length} requests, ${bad.length} others ${JSON.stringify(bad.slice(0, 2))}`);
   check('every lookup POST carried only the four form fields', fromServer.filter((r) => r.tool === 'lookup').every((r) => r.fields.every((f) => ['Environment', 'RecordId', 'AdvancedFetch', 'FieldsToFetch'].includes(f))));
   check('nothing reached a Save or an update', !standin().some((r) => /save|update/i.test(r.path)));
   const serverLog = fs.existsSync(SERVER_LOG) ? fs.readFileSync(SERVER_LOG, 'utf8') : '';
   check('the server log has no looked-up value, record id or field id', !/12\.50|Yes & no|Sample role|5001|Group\.Name/.test(serverLog));
+  check('…nor a loan id or a step message', !/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}|Sample step failed|Sample run failed/.test(serverLog));
 
   check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   await browser.close();

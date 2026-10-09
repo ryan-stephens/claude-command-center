@@ -5,9 +5,13 @@
 // - The record lookup (an MVC form, one host for every environment): one POST of the form, read
 //   from the table#FieldResults in the page it answers with.
 //
-// Every request goes through `guard`, which lets exactly those three through and throws on anything
-// else: the add-to-set page's Save, the lookup's update boxes or any other address are never
-// reached from here. Redirects aren't followed (a followed POST becomes a GET elsewhere).
+// - The scenario runner (§133, server/verify-builder.ts): on this machine only, its scenarios, one
+//   run started and that run read.
+//
+// Every request goes through `guard`, which lets exactly those through and throws on anything
+// else: the add-to-set page's Save, the lookup's update boxes, the scenario runner's other
+// endpoints or any other address are never reached from here. Redirects aren't followed (a
+// followed POST becomes a GET elsewhere).
 //
 // Values a lookup returns are a record's data: never logged, never kept here. Saved lists of field
 // ids (§132) are the one thing written: their own file, only by the panel's Save and Delete.
@@ -20,7 +24,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-  DEFAULT_ENV_VALUES, DEFAULT_ID_PARAM, LIST_NAME_MAX, MAX_IDS, MAX_LISTS, cleanLists, cleanUrl, cleanVerify, setUrl, splitFieldLines,
+  DEFAULT_ENV_VALUES, DEFAULT_ID_PARAM, LIST_NAME_MAX, MAX_IDS, MAX_LISTS, cleanLists, cleanUrl, cleanVerify, isLoopback, setUrl, splitFieldLines,
   type FieldList, type FieldListsFile, type VerifyFile, type FieldCheck, type LookupField, type LookupResult, type SetInfo, type VerifyConfig, type VerifyEnv,
 } from '../shared/verify.ts';
 
@@ -127,10 +131,14 @@ export function deleteFieldList(name: string, file = FIELD_LISTS_FILE): FieldLis
 // ---- Requests ---------------------------------------------------------------
 
 export interface VerifyRequest {
+  /** Which tool it is for (§133): the scenario runner's requests are checked against its own allowlist. Unset: the set tool or the lookup. */
+  tool?: 'set' | 'lookup' | 'builder';
   method: 'GET' | 'POST';
   url: string;
   /** A POST's form, url-encoded by the transport. */
   form?: [string, string][];
+  /** A POST's JSON body (the scenario runner only). */
+  json?: unknown;
 }
 
 export interface VerifyResponse {
@@ -156,6 +164,8 @@ export function guard(req: VerifyRequest, cfg: VerifyConfig): void {
   const refuse = (why: string): never => { throw new Error(`Verify refused a request: ${why}.`); };
   let u: URL;
   try { u = new URL(req.url); } catch { return refuse('not an address'); }
+  if (req.tool === 'builder') return guardBuilder(req, cfg, refuse);
+  if (req.json !== undefined) refuse('a JSON body goes only to the test-data tool');
   if (req.method === 'GET') {
     if (req.form) refuse('a GET with a form');
     const base = [...Object.values(cfg.set?.urls ?? {})].map((x) => cleanUrl(x)).find((b) => b && (req.url.startsWith(`${b}/Home/SetVersion`) || req.url.startsWith(`${b}/Home/ValidateField`)));
@@ -169,6 +179,33 @@ export function guard(req: VerifyRequest, cfg: VerifyConfig): void {
     if (!at || req.url !== at) refuse('a POST goes only to the record lookup’s form');
     const allowed = new Set(lookupFields(cfg));
     for (const [k] of req.form ?? []) if (!allowed.has(k)) refuse(`the form field ${k} isn’t one a lookup sends`);
+    return;
+  }
+  refuse(`the method ${String(req.method)}`);
+}
+
+/**
+ * The scenario runner's three requests (§133), on its configured base and only on this machine:
+ * GET <base>/api/scenarios, GET <base>/api/runs/<id>, and POST <base>/api/scenarios/<id>/versions/<n>/runs
+ * with exactly { environment: 'dev' | 'uat' }. Every other path or method (delete, lock, copy, new
+ * versions, steps, resume, tokens, tags) and any other body is refused. Matched on the address as
+ * written, so `..`, a query or a lookalike host never match.
+ */
+function guardBuilder(req: VerifyRequest, cfg: VerifyConfig, refuse: (why: string) => never): void {
+  const base = cleanUrl(cfg.builder?.url);
+  if (!base || !isLoopback(base)) refuse('the test-data tool has no address on this machine');
+  if (req.form) refuse('a form to the test-data tool');
+  const esc = base!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (req.method === 'GET') {
+    if (req.json !== undefined) refuse('a GET with a body');
+    if (new RegExp(`^${esc}/api/scenarios$`).test(req.url) || new RegExp(`^${esc}/api/runs/[\\w-]{1,64}$`).test(req.url)) return;
+    refuse('the test-data tool is only read for its scenarios and a run');
+  }
+  if (req.method === 'POST') {
+    if (!new RegExp(`^${esc}/api/scenarios/[\\w-]{1,64}/versions/\\d{1,6}/runs$`).test(req.url)) refuse('a POST to the test-data tool only starts a run');
+    const body = req.json as Record<string, unknown> | null;
+    const ok = body !== null && typeof body === 'object' && !Array.isArray(body) && Object.keys(body).length === 1 && (body.environment === 'dev' || body.environment === 'uat');
+    if (!ok) refuse('a run is started with exactly { environment: dev or uat }');
     return;
   }
   refuse(`the method ${String(req.method)}`);

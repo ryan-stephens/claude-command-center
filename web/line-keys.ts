@@ -22,7 +22,8 @@ import {
 } from './line-model.ts';
 import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
 import { withSimple } from './simple-model.ts';
-import { armProd, copyFields, currentSection, cycleEnv, cycleSection, deleteList, openPage, refreshSets, runCheck, runLookup, saveList, setField, startSaveList, stepRecent, toggleAdvanced, toggleOnlyEmpty } from './verify-state.ts';
+import { copyRunIds, fetchRunLoan, loadScenarios, moveScenario, runScenarioKey } from './verify-builder.ts';
+import { armProd, cap, copyFields, currentSection, cycleEnv, cycleSection, deleteList, openPage, refreshSets, runCheck, runLookup, saveList, setField, startSaveList, stepRecent, toggleAdvanced, toggleOnlyEmpty, toolName } from './verify-state.ts';
 import { addCardContext, answerCard, answerQuestionCard, focusCardTab, sayToCard, send, showDoor, startCard, stopRun, tryCard } from './ws.ts';
 import { IMAGE_ONLY_TEXT, MAX_IMAGES, pickImages, readImage, type Pasted } from './say-images.ts';
 import { fitSay, nudgeSay } from './say-size.ts';
@@ -59,7 +60,8 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['l  ·  i  ·  Enter  ·  a  ·  o (Verify: record lookup)', 'The record id box (Enter looks it up; ↑ ↓ there go through the records fetched lately, also chips under it)  ·  the Fields box, one id per line as it is (an id may have spaces; empty: the field set’s ids box)  ·  look the record up  ·  Advanced fetch, slower: read-only and missing fields marked, and a field’s options  ·  the tool’s page. Read only: values stay in the page'],
       ['f  ·  Shift+S  ·  Shift+F (Verify: record lookup)', 'Choose a saved list of field ids for the Fields box (↑ ↓ choose, Esc leaves)  ·  save the Fields box as a list (a name, Enter)  ·  delete the chosen list, after a second press. Lists are kept in ~/.cc-control/field-lists.json, nowhere else'],
       ['/  ·  Shift+M  ·  Shift+Y (Verify: record lookup)', 'Filter the values by field or value  ·  only the fields that are empty or don’t exist  ·  copy the rows shown as field=value lines'],
-      ['o (Verify: test data)', 'The scenario runner’s own page, in the browser'],
+      ['↑ ↓ / j k  ·  /  ·  r (Verify: test data)', 'Choose a scenario of the scenario runner on this machine  ·  filter them by name, version or tag  ·  read the list again. Not running? The section says so, with how to start it when the Verify file has a start hint'],
+      ['Enter  ·  f  ·  Shift+Y  ·  o (Verify: test data)', 'Run the scenario in Dev or UAT (e), after a second Enter within 4 s: it creates a test loan there; its steps follow as it runs (never Prod: Shift+P does nothing here)  ·  fetch the loan it made in the record lookup (its environment, the chosen list)  ·  copy the loan id  ·  the tool’s own page. Loan ids and step messages stay in the page'],
       ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
       ['Esc (card open)', 'While Claude is working: stop it, as Esc does in Claude Code. Otherwise back to the board, the card still focused; on the board, clear the filter'],
@@ -951,12 +953,13 @@ function verifyKeys(e: KeyboardEvent): boolean {
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
   // f's picker is a select: Esc leaves it (the arrows choose, as a select does).
   if (e.key === 'Escape' && document.activeElement?.id === 'verify-list') { (document.activeElement as HTMLElement).blur(); return true; }
+  const section = currentSection();
   switch (e.key) {
     case 'e': cycleEnv(); return true;
-    case 'P': armProd(); return true;
+    // The test-data tool runs in Dev or UAT only (§133).
+    case 'P': if (section === 'builder') flash(`${cap(toolName('builder'))} runs in Dev or UAT only: no Prod here`); else armProd(); return true;
     case 'L': openPage('lookup'); return true;
   }
-  const section = currentSection();
   if (section === 'set') {
     switch (e.key) {
       case 'i': focusField('verify-ids'); return true;
@@ -983,6 +986,13 @@ function verifyKeys(e: KeyboardEvent): boolean {
   }
   if (section === 'builder') {
     switch (e.key) {
+      case 'Enter': void runScenarioKey(); return true;
+      case 'ArrowUp': case 'k': moveScenario(-1); return true;
+      case 'ArrowDown': case 'j': moveScenario(1); return true;
+      case '/': focusField('verify-bfilter'); return true;
+      case 'r': void loadScenarios(); return true;
+      case 'f': fetchRunLoan(); return true;
+      case 'Y': copyRunIds(); return true;
       case 'o': openPage('builder'); return true;
     }
   }
@@ -1003,7 +1013,9 @@ function verifyFieldKeys(e: KeyboardEvent, el: HTMLElement): boolean {
     return true;
   }
   if (e.key === 'Enter' && el.id === 'verify-record') { el.blur(); void runLookup(); return true; }
-  if (e.key === 'Enter' && el.id === 'verify-filter') { el.blur(); return true; }
+  if (e.key === 'Enter' && (el.id === 'verify-filter' || el.id === 'verify-bfilter')) { el.blur(); return true; }
+  // The scenario filter: ↑ ↓ still choose while typing.
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && el.id === 'verify-bfilter') { moveScenario(e.key === 'ArrowUp' ? -1 : 1); return true; }
   if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && el.id === 'verify-record') { stepRecent(e.key === 'ArrowUp' ? 1 : -1); return true; }
   // The rest types; Ctrl+V and the other editing keys must reach the box (ids are pasted here).
   return false;

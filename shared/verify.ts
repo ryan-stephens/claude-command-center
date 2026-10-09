@@ -175,6 +175,32 @@ export function cleanLists(raw: unknown): FieldList[] {
   return out;
 }
 
+/** The scenario runner's environments (§133): never Prod. */
+export type BuilderEnv = 'dev' | 'uat';
+export const BUILDER_ENVS: BuilderEnv[] = ['dev', 'uat'];
+
+/** A saved scenario, its latest version, as the scenario runner lists it. */
+export interface BuilderScenario {
+  id: string;
+  version: number;
+  name: string;
+  tags: string[];
+  locked: boolean;
+}
+
+export type BuilderStepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
+
+/** A run of a scenario, read tolerantly from the tool. Loan ids and step messages stay in the page's memory. */
+export interface BuilderRun {
+  runId: string;
+  env: BuilderEnv;
+  status: 'running' | 'succeeded' | 'failed';
+  steps: { order: number; type: string; status: BuilderStepStatus; error?: string }[];
+  /** The loans it made (the tool's loan guids). */
+  recordIds: string[];
+  error?: string;
+}
+
 /** localhost, 127.0.0.1 or [::1]: the scenario runner is only ever reached on this machine. */
 export function isLoopback(url: string | undefined): boolean {
   if (!url) return false;

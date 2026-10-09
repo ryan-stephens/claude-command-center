@@ -53,3 +53,37 @@ export function pushRecent(list: RecentRecord[], r: RecentRecord): RecentRecord[
   const had = list.find((x) => x.record === r.record && x.env === r.env);
   return [{ ...r, ...(r.label || !had?.label ? {} : { label: had.label }) }, ...list.filter((x) => x !== had)].slice(0, RECENT_MAX);
 }
+
+// ---- The test-data section's run (§133) ----
+
+export const POLL_MS = 2000;
+export const POLL_MAX_MS = 15 * 60_000;
+/** Polls in a row that fail before the page stops asking. */
+export const POLL_MAX_ERRORS = 3;
+/** How long the first Enter (or Shift+P, Shift+U) stays armed. */
+export const ARM_MS = 4000;
+
+export type RunPhase = 'poll' | 'succeeded' | 'failed' | 'timeout' | 'error';
+
+/**
+ * After a poll: ask again in POLL_MS while the run is going, stop when it ends, when it has gone on
+ * for POLL_MAX_MS, or after POLL_MAX_ERRORS failed polls in a row.
+ */
+export function runPhase(status: 'running' | 'succeeded' | 'failed' | undefined, errors: number, startedAt: number, now: number): RunPhase {
+  if (status === 'succeeded' || status === 'failed') return status;
+  if (errors >= POLL_MAX_ERRORS) return 'error';
+  if (now - startedAt >= POLL_MAX_MS) return 'timeout';
+  return 'poll';
+}
+
+/** The scenarios the filter (/) leaves: by name, version (v3) or tag. */
+export function visibleScenarios<T extends { name: string; version: number; tags: string[] }>(list: T[], filter: string): T[] {
+  const q = filter.trim().toLowerCase();
+  if (!q) return list;
+  return list.filter((s) => s.name.toLowerCase().includes(q) || `v${s.version}` === q || s.tags.some((t) => t.toLowerCase().includes(q)));
+}
+
+/** A two-step key: armed when pressed once, fired when pressed again within ARM_MS on the same thing. */
+export function armed(arm: { key: string; at: number } | null, key: string, now: number): boolean {
+  return Boolean(arm && arm.key === key && now - arm.at < ARM_MS);
+}

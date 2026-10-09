@@ -89,6 +89,19 @@ export function useVerifySection(): VerifySection | null {
 /** A tab, or Alt+← / Alt+→: another section. */
 export function showSection(section: VerifySection): void {
   put({ section });
+  // The test-data tool runs in Dev or UAT only (§133): Prod gives way to Dev there.
+  if (section === 'builder' && useVerify.getState().env === 'prod') { put({ env: 'dev', prodArmed: 0 }); flash(`${cap(toolName('builder'))} runs in Dev or UAT: Dev`); }
+}
+
+/**
+ * f on a run's loan (§133): the record lookup, with that id, the run's environment, the chosen
+ * list in the Fields box (with none, the box as it is), Advanced off; and it fetches.
+ */
+export function fetchInLookup(record: string, env: VerifyEnv, label: string): void {
+  const s = useVerify.getState();
+  const list = s.list ? get().verifyLists?.lists.find((l) => l.name === s.list) : undefined;
+  put({ section: 'lookup', record, env, prodArmed: 0, advanced: false, lookFilter: '', onlyEmpty: false, ...(list ? { fields: list.ids.join('\n') } : {}) });
+  void runLookup(label);
 }
 
 export function cycleSection(delta: number): void {
