@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanLists, cleanUrl, cleanVerify, drift, idsInText, isLoopback, LOOKUP_MAX_IDS, MAX_LISTS, splitFieldLines, splitIds, setUrl } from './verify.ts';
+import { cleanLists, cleanUrl, cleanVerify, drift, idsInText, isAbsolutePath, isLoopback, LOOKUP_MAX_IDS, MAX_LISTS, splitFieldLines, splitIds, setUrl } from './verify.ts';
 
 test('splitIds: one per line or split by commas, spaces, semicolons; duplicates and junk go', () => {
   assert.deepEqual(splitIds('1000\nCX.SAMPLE.ONE, cx.sample.one; 4002  "LE1.X2".\n--\n'), ['1000', 'CX.SAMPLE.ONE', '4002', 'LE1.X2']);
@@ -54,6 +54,15 @@ test('cleanVerify: the lookup’s page and update address (same host only), allo
   assert.equal(cleanVerify({ builder: { url: 'http://builder.example.invalid:5100' } })?.builder, undefined, 'a builder off this machine is dropped');
   assert.equal(cleanVerify({ builder: { url: 'http://127.0.0.1:5100' } })?.builder?.url, 'http://127.0.0.1:5100');
   assert.equal(cleanVerify({ builder: { url: 'http://[::1]:5100' } })?.builder?.url, 'http://[::1]:5100');
+});
+
+test('cleanVerify: the builder’s launch commands (one or up to three) and their folder (§135)', () => {
+  assert.deepEqual(cleanVerify({ builder: { url: 'http://localhost:5100', launch: 'dotnet run', cwd: 'C:/src/sample-tool' } })?.builder, { url: 'http://localhost:5100', launch: ['dotnet run'], cwd: 'C:/src/sample-tool' });
+  assert.deepEqual(cleanVerify({ builder: { launch: [' dotnet run ', '', 'npm start', 'a', 'b', 7] } })?.builder?.launch, ['dotnet run', 'npm start', 'a'], 'trimmed, empties and non-strings dropped, at most three');
+  assert.equal(cleanVerify({ builder: { launch: 'x', cwd: 'src/tool' } })?.builder?.cwd, undefined, 'a relative folder is dropped');
+  assert.equal(cleanVerify({ builder: { start: 'a hint' } })?.builder?.launch, undefined, 'the start hint is never a command');
+  for (const p of ['C:/x', 'D:\\x', '\\\\server\\share', '/home/x']) assert.ok(isAbsolutePath(p), p);
+  for (const p of ['x', './x', 'C:x', '..\\x']) assert.ok(!isAbsolutePath(p), p);
 });
 
 test('isLoopback: localhost, 127.0.0.1, [::1]; not a lookalike', () => {

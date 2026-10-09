@@ -140,6 +140,8 @@ export interface LineLegendInput {
   /** §134: the lookup's fetch can be changed from (rows, edit, send); an update sent has a progress page (w). */
   verifyUpdatable?: boolean;
   verifyWatch?: boolean;
+  /** §135: the test-data tool can be started from here (start), or was and can be stopped (stop). */
+  verifyLaunch?: 'start' | 'stop';
   /** New-card screen: which panel, and whether panel 2 shows the exact text. */
   pane?: 'src' | 'pkt' | 'go';
   preview?: boolean;
@@ -234,7 +236,8 @@ export function lineLegendFor(x: LineLegendInput): LegendItem[] {
       : x.verifySection === 'lookup' ? [{ keys: ['Enter'], label: 'Look up', tone: 'acc' }, { keys: ['l', 'i'], label: 'Record / fields' }, { keys: ['a'], label: 'Advanced' }, { keys: ['f', '⇧S'], label: 'List / save' }, { keys: ['/'], label: 'Filter' }, { keys: ['⇧M'], label: 'Only empty' }, { keys: ['⇧Y'], label: 'Copy' }, { keys: ['o'], label: 'Its page' },
         ...(x.verifyUpdatable ? [{ keys: ['↑', '↓'], label: 'Row' }, { keys: ['u'], label: 'Edit' }, { keys: ['z'], label: 'Take back' }, { keys: ['⌫'], label: 'Clear' }, { keys: ['⇧U'], label: 'Send (twice)', tone: 'attn' as const }] : []),
         ...(x.verifyWatch ? [{ keys: ['w'], label: 'Progress page' }] : [])]
-      : x.verifySection === 'builder' ? [{ keys: ['Enter'], label: 'Run (twice)', tone: 'acc' }, { keys: ['↑', '↓'], label: 'Scenario' }, { keys: ['/'], label: 'Filter' }, { keys: ['r'], label: 'Re-read' }, { keys: ['f'], label: 'Fetch the loan' }, { keys: ['⇧Y'], label: 'Copy' }, { keys: ['o'], label: 'Its page' }]
+      : x.verifySection === 'builder' ? [{ keys: ['Enter'], label: 'Run (twice)', tone: 'acc' }, { keys: ['↑', '↓'], label: 'Scenario' }, { keys: ['/'], label: 'Filter' }, { keys: ['r'], label: 'Re-read' }, { keys: ['f'], label: 'Fetch the loan' }, { keys: ['⇧Y'], label: 'Copy' }, { keys: ['o'], label: 'Its page' },
+        ...(x.verifyLaunch === 'start' ? [{ keys: ['⇧S'], label: 'Start it', tone: 'acc' as const }] : x.verifyLaunch === 'stop' ? [{ keys: ['⇧K'], label: 'Stop it' }] : [])]
       : x.verifySection === 'set' ? [{ keys: ['Enter'], label: 'Check', tone: 'acc' }, { keys: ['i'], label: 'Ids' }, { keys: ['r'], label: 'Refresh set' }, { keys: ['o', '⇧O'], label: 'Open a tool' }]
       : [];
     return [

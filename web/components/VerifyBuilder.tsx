@@ -1,12 +1,13 @@
 // The Verify panel's test-data section (PLAN §132, §133): the scenario runner on this machine, which
 // creates test loans in Dev or UAT. Choose a scenario, Enter twice runs it, the run's steps follow,
-// and the loan it made goes to the record lookup with f. Its own web UI opens with o.
+// and the loan it made goes to the record lookup with f. Its own web UI opens with o. Not running,
+// and the machine's file says how to start it (§135): Shift+S starts it, Shift+K stops it.
 
-import { useEffect } from 'react';
-import { ENV_NAME } from '../../shared/verify.ts';
+import { useEffect, useState } from 'react';
+import { ENV_NAME, LAUNCH_WAIT_MS } from '../../shared/verify.ts';
 import { useStore } from '../store.ts';
 import { ARM_MS } from '../verify-model.ts';
-import { chooseScenario, chosenScenario, copyRunIds, fetchRunLoan, loadScenarios, runEnv, runScenarioKey, setBuilderFilter, shownScenarios, useBuilder } from '../verify-builder.ts';
+import { chooseScenario, chosenScenario, copyRunIds, fetchRunLoan, loadScenarios, runEnv, runScenarioKey, setBuilderFilter, shownScenarios, startTool, stopTool, useBuilder } from '../verify-builder.ts';
 import { cap, openPage, toolName, useVerify } from '../verify-state.ts';
 import { Key } from './ui.tsx';
 import { NotSetUp, primary, Sec, small } from './verify-ui.tsx';
@@ -18,6 +19,7 @@ const MARK: Record<string, { sign: string; tone: string }> = {
 
 export function VerifyBuilder({ file }: { file?: string }) {
   const b = useStore((s) => s.verify?.config.builder);
+  const proc = useStore((s) => s.builderProc);
   const s = useBuilder();
   // The env row drives the run's environment; read it so the confirmation follows e.
   useVerify((v) => v.env);
@@ -34,7 +36,8 @@ export function VerifyBuilder({ file }: { file?: string }) {
       {b?.ui && <button className={small} onClick={() => openPage('builder')}>Its page<Key k="o" size="sm" /></button>}
     </span>}>
       {!b?.url && <NotSetUp name={cap(name)} keys={'"builder": { "url": "http://localhost:…", "ui": … }'} file={file} />}
-      {s.error && <p role="alert" className="text-[12.5px] text-bad">{s.error}</p>}
+      {s.error && proc.state !== 'starting' && <p role="alert" className="text-[12.5px] text-bad">{s.error}</p>}
+      {b?.url && b.launch && (s.up === false || proc.state === 'starting' || proc.state === 'slow' || proc.state === 'exited') && <Launch name={name} />}
       {b?.url && s.scenarios && (
         <>
           <div className="flex items-center gap-1.5">
@@ -65,6 +68,12 @@ export function VerifyBuilder({ file }: { file?: string }) {
               </button>
               <span className="text-[12px] text-faint">Creates a test loan in {ENV_NAME[env]}. Dev or UAT only (e).</span>
             </div>
+            {proc.state === 'up' && b?.launch && (
+              <div className="flex items-center gap-2 text-[12px] text-faint">
+                <span>Started from here; it stops with cc-control.</span>
+                <button className={small} onClick={() => void stopTool()}>Stop it<Key k="⇧K" size="sm" /></button>
+              </div>
+            )}
             {isArmed && chosen && <p className="text-[12.5px] font-semibold text-attn">Enter again to create a loan in {ENV_NAME[env]} with {chosen.name}</p>}
           </div>
         </>
@@ -72,6 +81,42 @@ export function VerifyBuilder({ file }: { file?: string }) {
       {s.runError && <p role="alert" className="text-[12.5px] text-bad">{s.runError}</p>}
       {s.run && <RunView lookName={lookName} />}
     </Sec>
+  );
+}
+
+/** §135: start the tool from here, and how starting it goes. */
+function Launch({ name }: { name: string }) {
+  const b = useStore((s) => s.verify?.config.builder);
+  const proc = useStore((s) => s.builderProc);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (proc.state !== 'starting') return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [proc.state]);
+  const secs = proc.startedAt ? Math.max(0, Math.round((now - proc.startedAt) / 1000)) : 0;
+  const starting = proc.state === 'starting';
+  return (
+    <div className="grid gap-1.5 rounded-xl border border-line px-3 py-2" aria-label="Start the tool">
+      <div className="flex flex-wrap items-center gap-2">
+        {proc.state === 'starting' || proc.state === 'slow'
+          ? <button className={small} onClick={() => void stopTool()}>Stop<Key k="⇧K" size="sm" /></button>
+          : <button className={primary} onClick={() => void startTool()}>{proc.state === 'exited' ? 'Start it again' : 'Start it'}<Key k="⇧S" size="sm" /></button>}
+        <span className="inline-flex items-center gap-1.5 text-[12.5px] text-sub" role="status">
+          {starting ? <><span className="spinner" />Starting {name}… {secs} s, waiting for its API to answer</>
+            : proc.state === 'slow' ? <span className="text-attn">Started, but its API hasn’t answered in {LAUNCH_WAIT_MS / 60_000} minutes. It is still running: r tries again, ⇧K stops it.</span>
+            : proc.state === 'exited' ? <span className="text-bad">It stopped{proc.exitCode != null ? ` (exit code ${proc.exitCode})` : ''}.</span>
+            : <>Runs this machine’s launch command{(b?.launch?.length ?? 0) > 1 ? 's' : ''}, then waits for it to answer.</>}
+        </span>
+      </div>
+      <ul className="grid gap-0.5 font-mono text-[11.5px] text-faint" aria-label="Launch commands">
+        {b?.launch?.map((c) => <li key={c} className="break-all">$ {c}</li>)}
+        <li className="break-all">in {b?.cwd ?? 'your home folder'}</li>
+      </ul>
+      {proc.tail && proc.tail.length > 0 && (
+        <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-raise px-2 py-1 font-mono text-[11px] text-sub" aria-label="Its last output">{proc.tail.join('\n')}</pre>
+      )}
+    </div>
   );
 }
 

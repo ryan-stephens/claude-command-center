@@ -21,6 +21,7 @@ import { stopVoice } from './voice.ts';
 import { maybeShowWelcome } from './components/Welcome.tsx';
 import { activeSession, attention, NO_BINDINGS, set, toggleSound, useStore } from './store.ts';
 import { useVerifySection, useVerifyUpdates } from './verify-state.ts';
+import { useBuilder } from './verify-builder.ts';
 
 /** The keys that matter right now, as big keycaps. Changes with the view, the panel or the zone. */
 function Legend() {
@@ -90,6 +91,11 @@ function Legend() {
   const panel = useStore((s) => s.line.panel);
   const verifySection = useVerifySection();
   const { updatable: verifyUpdatable, watch: verifyWatch } = useVerifyUpdates();
+  // §135: Start when the test-data tool isn't answering and the machine's file says how; Stop once started here.
+  const canLaunch = useStore((s) => Boolean(s.verify?.config.builder?.launch?.length));
+  const launchState = useStore((s) => s.builderProc.state);
+  const builderDown = useBuilder((b) => b.up === false);
+  const verifyLaunch = !canLaunch ? undefined : launchState === 'starting' || launchState === 'slow' || launchState === 'up' ? 'stop' as const : builderDown ? 'start' as const : undefined;
   const hasStack = useStore((s) => Boolean(shown && cardRecipe(s.recipes, shown.workspaceId, cardRepos(shown)[0])?.stack));
   const hasWorktrees = Boolean(shown && ownFolders(shown).length);
   const hints = useStore((s) => s.settings.keyHints ?? 'always');
@@ -109,7 +115,7 @@ function Legend() {
   const simple = isSimple ? { block: spBlock, adding: spAdding, context: spContext, folders: spFolders, repos: spRepos, onSource: spOnSource, prompt: spPrompt, more: spMore, hasTicket: spTicket, details: spDetails, ticketLink: spTicketLink, ownChip: spOwn } : undefined;
   if (modal) return null;
   const items = trimLegend(screen === 'line'
-    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, anyNeeds, focusAsks, focusUnread, focusTry, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, question, hasTab, needsTab, inApp, working, hasChanges, hasDraft, tab, simple, panel, verifySection, verifyUpdatable, verifyWatch, hasStack, bindings })
+    ? lineLegendFor({ view: lineView, hasFocus: lineFocus, onTicket, anyNeeds, focusAsks, focusUnread, focusTry, hasSession, filtered, pane, preview, cardRepo, addingTo, canAdd, hasWaiting, canTry, appRunning, appUp, ship, canDone, hasPr, hasWorktrees, canSay, asking, question, hasTab, needsTab, inApp, working, hasChanges, hasDraft, tab, simple, panel, verifySection, verifyUpdatable, verifyWatch, verifyLaunch, hasStack, bindings })
     : legendFor({ zone, pending, pendingKind, busy, drafting, bindings }), hints);
   if (!items) return null;
   const k = (id: ActionId) => displayCombo(bindingsFor(id, bindings)[0] ?? '');

@@ -15,9 +15,9 @@ import type { Ticket, TicketProject, TicketSources } from './tickets.ts';
  */
 import type { Changes } from './changes.ts';
 import type { TicketTransition } from './tickets.ts';
-import type { BuilderEnv, BuilderRun, BuilderScenario, EnvCheck, FieldChange, FieldListsFile, LookupResult, SetInfo, UpdateSent, VerifyEnv, VerifyFile } from './verify.ts';
+import type { BuilderEnv, BuilderProc, BuilderRun, BuilderScenario, EnvCheck, FieldChange, FieldListsFile, LookupResult, SetInfo, UpdateSent, VerifyEnv, VerifyFile } from './verify.ts';
 
-export const PROTOCOL = 32;
+export const PROTOCOL = 33;
 
 export type SessionStatus = 'idle' | 'running' | 'requires_action' | 'stopped';
 
@@ -406,6 +406,10 @@ export type ClientMsg =
   | { type: 'builder.start'; reqId: string; env: BuilderEnv; scenarioId: string; version: number }
   /** How a run is going; answered with builder.run. Loan ids and step messages go to this page only. */
   | { type: 'builder.status'; reqId: string; runId: string }
+  /** §135: start the test-data tool with the commands in this machine's Verify file (the page sends none); answered with builder.proc. */
+  | { type: 'builder.launch'; reqId: string }
+  /** Stop what builder.launch started (nothing else); answered with builder.proc. */
+  | { type: 'builder.halt'; reqId: string }
   /** Bring the card's Windows Terminal tab to the front (g). Answered with ok or an error. */
   | { type: 'card.focusTab'; reqId: string; id: string }
   /** Answer the permission prompt the terminal relayed (card.live.ask.requestId). Answered with ok or an error. */
@@ -520,6 +524,8 @@ export type ServerMsg =
   | { type: 'builder.scenarios'; reqId: string; scenarios: BuilderScenario[] }
   | { type: 'builder.started'; reqId: string; runId: string }
   | { type: 'builder.run'; reqId: string; run: BuilderRun }
+  /** §135: the test-data tool as started from here: to the page that asked, and to every page when it changes. */
+  | { type: 'builder.proc'; reqId?: string; proc: BuilderProc }
   | { type: 'card.worktrees'; reqId: string; id: string; worktrees: CardWorktree[] }
   | { type: 'card.worktreesRemoved'; reqId: string; id: string; removed: CardWorktree[]; kept: CardWorktree[] }
   /** The picker's rows for a card's stack, and the APIs to tick when nothing was picked before. */

@@ -53,8 +53,12 @@ export interface VerifyConfig {
     url?: string;
     /** Its web UI, opened by o. */
     ui?: string;
-    /** A short hint for starting it, shown when it isn't running. Never run. */
+    /** A short hint for starting it, shown when it isn't running and there is no `launch`. Never run. */
     start?: string;
+    /** §135: the commands that start it (its API, its UI), run by the server from this file only, when you press Start. */
+    launch?: string[];
+    /** The folder they run in (absolute). Unset: your home folder. */
+    cwd?: string;
   };
 }
 
@@ -222,6 +226,22 @@ export interface BuilderRun {
   error?: string;
 }
 
+/**
+ * The test-data tool as started from here (§135): off (not started here), starting (its commands
+ * run, its API not answering yet), up (answering), exited (a command ended: the code and its last
+ * lines), slow (still not answering after LAUNCH_WAIT_MS; it is left running).
+ */
+export interface BuilderProc {
+  state: 'off' | 'starting' | 'up' | 'exited' | 'slow';
+  startedAt?: number;
+  exitCode?: number | null;
+  /** The last lines its commands wrote, when it didn't come up. In memory only, never logged. */
+  tail?: string[];
+}
+
+/** How long Start waits for the tool's API to answer (a first .NET build is slow). */
+export const LAUNCH_WAIT_MS = 5 * 60_000;
+
 /** localhost, 127.0.0.1 or [::1]: the scenario runner is only ever reached on this machine. */
 export function isLoopback(url: string | undefined): boolean {
   if (!url) return false;
@@ -305,11 +325,23 @@ export function cleanVerify(raw: unknown): VerifyConfig | undefined {
   const bu = cleanUrl(s(r.builder?.url, 500)); if (bu && isLoopback(bu)) builder.url = bu;
   const bi = cleanUrl(s(r.builder?.ui, 500)); if (bi) builder.ui = bi;
   const bs = s(r.builder?.start, 200); if (bs) builder.start = bs;
+  // §135: a command, or up to three (each its own process); the page never sends one, only asks.
+  const bl = (Array.isArray(r.builder?.launch) ? r.builder.launch : [r.builder?.launch]).map((x) => s(x, 500)).filter((x): x is string => Boolean(x)).slice(0, LAUNCH_MAX);
+  if (bl.length) builder.launch = bl;
+  const bc = s(r.builder?.cwd, 500); if (bc && isAbsolutePath(bc)) builder.cwd = bc;
   const out: VerifyConfig = {};
   if (Object.keys(set).length) out.set = set;
   if (Object.keys(lookup).length) out.lookup = lookup;
   if (Object.keys(builder).length) out.builder = builder;
   return Object.keys(out).length ? out : undefined;
+}
+
+/** At most this many commands start the test-data tool (§135). */
+export const LAUNCH_MAX = 3;
+
+/** A full path, on Windows (C:\…, \\server\…) or elsewhere (/…): a launch's folder is never relative. */
+export function isAbsolutePath(p: string): boolean {
+  return /^(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(p);
 }
 
 /** Two addresses on the same scheme, host and port. */

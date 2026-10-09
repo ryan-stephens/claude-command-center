@@ -276,6 +276,28 @@ async function ask(page, msg) {
   check('a tool that isn’t running says so, with the start hint', await until(async () => /Sample data isn’t running here\. To start it: run the sample tool/.test(await view.innerText())));
   check('…and its tab’s dot says it isn’t running', (await tabs.getByRole('tab', { name: 'Sample data' }).getAttribute('title')) === 'Not running here');
   await shot(page, 'builder-not-running');
+  // §135: Start from here, with the file's launch commands (standins/builder-start.cjs on 18909).
+  const STANDINS = path.join(__dirname, 'standins').replace(/\\/g, '/');
+  const withLaunch = (launch) => fs.writeFileSync(VERIFY_FILE, JSON.stringify({ ...cfg, builder: { name: 'Sample data', url: 'http://127.0.0.1:18909', ui: BUILDER_UI, start: 'run the sample tool', launch, cwd: STANDINS } }, null, 2));
+  const launchBox = view.getByLabel('Start the tool');
+  const up18909 = () => fetch('http://127.0.0.1:18909/api/scenarios').then(() => true, () => false);
+  withLaunch('node builder-start.cjs fail');
+  check('with a launch command, not running offers Start and shows the command and its folder', await until(async () => /Start it[\s\S]*\$ node builder-start\.cjs fail[\s\S]*in .*standins/.test(await launchBox.innerText()), 10000), (await launchBox.innerText().catch(() => '')).replace(/\s+/g, ' '));
+  await page.keyboard.press('Shift+S');
+  check('Shift+S runs it; one that fails says it stopped, its exit code and its last lines', await until(async () => /It stopped \(exit code 3\)[\s\S]*made-up project file was not found/.test(await launchBox.innerText())), (await launchBox.innerText().catch(() => '')).replace(/\s+/g, ' '));
+  await shot(page, 'builder-launch-failed');
+  withLaunch('node builder-start.cjs 18909 2500');
+  await until(async () => /builder-start\.cjs 18909/.test(await launchBox.innerText()), 10000);
+  await page.keyboard.press('Shift+S');
+  check('Shift+S again: starting, counting, waiting for the API', await until(async () => /Starting Sample data… \d+ s, waiting for its API/.test(await launchBox.innerText()), 5000));
+  await shot(page, 'builder-starting');
+  check('once the API answers, the scenarios are read without a key', await until(async () => /Sample started here/.test(await view.getByRole('listbox', { name: 'Scenarios' }).innerText()), 20000));
+  check('…the start box goes, and Stop it (Shift+K) is offered', !(await launchBox.count()) && (await view.getByRole('button', { name: /Stop it/ }).count()) === 1);
+  await shot(page, 'builder-started');
+  await page.keyboard.press('Shift+K');
+  check('Shift+K stops what it started: the port is free, and Start is offered again', await until(async () => !(await up18909()) && (await launchBox.getByRole('button', { name: /Start it/ }).count()) === 1));
+  check('…and the section says it isn’t running, pointing at Shift+S, with no list left from before', await until(async () => /Sample data isn’t running here\. Start it with Shift\+S\./.test(await view.innerText()) && !(await view.getByRole('listbox', { name: 'Scenarios' }).count())));
+  await shot(page, 'builder-stopped');
   fs.writeFileSync(VERIFY_FILE, JSON.stringify({ ...cfg, builder: { name: 'Sample data', url: BUILDER, ui: BUILDER_UI, start: 'run the sample tool' } }, null, 2));
   await sleep(3500);
   await page.keyboard.press('r');

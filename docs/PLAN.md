@@ -3342,3 +3342,27 @@ An unread turn comes first; once it is seen, the card stays in Your move as *Rea
 Screenshots looked at. The first run showed *applied* next to the **old** values (the table is the fetch from before the update); rows with a mark now show the value the last check saw, and the walk checks it. One walk step (`Shift+F` twice) failed twice in about ten runs when the second press came 150 ms after the first; the walk now waits for the first press's message, and it passed four runs in a row. `walk-card` 66/66.
 
 **Not yet:** what the tool shows when an update fails (not seen at VU; for now no SuccessMessage is *"didn't confirm"*); a key to fetch the whole list again after *applied* (calculated fields may change others); Prod updates, which stay off.
+
+## 135. Verify: start the test-data tool from the panel
+
+2026-10-09. The owner: when the scenario runner (the test-data tool) isn't running, let the panel start it. §133 left this as its *Not yet* (the file's `start` was a hint, never run).
+
+**What changed.**
+- **Config:** `builder.launch`, a command or up to three (an API and its UI, each its own process), and `builder.cwd`, the folder they run in (absolute; unset, the home folder). The `start` hint stays a hint and is never run, so a file written for §133 runs nothing new. Names, paths and commands live in the machine's `verify.json`, never the repo.
+- **Server** (`server/verify-launch.ts`, `BuilderLauncher`): `builder.launch` runs the file's commands (shell, no Claude Code session markers or `CC_CONTROL_*` secrets in their environment); the page sends no command, only asks. Refused when there is no `launch` or `url`, the folder is missing, or the tool already answers (one started by hand is never touched; Stop says it wasn't started here). It then asks the API (`BuilderTool.answers`, the guarded scenarios read: any answer counts) every 1.5 s: *starting* → *up*; a command that exits non-zero → *exited*, the others stopped, with its exit code and last 30 lines (colour codes stripped); one that exits 0 while starting is taken as handing off and the wait goes on; no answer in 5 minutes → *slow*, left running. `builder.halt` stops what it started; so does the server going away (`killTree`, now exported from `recipes.ts`). Output is kept in memory only and sent only when it didn't come up: the tool may print loan ids.
+- **Protocol 33:** `builder.launch`, `builder.halt` → `builder.proc { state, startedAt, exitCode, tail }`, also sent to every page on a change and on connect when not *off*.
+- **The section:** not answering, with `launch` set: a box with **Start it (`Shift+S`)**, the commands and folder; while starting, a counter and **Stop (`Shift+K`)**; *exited* shows the code and last lines with *Start it again*; *up* reads the scenarios without a key and offers *Stop it* under Run. The not-running message says *Start it with Shift+S* instead of the hint. A failed read now drops the old list, so a stopped tool doesn't offer runs. Legend (`verifyLaunch`), a `?` row, README; `pnpm run doctor` says how many commands `Shift+S` runs and where, or warns of a missing folder.
+
+**Verified:** `pnpm typecheck`, `tsc --noUnusedLocals`, `pnpm test` (452; new: the launcher with fake processes: starting → up, a failed command's code and tail and the others stopped, a clean exit handing off, slow then Stop, exited after up, the refusals, stopAll, its environment; `cleanVerify`'s `launch` and `cwd`; `answers`; the legend). `walk-verify` 119/119 light and dark, with `standins/builder-start.cjs` (a failing launch: exit code 3 and its lines; a good one: starting, up, the scenarios read, Shift+K freeing the port, the list gone); screenshots looked at (the header's Stop wrapped the other buttons in the 400 px panel, so it moved under Run). `walk-card` 66/66 light and dark, `walk-hub` 41/41. `walk-perf` not run.
+
+**Not yet:** checking it against the real tool at VU (the owner adds `launch` and `cwd` to the machine's file).
+
+## 136. MVP pace: lighter checks per change
+
+2026-10-09. The owner: cc-control is still getting to MVP, so performance and regression don't need guarding as heavily as they have been; develop faster.
+
+**The rules now** (`CLAUDE.md`, `docs/prompts/continue.md`, `docs/prompts/continue-try-it-robustness.md`):
+- Before a commit: `pnpm typecheck` and `pnpm test`. `tsc --noUnusedLocals` when convenient.
+- Run the walk for the feature you changed, in one theme. Both themes and screenshots only for a visible UI change worth a look.
+- `walk-card`, `walk-hub` and `walk-perf` aren't required per commit any more: run them when the change touches the open card, sessions in the app or speed, or before a showcase.
+- Push when that passes. Asking before restarting the owner's server on :7777, and never committing internal names, stay as they were.

@@ -83,6 +83,9 @@ test('the Ticket Line bar follows the view and the new-card panel', () => {
   const builder = labels({ view: 'drawer', panel: 'verify', verifySection: 'builder', bindings: {} });
   assert.deepEqual(builder.slice(1, 10), ['Run (twice)', 'Scenario', 'Filter', 'Re-read', 'Fetch the loan', 'Copy', 'Its page', 'Section', 'Dev / UAT'], 'the test-data section (§133): Enter twice runs');
   assert.ok(!builder.includes('Prod'), 'no Prod for the test-data tool');
+  assert.ok(!builder.includes('Start it') && !builder.includes('Stop it'), 'nothing to start or stop unless the file says how');
+  assert.ok(labels({ view: 'drawer', panel: 'verify', verifySection: 'builder', verifyLaunch: 'start', bindings: {} }).includes('Start it'), '§135: not running, Shift+S starts it');
+  assert.ok(labels({ view: 'drawer', panel: 'verify', verifySection: 'builder', verifyLaunch: 'stop', bindings: {} }).includes('Stop it'), '§135: started here, Shift+K stops it');
   assert.deepEqual(labels({ view: 'drawer', canAdd: true, hasWaiting: true, bindings: {} }).slice(7, 10), ['How it runs', 'Add context', 'Take back']);
   assert.deepEqual(labels({ view: 'drawer', hasWorktrees: true, bindings: {} }).slice(-2), ['Worktrees', 'Remove card'], 'a worktree card: Shift+X before Delete');
   assert.ok(!labels({ view: 'drawer', bindings: {} }).includes('Worktrees'));

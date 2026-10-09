@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { MAX_IDS, VERIFY_ENVS, setUrl, splitFieldLines, type EnvCheck, type FieldCheck, type FieldListsFile, type VerifyEnv, type VerifyFile } from '../shared/verify.ts';
 import { BuilderTool } from './verify-builder.ts';
+import { BuilderLauncher } from './verify-launch.ts';
 import { deleteFieldList, explain, FIELD_LISTS_FILE, FileWatch, LookupTool, readFieldLists, Requester, saveFieldList, SetTool, VerifyFileWatch } from './verify.ts';
 import { KEY_HINTS, NEW_CARD_LOOKS, PROTOCOL, type ClientMsg, type ImageAttachment, type RepoInfo, type ServerMsg, type Settings, type TranscriptItem, type Workspace } from '../shared/protocol.ts';
 import { addPath, removePath, repoName, samePath, suggestSources, WORKSPACE_COLORS } from '../shared/workspaces.ts';
@@ -366,6 +367,8 @@ const verifyRequests = new Requester(verifyConfig);
 const setTool = new SetTool(verifyConfig, verifyRequests);
 const lookupTool = new LookupTool(verifyConfig, verifyRequests);
 const builderTool = new BuilderTool(verifyConfig);
+// §135: Start runs the Verify file's own launch commands; every page hears how it goes.
+const builderLauncher = new BuilderLauncher({ cfg: verifyConfig, answers: () => builderTool.answers(), changed: (proc) => broadcast({ type: 'builder.proc', proc }) });
 
 /** One environment's answer: each id through ValidateField (four at a time), with the cached set's version beside it. */
 async function checkEnv(env: VerifyEnv, ids: string[]): Promise<EnvCheck> {
@@ -1009,6 +1012,12 @@ async function handle(ws: WebSocket, msg: ClientMsg): Promise<void> {
     case 'builder.status':
       send(ws, { type: 'builder.run', reqId: msg.reqId, run: await builderTool.run(String(msg.runId ?? '')) });
       return;
+    case 'builder.launch':
+      send(ws, { type: 'builder.proc', reqId: msg.reqId, proc: await builderLauncher.start() });
+      return;
+    case 'builder.halt':
+      send(ws, { type: 'builder.proc', reqId: msg.reqId, proc: builderLauncher.stop() });
+      return;
     case 'verify.lists.save':
     case 'verify.lists.delete': {
       // The lists file only: names and field ids, nothing else on disk.
@@ -1249,6 +1258,7 @@ wss.on('connection', (ws) => {
   send(ws, { type: 'hello', protocol: PROTOCOL });
   { const v = verifyNow(); send(ws, { type: 'verify.config', verify: { file: v.file, config: v.config, ...(v.problem ? { problem: v.problem } : {}) } }); }
   send(ws, listsMsg(listsNow()));
+  { const proc = builderLauncher.state(); if (proc.state !== 'off') send(ws, { type: 'builder.proc', proc }); }
   send(ws, snapshot());
   send(ws, { type: 'settings', settings: store.loadSettings() });
   send(ws, { type: 'prompts', prompts: store.loadPrompts() });
@@ -1340,6 +1350,7 @@ process.on('unhandledRejection', (reason) => {
 function shutdown(): void {
   manager.stopAll();
   runs.stopAll();
+  builderLauncher.stopAll();
   doors?.closeAll();
   channels.closeAll();
   typist.forgetAll();

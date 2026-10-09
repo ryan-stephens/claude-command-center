@@ -118,3 +118,12 @@ test('BuilderTool: not running says so, with the start hint; an error answer say
   await assert.rejects(tool(() => ({ status: 202, json: {} })).b.start('dev', 'sc-1', 1), /didn’t say which run/);
   await assert.rejects(new BuilderTool(() => ({})).scenarios(), /no "url"/);
 });
+
+test('BuilderTool.answers (§135): any answer counts, even an error; refused or silent doesn’t; with launch, not running points at Shift+S', async () => {
+  const refused = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+  assert.equal(await tool(() => refused).b.answers(), false);
+  assert.equal(await tool(() => Object.assign(new Error('t'), { name: 'TimeoutError' })).b.answers(), false);
+  assert.equal(await tool(() => ({ status: 500, json: {} })).b.answers(), true);
+  assert.equal(await tool(() => ({ status: 200, json: [] })).b.answers(), true);
+  await assert.rejects(tool(() => refused, { builder: { url: BASE, start: 'a hint', launch: ['run it'] } }).b.scenarios(), (e: Error) => e.message === 'The test-data tool isn’t running here. Start it with Shift+S.', 'the hint gives way to the key');
+});

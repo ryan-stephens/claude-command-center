@@ -6,7 +6,7 @@ import type { TicketTransition } from '../shared/tickets.ts';
 import type { ShipPlan, ShipRequest } from '../shared/ship.ts';
 import { PROTOCOL, type ClientMsg, type CommandPack, type FileHit, type FolderListing, type ImageAttachment, type RepoInfo, type ServerMsg, type WorkspaceFile } from '../shared/protocol.ts';
 import type { PromptContext } from '../shared/prompts.ts';
-import type { BuilderEnv, BuilderRun, BuilderScenario, EnvCheck, FieldChange, LookupResult, SetInfo, UpdateSent, VerifyEnv } from '../shared/verify.ts';
+import type { BuilderEnv, BuilderProc, BuilderRun, BuilderScenario, EnvCheck, FieldChange, LookupResult, SetInfo, UpdateSent, VerifyEnv } from '../shared/verify.ts';
 import { onCardChange, onStatusChange } from './attention.ts';
 import { haveOf, mergeTranscript } from './transcript-merge.ts';
 import { activeSession, flash, get, groupKeyOf, set, setFilter, syncSeen } from './store.ts';
@@ -275,6 +275,16 @@ export async function builderStart(env: BuilderEnv, scenarioId: string, version:
 /** How a run is going. Its loan ids and messages stay in this page's memory. */
 export async function builderStatus(runId: string): Promise<BuilderRun> {
   return (await request((reqId) => ({ type: 'builder.status', reqId, runId }), 20_000) as Extract<ServerMsg, { type: 'builder.run' }>).run;
+}
+
+/** §135: start the test-data tool with this machine's launch commands (the server has them; the page sends none). */
+export async function builderLaunch(): Promise<BuilderProc> {
+  return (await request((reqId) => ({ type: 'builder.launch', reqId }), 20_000) as Extract<ServerMsg, { type: 'builder.proc' }>).proc;
+}
+
+/** Stop what builderLaunch started. */
+export async function builderHalt(): Promise<BuilderProc> {
+  return (await request((reqId) => ({ type: 'builder.halt', reqId }), 10_000) as Extract<ServerMsg, { type: 'builder.proc' }>).proc;
 }
 
 /** Stop the card's run (every service and the session), or one service alone. */
@@ -565,6 +575,9 @@ function receive(msg: ServerMsg): void {
       return;
     case 'verify.lists':
       set({ verifyLists: msg.lists });
+      return;
+    case 'builder.proc':
+      set({ builderProc: msg.proc });
       return;
     case 'workspace.file':
       pendingWorkspaceFiles.get(msg.reqId)?.(msg.file);

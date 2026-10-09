@@ -4,10 +4,10 @@
 
 import { create } from 'zustand';
 import { ENV_NAME, type BuilderEnv, type BuilderRun, type BuilderScenario } from '../shared/verify.ts';
-import { flash } from './store.ts';
+import { flash, useStore } from './store.ts';
 import { ARM_MS, armed, POLL_MS, runPhase, visibleScenarios, type RunPhase } from './verify-model.ts';
 import { cap, fetchInLookup, toolName, useVerify } from './verify-state.ts';
-import { builderList, builderStart, builderStatus } from './ws.ts';
+import { builderHalt, builderLaunch, builderList, builderStart, builderStatus } from './ws.ts';
 
 export interface BuilderState {
   scenarios?: BuilderScenario[];
@@ -50,11 +50,49 @@ export async function loadScenarios(): Promise<void> {
     const scenarios = await builderList();
     put({ scenarios, up: true });
   } catch (e) {
-    put({ error: (e as Error).message, up: false });
+    // A list from before would offer runs on a tool that isn't there (§135: stopped, say).
+    put({ error: (e as Error).message, up: false, scenarios: undefined });
   } finally {
     put({ loading: false });
   }
 }
+
+/**
+ * §135, Shift+S (or Start): run the tool's launch commands from this machine's Verify file. The
+ * server waits for its API; when it answers, every page reads the scenarios (below).
+ */
+export async function startTool(): Promise<void> {
+  const b = useStore.getState().verify?.config.builder;
+  if (!b?.launch?.length) { flash(`${cap(toolName('builder'))} has no "launch" in this machine’s Verify file: add the command that starts it`); return; }
+  const p = useStore.getState().builderProc;
+  if (p.state === 'starting') { flash(`${cap(toolName('builder'))} is starting`); return; }
+  try {
+    useStore.setState({ builderProc: await builderLaunch() });
+    flash(`Starting ${toolName('builder')}`);
+  } catch (e) {
+    flash((e as Error).message);
+    // Already running (started by hand): read its list.
+    if (/already running/.test((e as Error).message)) void loadScenarios();
+  }
+}
+
+/** Shift+K (or Stop): stop what Start started. A tool started by hand is left alone (the server says so). */
+export async function stopTool(): Promise<void> {
+  try {
+    useStore.setState({ builderProc: await builderHalt() });
+    flash(`Stopped ${toolName('builder')}`);
+    void loadScenarios();
+  } catch (e) {
+    flash((e as Error).message);
+  }
+}
+
+// The tool came up, or went away: read the list again (a failure shows why, and offers Start again).
+useStore.subscribe((s, prev) => {
+  if (s.builderProc.state === prev.builderProc.state) return;
+  if (s.builderProc.state === 'up') { void loadScenarios(); flash(`${cap(toolName('builder'))} is up`); }
+  else if (s.builderProc.state === 'exited') void loadScenarios();
+});
 
 export function setBuilderFilter(filter: string): void { put({ filter, arm: null }); }
 

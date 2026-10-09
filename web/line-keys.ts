@@ -22,7 +22,7 @@ import {
 } from './line-model.ts';
 import { simpleKeys, simpleLook, switchLook } from './simple-keys.ts';
 import { withSimple } from './simple-model.ts';
-import { copyRunIds, fetchRunLoan, loadScenarios, moveScenario, runScenarioKey } from './verify-builder.ts';
+import { copyRunIds, fetchRunLoan, loadScenarios, moveScenario, runScenarioKey, startTool, stopTool } from './verify-builder.ts';
 import { armProd, cancelEdit, cap, clearRow, commitEdit, copyFields, currentSection, editRow, moveRow, openWatch, sendKey, unstageRow, cycleEnv, cycleSection, deleteList, openPage, refreshSets, runCheck, runLookup, saveList, setField, startSaveList, stepRecent, toggleAdvanced, toggleOnlyEmpty, toolName } from './verify-state.ts';
 import { addCardContext, answerCard, answerQuestionCard, focusCardTab, sayToCard, send, showDoor, startCard, stopRun, tryCard } from './ws.ts';
 import { IMAGE_ONLY_TEXT, MAX_IMAGES, pickImages, readImage, type Pasted } from './say-images.ts';
@@ -63,6 +63,7 @@ export const LINE_SECTIONS: { title: string; keys: [string, string][] }[] = [
       ['↑ ↓ / j k  ·  u  ·  z  ·  Backspace (Verify: record lookup, updates on)', 'Only when this machine’s Verify file allows updates, in Dev or UAT: choose a row  ·  edit it (a box, or its options; Enter stages it as old → new, Esc cancels, an empty edit is no change)  ·  take a staged change back  ·  stage a clear of the field (old → empty). Read-only and missing fields can’t be edited, and say why'],
       ['Shift+U  ·  w (Verify: record lookup, updates on)', 'Send the staged changes, after a second Shift+U within 4 s (never in Prod). The tool applies them in a couple of minutes: the page fetches the changed rows again every 10 s for 3 minutes and marks each pending, applied or differs  ·  the tool’s progress page for the update. To change more, fetch again'],
       ['↑ ↓ / j k  ·  /  ·  r (Verify: test data)', 'Choose a scenario of the scenario runner on this machine  ·  filter them by name, version or tag  ·  read the list again. Not running? The section says so, with how to start it when the Verify file has a start hint'],
+      ['Shift+S  ·  Shift+K (Verify: test data)', 'Start the tool when it isn’t running: the server runs the launch commands this machine’s Verify file gives (in its cwd) and waits up to 5 minutes for the API to answer, then reads the scenarios; if it stops first, its last lines show  ·  stop what was started here (a tool started by hand is left alone). It also stops with cc-control'],
       ['Enter  ·  f  ·  Shift+Y  ·  o (Verify: test data)', 'Run the scenario in Dev or UAT (e), after a second Enter within 4 s: it creates a test loan there; its steps follow as it runs (never Prod: Shift+P does nothing here)  ·  fetch the loan it made in the record lookup (its environment, the chosen list)  ·  copy the loan id  ·  the tool’s own page. Loan ids and step messages stay in the page'],
       ['f (Try it panel)', 'The highlighted service’s output full width, as it prints (its tab for each run, j k switch; / filters the lines, w wraps them, End goes back to the newest, q and r stop and start it from there). The panel shows the same output under the service, following the newest line until you scroll up'],
       ['[ / ] (a panel open)', 'Narrower / wider: the panel’s edge drags too, and the width is remembered'],
@@ -1009,6 +1010,9 @@ function verifyKeys(e: KeyboardEvent): boolean {
       case 'f': fetchRunLoan(); return true;
       case 'Y': copyRunIds(); return true;
       case 'o': openPage('builder'); return true;
+      // §135: start it with the machine's launch commands; stop what was started here.
+      case 'S': void startTool(); return true;
+      case 'K': void stopTool(); return true;
     }
   }
   return false;

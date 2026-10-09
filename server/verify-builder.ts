@@ -18,6 +18,9 @@ export type BuilderTransport = (req: VerifyRequest, signal: AbortSignal) => Prom
 
 export const BUILDER_TIMEOUT_MS = 10_000;
 
+/** The tool didn't answer at all: nothing listens at its address, or it hung. */
+export class NotAnswering extends Error {}
+
 /** Node's fetch: JSON in and out, no redirects followed, no credentials. */
 export const builderFetch: BuilderTransport = async (req, signal) => {
   const res = await fetch(req.url, {
@@ -112,10 +115,11 @@ export class BuilderTool {
     } catch (e) {
       const err = e as { name?: string; cause?: { code?: string } };
       if (err.cause?.code === 'ECONNREFUSED') {
-        const start = this.cfg().builder?.start;
-        throw new Error(`${this.name()} isn’t running here.${start ? ` To start it: ${start}` : ''}`);
+        const b = this.cfg().builder;
+        // §135: with launch commands, the page offers Start (Shift+S); without, the file's hint.
+        throw new NotAnswering(`${this.name()} isn’t running here.${b?.launch ? ' Start it with Shift+S.' : b?.start ? ` To start it: ${b.start}` : ''}`);
       }
-      if (err.name === 'TimeoutError' || err.name === 'AbortError') throw new Error(`${this.name()}: no answer in ${BUILDER_TIMEOUT_MS / 1000} s.`);
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') throw new NotAnswering(`${this.name()}: no answer in ${BUILDER_TIMEOUT_MS / 1000} s.`);
       throw new Error(`${this.name()}: ${(e as Error).message}`);
     }
     if (res.status >= 300) {
@@ -123,6 +127,11 @@ export class BuilderTool {
       throw new Error(`${this.name()} answered ${res.status}${said ? `: ${said}` : ''}.`);
     }
     return res.json;
+  }
+
+  /** §135: does it answer at all (any answer, even an error page, means something is listening)? */
+  async answers(): Promise<boolean> {
+    try { await this.scenarios(); return true; } catch (e) { return !(e instanceof NotAnswering); }
   }
 
   async scenarios(): Promise<BuilderScenario[]> {

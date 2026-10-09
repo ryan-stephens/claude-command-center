@@ -104,6 +104,12 @@ else {
   if (vc.builder?.url) line('ok', `${vc.builder.name ?? 'Test data'}`, `${vc.builder.url}${vc.builder.ui ? `, its page ${vc.builder.ui}` : ''}`, vc.builder.ui ? '' : 'Add "ui" (its web page) to the builder in the Verify file for o.');
   else if (raw && !isLoopback(raw)) line('warn', 'Test data', `"builder.url" isn’t on this machine (${raw})`, 'The scenario runner is only ever reached on localhost, 127.0.0.1 or [::1]; Verify ignores any other host.');
   else if (vc.builder) line('warn', `${vc.builder.name ?? 'Test data'}`, 'no "url"', 'Add the API’s address on this machine (http://localhost:…) to the builder in the Verify file.');
+  // §135: Shift+S starts it with these commands.
+  if (vc.builder?.launch) {
+    const cwd = vc.builder.cwd ?? 'your home folder';
+    if (vc.builder.cwd && !existsSync(vc.builder.cwd)) line('warn', `${vc.builder.name ?? 'Test data'}: start`, `its folder isn’t there: ${cwd}`, 'Set "cwd" in the builder to the tool’s folder (a full path).');
+    else line('ok', `${vc.builder.name ?? 'Test data'}: start`, `Shift+S runs ${vc.builder.launch.length} command${vc.builder.launch.length === 1 ? '' : 's'} in ${cwd}`);
+  } else if (vc.builder?.url) line('info', `${vc.builder.name ?? 'Test data'}: start`, 'not from the panel', 'Add "launch" (the command that starts it) and "cwd" to the builder in the Verify file, and Shift+S starts it when it isn’t running.');
 }
 {
   const fl = readFieldLists();
