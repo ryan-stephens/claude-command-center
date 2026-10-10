@@ -20,16 +20,13 @@ import { updatesOn } from '../../shared/verify.ts';
 import { BuilderTool } from '../../server/verify-builder.ts';
 import { branchOf, contextPack, firstMessageFor, keyFor, suggestApis, suggestRepos, titleFor, workText } from '../shared/context.ts';
 import { OPENERS, type ClaudeStatus, type Opener, type Preflight, type Session, type Snapshot, type TicketInfo } from '../shared/types.ts';
-import { checkLine, cleanAsk } from '../shared/data-check.ts';
-import type { DataCheck, DataCheckAsk } from '../shared/types.ts';
-import { KEEP_CHECKS, newCheck, runDataCheck, type DataDeps } from './data-check.ts';
+import { DataDesk, forClaude, waitOf } from './data.ts';
 import { applyHook, V2_EVENTS } from './hook-state.ts';
 import { focusOrOpen, linkDeps, makeSessionWorktrees, openTerminal, openVsCode, trust, writeLocalFiles } from './launch.ts';
 import { MyTickets } from './my-tickets.ts';
 import { SessionStore, V2_DIR } from './sessions.ts';
 import { refreshPr, ship, shipPlan, slackConfig } from './ship.ts';
 import { StackManager } from './stacks.ts';
-import { checkFields, envOf, idsFor, makeLoan } from './tools.ts';
 import { join } from 'node:path';
 
 const PORT = Number(process.env.CCV2_PORT || 7878);
@@ -87,6 +84,7 @@ function snapshot(): Snapshot {
       loans: Boolean(cfg.builder?.url),
       fields: Boolean(cfg.lookup?.url && cfg.lookup?.recordField),
       updates: updatesOn(cfg),
+      testData: desk.toolView(),
       fieldLists: readFieldLists().lists.map((l) => l.name),
       port: PORT,
     },
@@ -189,66 +187,9 @@ async function launch(body: Record<string, unknown>): Promise<Session> {
   return sessions.get(session.id)!;
 }
 
-// ---- Data checks (§139): a loan, its fields filled, applied, checked; run here, step by step -----
+// ---- The data tools (§140): loans, lookups and changes, for Claude and for you --------------------
 
-const dataDeps: DataDeps = {
-  makeLoan: (env, scenario) => makeLoan(builder, env, scenario),
-  lookup: { fetch: (env, loan, ids, advanced, opts) => lookup.fetch(env, loan, ids, advanced, opts), update: (token, changes) => lookup.update(token, changes) },
-  check: (env, loan, ids, expect, list) => checkFields(lookup, env, loan, ids, expect, list),
-  listIds: (name) => idsFor(name, undefined).ids,
-  updatesOn: () => updatesOn(verifyConfig()),
-};
-const checkRuns = new Map<string, Promise<DataCheck>>();
-/** A tool call answers within this (Node's fetch in the toolbelt gives up waiting for headers at 300 s). */
-const MAX_WAIT_S = 270;
-
-/** Start a data check for a session; it runs on here, and the session records each step. */
-function startCheck(s: Session, raw: Record<string, unknown>, by: DataCheck['by']): DataCheck {
-  const ask: DataCheckAsk = cleanAsk(raw);
-  if ((s.checks ?? []).some((c) => c.state === 'running')) throw new Error('A data check is already running for this session: wait for it (data_check_status) or let it finish.');
-  if (ask.list) idsFor(ask.list, undefined);
-  const first = newCheck(ask, by);
-  const put = (c: DataCheck, made?: { loans?: typeof s.loans; result?: typeof s.fields[number] }) => sessions.update(s.id, (x) => {
-    const checks = [...(x.checks ?? []).filter((y) => y.id !== c.id), c].slice(-KEEP_CHECKS);
-    const ended = c.state !== 'running' && (x.checks ?? []).find((y) => y.id === c.id)?.state === 'running';
-    const filled = c.steps.find((st) => st.name === 'apply')?.state === 'done';
-    return {
-      ...x, checks,
-      ...(made?.loans ? { loans: [...x.loans, ...made.loans] } : {}),
-      ...(made?.result ? { fields: [...x.fields, made.result] } : {}),
-      ...(ended && filled ? { evidence: [...x.evidence, { kind: 'note' as const, text: `Filled ${Object.keys(c.ask.set ?? {}).length} field(s) on ${c.loan} in ${c.ask.env === 'dev' ? 'Dev' : 'UAT'} through the record lookup; they applied`, at: Date.now(), ok: true }] } : {}),
-    };
-  });
-  put(first);
-  checkRuns.set(first.id, runDataCheck(first, dataDeps, put).finally(() => setTimeout(() => checkRuns.delete(first.id), 60_000)));
-  return first;
-}
-
-/** Wait up to `ms` for a check to end; then the check as it is. */
-async function waitCheck(sessionId: string, id: string, ms: number): Promise<DataCheck | undefined> {
-  const run = checkRuns.get(id);
-  if (run) await Promise.race([run, new Promise((r) => setTimeout(r, ms))]);
-  return sessions.get(sessionId)?.checks?.find((c) => c.id === id);
-}
-
-/** A check as Claude reads it: the line, the steps, the values and what differs. */
-function checkForClaude(c: DataCheck | undefined) {
-  if (!c) return 'No such data check.';
-  return {
-    id: c.id, state: c.state, summary: checkLine(c), loan: c.loan ?? null, steps: c.steps.filter((x) => x.state !== 'skipped'),
-    ...(c.result ? { matched: c.result.matched, total: c.result.total, differs: c.result.differs } : {}),
-    ...(c.values ? { values: c.values } : {}),
-    ...(c.watchUrl ? { updateProgress: c.watchUrl } : {}),
-    ...(c.state === 'running' ? { note: 'Still running: call data_check_status with this id to wait for it.' } : {}),
-  };
-}
-
-// A server that stopped mid-check left it running on paper: say so.
-for (const s of sessions.list()) {
-  if ((s.checks ?? []).some((c) => c.state === 'running')) {
-    sessions.update(s.id, (x) => ({ ...x, checks: (x.checks ?? []).map((c) => (c.state === 'running' ? { ...c, state: 'failed', endedAt: Date.now(), steps: c.steps.map((st) => (st.state === 'running' || st.state === 'waiting' ? { ...st, state: 'failed', text: st.state === 'running' ? 'Command Center stopped while this ran' : '' } : st)) } : c)) }));
-  }
-}
+const desk = new DataDesk({ sessions, builder, lookup, cfg: verifyConfig, changed: () => soon() });
 
 function needSession(id: string): Session {
   const s = sessions.get(id);
@@ -350,10 +291,22 @@ app.post('/api/sessions/:id/tried', (c) => {
   } catch (e) { return fail(c, e); }
 });
 app.get('/api/scenarios', async (c) => {
-  try { return c.json({ scenarios: (await builder.scenarios()).map((x) => ({ id: x.id, name: x.name, tags: x.tags })) }); } catch (e) { return fail(c, e); }
+  try { return c.json({ scenarios: await desk.scenarios() }); } catch (e) { return fail(c, e); }
 });
-app.post('/api/sessions/:id/checks', async (c) => {
-  try { return c.json({ check: startCheck(needSession(c.req.param('id')), await body(c), 'you') }); } catch (e) { return fail(c, e); }
+app.post('/api/test-data/start', async (c) => {
+  try { return c.json(await desk.startTool(0)); } catch (e) { return fail(c, e); }
+});
+app.post('/api/test-data/stop', (c) => {
+  try { return c.json(desk.stopTool()); } catch (e) { return fail(c, e); }
+});
+app.post('/api/sessions/:id/data/lookup', async (c) => {
+  try { return c.json({ event: await desk.lookup(needSession(c.req.param('id')), await body(c), 'you') }); } catch (e) { return fail(c, e); }
+});
+app.post('/api/sessions/:id/data/update', async (c) => {
+  try { return c.json({ event: await desk.update(needSession(c.req.param('id')), await body(c), 'you') }); } catch (e) { return fail(c, e); }
+});
+app.post('/api/sessions/:id/data/loan', async (c) => {
+  try { return c.json({ event: desk.startLoan(needSession(c.req.param('id')), await body(c), 'you') }); } catch (e) { return fail(c, e); }
 });
 app.get('/api/sessions/:id/ship', async (c) => {
   try { return c.json(await shipPlan(needSession(c.req.param('id')), slackConfig())); } catch (e) { return fail(c, e); }
@@ -409,6 +362,8 @@ app.post('/hooks/:event', async (c) => {
 });
 
 type Tool = (s: Session, args: Record<string, unknown>) => Promise<unknown>;
+/** A data event that failed reaches Claude as a tool error (it is on the Data panel either way). */
+const orFail = <T extends { state: string; error?: string } | undefined>(ev: T): T => { if (ev?.state === 'failed') throw new Error(ev.error ?? 'It failed.'); return ev; };
 const TOOLS: Record<string, Tool> = {
   session_info: async (s) => ({ key: s.key, title: s.title, branch: s.branch, repos: s.repos.map((r) => ({ name: r.name, dir: r.dir })), logs: stacks.logsDir(s.key), ticket: s.ticket ?? null, stack: stacks.view(s.id) ?? 'not running' }),
   stack_status: async (s) => {
@@ -433,30 +388,23 @@ const TOOLS: Record<string, Tool> = {
   },
   stack_restart: async (s, a) => { stacks.restart(s.id, String(a.service ?? 'ui')); return { restarted: a.service ?? 'ui' }; },
   stack_logs: async (s, a) => ({ lines: stacks.log(s.id, String(a.service ?? 'ui')).slice(-Math.min(Number(a.lines ?? 80), 400)).map((l) => l.text) }),
-  list_loan_scenarios: async () => (await builder.scenarios()).map((x) => ({ name: x.name, id: x.id, version: x.version, tags: x.tags })),
+  test_data_tool: async (_s, a) => {
+    const action = String(a.action ?? 'status');
+    if (action === 'start') return desk.startTool(waitOf(a.wait_seconds, 120_000));
+    if (action === 'stop') return desk.stopTool();
+    return desk.toolStatus();
+  },
+  list_loan_scenarios: async () => desk.scenarios(),
   make_test_loan: async (s, a) => {
-    const r = await makeLoan(builder, envOf(a.env), String(a.scenario ?? ''));
-    sessions.update(s.id, (x) => ({ ...x, loans: [...x.loans, ...r.loans] }));
-    return r;
+    const ev = desk.startLoan(s, a, 'claude');
+    return forClaude(orFail(await desk.wait(s.id, ev.id, waitOf(a.wait_seconds, 240_000))));
   },
-  check_fields: async (s, a) => {
-    const env = envOf(a.env);
-    const { ids, list } = idsFor(a.list ? String(a.list) : undefined, Array.isArray(a.fields) ? a.fields.map(String) : undefined);
-    const expect = (a.expect && typeof a.expect === 'object' ? a.expect : {}) as Record<string, string>;
-    const r = await checkFields(lookup, env, String(a.loan ?? ''), ids, expect, list);
-    sessions.update(s.id, (x) => ({ ...x, fields: [...x.fields, r.result] }));
-    return { matched: r.result.matched, total: r.result.total, differs: r.result.differs, values: r.values };
-  },
-  run_data_check: async (s, a) => {
-    const c = startCheck(s, a, 'claude');
-    const wait = Math.min(Math.max(Number(a.wait_seconds ?? 240), 0), MAX_WAIT_S) * 1000;
-    return checkForClaude(await waitCheck(s.id, c.id, wait));
-  },
-  data_check_status: async (s, a) => {
-    const id = typeof a.id === 'string' && a.id ? a.id : s.checks?.at(-1)?.id;
-    if (!id) return 'No data check has run in this session.';
-    const wait = Math.min(Math.max(Number(a.wait_seconds ?? 120), 0), MAX_WAIT_S) * 1000;
-    return checkForClaude(await waitCheck(s.id, id, wait));
+  lookup_fields: async (s, a) => forClaude(orFail(await desk.lookup(s, a, 'claude'))),
+  update_fields: async (s, a) => forClaude(orFail(await desk.update(s, a, 'claude'))),
+  data_status: async (s, a) => {
+    const id = typeof a.id === 'string' && a.id ? a.id : s.data?.at(-1)?.id;
+    if (!id) return 'Nothing has been looked up, changed or made in this session yet.';
+    return forClaude(await desk.wait(s.id, id, waitOf(a.wait_seconds, 120_000)));
   },
   add_evidence: async (s, a) => {
     const kind = a.kind === 'tests' ? 'tests' : 'note';
@@ -502,6 +450,6 @@ setInterval(async () => {
 
 serve({ fetch: app.fetch, port: PORT, hostname: '127.0.0.1' }, () => console.log(`Command Center v2 on ${URL_SELF}`));
 
-const bye = () => { stacks.stopAll(); process.exit(0); };
+const bye = () => { stacks.stopAll(); desk.stopAll(); process.exit(0); };
 process.on('SIGINT', bye);
 process.on('SIGTERM', bye);

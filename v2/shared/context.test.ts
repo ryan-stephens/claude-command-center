@@ -36,5 +36,5 @@ test('the context pack has the ticket, the worktrees, the stack, the logs and on
   assert.match(pack, /web-app: `C:\/src\/web-app-shop-160`/);
   assert.match(pack, /fees-api\. Every other API comes from Dev/);
   assert.match(pack, /make_test_loan/);
-  assert.doesNotMatch(pack, /check_fields/);
+  assert.doesNotMatch(pack, /lookup_fields/);
 });

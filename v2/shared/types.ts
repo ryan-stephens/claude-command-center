@@ -59,46 +59,53 @@ export interface FieldCheckResult {
 
 export type EvidenceKind = 'tests' | 'tried' | 'loan' | 'fields' | 'note' | 'screenshot';
 
-/**
- * A data check (§139): a test loan made (or one given), fields filled through the record lookup,
- * waited on until they apply, then read and compared. Asked for by you from the Switchboard or by
- * Claude through the toolbelt; run by the server, step by step, in Dev or UAT only.
- */
-export interface DataCheckAsk {
-  env: 'dev' | 'uat';
-  /** Make a new loan from this scenario... */
-  scenario?: string;
-  /** ...or use this one. */
-  loan?: string;
-  /** Field id → the value to fill in ('' clears it). */
-  set?: Record<string, string>;
-  /** A saved field list to read as well. */
-  list?: string;
-  /** More field ids to read. */
-  fields?: string[];
-  /** Field id → the value it should have (what is set is expected too). */
-  expect?: Record<string, string>;
+/** One field as the record lookup showed it, and what was done or expected of it. */
+export interface FieldRow {
+  id: string;
+  /** Its value; null when the loan has no such field. */
+  value: string | null;
+  readOnly?: boolean;
+  /** It can be changed through the lookup (updates on, a details lookup). */
+  editable?: boolean;
+  /** The values it may take (a details lookup). */
+  options?: string[];
+  /** What it should be, and whether it is. */
+  expected?: string;
+  ok?: boolean;
+  /** An update: the value sent, and whether it shows yet. */
+  sent?: string;
+  applied?: 'applied' | 'pending' | 'differs';
 }
 
-export type DataStepName = 'loan' | 'set' | 'apply' | 'check';
-export type DataStepState = 'waiting' | 'running' | 'done' | 'failed' | 'skipped';
-
-export interface DataCheck {
+/**
+ * One use of the team's data tools in a session (§140): a record lookup, an update through it, or a
+ * test loan made by the test-data tool. By Claude through the toolbelt or by you from the page, kept
+ * on the session and shown on its Data panel as it happens.
+ */
+export interface DataEvent {
   id: string;
-  ask: DataCheckAsk;
-  by: 'you' | 'claude';
-  state: 'running' | 'passed' | 'differs' | 'failed';
-  steps: { name: DataStepName; state: DataStepState; text: string }[];
+  at: number;
+  by: 'claude' | 'you';
+  kind: 'lookup' | 'update' | 'loan';
+  env: 'dev' | 'uat';
+  state: 'running' | 'done' | 'failed';
+  /** One line: what it was and what came of it. */
+  title: string;
+  error?: string;
   loan?: string;
-  result?: FieldCheckResult;
-  /** What each field read as at the end (null: not there). */
-  values?: Record<string, string | null>;
-  /** The lookup's progress page for the update, when it gave one. */
+  rows?: FieldRow[];
+  /** A lookup: the saved list it read; details: read-only and options asked for. */
+  list?: string;
+  details?: boolean;
+  /** An update: the lookup's progress page, when it gave one. */
   watchUrl?: string;
-  startedAt: number;
+  /** A loan: the scenario, the run, its steps and the loans it made. */
+  scenario?: string;
+  runId?: string;
+  steps?: { order: number; type: string; status: string; error?: string }[];
+  loans?: string[];
   endedAt?: number;
 }
-
 export interface Evidence {
   kind: EvidenceKind;
   text: string;
@@ -132,8 +139,8 @@ export interface Session {
   claude: ClaudeStatus;
   loans: LoanMade[];
   fields: FieldCheckResult[];
-  /** Data checks, newest last (the last few kept). */
-  checks?: DataCheck[];
+  /** Lookups, updates and loans, newest last (the last few dozen kept). */
+  data?: DataEvent[];
   evidence: Evidence[];
   prs: ShippedPr[];
   /** When the review request was posted, and where. */
@@ -203,8 +210,10 @@ export interface Snapshot {
     slack?: { channel: string };
     loans: boolean;
     fields: boolean;
-    /** Fields can be filled through the record lookup on this machine (Dev and UAT). */
+    /** Fields can be changed through the record lookup on this machine (Dev and UAT). */
     updates: boolean;
+    /** The test-data tool: whether it can be started from here, and how it is (as started from here). */
+    testData: { name: string; launch: boolean; state: 'off' | 'starting' | 'up' | 'exited' | 'slow'; tail?: string[]; exitCode?: number | null };
     fieldLists: string[];
     port: number;
   };

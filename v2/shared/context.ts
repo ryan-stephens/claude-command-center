@@ -94,11 +94,12 @@ export function contextPack(p: PackInput): string {
   lines.push('## Tools (the command-center MCP server)', '');
   lines.push('- `session_info`: this session, its repos and branch.');
   lines.push('- `stack_status`, `stack_up`, `stack_add_api`, `stack_restart`, `stack_logs`: bring up and check the UI and APIs for this worktree. Adding an API rebuilds the UI\'s proxy file and restarts the UI.');
-  if (p.tools.loans) lines.push('- `list_loan_scenarios`, `make_test_loan`: create a test loan in Dev or UAT (never Prod).');
-  if (p.tools.loans && p.tools.fields) lines.push(`- \`run_data_check\`: the whole data proof in one call: a new test loan from a scenario (or a loan you name), ${p.tools.updates ? 'the fields you give filled in through the record lookup and waited on until they apply, ' : ''}then every field you name (or a saved list) read and compared with what you expect. It runs in Command Center, which shows each step on the Switchboard; \`data_check_status\` waits for one still running. Prefer it to the separate calls; work the fields and expected values out from the ticket's criteria.${p.tools.updates ? '' : ' (Filling fields is off on this machine: it only reads.)'}`);
-  if (p.tools.fields) lines.push(`- \`check_fields\`: read a loan's fields in Dev or UAT and compare them with what you expect.${p.tools.fieldLists.length ? ` Saved field lists: ${p.tools.fieldLists.join(', ')}.` : ''}`);
+  if (p.tools.loans) lines.push('- `test_data_tool`, `list_loan_scenarios`, `make_test_loan`: the test-data tool. Start it with `test_data_tool` (start) when it isn’t running; make a loan in Dev or UAT from a saved scenario (never Prod).');
+  if (p.tools.fields) lines.push(`- \`lookup_fields\`: read a loan's fields through the record lookup (\`details\` for read-only marks and options; \`expect\` to compare).${p.tools.fieldLists.length ? ` Saved field lists: ${p.tools.fieldLists.join(', ')}.` : ''}`);
+  if (p.tools.fields) lines.push(p.tools.updates ? '- `update_fields`: change a loan’s fields through the record lookup and wait until the change shows.' : '- `update_fields`: off on this machine (the record lookup only reads here).');
+  if (p.tools.loans || p.tools.fields) lines.push('- `data_status`: a loan still being made, or any lookup or change, by id.', '', 'Everything you do with these shows on the session’s Data panel in Command Center, so the user sees the loans, the fields and their values as you work. Work out which fields and values prove the change from the ticket’s criteria.');
   lines.push('- `add_evidence`: record what proves the change works (tests run, what you checked).');
   lines.push('- `ship`: push the branch, open the PRs with the evidence, and post the review request. Commit first; ask the user before shipping.');
-  lines.push('', 'Prove the change end to end before handing it over: bring the stack up, run a data check (a test loan, its fields filled and checked), then tell the user what to try.');
+  lines.push('', 'Prove the change end to end before handing it over: bring the stack up, make a test loan, set up and check its fields, then tell the user what to try.');
   return `${lines.join('\n')}\n`;
 }

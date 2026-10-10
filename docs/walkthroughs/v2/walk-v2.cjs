@@ -184,40 +184,74 @@ function toolbelt(sessionId, token) {
     await page.getByRole('button', { name: 'Take audit-api out' }).click();
     check('taking an API out stops it and drops its proxy rule', await until(async () => !(await state()).stacks[s.id].services.some((x) => x.name === 'audit-api'), 15000) && !JSON.parse(fs.readFileSync(`${V2DIR}/runs/stacks/${s.id}.proxy.conf.json`, 'utf8'))['/api/audit/**']);
 
-    // Loans and fields through the toolbelt.
+    // ---- The data tools (§140): the test-data tool started from its folder, loans, lookups, changes ----
+    const updates = () => fs.readFileSync(`${ROOT}/tools.log`, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.tool === 'lookup-update');
+    const verifyNow = JSON.parse(fs.readFileSync(VERIFY, 'utf8'));
+    // A second tool that isn't running yet, with the command that starts it in its folder.
+    fs.writeFileSync(VERIFY, JSON.stringify({ ...verifyNow, builder: { name: 'Sample data', url: 'http://127.0.0.1:18909', launch: ['node builder-start.cjs 18909 1500'], cwd: `${REPO}/docs/walkthroughs/simple-new-card/standins` } }, null, 2));
+    await sleep(600);
+    const tsNot = await tb.call('test_data_tool', { action: 'status' });
+    check('test_data_tool says it isn’t running', !tsNot.error && /"answering": false/.test(tsNot.text) && /"launch": true/.test(tsNot.text), tsNot.text.slice(0, 160));
+    const tsStart = await tb.call('test_data_tool', { action: 'start', wait_seconds: 30 });
+    check('test_data_tool starts it from its folder and waits until it answers', !tsStart.error && /"answering": true/.test(tsStart.text) && /"state": "up"/.test(tsStart.text), tsStart.text.slice(0, 200));
+    const scenStarted = await tb.call('list_loan_scenarios');
+    check('and its scenarios can be listed', !scenStarted.error && /Sample started here/.test(scenStarted.text));
+    await page.locator('.sess').getByRole('button', { name: /^Data/ }).click();
+    check('the Data panel shows it running, started here', await until(() => page.locator('.dpanel').getByText('running (started here)').isVisible(), 5000));
+    const tsStop = await tb.call('test_data_tool', { action: 'stop' });
+    check('test_data_tool stops what it started', !tsStop.error && /"state": "off"/.test(tsStop.text) && await until(async () => !(await fetch('http://127.0.0.1:18909/api/scenarios').then(() => true, () => false)), 5000));
+    fs.writeFileSync(VERIFY, JSON.stringify(verifyNow, null, 2));
+    await sleep(600);
+
     const scen = await tb.call('list_loan_scenarios');
     check('list_loan_scenarios lists the stand-in scenarios', !scen.error && /Sample purchase/.test(scen.text));
     const prod = await tb.call('make_test_loan', { env: 'prod', scenario: 'Sample purchase' });
     check('a Prod loan is refused', prod.error && /never Prod/.test(prod.text));
     const loanR = await tb.call('make_test_loan', { env: 'dev', scenario: 'Sample purchase' });
     const loan = (/"loan": "([^"]+)"/.exec(loanR.text) || [])[1];
-    check('make_test_loan waits for the run and returns the loan', !loanR.error && Boolean(loan), loanR.text.slice(0, 160));
-    const fieldsR = await tb.call('check_fields', { env: 'dev', loan, list: 'Sample fields', expect: { '1000': '12.50' } });
-    check('check_fields reads the list and compares', !fieldsR.error && /"matched": 2/.test(fieldsR.text), fieldsR.text.slice(0, 160));
-    check('the session shows the loan and the field check', await until(() => page.locator('.sess').getByText(loan).isVisible(), 5000) && await page.locator('.sess').getByText('2 / 2').isVisible());
-    // A data check (§139): Claude asks once; the server makes the loan, fills two fields, waits until they apply, checks.
-    const dprod = await tb.call('run_data_check', { env: 'prod', scenario: 'Sample purchase', fields: ['1000'] });
-    check('a Prod data check is refused', dprod.error && /never Prod/.test(dprod.text));
-    const dc = await tb.call('run_data_check', { env: 'dev', scenario: 'Sample purchase', set: { 'CX.SAMPLE.ONE': 'No', 'CX.AMOUNT': '2500' }, list: 'Sample fields', expect: { '1000': '12.50' }, wait_seconds: 120 });
-    const dcj = dc.error ? {} : JSON.parse(dc.text);
-    check('run_data_check makes a loan, fills, waits for it to apply and checks', dcj.state === 'passed' && dcj.matched === 3 && dcj.total === 3 && dcj.values?.['CX.AMOUNT'] === '2,500.00', dc.text.slice(0, 300));
-    const updates = () => fs.readFileSync(`${ROOT}/tools.log`, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.tool === 'lookup-update');
+    check('make_test_loan follows the run and returns the loan', !loanR.error && Boolean(loan) && /"state": "done"/.test(loanR.text), loanR.text.slice(0, 200));
+    const fieldsR = await tb.call('lookup_fields', { env: 'dev', loan, list: 'Sample fields', expect: { '1000': '12.50' } });
+    check('lookup_fields reads the list and compares', !fieldsR.error && /"ok": true/.test(fieldsR.text) && /Yes & no/.test(fieldsR.text), fieldsR.text.slice(0, 200));
+    check('the session shows the loan and the field check', await until(() => page.locator('.sess').getByText(loan).first().isVisible(), 5000) && await page.locator('.sess').getByText('2 / 2').isVisible());
+    const detR = await tb.call('lookup_fields', { env: 'dev', loan, fields: ['1000', 'CX.SAMPLE.ONE', 'CX.AMOUNT'], details: true });
+    const det = detR.error ? {} : JSON.parse(detR.text);
+    const row = (id) => (det.fields || []).find((f) => f.id === id) || {};
+    check('details say what is read-only, what can change and its options', row('1000').readOnly === true && row('CX.SAMPLE.ONE').editable === true && (row('CX.SAMPLE.ONE').options || []).includes('No'), detR.text.slice(0, 200));
+    const prodLook = await tb.call('lookup_fields', { env: 'prod', loan, fields: ['1000'] });
+    check('a Prod lookup is refused', prodLook.error && /never Prod/.test(prodLook.text));
+    const upd = await tb.call('update_fields', { env: 'dev', loan, set: { 'CX.SAMPLE.ONE': 'no', 'CX.AMOUNT': '2500' }, wait_seconds: 60 });
+    const updJ = upd.error ? {} : JSON.parse(upd.text);
+    check('update_fields changes two fields and waits until they show', /all applied/.test(updJ.summary || '') && (updJ.fields || []).find((f) => f.id === 'CX.AMOUNT')?.value === '2,500.00' && (updJ.fields || []).find((f) => f.id === 'CX.SAMPLE.ONE')?.sent === 'No', upd.text.slice(0, 260));
     const writes = updates();
-    check('one update went to the lookup, with exactly the two fields', writes.length === 1 && writes[0].count === 2 && writes[0].ids.sort().join(',') === 'CX.AMOUNT,CX.SAMPLE.ONE', JSON.stringify(writes.map((w) => w.ids)));
-    check('the Switchboard shows the check passed, step by step', await until(() => page.locator('.dcheck.passed').getByText('all 2 applied').isVisible(), 5000));
-    const ro = await tb.call('run_data_check', { env: 'dev', loan: dcj.loan, set: { '1000': '13.00' } });
-    check('filling a read-only field fails before anything is sent', !ro.error && /Can’t fill 1000/.test(ro.text) && updates().length === 1, ro.text.slice(0, 200));
-    // From the page: a check on the loan just made, with an expected value that differs.
-    await page.locator('.sess').getByRole('button', { name: 'Test data' }).click();
-    await page.getByRole('button', { name: 'One I have' }).click();
-    await page.getByLabel('Loan id').fill(dcj.loan);
-    await page.locator('.dform textarea').nth(1).fill('CX.SAMPLE.ONE = Yes & no\nCX.AMOUNT = 2500');
-    await shot(page, 'data-check-form');
-    await page.getByRole('button', { name: 'Run the check' }).click();
-    check('a check from the page (nothing filled) shows what differs', updates().length === 1 && await until(() => page.locator('.dcheck.differs .ddiff').getByText('CX.SAMPLE.ONE').isVisible(), 15000) && await page.locator('.ddiff').getByText('Yes & no').isVisible());
-    await shot(page, 'data-check-differs');
+    check('one update went to the lookup, with exactly those two fields', writes.length === 1 && writes[0].count === 2 && writes[0].ids.sort().join(',') === 'CX.AMOUNT,CX.SAMPLE.ONE', JSON.stringify(writes.map((w) => w.ids)));
+    const ro = await tb.call('update_fields', { env: 'dev', loan, set: { '1000': '13.00' } });
+    check('changing a read-only field is refused with nothing sent', ro.error && /1000 is read-only/.test(ro.text) && updates().length === 1, ro.text.slice(0, 200));
+    check('the Data panel shows the refused change first, saying why', await until(() => page.locator('.devent.failed').first().getByText(/1000 is read-only/).isVisible(), 5000));
+    const changed = page.locator('.devent', { hasText: /2 field\(s\) changed/ });
+    await changed.locator('.devent-head').click();
+    check('and Claude’s change with what was sent', await until(() => changed.locator('td', { hasText: '2,500.00' }).isVisible(), 5000));
+    await shot(page, 'data-panel');
+
+    // From the page: look a loan up with details, change a field in place, make a loan.
+    await page.locator('.dpanel').getByRole('button', { name: 'Look up fields' }).click();
+    check('the lookup form starts with the last loan', await page.locator('.dpanel').getByLabel('Loan id').inputValue() === loan);
+    await page.locator('.dpanel').getByLabel('Saved field list').selectOption('Sample fields');
+    await page.locator('.dform').getByRole('button', { name: 'Look up', exact: true }).click();
+    const sel = page.locator('.devent').first().getByLabel('New value for CX.SAMPLE.ONE');
+    check('a details lookup from the page offers the field’s options to change it', await until(() => sel.isVisible(), 10000) && await page.locator('.devent').first().getByText('read-only').first().isVisible());
+    await sel.selectOption('Yes & no');
+    await page.getByRole('button', { name: 'Change 1 field(s) in Dev' }).click();
+    check('the first press only asks to be sure', updates().length === 1 && await page.getByRole('button', { name: /Send 1 change\(s\) to Dev: sure\?/ }).isVisible());
+    await shot(page, 'data-edit');
+    await page.getByRole('button', { name: /Send 1 change\(s\) to Dev/ }).click();
+    check('the second sends it, and it shows as applied', await until(() => page.locator('.devent').first().getByText(/1 field\(s\) changed .*all applied/).isVisible(), 45000) && updates().length === 2 && updates()[1].ids.join(',') === 'CX.SAMPLE.ONE');
+    await page.locator('.dpanel').getByRole('button', { name: 'New loan' }).click();
+    await page.locator('.dpanel').getByRole('button', { name: 'Make the loan' }).click();
+    check('a loan made from the page shows its run, then the loan', await until(() => page.locator('.devent').first().getByText(/Sample purchase made /).isVisible(), 30000) && await page.locator('.devent').first().getByRole('button', { name: 'Look up' }).isVisible());
     st = await state();
-    check('the session keeps both checks, the loan and the fill as evidence', st.sessions[0].checks.length === 3 && st.sessions[0].evidence.some((e) => /Filled 2 field\(s\)/.test(e.text)));
+    check('the session keeps every lookup, change and loan, and the changes as evidence', st.sessions[0].data.length >= 8 && st.sessions[0].evidence.some((e) => /Changed CX.SAMPLE.ONE, CX.AMOUNT/.test(e.text)), String(st.sessions[0].data.length));
+    const last = await tb.call('data_status', {});
+    check('data_status gives the latest', !last.error && /"kind": "loan"/.test(last.text));
     await tb.call('add_evidence', { kind: 'tests', text: '18 tests pass, 4 new' });
 
     // Claude needs you: the block turns orange, the HUD says Answer.

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { LogLine } from '../../shared/recipes.ts';
 import type { Health, ServiceView, Session, Snapshot, StackView } from '../shared/types.ts';
 import { ago, get, go, post } from './api.ts';
-import { CheckForm, CheckView } from './DataCheck.tsx';
+import { DataPanel, DataStrip } from './DataPanel.tsx';
 
 const healthWord: Record<Health, string> = { up: 'up', starting: 'starting', unhealthy: 'unhealthy', failed: 'failed', stopped: 'stopped' };
 const dotOf = (h: Health) => (h === 'up' ? 'up' : h === 'starting' ? 'st' : h === 'stopped' ? 'off' : 'bad');
@@ -15,7 +15,7 @@ const claudeWord: Record<Session['claude']['state'], string> = { starting: 'open
 
 /** Does a session need looking at: Claude asks, or a service is down? */
 function troubled(s: Session, v?: StackView): boolean {
-  return s.claude.state === 'needs-you' || Boolean(v?.services.some((x) => isProblem(x.health))) || (s.fields.at(-1)?.differs.length ?? 0) > 0 || ['differs', 'failed'].includes(s.checks?.at(-1)?.state ?? '');
+  return s.claude.state === 'needs-you' || Boolean(v?.services.some((x) => isProblem(x.health))) || (s.fields.at(-1)?.differs.length ?? 0) > 0 || s.data?.at(-1)?.state === 'failed';
 }
 
 export function Switchboard({ snap }: { snap: Snapshot }) {
@@ -84,11 +84,12 @@ export function Switchboard({ snap }: { snap: Snapshot }) {
 function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Snapshot; act: (p: Promise<unknown>) => void }) {
   const [logs, setLogs] = useState<string | null>(null);
   const [menu, setMenu] = useState<'' | 'add' | 'more'>('');
-  const [checking, setChecking] = useState(false);
-  const lastCheck = s.checks?.at(-1);
-  const canCheck = snap.config.loans || snap.config.fields;
-  const dataButton = canCheck ? <button type="button" className="btn" aria-expanded={checking} onClick={() => setChecking(!checking)}>Test data</button> : null;
-  const dataPart = <>{checking && <CheckForm s={s} snap={snap} close={() => setChecking(false)} />}{lastCheck && <CheckView c={lastCheck} />}</>;
+  const [dataOpen, setDataOpen] = useState(false);
+  const busy = s.data?.some((e) => e.state === 'running');
+  const dataButton = snap.config.loans || snap.config.fields || s.data?.length
+    ? <button type="button" className={`btn${dataOpen ? ' dark' : ''}`} aria-expanded={dataOpen} onClick={() => setDataOpen(!dataOpen)}>Data{s.data?.length ? ` · ${s.data.length}` : ''}{busy ? ' …' : ''}</button>
+    : null;
+  const dataPart = dataOpen ? <DataPanel s={s} snap={snap} /> : <DataStrip s={s} open={() => setDataOpen(true)} />;
   const ws = snap.workspaces.find((w) => w.id === s.workspaceId);
   const ui = v?.services.find((x) => x.kind === 'ui');
   const apis = v?.services.filter((x) => x.kind === 'api') ?? [];
@@ -110,7 +111,7 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
           <button type="button" className="btn" onClick={() => go(`/ship/${s.id}`)}>Ship</button>
           <More s={s} open={menu === 'more'} toggle={() => setMenu(menu === 'more' ? '' : 'more')} act={act} />
         </span>
-        {(checking || lastCheck) && <div style={{ flexBasis: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>{dataPart}</div>}
+        {(dataOpen || s.data?.length) ? <div style={{ flexBasis: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>{dataPart}</div> : null}
       </section>
     );
   }

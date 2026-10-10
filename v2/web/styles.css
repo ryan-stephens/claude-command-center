@@ -132,15 +132,10 @@ input:focus, textarea:focus, select:focus, button:focus-visible, a:focus-visible
 .pick-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
 @media (max-width: 560px) { .pick-row { grid-template-columns: auto minmax(0, 1fr); } .pick-row > .chip, .pick-row > .mu { display: none; } }
 
-/* Data checks (§139): the form, and the latest check step by step. */
+/* Shared by the Data panel: forms, run steps, field tables. */
 .seg.small { min-height: 36px; padding: 0 12px; font-size: 14px; }
 .seg:disabled { opacity: .5; cursor: default; }
 .dform { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
-.dcols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 14px; }
-.dcol { display: flex; flex-direction: column; gap: 6px; }
-.dcol textarea { font-family: var(--mono); font-size: 13px; }
-.dcheck { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line-2); }
-.dcheck.differs, .dcheck.failed { border-color: var(--signal); background: var(--signal-soft); }
 .dsteps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 14px; }
 .dsteps li { display: flex; gap: 6px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
 .dmark { width: 14px; text-align: center; font-weight: 700; }
@@ -150,3 +145,16 @@ input:focus, textarea:focus, select:focus, button:focus-visible, a:focus-visible
 .ddiff { border-collapse: collapse; font-size: 13px; width: 100%; }
 .ddiff th { text-align: left; font-weight: 600; color: var(--muted); padding: 4px 10px 4px 0; }
 .ddiff td { padding: 4px 10px 4px 0; border-top: 1px dashed var(--line); overflow-wrap: anywhere; }
+
+/* The Data panel (§140): the team's data tools for a session, and everything done with them. */
+.dpanel { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
+.dstrip { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--card); color: var(--ink); cursor: pointer; font-size: 14px; }
+.dstrip.bad { border-color: var(--signal); background: var(--signal-soft); }
+.dstrip-title, .devent-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.devent { border: 1px solid var(--line-2); border-radius: 10px; background: var(--card); }
+.devent.bad { border-color: var(--signal); }
+.devent-head { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 10px 12px; border: 0; background: transparent; color: var(--ink); cursor: pointer; text-align: left; font-size: 14px; }
+.devent-body { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+.ddiff tr.bad td { color: var(--signal-text); }
+.ddiff input[type='text'], .ddiff select { min-height: 32px; font-size: 13px; padding: 0 8px; width: 100%; }
+.devent .dsteps .running .dmark { color: var(--muted); }
