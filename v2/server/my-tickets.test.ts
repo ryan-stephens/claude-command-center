@@ -15,10 +15,10 @@ function fakeJira(answer: (jql: string) => unknown[]): string[] {
   return asked;
 }
 
-test('your tickets: assigned to you and not done, Ready for PO left out, asked once a minute', async () => {
+test('your tickets: assigned to you and not done, Ready for PO and Prod left out, asked once a minute', async () => {
   const real = globalThis.fetch;
   try {
-    const asked = fakeJira(() => [issue('SHOP-1', 'In Progress'), issue('SHOP-2', 'Ready for PO'), issue('SHOP-3', 'To Do')]);
+    const asked = fakeJira(() => [issue('SHOP-1', 'In Progress'), issue('SHOP-2', 'Ready for PO'), issue('SHOP-3', 'To Do'), issue('SHOP-4', 'Ready for Prod')]);
     const m = new MyTickets(env);
     const r = await m.picks('');
     assert.equal(r.source, 'jira');

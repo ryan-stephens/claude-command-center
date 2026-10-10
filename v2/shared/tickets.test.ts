@@ -5,9 +5,10 @@ import type { TicketPick } from './types.ts';
 
 const p = (key: string, title: string, mine = true, status = 'In Progress'): TicketPick => ({ key, title, status, updatedAt: 0, mine });
 
-test('your list leaves out done tickets and Ready for PO; CCV2_JIRA_SKIP replaces the statuses, none keeps all', () => {
+test('your list leaves out done tickets, Ready for PO and Ready for Prod; CCV2_JIRA_SKIP replaces the statuses, none keeps all', () => {
   const skip = skipStatuses(undefined);
-  assert.deepEqual(skip, ['Ready for PO']);
+  assert.deepEqual(skip, ['Ready for PO', 'Ready for Prod']);
+  assert.equal(workable({ status: 'Ready for Prod', done: false }, skip), false);
   assert.equal(workable({ status: 'In Progress', done: false }, skip), true);
   assert.equal(workable({ status: 'ready for po', done: false }, skip), false);
   assert.equal(workable({ status: 'Done', done: true }, skip), false);

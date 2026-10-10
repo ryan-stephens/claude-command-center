@@ -1,11 +1,11 @@
 // The Launchpad's ticket picker: your tickets that are still yours to work on (assigned to you, not
-// done, not past the work: "Ready for PO" by default), and what a search finds elsewhere in Jira.
+// done, not past the work: "Ready for PO" and "Ready for Prod" by default), and what a search finds elsewhere in Jira.
 // Pure, so the page and the server share it.
 
 import type { TicketPick } from './types.ts';
 
 /** Statuses that are past the work, though Jira doesn't count them as done. CCV2_JIRA_SKIP replaces them. */
-export const SKIP_DEFAULT = ['Ready for PO'];
+export const SKIP_DEFAULT = ['Ready for PO', 'Ready for Prod'];
 
 /** The statuses to leave out of your list: a comma list, or the default; "none" leaves nothing out. */
 export function skipStatuses(setting: string | undefined): string[] {
