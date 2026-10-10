@@ -59,6 +59,17 @@ export interface FieldCheckResult {
 
 export type EvidenceKind = 'tests' | 'tried' | 'loan' | 'fields' | 'note' | 'screenshot';
 
+/**
+ * A field worth checking in this session (§142): picked by Claude or you (with why, and the value
+ * it should have), or found in the ticket's text or in the session's changes.
+ */
+export interface FieldPick {
+  id: string;
+  why?: string;
+  expect?: string;
+  from: 'claude' | 'you' | 'ticket' | 'changes';
+}
+
 /** One field as the record lookup showed it, and what was done or expected of it. */
 export interface FieldRow {
   id: string;
@@ -141,6 +152,8 @@ export interface Session {
   fields: FieldCheckResult[];
   /** Lookups, updates and loans, newest last (the last few dozen kept). */
   data?: DataEvent[];
+  /** The fields Claude or you picked to check for this work (§142); the ticket's and the changes' are found when asked. */
+  fieldPicks?: FieldPick[];
   evidence: Evidence[];
   prs: ShippedPr[];
   /** When the review request was posted, and where. */

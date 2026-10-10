@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { parseFieldLines } from '../shared/data-tools.ts';
-import type { DataEvent, FieldRow, Session, Snapshot } from '../shared/types.ts';
+import type { DataEvent, FieldPick, FieldRow, LoanMade, Session, Snapshot } from '../shared/types.ts';
 import { ago, get, post } from './api.ts';
 
 const KIND: Record<DataEvent['kind'], string> = { lookup: 'Lookup', update: 'Change', loan: 'Loan' };
@@ -50,7 +50,7 @@ export function DataPanel({ s, snap }: { s: Session; snap: Snapshot }) {
       </div>
       {setup && <ToolSetup snap={snap} done={() => setSetup(false)} />}
       {tool.tail && tool.tail.length > 0 && <pre className="preview" style={{ maxHeight: 140 }}>{tool.tail.join('\n')}</pre>}
-      {form === 'lookup' && <LookupForm s={s} snap={snap} loan={loanFor || s.loans.at(-1)?.loan || ''} done={() => setForm('')} />}
+      {form === 'lookup' && <LookupForm s={s} snap={snap} loan={loanFor} done={() => setForm('')} />}
       {form === 'loan' && <LoanForm s={s} done={() => setForm('')} />}
       {error && <div className="err" role="alert">{error}</div>}
       {!events.length && <div className="mu" style={{ fontSize: 14 }}>Nothing yet. What Claude looks up, changes or makes with these tools shows here as it happens; so does what you do.</div>}
@@ -123,30 +123,77 @@ function EnvPick({ env, set }: { env: 'dev' | 'uat'; set: (e: 'dev' | 'uat') => 
   return <>{(['dev', 'uat'] as const).map((e) => <button key={e} type="button" className={`seg small${env === e ? ' on' : ''}`} onClick={() => set(e)}>{envWord(e)}</button>)}</>;
 }
 
+const FROM: Record<FieldPick['from'], string> = { claude: 'Claude', you: 'you', ticket: 'ticket', changes: 'changes' };
+
+/** The ids box from picks: "ID = expected" where a value is expected, else the id. */
+export function picksText(picks: FieldPick[]): string {
+  return picks.map((p) => (p.expect !== undefined ? `${p.id} = ${p.expect}` : p.id)).join('\n');
+}
+
 function LookupForm({ s, snap, loan: given, done }: { s: Session; snap: Snapshot; loan: string; done: () => void }) {
   const [env, setEnv] = useState<'dev' | 'uat'>(s.loans.at(-1)?.env ?? 'dev');
   const [loan, setLoan] = useState(given);
   const [list, setList] = useState('');
   const [ids, setIds] = useState('');
   const [details, setDetails] = useState(snap.config.updates);
+  const [picks, setPicks] = useState<FieldPick[] | null>(null);
+  const [loans, setLoans] = useState<LoanMade[]>([]);
   const [error, setError] = useState('');
-  useEffect(() => setLoan(given), [given]);
+  // The session's loans and fields worth checking: the newest loan and every pick go in to begin with.
+  const load = (fill: boolean) => get<{ fields: FieldPick[]; loans: LoanMade[] }>(`/api/sessions/${s.id}/fields`).then((r) => {
+    setPicks(r.fields);
+    setLoans(r.loans);
+    if (fill) {
+      setLoan((l) => l || r.loans[0]?.loan || '');
+      if (r.loans[0] && !given) setEnv(r.loans[0].env);
+      setIds((x) => x || picksText(r.fields));
+    }
+  }).catch((e: Error) => setError(e.message));
+  useEffect(() => { void load(true); }, [s.fieldPicks?.length]);
+  useEffect(() => { if (given) setLoan(given); }, [given]);
   const go = () => {
     const p = parseFieldLines(ids);
     setError('');
     post(`/api/sessions/${s.id}/data/lookup`, { env, loan, ...(list ? { list } : {}), fields: p.ids, details, ...(Object.keys(p.values).length ? { expect: p.values } : {}) }).then(done).catch((e: Error) => setError(e.message));
   };
+  const unpick = (id: string) => { post(`/api/sessions/${s.id}/fields`, { fields: [], remove: [id] }).then(() => load(false)).catch((e: Error) => setError(e.message)); };
   return (
     <div className="dform" role="group" aria-label="Look up fields">
       <div className="row" style={{ gap: 8 }}>
         <EnvPick env={env} set={setEnv} />
-        <input type="text" className="mono" aria-label="Loan id" value={loan} onChange={(e) => setLoan(e.target.value)} placeholder="loan id" style={{ flex: '1 1 300px' }} />
+        <input type="text" className="mono" aria-label="Loan id" value={loan} onChange={(e) => setLoan(e.target.value)} placeholder="loan id (guid)" style={{ flex: '1 1 300px' }} />
+        {loans.length > 0 && (
+          <select aria-label="A loan from this session" value="" onChange={(e) => { const l = loans.find((x) => x.loan === e.target.value); if (l) { setLoan(l.loan); setEnv(l.env); } }}>
+            <option value="">Loans made here ({loans.length})</option>
+            {loans.map((l) => <option key={`${l.loan}${l.at}`} value={l.loan}>{l.loan.slice(0, 8)}… · {envWord(l.env)} · {l.scenario} · {ago(l.at)}</option>)}
+          </select>
+        )}
+      </div>
+      <div className="picks-box">
+        <div className="row" style={{ gap: 8, alignItems: 'baseline' }}>
+          <span className="cap">Fields to check for this session</span>
+          <span className="mu" style={{ fontSize: 13 }}>{picks === null ? 'finding…' : picks.length ? `${picks.length}: Claude’s and yours, the ticket’s, and the ones in the changes` : 'none yet: Claude picks them as it works (set_fields_to_check), and ids in the ticket or the changes show here'}</span>
+          {picks && picks.length > 0 && <button type="button" className="btn small" style={{ marginLeft: 'auto' }} onClick={() => setIds(picksText(picks))}>Fill the box with these</button>}
+        </div>
+        {picks && picks.length > 0 && (
+          <div className="row" style={{ gap: 6 }}>
+            {picks.map((p) => (
+              <span key={p.id} className={`chip pick-chip ${p.from}`} title={[p.why, p.expect !== undefined ? `should be ${p.expect}` : ''].filter(Boolean).join(' · ')}>
+                <span className="mono">{p.id}</span>{p.expect !== undefined && <span className="mu">= {p.expect}</span>}<span className="from">{FROM[p.from]}</span>
+                {(p.from === 'claude' || p.from === 'you') && <button type="button" className="x" aria-label={`Drop ${p.id}`} onClick={() => unpick(p.id)}>×</button>}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="row" style={{ gap: 8 }}>
         <select aria-label="Saved field list" value={list} onChange={(e) => setList(e.target.value)}>
           <option value="">No saved list</option>
           {snap.config.fieldLists.map((l) => <option key={l} value={l}>{l}</option>)}
         </select>
+        <span className="mu" style={{ fontSize: 13 }}>and these, one a line (ID = value to expect one):</span>
       </div>
-      <textarea aria-label="Field ids" rows={3} value={ids} onChange={(e) => setIds(e.target.value)} placeholder={'Field ids, one a line (ID = value to expect one)'} className="mono" />
+      <textarea aria-label="Field ids" rows={Math.min(8, Math.max(3, ids.split('\n').length))} value={ids} onChange={(e) => setIds(e.target.value)} placeholder="CX.SAMPLE.ONE" className="mono" />
       <div className="row" style={{ gap: 10 }}>
         <label className="pick"><input type="checkbox" checked={details} onChange={(e) => setDetails(e.target.checked)} /> Details: read-only, options{snap.config.updates ? ', and edit in place' : ''}</label>
         <button type="button" className="btn dark" style={{ marginLeft: 'auto' }} disabled={!loan.trim() || (!list && !ids.trim())} onClick={go}>Look up</button>
@@ -156,25 +203,51 @@ function LookupForm({ s, snap, loan: given, done }: { s: Session; snap: Snapshot
   );
 }
 
+interface Scenario { id: string; name: string; version: number; tags: string[] }
+
+/** Run a saved scenario: a filter, the list grouped by its first tag, then Dev or UAT. */
 function LoanForm({ s, done }: { s: Session; done: () => void }) {
   const [env, setEnv] = useState<'dev' | 'uat'>('dev');
-  const [scenarios, setScenarios] = useState<{ id: string; name: string; tags: string[] }[] | null>(null);
+  const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
   const [scenario, setScenario] = useState('');
+  const [filter, setFilter] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
-    get<{ scenarios: { id: string; name: string; tags: string[] }[] }>('/api/scenarios')
-      .then((r) => { setScenarios(r.scenarios); setScenario(r.scenarios[0]?.name ?? ''); })
+    get<{ scenarios: Scenario[] }>('/api/scenarios')
+      .then((r) => setScenarios(r.scenarios))
       .catch((e: Error) => { setScenarios([]); setError(e.message); });
   }, []);
+  const words = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = (scenarios ?? []).filter((x) => words.every((w) => `${x.name} ${x.tags.join(' ')} v${x.version}`.toLowerCase().includes(w)));
+  const groups = new Map<string, Scenario[]>();
+  for (const x of shown) { const g = x.tags[0] ?? 'No tag'; groups.set(g, [...(groups.get(g) ?? []), x]); }
+  const chosen = scenarios?.find((x) => x.id === scenario);
   return (
     <div className="dform" role="group" aria-label="New loan">
       <div className="row" style={{ gap: 8 }}>
-        <EnvPick env={env} set={setEnv} />
-        <select aria-label="Scenario" value={scenario} onChange={(e) => setScenario(e.target.value)} style={{ flex: '1 1 260px' }}>
-          {scenarios === null ? <option>Loading…</option> : scenarios.map((x) => <option key={x.id} value={x.name}>{x.name}{x.tags.length ? ` · ${x.tags.join(', ')}` : ''}</option>)}
-        </select>
-        <button type="button" className="btn dark" disabled={!scenario} onClick={() => { setError(''); post(`/api/sessions/${s.id}/data/loan`, { env, scenario }).then(done).catch((e: Error) => setError(e.message)); }}>Make the loan</button>
+        <span className="cap">Run a saved scenario</span>
+        <input type="text" aria-label="Filter scenarios" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by name, tag or v2" style={{ flex: '1 1 240px' }} />
       </div>
+      <div className="scen-list" role="listbox" aria-label="Scenarios">
+        {scenarios === null && <div className="mu" style={{ padding: 8 }}>Reading the scenarios…</div>}
+        {scenarios && !shown.length && <div className="mu" style={{ padding: 8 }}>{scenarios.length ? 'No scenario matches.' : 'No scenarios.'}</div>}
+        {[...groups].map(([g, list]) => (
+          <div key={g}>
+            <div className="cap scen-group">{g}</div>
+            {list.map((x) => (
+              <div key={x.id} role="option" aria-selected={x.id === scenario} className={`scen${x.id === scenario ? ' on' : ''}`} onClick={() => setScenario(x.id)}>
+                <span>{x.name}</span><span className="mu mono" style={{ fontSize: 12 }}>v{x.version}</span>
+                <span className="mu" style={{ fontSize: 12 }}>{x.tags.slice(1).join(', ')}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="row" style={{ gap: 8 }}>
+        <EnvPick env={env} set={setEnv} />
+        <button type="button" className="btn dark" style={{ marginLeft: 'auto' }} disabled={!chosen} onClick={() => { setError(''); post(`/api/sessions/${s.id}/data/loan`, { env, scenario: chosen!.id }).then(done).catch((e: Error) => setError(e.message)); }}>{chosen ? `Make a loan from ${chosen.name} in ${envWord(env)}` : 'Pick a scenario'}</button>
+      </div>
+      <span className="note">A new scenario made for this ticket is coming once the tool’s create API is known; until then, run a saved one.</span>
       {error && <div className="err" role="alert">{error}</div>}
     </div>
   );

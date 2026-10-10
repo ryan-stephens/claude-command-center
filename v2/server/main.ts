@@ -17,6 +17,7 @@ import { DB_PATH, Store } from '../../server/store.ts';
 import { demoTickets, jiraConfig, TicketService } from '../../server/tickets.ts';
 import { LookupTool, readFieldLists, Requester, VERIFY_FILE, VerifyFileWatch } from '../../server/verify.ts';
 import { findInstalls, lookInFolder, saveStart } from './tool-setup.ts';
+import { cleanPicks, FieldPicks, mergePicks } from './field-picks.ts';
 import { updatesOn } from '../../shared/verify.ts';
 import { BuilderTool } from '../../server/verify-builder.ts';
 import { branchOf, contextPack, firstMessageFor, keyFor, suggestApis, suggestRepos, titleFor, workText } from '../shared/context.ts';
@@ -191,6 +192,25 @@ async function launch(body: Record<string, unknown>): Promise<Session> {
 // ---- The data tools (§140): loans, lookups and changes, for Claude and for you --------------------
 
 const desk = new DataDesk({ sessions, builder, lookup, cfg: verifyConfig, changed: () => soon() });
+const picks = new FieldPicks();
+
+/** What a lookup for this session starts with: the fields worth checking, and the loans made, newest first. */
+async function forLookup(s: Session) {
+  return { fields: await picks.list(s), loans: [...s.loans].reverse() };
+}
+
+/** Claude or you pick fields to check: added to the picks (or replacing them), each id once. */
+function pickFields(s: Session, a: Record<string, unknown>, from: 'claude' | 'you') {
+  const given = cleanPicks(a.fields, from);
+  const remove = Array.isArray(a.remove) ? a.remove.map((x) => String(x).toLowerCase()) : [];
+  sessions.update(s.id, (x) => {
+    const kept = a.replace === true ? [] : (x.fieldPicks ?? []).filter((p) => !remove.includes(p.id.toLowerCase()));
+    // A newer pick of the same id wins over the older one.
+    return { ...x, fieldPicks: mergePicks(given, kept) };
+  });
+  return sessions.get(s.id)!.fieldPicks ?? [];
+}
+
 
 function needSession(id: string): Session {
   const s = sessions.get(id);
@@ -313,6 +333,12 @@ app.post('/api/test-data/start', async (c) => {
 app.post('/api/test-data/stop', (c) => {
   try { return c.json(desk.stopTool()); } catch (e) { return fail(c, e); }
 });
+app.get('/api/sessions/:id/fields', async (c) => {
+  try { return c.json(await forLookup(needSession(c.req.param('id')))); } catch (e) { return fail(c, e); }
+});
+app.post('/api/sessions/:id/fields', async (c) => {
+  try { return c.json({ picked: pickFields(needSession(c.req.param('id')), await body(c), 'you') }); } catch (e) { return fail(c, e); }
+});
 app.post('/api/sessions/:id/data/lookup', async (c) => {
   try { return c.json({ event: await desk.lookup(needSession(c.req.param('id')), await body(c), 'you') }); } catch (e) { return fail(c, e); }
 });
@@ -415,6 +441,8 @@ const TOOLS: Record<string, Tool> = {
   },
   lookup_fields: async (s, a) => forClaude(orFail(await desk.lookup(s, a, 'claude'))),
   update_fields: async (s, a) => forClaude(orFail(await desk.update(s, a, 'claude'))),
+  fields_to_check: async (s) => ({ ...(await forLookup(s)), note: 'picked: by you or the user; ticket: named in the ticket; changes: in the lines this session added. Pick the ones that prove the change with set_fields_to_check (with why and the value each should have); they show in the Data panel’s lookup.' }),
+  set_fields_to_check: async (s, a) => ({ picked: pickFields(s, a, 'claude') }),
   data_status: async (s, a) => {
     const id = typeof a.id === 'string' && a.id ? a.id : s.data?.at(-1)?.id;
     if (!id) return 'Nothing has been looked up, changed or made in this session yet.';

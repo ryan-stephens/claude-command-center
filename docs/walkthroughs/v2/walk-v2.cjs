@@ -251,9 +251,23 @@ function toolbelt(sessionId, token) {
     check('and Claude’s change with what was sent', await until(() => changed.locator('td', { hasText: '2,500.00' }).isVisible(), 5000));
     await shot(page, 'data-panel');
 
+    // Fields to check (§142): Claude picks two; the session's changes name a third.
+    const payDir = s.repos.find((r) => r.name === 'payments-api').dir;
+    fs.writeFileSync(`${payDir}/limits.ts`, 'export const limit = read("CX.CHANGED.FIELD");\n');
+    git(payDir, 'add', 'limits.ts');
+    git(payDir, '-c', 'user.email=walk@example.invalid', '-c', 'user.name=walk', 'commit', '-q', '-m', 'feat: read the limit');
+    const pickR = await tb.call('set_fields_to_check', { fields: [{ id: 'CX.SAMPLE.ONE', why: 'the waiver choice', expect: 'No' }, { id: 'CX.AMOUNT', why: 'the waived amount' }] });
+    check('set_fields_to_check keeps Claude’s picks', !pickR.error && /"from": "claude"/.test(pickR.text) && /the waiver choice/.test(pickR.text), pickR.text.slice(0, 160));
+    const ftc = await tb.call('fields_to_check');
+    const ftcJ = ftc.error ? {} : JSON.parse(ftc.text);
+    check('fields_to_check: Claude’s picks, then the ids the changes added, and the loans made', (ftcJ.fields || []).map((f) => `${f.id}:${f.from}`).join(',') === 'CX.SAMPLE.ONE:claude,CX.AMOUNT:claude,CX.CHANGED.FIELD:changes' && ftcJ.loans?.[0]?.loan === loan, ftc.text.slice(0, 300));
+
     // From the page: look a loan up with details, change a field in place, make a loan.
     await page.locator('.dpanel').getByRole('button', { name: 'Look up fields' }).click();
-    check('the lookup form starts with the last loan', await page.locator('.dpanel').getByLabel('Loan id').inputValue() === loan);
+    check('the lookup form starts with the last loan', await until(async () => (await page.locator('.dpanel').getByLabel('Loan id').inputValue()) === loan, 5000));
+    check('and the session’s fields to check, with where each came from', await until(() => page.locator('.picks-box').getByText('CX.CHANGED.FIELD').isVisible(), 5000) && await page.locator('.pick-chip.claude', { hasText: 'CX.SAMPLE.ONE' }).isVisible() && await page.locator('.pick-chip.changes').isVisible());
+    check('the ids box is filled from them, with the expected value', /^CX\.SAMPLE\.ONE = No\nCX\.AMOUNT\nCX\.CHANGED\.FIELD$/.test(await page.locator('.dpanel').getByLabel('Field ids').inputValue()), JSON.stringify(await page.locator('.dpanel').getByLabel('Field ids').inputValue()));
+    await shot(page, 'fields-to-check');
     await page.locator('.dpanel').getByLabel('Saved field list').selectOption('Sample fields');
     await page.locator('.dform').getByRole('button', { name: 'Look up', exact: true }).click();
     const sel = page.locator('.devent').first().getByLabel('New value for CX.SAMPLE.ONE');
@@ -265,7 +279,10 @@ function toolbelt(sessionId, token) {
     await page.getByRole('button', { name: /Send 1 change\(s\) to Dev/ }).click();
     check('the second sends it, and it shows as applied', await until(() => page.locator('.devent').first().getByText(/1 field\(s\) changed .*all applied/).isVisible(), 45000) && updates().length === 2 && updates()[1].ids.join(',') === 'CX.SAMPLE.ONE');
     await page.locator('.dpanel').getByRole('button', { name: 'New loan' }).click();
-    await page.locator('.dpanel').getByRole('button', { name: 'Make the loan' }).click();
+    await page.locator('.dpanel').getByLabel('Filter scenarios').fill('purchase');
+    await page.locator('.scen', { hasText: 'Sample purchase' }).click();
+    await shot(page, 'new-loan');
+    await page.locator('.dpanel').getByRole('button', { name: 'Make a loan from Sample purchase in Dev' }).click();
     check('a loan made from the page shows its run, then the loan', await until(() => page.locator('.devent').first().getByText(/Sample purchase made /).isVisible(), 30000) && await page.locator('.devent').first().getByRole('button', { name: 'Look up' }).isVisible());
     st = await state();
     check('the session keeps every lookup, change and loan, and the changes as evidence', st.sessions[0].data.length >= 8 && st.sessions[0].evidence.some((e) => /Changed CX.SAMPLE.ONE, CX.AMOUNT/.test(e.text)), String(st.sessions[0].data.length));
@@ -298,7 +315,7 @@ function toolbelt(sessionId, token) {
     await page.getByRole('button', { name: 'Open PRs and post' }).click();
     check('shipping pushes the branch', await until(async () => git(`${ROOT}/origins/fees-api.git`, 'branch', '--list').includes(s.branch), 15000));
     check('and posts the review request with the evidence and the mention', await until(async () => slack.length === 1, 8000) && /@payments/.test(slack[0].text) && /18 tests pass/.test(slack[0].text) && /Sample fields/.test(slack[0].text), JSON.stringify(slack[0] ?? {}).slice(0, 200));
-    check('it says the PR must be opened by hand on an unknown host', await page.getByText(/open its PR by hand/).isVisible());
+    check('it says each pushed repo’s PR must be opened by hand on an unknown host (fees-api and payments-api)', await page.getByText(/open its PR by hand/).first().isVisible() && (await page.getByText(/open its PR by hand/).count()) === 2);
 
     // ---- Stop, remove ----
     await hook('PostToolUse', { session_id: 'claude-1', tool_name: 'Bash' });
