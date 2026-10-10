@@ -16,9 +16,13 @@ import { stackOf } from '../../server/stack.ts';
 import { DB_PATH, Store } from '../../server/store.ts';
 import { demoTickets, jiraConfig, TicketService } from '../../server/tickets.ts';
 import { LookupTool, readFieldLists, Requester, VerifyFileWatch } from '../../server/verify.ts';
+import { updatesOn } from '../../shared/verify.ts';
 import { BuilderTool } from '../../server/verify-builder.ts';
 import { branchOf, contextPack, firstMessageFor, keyFor, suggestApis, suggestRepos, titleFor, workText } from '../shared/context.ts';
 import { OPENERS, type ClaudeStatus, type Opener, type Preflight, type Session, type Snapshot, type TicketInfo } from '../shared/types.ts';
+import { checkLine, cleanAsk } from '../shared/data-check.ts';
+import type { DataCheck, DataCheckAsk } from '../shared/types.ts';
+import { KEEP_CHECKS, newCheck, runDataCheck, type DataDeps } from './data-check.ts';
 import { applyHook, V2_EVENTS } from './hook-state.ts';
 import { focusOrOpen, linkDeps, makeSessionWorktrees, openTerminal, openVsCode, trust, writeLocalFiles } from './launch.ts';
 import { MyTickets } from './my-tickets.ts';
@@ -82,6 +86,7 @@ function snapshot(): Snapshot {
       ...(slack ? { slack: { channel: slack.channel } } : {}),
       loans: Boolean(cfg.builder?.url),
       fields: Boolean(cfg.lookup?.url && cfg.lookup?.recordField),
+      updates: updatesOn(cfg),
       fieldLists: readFieldLists().lists.map((l) => l.name),
       port: PORT,
     },
@@ -116,7 +121,7 @@ async function findTicket(key: string): Promise<{ ticket?: TicketInfo; problem?:
 
 function toolsNow() {
   const cfg = verifyConfig();
-  return { loans: Boolean(cfg.builder?.url), fields: Boolean(cfg.lookup?.url && cfg.lookup?.recordField), fieldLists: readFieldLists().lists.map((l) => l.name) };
+  return { loans: Boolean(cfg.builder?.url), fields: Boolean(cfg.lookup?.url && cfg.lookup?.recordField), updates: updatesOn(cfg), fieldLists: readFieldLists().lists.map((l) => l.name) };
 }
 
 async function preflight(workspaceId: string, input: string): Promise<Preflight> {
@@ -182,6 +187,67 @@ async function launch(body: Record<string, unknown>): Promise<Session> {
     }
   }
   return sessions.get(session.id)!;
+}
+
+// ---- Data checks (§139): a loan, its fields filled, applied, checked; run here, step by step -----
+
+const dataDeps: DataDeps = {
+  makeLoan: (env, scenario) => makeLoan(builder, env, scenario),
+  lookup: { fetch: (env, loan, ids, advanced, opts) => lookup.fetch(env, loan, ids, advanced, opts), update: (token, changes) => lookup.update(token, changes) },
+  check: (env, loan, ids, expect, list) => checkFields(lookup, env, loan, ids, expect, list),
+  listIds: (name) => idsFor(name, undefined).ids,
+  updatesOn: () => updatesOn(verifyConfig()),
+};
+const checkRuns = new Map<string, Promise<DataCheck>>();
+/** A tool call answers within this (Node's fetch in the toolbelt gives up waiting for headers at 300 s). */
+const MAX_WAIT_S = 270;
+
+/** Start a data check for a session; it runs on here, and the session records each step. */
+function startCheck(s: Session, raw: Record<string, unknown>, by: DataCheck['by']): DataCheck {
+  const ask: DataCheckAsk = cleanAsk(raw);
+  if ((s.checks ?? []).some((c) => c.state === 'running')) throw new Error('A data check is already running for this session: wait for it (data_check_status) or let it finish.');
+  if (ask.list) idsFor(ask.list, undefined);
+  const first = newCheck(ask, by);
+  const put = (c: DataCheck, made?: { loans?: typeof s.loans; result?: typeof s.fields[number] }) => sessions.update(s.id, (x) => {
+    const checks = [...(x.checks ?? []).filter((y) => y.id !== c.id), c].slice(-KEEP_CHECKS);
+    const ended = c.state !== 'running' && (x.checks ?? []).find((y) => y.id === c.id)?.state === 'running';
+    const filled = c.steps.find((st) => st.name === 'apply')?.state === 'done';
+    return {
+      ...x, checks,
+      ...(made?.loans ? { loans: [...x.loans, ...made.loans] } : {}),
+      ...(made?.result ? { fields: [...x.fields, made.result] } : {}),
+      ...(ended && filled ? { evidence: [...x.evidence, { kind: 'note' as const, text: `Filled ${Object.keys(c.ask.set ?? {}).length} field(s) on ${c.loan} in ${c.ask.env === 'dev' ? 'Dev' : 'UAT'} through the record lookup; they applied`, at: Date.now(), ok: true }] } : {}),
+    };
+  });
+  put(first);
+  checkRuns.set(first.id, runDataCheck(first, dataDeps, put).finally(() => setTimeout(() => checkRuns.delete(first.id), 60_000)));
+  return first;
+}
+
+/** Wait up to `ms` for a check to end; then the check as it is. */
+async function waitCheck(sessionId: string, id: string, ms: number): Promise<DataCheck | undefined> {
+  const run = checkRuns.get(id);
+  if (run) await Promise.race([run, new Promise((r) => setTimeout(r, ms))]);
+  return sessions.get(sessionId)?.checks?.find((c) => c.id === id);
+}
+
+/** A check as Claude reads it: the line, the steps, the values and what differs. */
+function checkForClaude(c: DataCheck | undefined) {
+  if (!c) return 'No such data check.';
+  return {
+    id: c.id, state: c.state, summary: checkLine(c), loan: c.loan ?? null, steps: c.steps.filter((x) => x.state !== 'skipped'),
+    ...(c.result ? { matched: c.result.matched, total: c.result.total, differs: c.result.differs } : {}),
+    ...(c.values ? { values: c.values } : {}),
+    ...(c.watchUrl ? { updateProgress: c.watchUrl } : {}),
+    ...(c.state === 'running' ? { note: 'Still running: call data_check_status with this id to wait for it.' } : {}),
+  };
+}
+
+// A server that stopped mid-check left it running on paper: say so.
+for (const s of sessions.list()) {
+  if ((s.checks ?? []).some((c) => c.state === 'running')) {
+    sessions.update(s.id, (x) => ({ ...x, checks: (x.checks ?? []).map((c) => (c.state === 'running' ? { ...c, state: 'failed', endedAt: Date.now(), steps: c.steps.map((st) => (st.state === 'running' || st.state === 'waiting' ? { ...st, state: 'failed', text: st.state === 'running' ? 'Command Center stopped while this ran' : '' } : st)) } : c)) }));
+  }
 }
 
 function needSession(id: string): Session {
@@ -283,6 +349,12 @@ app.post('/api/sessions/:id/tried', (c) => {
     return c.json({ ok: true });
   } catch (e) { return fail(c, e); }
 });
+app.get('/api/scenarios', async (c) => {
+  try { return c.json({ scenarios: (await builder.scenarios()).map((x) => ({ id: x.id, name: x.name, tags: x.tags })) }); } catch (e) { return fail(c, e); }
+});
+app.post('/api/sessions/:id/checks', async (c) => {
+  try { return c.json({ check: startCheck(needSession(c.req.param('id')), await body(c), 'you') }); } catch (e) { return fail(c, e); }
+});
 app.get('/api/sessions/:id/ship', async (c) => {
   try { return c.json(await shipPlan(needSession(c.req.param('id')), slackConfig())); } catch (e) { return fail(c, e); }
 });
@@ -374,6 +446,17 @@ const TOOLS: Record<string, Tool> = {
     const r = await checkFields(lookup, env, String(a.loan ?? ''), ids, expect, list);
     sessions.update(s.id, (x) => ({ ...x, fields: [...x.fields, r.result] }));
     return { matched: r.result.matched, total: r.result.total, differs: r.result.differs, values: r.values };
+  },
+  run_data_check: async (s, a) => {
+    const c = startCheck(s, a, 'claude');
+    const wait = Math.min(Math.max(Number(a.wait_seconds ?? 240), 0), MAX_WAIT_S) * 1000;
+    return checkForClaude(await waitCheck(s.id, c.id, wait));
+  },
+  data_check_status: async (s, a) => {
+    const id = typeof a.id === 'string' && a.id ? a.id : s.checks?.at(-1)?.id;
+    if (!id) return 'No data check has run in this session.';
+    const wait = Math.min(Math.max(Number(a.wait_seconds ?? 120), 0), MAX_WAIT_S) * 1000;
+    return checkForClaude(await waitCheck(s.id, id, wait));
   },
   add_evidence: async (s, a) => {
     const kind = a.kind === 'tests' ? 'tests' : 'note';

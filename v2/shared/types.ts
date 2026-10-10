@@ -59,6 +59,46 @@ export interface FieldCheckResult {
 
 export type EvidenceKind = 'tests' | 'tried' | 'loan' | 'fields' | 'note' | 'screenshot';
 
+/**
+ * A data check (§139): a test loan made (or one given), fields filled through the record lookup,
+ * waited on until they apply, then read and compared. Asked for by you from the Switchboard or by
+ * Claude through the toolbelt; run by the server, step by step, in Dev or UAT only.
+ */
+export interface DataCheckAsk {
+  env: 'dev' | 'uat';
+  /** Make a new loan from this scenario... */
+  scenario?: string;
+  /** ...or use this one. */
+  loan?: string;
+  /** Field id → the value to fill in ('' clears it). */
+  set?: Record<string, string>;
+  /** A saved field list to read as well. */
+  list?: string;
+  /** More field ids to read. */
+  fields?: string[];
+  /** Field id → the value it should have (what is set is expected too). */
+  expect?: Record<string, string>;
+}
+
+export type DataStepName = 'loan' | 'set' | 'apply' | 'check';
+export type DataStepState = 'waiting' | 'running' | 'done' | 'failed' | 'skipped';
+
+export interface DataCheck {
+  id: string;
+  ask: DataCheckAsk;
+  by: 'you' | 'claude';
+  state: 'running' | 'passed' | 'differs' | 'failed';
+  steps: { name: DataStepName; state: DataStepState; text: string }[];
+  loan?: string;
+  result?: FieldCheckResult;
+  /** What each field read as at the end (null: not there). */
+  values?: Record<string, string | null>;
+  /** The lookup's progress page for the update, when it gave one. */
+  watchUrl?: string;
+  startedAt: number;
+  endedAt?: number;
+}
+
 export interface Evidence {
   kind: EvidenceKind;
   text: string;
@@ -92,6 +132,8 @@ export interface Session {
   claude: ClaudeStatus;
   loans: LoanMade[];
   fields: FieldCheckResult[];
+  /** Data checks, newest last (the last few kept). */
+  checks?: DataCheck[];
   evidence: Evidence[];
   prs: ShippedPr[];
   /** When the review request was posted, and where. */
@@ -161,6 +203,8 @@ export interface Snapshot {
     slack?: { channel: string };
     loans: boolean;
     fields: boolean;
+    /** Fields can be filled through the record lookup on this machine (Dev and UAT). */
+    updates: boolean;
     fieldLists: string[];
     port: number;
   };

@@ -72,7 +72,7 @@ function toolbelt(sessionId, token) {
   makeRepo('shop-ui', { 'README.md': 'stand-in ui\n', 'proxy.conf.json': '{\n  "/api/**": { "target": "https://dev.example.invalid", "changeOrigin": true }\n}\n' });
   for (const r of ['fees-api', 'payments-api', 'loans-api', 'audit-api']) makeRepo(r, { 'README.md': `${r}\n` });
   execFileSync(process.execPath, [`${REPO}/docs/walkthroughs/v2/seed-v2.ts`, DB, DIR, `${REPO}/docs/walkthroughs/v2`], { stdio: 'inherit' });
-  fs.writeFileSync(VERIFY, JSON.stringify({ lookup: { name: 'Sample lookup', url: 'http://127.0.0.1:18902/Lookup', recordField: 'RecordId' }, builder: { name: 'Sample data', url: 'http://127.0.0.1:18903' } }, null, 2));
+  fs.writeFileSync(VERIFY, JSON.stringify({ lookup: { name: 'Sample lookup', url: 'http://127.0.0.1:18902/Lookup', recordField: 'RecordId', updateUrl: 'http://127.0.0.1:18902/LookupUpdate', allowUpdate: true, updateFields: ['RecordNumber', 'RecordFolder'] }, builder: { name: 'Sample data', url: 'http://127.0.0.1:18903' } }, null, 2));
   fs.writeFileSync(LISTS, JSON.stringify({ lists: [{ name: 'Sample fields', ids: ['1000', 'CX.SAMPLE.ONE'] }] }, null, 2));
   fs.writeFileSync(`${ROOT}/config.env`, '');
   const tools = spawn(process.execPath, [`${REPO}/docs/walkthroughs/simple-new-card/standins/verify-tools.cjs`, '18900', `${ROOT}/tools.log`], { stdio: 'ignore', windowsHide: true });
@@ -194,8 +194,31 @@ function toolbelt(sessionId, token) {
     check('make_test_loan waits for the run and returns the loan', !loanR.error && Boolean(loan), loanR.text.slice(0, 160));
     const fieldsR = await tb.call('check_fields', { env: 'dev', loan, list: 'Sample fields', expect: { '1000': '12.50' } });
     check('check_fields reads the list and compares', !fieldsR.error && /"matched": 2/.test(fieldsR.text), fieldsR.text.slice(0, 160));
-    await tb.call('add_evidence', { kind: 'tests', text: '18 tests pass, 4 new' });
     check('the session shows the loan and the field check', await until(() => page.locator('.sess').getByText(loan).isVisible(), 5000) && await page.locator('.sess').getByText('2 / 2').isVisible());
+    // A data check (§139): Claude asks once; the server makes the loan, fills two fields, waits until they apply, checks.
+    const dprod = await tb.call('run_data_check', { env: 'prod', scenario: 'Sample purchase', fields: ['1000'] });
+    check('a Prod data check is refused', dprod.error && /never Prod/.test(dprod.text));
+    const dc = await tb.call('run_data_check', { env: 'dev', scenario: 'Sample purchase', set: { 'CX.SAMPLE.ONE': 'No', 'CX.AMOUNT': '2500' }, list: 'Sample fields', expect: { '1000': '12.50' }, wait_seconds: 120 });
+    const dcj = dc.error ? {} : JSON.parse(dc.text);
+    check('run_data_check makes a loan, fills, waits for it to apply and checks', dcj.state === 'passed' && dcj.matched === 3 && dcj.total === 3 && dcj.values?.['CX.AMOUNT'] === '2,500.00', dc.text.slice(0, 300));
+    const updates = () => fs.readFileSync(`${ROOT}/tools.log`, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.tool === 'lookup-update');
+    const writes = updates();
+    check('one update went to the lookup, with exactly the two fields', writes.length === 1 && writes[0].count === 2 && writes[0].ids.sort().join(',') === 'CX.AMOUNT,CX.SAMPLE.ONE', JSON.stringify(writes.map((w) => w.ids)));
+    check('the Switchboard shows the check passed, step by step', await until(() => page.locator('.dcheck.passed').getByText('all 2 applied').isVisible(), 5000));
+    const ro = await tb.call('run_data_check', { env: 'dev', loan: dcj.loan, set: { '1000': '13.00' } });
+    check('filling a read-only field fails before anything is sent', !ro.error && /Can’t fill 1000/.test(ro.text) && updates().length === 1, ro.text.slice(0, 200));
+    // From the page: a check on the loan just made, with an expected value that differs.
+    await page.locator('.sess').getByRole('button', { name: 'Test data' }).click();
+    await page.getByRole('button', { name: 'One I have' }).click();
+    await page.getByLabel('Loan id').fill(dcj.loan);
+    await page.locator('.dform textarea').nth(1).fill('CX.SAMPLE.ONE = Yes & no\nCX.AMOUNT = 2500');
+    await shot(page, 'data-check-form');
+    await page.getByRole('button', { name: 'Run the check' }).click();
+    check('a check from the page (nothing filled) shows what differs', updates().length === 1 && await until(() => page.locator('.dcheck.differs .ddiff').getByText('CX.SAMPLE.ONE').isVisible(), 15000) && await page.locator('.ddiff').getByText('Yes & no').isVisible());
+    await shot(page, 'data-check-differs');
+    st = await state();
+    check('the session keeps both checks, the loan and the fill as evidence', st.sessions[0].checks.length === 3 && st.sessions[0].evidence.some((e) => /Filled 2 field\(s\)/.test(e.text)));
+    await tb.call('add_evidence', { kind: 'tests', text: '18 tests pass, 4 new' });
 
     // Claude needs you: the block turns orange, the HUD says Answer.
     await hook('PermissionRequest', { session_id: 'claude-1', tool_name: 'Bash', tool_input: { command: 'pnpm db:migrate' } });

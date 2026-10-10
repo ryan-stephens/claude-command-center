@@ -12,7 +12,7 @@ v1 (`pnpm start`, :7777) is untouched and can run beside it. v2 reads v1's works
 ## What it does
 
 - **New work** (`/new`): a ticket key builds the preflight: repos, worktrees on a branch (node_modules hard-linked), the context pack, the APIs to run, the tools, the first message. Then Launch opens Claude in a terminal tab (or VS Code; for Claude Desktop, open the folder there).
-- **Switchboard** (`/`): every session's stack, one UI and any number of APIs. Plug a session's UI into the front door (the sign-in port). Add or take out an API: the UI's `proxy.conf.json` is rebuilt and the UI restarted. Health every 5 s.
+- **Switchboard** (`/`): every session's stack, one UI and any number of APIs. Plug a session's UI into the front door (the sign-in port). Add or take out an API: the UI's `proxy.conf.json` is rebuilt and the UI restarted. Health every 5 s. **Test data** on a session runs a data check: a new test loan (or one you have), fields filled through the record lookup, waited on until they apply, then checked; each step shows live, and Claude can run the same check (`run_data_check`).
 - **HUD** (`/hud`): a small window beside your terminals, with who needs you and one action each.
 - **Ship dock** (`/ship/<id>`): PRs with the session's evidence, then the review request posted to Slack.
 
@@ -23,7 +23,7 @@ Launch writes three files into the session's home worktree, kept out of git:
 | File | What |
 |---|---|
 | `CLAUDE.local.md` | the context pack: ticket, criteria, worktrees, stack, logs, tools |
-| `.mcp.json` | the `command-center` toolbelt (`v2/mcp/toolbelt.ts`): stack, test loans, field checks, evidence, ship |
+| `.mcp.json` | the `command-center` toolbelt (`v2/mcp/toolbelt.ts`): stack, test loans, field checks, data checks, evidence, ship |
 | `.claude/settings.local.json` | hooks (`v2/hooks/hook.mjs`) that report Claude's state to the Switchboard |
 
 Any Claude Code client opened on the folder gets them.
@@ -31,7 +31,7 @@ Any Claude Code client opened on the folder gets them.
 ## Machine settings (never in the repo)
 
 - `~/.cc-control/config.env`: Jira (as in v1), `CC_CONTROL_SLACK_WEBHOOK`, `CC_CONTROL_SLACK_CHANNEL`, `CC_CONTROL_SLACK_MENTION`.
-- `~/.cc-control/verify.json`: where the test-data tool and the record lookup are (as in v1).
+- `~/.cc-control/verify.json`: where the test-data tool and the record lookup are (as in v1). Filling fields needs the lookup's `updateUrl`, `updateFields` and `"allowUpdate": true` (§134); without them a data check only reads.
 - `CCV2_PORT` (7878), `CCV2_DIR` (`~/.cc-control/v2`).
 
 ## Tests

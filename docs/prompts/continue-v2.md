@@ -52,10 +52,10 @@ The owner reviewed and approved the canvas *Command Center v2: the fresh take* (
 
   Any Claude client opened on the folder gets them. A repo with its own `.mcp.json` keeps it; the terminal then passes ours with `--mcp-config`.
 - **Claude's state** comes only from hooks (`applyHook`): needs-you, working, done, ended. A terminal tab is titled with the session key. The HUD's Answer focuses it with v1's `focusTab`, or opens a new tab with `claude --resume <id>`.
-- **Toolbelt:** `session_info`, `stack_status`, `stack_up`, `stack_add_api`, `stack_restart`, `stack_logs`, `list_loan_scenarios`, `make_test_loan`, `check_fields`, `add_evidence`, `ship`.
+- **Toolbelt:** `session_info`, `stack_status`, `stack_up`, `stack_add_api`, `stack_restart`, `stack_logs`, `list_loan_scenarios`, `make_test_loan`, `check_fields`, `run_data_check`, `data_check_status`, `add_evidence`, `ship`.
   - Test loans and field values go to Claude on purpose. This is a deliberate change from v1.
   - Never Prod.
-  - The lookup's update form is not exposed.
+  - Since §139, a data check fills fields through the lookup's update form (only when the machine's verify.json allows updates; editable fields and their options only). The rest of the form, and the role and move forms, are never used.
 - **Machine settings, never in the repo:**
   - `~/.cc-control/config.env`: Jira; `CC_CONTROL_SLACK_WEBHOOK`, `CC_CONTROL_SLACK_CHANNEL`, `CC_CONTROL_SLACK_MENTION`;
   - `~/.cc-control/verify.json`: the test-data tool and the record lookup.

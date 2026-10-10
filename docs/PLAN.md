@@ -3416,3 +3416,31 @@ Screenshots looked at. The first run showed *applied* next to the **old** values
 **Checked:** `pnpm typecheck`; `pnpm test` (477: the skip list, matching, the merge, the JQL sent, Ready for PO left out, the minute's cache, a search's extra tickets, a missing key not a problem, the demo set); the walk, 52/52 (new: the list shows your open tickets without Done or Ready for PO, a search finds one elsewhere, typing narrows, Enter picks and closes). Screenshot looked at. Not checked: against the real Jira at VU.
 
 **To check at VU:** `git pull`, restart v2, open *New work*: your open tickets are listed under the box, none in Ready for PO, Ready for Prod or Done; type part of a title from someone else's ticket and it shows under *Elsewhere in Jira*.
+
+## 139. v2: data checks — a test loan, its fields filled, applied and checked, from one ask
+
+2026-10-09. The owner: let the user create test loans and have field ids filled in and checked for them, without doing each step by hand; review the options and go with the highest value and best experience.
+
+**The options weighed.**
+1. *Toolbelt only:* a `set_fields` tool next to `make_test_loan` and `check_fields`. Cheapest, but Claude strings four slow calls together (a loan is minutes, an update a couple more), nothing shows while it waits, and you can't do it yourself.
+2. *A form only:* the Switchboard runs it; Claude can't prove its own change.
+3. **Chosen: one data check, run by the server, asked for from either side.** One ask (a scenario or a loan, fields to fill, fields to check) becomes a background run with four steps, shown live on the session's block, recorded as evidence, and available both as **Test data** on the Switchboard and as one MCP call. Claude works the fields and values out from the ticket; you can run the same thing from the page without a terminal.
+
+**The steps** (`v2/server/data-check.ts`, `runDataCheck`; pure parts in `v2/shared/data-check.ts`):
+- **Loan:** make one from the scenario (v1's test-data tool, as `make_test_loan`), or use the loan given.
+- **Fill:** only when there is something to fill. The lookup is fetched with Advanced for those ids (an update session, §134); refused, with nothing sent, when updates are off on this machine, the loan isn't found, the page has no update form, a field is read-only or not on the loan, or a value isn't among a field's options (matched in any case, sent as the option is written). A field that already has the value is left out; nothing left means no update and no wait. Else one update through v1's `LookupTool.update` (the write guard, §134).
+- **Applied:** the changed fields are read again every 10 s (no Advanced, no session) until each shows what was sent (numbers alike with or without commas or trailing zeros); after 3 minutes the step fails, naming what is still pending, and the check goes on to read.
+- **Check:** every id from the saved list, the ids named, the ids filled and the ids expected, read once, and compared with what was filled plus what was expected (`check_fields`'s comparison, now using the same `sameValue`). *Passed*, *Differs* (what, expected, read) or *Failed* (the step that failed and why).
+- One at a time per session; the last 8 kept on the session (`checks`); the loan and the field check go to `loans` and `fields` as before (so the Ship dock's evidence has them), and a fill that applied adds a note to the evidence. A server that stops mid-check marks it failed on the next start.
+
+**From Claude:** `run_data_check` { env, scenario | loan, set, expect, fields, list, wait_seconds } starts it and waits up to 240 s (at most 270: Node's fetch in the toolbelt stops waiting for headers at 300 s), then answers with the steps, the values read and what differs, or *still running*; `data_check_status` { id?, wait_seconds? } waits for it. The context pack names it and says to prefer it, working the fields and values out from the criteria; it says when filling is off.
+
+**From the page:** **Test data** on a session (folded or not) opens a form: Dev or UAT; a new loan from a scenario (the list read from the tool) or *One I have* (the last loan filled in); *Fill in*, lines of `ID = value` (an id may have spaces; `ID =` clears), disabled with a note when updates are off; *Then check*, a saved list and more ids (`ID = value` to expect one). The fill box is never carried over from the last check, since it writes. The latest check shows under the block step by step (✓ ✗ …), with a table of what differs and the lookup's progress link; *Only problems* counts a check that differs or failed.
+
+**A deliberate change from §137:** the lookup's update form is now used for Claude too, through the same guard and only where the machine's `verify.json` allows updates (§134's `allowUpdate`); never Prod.
+
+**Checked:** `pnpm typecheck`; `pnpm test` (487; new: values alike, field lines, the ask's refusals, the ids read; the runner with a pretend tool and lookup: new loan, fill, wait, check; a value already there not sent; an update that never applies; updates off, a read-only field, a value not an option, all refused before sending; a loan that fails; a check only). The walk, 59/59: a Prod data check refused; `run_data_check` making a loan, filling two fields, waiting for them to apply (the stand-in applies after two reads) and passing 3 / 3, with **exactly one update, of exactly those two fields**, sent to the stand-in; the block showing it step by step; a read-only field refused with nothing sent; a check from the page (nothing filled) showing the field that differs, expected and read; the checks and the fill's evidence on the session. Screenshots looked at (the first run showed the fill box carried over from Claude's check, which would have written again; it now starts empty).
+
+**Not checked:** the real test-data tool and record lookup at VU (the update's apply time there, and option values as the real page writes them).
+
+**To check at VU:** with `allowUpdate`, `updateUrl` and `updateFields` in verify.json, *Test data* on a session: a new Dev loan from a scenario, two fields filled, a saved list checked; it shows each step and ends *Passed* or says what differs. Then ask Claude in the session to prove the ticket with a data check.

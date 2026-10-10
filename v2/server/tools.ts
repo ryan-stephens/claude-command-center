@@ -7,6 +7,7 @@
 import type { BuilderEnv, BuilderScenario, LookupField } from '../../shared/verify.ts';
 import { readFieldLists, type LookupTool } from '../../server/verify.ts';
 import type { BuilderTool } from '../../server/verify-builder.ts';
+import { sameValue } from '../shared/data-check.ts';
 import type { FieldCheckResult, LoanMade } from '../shared/types.ts';
 
 export const LOAN_POLL_MS = 2_000;
@@ -63,15 +64,14 @@ export function idsFor(list: string | undefined, fields: string[] | undefined): 
   return { ids };
 }
 
-/** Compare what was read with what was expected (numbers alike with or without thousands commas, any case for true/false). */
+/** Compare what was read with what was expected (numbers alike with or without thousands commas or trailing zeros, anything else in any case). */
 export function compareFields(read: LookupField[], ids: string[], expect: Record<string, string> = {}): Pick<FieldCheckResult, 'total' | 'matched' | 'differs'> {
-  const norm = (v: string) => { const t = v.trim(); return /^-?[\d,]+(\.\d+)?$/.test(t) ? t.replace(/,/g, '') : t.toLowerCase(); };
   const differs: FieldCheckResult['differs'] = [];
   for (const id of ids) {
     const f = read.find((x) => x.id.toLowerCase() === id.toLowerCase());
     const want = Object.entries(expect).find(([k]) => k.toLowerCase() === id.toLowerCase())?.[1];
     if (!f || !f.exists) differs.push({ id, ...(want !== undefined ? { expected: want } : {}) });
-    else if (want !== undefined && norm(f.value) !== norm(want)) differs.push({ id, expected: want, actual: f.value });
+    else if (want !== undefined && !sameValue(f.value, want)) differs.push({ id, expected: want, actual: f.value });
   }
   return { total: ids.length, matched: ids.length - differs.length, differs };
 }
