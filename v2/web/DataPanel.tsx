@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { parseFieldLines } from '../shared/data-tools.ts';
+import { parseFieldLines, scenarioAsk } from '../shared/data-tools.ts';
 import type { DataEvent, FieldPick, FieldRow, LoanMade, Session, Snapshot } from '../shared/types.ts';
 import { ago, get, post } from './api.ts';
 
-const KIND: Record<DataEvent['kind'], string> = { lookup: 'Lookup', update: 'Change', loan: 'Loan' };
+const KIND: Record<DataEvent['kind'], string> = { lookup: 'Lookup', update: 'Change', loan: 'Loan', scenario: 'Scenario' };
 const MARK: Record<DataEvent['state'], string> = { running: '…', done: '✓', failed: '✗' };
 const envWord = (e: string) => (e === 'dev' ? 'Dev' : 'UAT');
 
@@ -203,31 +203,93 @@ function LookupForm({ s, snap, loan: given, done }: { s: Session; snap: Snapshot
   );
 }
 
-interface Scenario { id: string; name: string; version: number; tags: string[] }
+interface Scenario { id: string; name: string; version: number; tags: string[]; folder?: string }
 
-/** Run a saved scenario: a filter, the list grouped by its first tag, then Dev or UAT. */
+/** New loan: a new scenario made for this session (by Claude), or a saved one run as it is. */
 function LoanForm({ s, done }: { s: Session; done: () => void }) {
+  const [mode, setMode] = useState<'new' | 'saved'>('new');
   const [env, setEnv] = useState<'dev' | 'uat'>('dev');
   const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
-  const [scenario, setScenario] = useState('');
-  const [filter, setFilter] = useState('');
   const [error, setError] = useState('');
+  // Read again on switching, and whenever a scenario is made here, so a new one is among the saved ones.
+  const made = (s.data ?? []).filter((e) => e.kind === 'scenario' && e.state === 'done').length;
   useEffect(() => {
     get<{ scenarios: Scenario[] }>('/api/scenarios')
-      .then((r) => setScenarios(r.scenarios))
+      .then((r) => { setScenarios(r.scenarios); setError(''); })
       .catch((e: Error) => { setScenarios([]); setError(e.message); });
-  }, []);
-  const words = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const shown = (scenarios ?? []).filter((x) => words.every((w) => `${x.name} ${x.tags.join(' ')} v${x.version}`.toLowerCase().includes(w)));
-  const groups = new Map<string, Scenario[]>();
-  for (const x of shown) { const g = x.tags[0] ?? 'No tag'; groups.set(g, [...(groups.get(g) ?? []), x]); }
-  const chosen = scenarios?.find((x) => x.id === scenario);
+  }, [mode, made]);
   return (
     <div className="dform" role="group" aria-label="New loan">
-      <div className="row" style={{ gap: 8 }}>
-        <span className="cap">Run a saved scenario</span>
-        <input type="text" aria-label="Filter scenarios" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by name, tag or v2" style={{ flex: '1 1 240px' }} />
+      <div className="row" style={{ gap: 6 }}>
+        <button type="button" className={`seg small${mode === 'new' ? ' on' : ''}`} onClick={() => setMode('new')}>New scenario for this session</button>
+        <button type="button" className={`seg small${mode === 'saved' ? ' on' : ''}`} onClick={() => setMode('saved')}>Run a saved scenario</button>
+        <span style={{ marginLeft: 'auto' }} className="row"><EnvPick env={env} set={setEnv} /></span>
       </div>
+      {mode === 'new' ? <NewScenario s={s} env={env} scenarios={scenarios} /> : <SavedScenario s={s} env={env} scenarios={scenarios} done={done} setError={setError} />}
+      {error && <div className="err" role="alert">{error}</div>}
+    </div>
+  );
+}
+
+/**
+ * A new scenario for this work: you choose its folder (and a scenario to start from, and anything
+ * Claude should know); Claude, in the session's own terminal, writes it from the ticket, the changes
+ * and the fields to check, makes it and runs it. The ask is copied and the terminal brought forward.
+ */
+function NewScenario({ s, env, scenarios }: { s: Session; env: 'dev' | 'uat'; scenarios: Scenario[] | null }) {
+  const [folder, setFolder] = useState(s.scenarioFolder ?? s.key);
+  const [like, setLike] = useState('');
+  const [notes, setNotes] = useState('');
+  const [asked, setAsked] = useState('');
+  const [error, setError] = useState('');
+  const folders = [...new Set((scenarios ?? []).map((x) => x.folder).filter((f): f is string => Boolean(f)))];
+  const saveFolder = (f: string) => { if (f.trim() && f.trim() !== (s.scenarioFolder ?? s.key)) post(`/api/sessions/${s.id}/scenario-folder`, { folder: f.trim() }).catch((e: Error) => setError(e.message)); };
+  const ask = () => {
+    const text = scenarioAsk({ key: s.key, folder: folder.trim() || s.key, ...(like ? { like } : {}), env, notes });
+    saveFolder(folder);
+    setAsked(text);
+    setError('');
+    void navigator.clipboard?.writeText(text).catch(() => {});
+    post(`/api/sessions/${s.id}/open`).catch(() => {});
+  };
+  return (
+    <>
+      <div className="mu" style={{ fontSize: 14 }}>Claude writes a scenario that sets up the loan this ticket needs, from the ticket, the session’s changes and the fields to check, in the shape the tool asks for. It shows here when it is made, then its loan.</div>
+      <div className="row" style={{ gap: 8 }}>
+        <label className="cap" htmlFor={`folder-${s.id}`} style={{ width: 70 }}>Folder</label>
+        <input id={`folder-${s.id}`} type="text" list={`folders-${s.id}`} value={folder} onChange={(e) => setFolder(e.target.value)} onBlur={() => saveFolder(folder)} style={{ flex: '1 1 240px' }} />
+        <datalist id={`folders-${s.id}`}>{folders.map((f) => <option key={f} value={f} />)}</datalist>
+      </div>
+      <div className="row" style={{ gap: 8 }}>
+        <label className="cap" htmlFor={`like-${s.id}`} style={{ width: 70 }}>Start from</label>
+        <select id={`like-${s.id}`} value={like} onChange={(e) => setLike(e.target.value)} style={{ flex: '1 1 240px' }}>
+          <option value="">Whatever fits best (Claude chooses)</option>
+          {(scenarios ?? []).map((x) => <option key={x.id} value={x.name}>{x.folder ? `${x.folder} / ` : ''}{x.name} (v{x.version})</option>)}
+        </select>
+      </div>
+      <textarea aria-label="Notes for Claude" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Anything Claude should know: the loan type, a state it must reach, what to leave out" />
+      <div className="row" style={{ gap: 8 }}>
+        <button type="button" className="btn dark" onClick={ask}>Ask Claude to make it</button>
+        <span className="note">Copies the ask and brings the session’s terminal forward: paste it there.</span>
+      </div>
+      {asked && <pre className="preview" aria-label="The ask for Claude">{asked}</pre>}
+      {error && <div className="err" role="alert">{error}</div>}
+    </>
+  );
+}
+
+/** Run a saved scenario: a filter, the list grouped by folder (or first tag), one chosen. */
+function SavedScenario({ s, env, scenarios, done, setError }: { s: Session; env: 'dev' | 'uat'; scenarios: Scenario[] | null; done: () => void; setError: (e: string) => void }) {
+  const [scenario, setScenario] = useState('');
+  const [filter, setFilter] = useState('');
+  const words = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = (scenarios ?? []).filter((x) => words.every((w) => `${x.name} ${x.folder ?? ''} ${x.tags.join(' ')} v${x.version}`.toLowerCase().includes(w)));
+  const groups = new Map<string, Scenario[]>();
+  for (const x of shown) { const g = x.folder ?? x.tags[0] ?? 'No folder'; groups.set(g, [...(groups.get(g) ?? []), x]); }
+  const chosen = scenarios?.find((x) => x.id === scenario);
+  return (
+    <>
+      <input type="text" aria-label="Filter scenarios" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by name, folder, tag or v2" />
       <div className="scen-list" role="listbox" aria-label="Scenarios">
         {scenarios === null && <div className="mu" style={{ padding: 8 }}>Reading the scenarios…</div>}
         {scenarios && !shown.length && <div className="mu" style={{ padding: 8 }}>{scenarios.length ? 'No scenario matches.' : 'No scenarios.'}</div>}
@@ -237,19 +299,16 @@ function LoanForm({ s, done }: { s: Session; done: () => void }) {
             {list.map((x) => (
               <div key={x.id} role="option" aria-selected={x.id === scenario} className={`scen${x.id === scenario ? ' on' : ''}`} onClick={() => setScenario(x.id)}>
                 <span>{x.name}</span><span className="mu mono" style={{ fontSize: 12 }}>v{x.version}</span>
-                <span className="mu" style={{ fontSize: 12 }}>{x.tags.slice(1).join(', ')}</span>
+                <span className="mu" style={{ fontSize: 12 }}>{(x.folder ? x.tags : x.tags.slice(1)).join(', ')}</span>
               </div>
             ))}
           </div>
         ))}
       </div>
       <div className="row" style={{ gap: 8 }}>
-        <EnvPick env={env} set={setEnv} />
         <button type="button" className="btn dark" style={{ marginLeft: 'auto' }} disabled={!chosen} onClick={() => { setError(''); post(`/api/sessions/${s.id}/data/loan`, { env, scenario: chosen!.id }).then(done).catch((e: Error) => setError(e.message)); }}>{chosen ? `Make a loan from ${chosen.name} in ${envWord(env)}` : 'Pick a scenario'}</button>
       </div>
-      <span className="note">A new scenario made for this ticket is coming once the tool’s create API is known; until then, run a saved one.</span>
-      {error && <div className="err" role="alert">{error}</div>}
-    </div>
+    </>
   );
 }
 
@@ -273,6 +332,13 @@ function EventCard({ s, ev, first, lookUp }: { s: Session; ev: DataEvent; first:
           {ev.steps && ev.steps.length > 0 && (
             <ol className="dsteps">{ev.steps.map((st) => <li key={st.order} className={st.status === 'succeeded' ? 'done' : st.status === 'failed' ? 'failed' : 'running'}><span className="dmark">{st.status === 'succeeded' ? '✓' : st.status === 'failed' ? '✗' : st.status === 'running' ? '…' : '·'}</span>{st.order}. {st.type}{st.error ? `: ${st.error}` : ''}</li>)}</ol>
           )}
+          {ev.kind === 'scenario' && ev.state === 'done' && (
+            <div className="row" style={{ gap: 8 }}>
+              <span className="mu" style={{ fontSize: 13 }}>{ev.folder}{ev.scenarioId ? <> · <span className="mono">{ev.scenarioId}</span></> : null}{ev.version !== undefined ? ` · v${ev.version}` : ''}</span>
+              {ev.scenarioId && (['dev', 'uat'] as const).map((e) => <button key={e} type="button" className="btn small" onClick={() => void post(`/api/sessions/${s.id}/data/loan`, { env: e, scenario: ev.scenarioId })}>Make a loan in {envWord(e)}</button>)}
+            </div>
+          )}
+          {ev.sent && <details><summary className="mu" style={{ fontSize: 13, cursor: 'pointer' }}>What was sent to the tool</summary><pre className="preview">{ev.sent}</pre></details>}
           {ev.loans && ev.loans.length > 0 && (
             <div className="row" style={{ gap: 8 }}>{ev.loans.map((l) => <span key={l} className="row" style={{ gap: 6 }}><span className="mono">{l}</span><button type="button" className="btn small" onClick={() => void navigator.clipboard?.writeText(l)}>Copy</button><button type="button" className="btn small" onClick={() => lookUp(l)}>Look up</button></span>)}</div>
           )}

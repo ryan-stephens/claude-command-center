@@ -10,11 +10,12 @@
 import { randomUUID } from 'node:crypto';
 import type { BuilderTool } from '../../server/verify-builder.ts';
 import { BuilderLauncher } from '../../server/verify-launch.ts';
-import { updatesOn, type VerifyConfig } from '../../shared/verify.ts';
+import { DEFAULT_CREATE_PATH, updatesOn, type BuilderScenario, type VerifyConfig } from '../../shared/verify.ts';
 import { dataEnv, loanId } from '../shared/data-tools.ts';
-import type { DataEvent, FieldCheckResult, LoanMade, Session, Snapshot } from '../shared/types.ts';
+import type { DataEvent, FieldCheckResult, FieldPick, LoanMade, Session, Snapshot } from '../shared/types.ts';
+import { changedFiles, createOperation, fit, HOW_TO, sessionContext } from './scenarios.ts';
 import type { SessionStore } from './sessions.ts';
-import { idsFor, lookupFields, makeLoan, updateFields, type Lookup } from './tools.ts';
+import { findScenario, idsFor, lookupFields, makeLoan, updateFields, type Lookup } from './tools.ts';
 
 export const KEEP_EVENTS = 40;
 /** A tool call answers within this: Node's fetch in the toolbelt stops waiting for headers at 300 s. */
@@ -83,7 +84,7 @@ export class DataDesk {
   }
 
   async scenarios() {
-    try { return (await this.d.builder.scenarios()).map((x) => ({ id: x.id, name: x.name, version: x.version, tags: x.tags })); } catch (e) { throw this.plain(e); }
+    try { return (await this.d.builder.scenarios()).map((x) => ({ id: x.id, name: x.name, version: x.version, tags: x.tags, ...(x.folder ? { folder: x.folder } : {}) })); } catch (e) { throw this.plain(e); }
   }
 
   // ---- Events ----
@@ -184,6 +185,52 @@ export class DataDesk {
     return ev;
   }
 
+  // ---- New scenarios (§143) ----
+
+  /** Everything Claude needs to write a scenario for this session: how the tool wants one, a template, the session's side, the folder. */
+  async scenarioGuide(s: Session, a: Record<string, unknown>, fields: FieldPick[]): Promise<unknown> {
+    const b = this.d.cfg().builder;
+    const createPath = b?.createPath ?? DEFAULT_CREATE_PATH;
+    let doc: unknown;
+    let list: BuilderScenario[];
+    try { [doc, list] = await Promise.all([this.d.builder.apiDoc(), this.d.builder.scenarios()]); } catch (e) { throw this.plain(e); }
+    const op = doc ? createOperation(doc, createPath) : undefined;
+    const like = a.like ? findScenario(list, String(a.like)) : list.find((x) => x.folder && x.folder === (s.scenarioFolder ?? s.key)) ?? list[0];
+    let template: unknown;
+    if (like) template = await this.d.builder.scenarioDetail(like.id, like.version).catch(() => this.d.builder.scenarioDetail(like.id).catch(() => undefined));
+    return {
+      howTo: HOW_TO,
+      toolFolder: b?.cwd ?? null,
+      createAddress: `${b?.url}/${createPath}`,
+      createOperation: op ? fit(op, 60_000) : `${this.name()} serves no API description (swagger/v1/swagger.json, openapi/v1.json): use the template, and the source in toolFolder.`,
+      template: like ? { name: like.name, id: like.id, version: like.version, ...(like.folder ? { folder: like.folder } : {}), asTheToolKeepsIt: template === undefined ? 'couldn’t be read' : fit(template, 40_000) } : null,
+      foldersInUse: [...new Set(list.map((x) => x.folder).filter(Boolean))].slice(0, 40),
+      scenarios: list.slice(0, 60).map((x) => `${x.name} (v${x.version}${x.folder ? `, ${x.folder}` : ''}${x.tags.length ? `, ${x.tags.join(' ')}` : ''})`),
+      session: sessionContext(s, await changedFiles(s), fields, [...s.loans].reverse()),
+    };
+  }
+
+  /** Make a scenario from a body Claude wrote (shaped as the tool wants it); with `run_env`, a loan from it right away. */
+  async makeScenario(s: Session, a: Record<string, unknown>, by: DataEvent['by']): Promise<{ scenario: DataEvent; loan?: DataEvent }> {
+    const body = a.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Give body: the scenario as the tool wants it (scenario_guide says how).');
+    const runEnv = a.run_env === undefined || a.run_env === null || a.run_env === '' ? undefined : dataEnv(a.run_env);
+    const o = body as Record<string, unknown>;
+    const name = String(o.name ?? o.Name ?? o.title ?? 'a new scenario').slice(0, 120);
+    const folder = s.scenarioFolder ?? s.key;
+    const sent = JSON.stringify(body, null, 2);
+    const ev = this.event(s, 'scenario', runEnv ?? 'dev', by, `Making the scenario “${name}”…`, { scenario: name, folder, sent: sent.length > 12_000 ? `${sent.slice(0, 12_000)}\n…` : sent });
+    let out: DataEvent;
+    try {
+      const r = await this.d.builder.create(o);
+      out = { ...ev, state: 'done', title: `Scenario “${name}” made${r.version !== undefined ? ` (v${r.version})` : ''}, filed under ${folder}`, ...(r.id ? { scenarioId: r.id } : {}), ...(r.version !== undefined ? { version: r.version } : {}), endedAt: Date.now() };
+      this.put(s.id, out, { note: `Made the test-data scenario “${name}” for this work` });
+    } catch (e) { return { scenario: this.failed(s, ev, e) }; }
+    if (!runEnv) return { scenario: out };
+    if (!out.scenarioId) return { scenario: { ...out, error: 'The tool didn’t say the new scenario’s id, so it wasn’t run: run it by name with make_test_loan.' } };
+    return { scenario: out, loan: this.startLoan(s, { env: runEnv, scenario: out.scenarioId }, by) };
+  }
+
   stopAll(): void {
     this.launcher.stopAll();
   }
@@ -200,6 +247,7 @@ export function forClaude(ev: DataEvent | undefined): unknown {
     ...(ev.rows ? { fields: ev.rows } : {}),
     ...(ev.steps?.length ? { steps: ev.steps } : {}),
     ...(ev.watchUrl ? { updateProgress: ev.watchUrl } : {}),
+    ...(ev.kind === 'scenario' ? { scenario: ev.scenario, ...(ev.scenarioId ? { scenarioId: ev.scenarioId } : {}), ...(ev.version !== undefined ? { version: ev.version } : {}), folder: ev.folder } : {}),
     ...(ev.state === 'running' ? { note: `Still running: call data_status with id ${ev.id} to wait for it.` } : {}),
   };
 }

@@ -14,6 +14,36 @@ function tool(answer: (r: VerifyRequest) => { status: number; json: unknown } | 
   return { b: new BuilderTool(() => cfg, t), seen };
 }
 
+test('guard, v2 §143: a scenario, a version and the API description are read; a new scenario goes only marked, to the create address, as one object', () => {
+  for (const r of [
+    { tool: 'builder', method: 'GET', url: `${BASE}/api/scenarios/sc-1` },
+    { tool: 'builder', method: 'GET', url: `${BASE}/api/scenarios/sc-1/versions/3` },
+    { tool: 'builder', method: 'GET', url: `${BASE}/swagger/v1/swagger.json` },
+    { tool: 'builder', method: 'GET', url: `${BASE}/openapi/v1.json` },
+    { tool: 'builder', kind: 'create', method: 'POST', url: `${BASE}/api/scenarios`, json: { name: 'Sample', steps: [] } },
+  ] as VerifyRequest[]) assert.doesNotThrow(() => guard(r, CFG), `${r.method} ${r.url}`);
+  // Another create address, when the file names one.
+  assert.doesNotThrow(() => guard({ tool: 'builder', kind: 'create', method: 'POST', url: `${BASE}/api/v2/scenario-definitions`, json: {} }, { builder: { ...CFG.builder, createPath: 'api/v2/scenario-definitions' } }));
+  for (const [why, r] of [
+    ['create, not marked', { tool: 'builder', method: 'POST', url: `${BASE}/api/scenarios`, json: { name: 'S' } }],
+    ['marked, another address', { tool: 'builder', kind: 'create', method: 'POST', url: `${BASE}/api/scenarios/sc-1/copy`, json: { name: 'S' } }],
+    ['marked, an array', { tool: 'builder', kind: 'create', method: 'POST', url: `${BASE}/api/scenarios`, json: [{ name: 'S' }] }],
+    ['marked, no body', { tool: 'builder', kind: 'create', method: 'POST', url: `${BASE}/api/scenarios` }],
+    ['marked, too big', { tool: 'builder', kind: 'create', method: 'POST', url: `${BASE}/api/scenarios`, json: { name: 'x'.repeat(300_000) } }],
+    ['a version’s steps', { tool: 'builder', method: 'GET', url: `${BASE}/api/scenarios/sc-1/versions/3/steps` }],
+    ['another description', { tool: 'builder', method: 'GET', url: `${BASE}/swagger/v2/swagger.json` }],
+  ] as [string, VerifyRequest][]) assert.throws(() => guard(r, CFG), /refused/, why);
+});
+
+test('the client, v2 §143: a new scenario posted as given, its id and version read; folders read from the list', async () => {
+  const { b, seen } = tool((r) => (r.method === 'POST' ? { status: 201, json: { scenarioId: 'sc-new', versionNumber: 1 } } : { status: 404, json: {} }));
+  assert.deepEqual((await b.create({ name: 'Sample new' })).id, 'sc-new');
+  assert.equal(seen[0].kind, 'create');
+  assert.equal(seen[0].url, `${BASE}/api/scenarios`);
+  assert.equal(await b.apiDoc(), undefined);
+  assert.deepEqual(readScenarios([{ scenarioId: 'a', versionNumber: 1, name: 'A', folder: { name: 'Fees' } }, { scenarioId: 'b', versionNumber: 2, name: 'B', FolderPath: 'Fees/Late' }]).map((x) => x.folder), ['Fees', 'Fees/Late']);
+});
+
 test('guard, the test-data tool: its three requests pass; everything else is refused', () => {
   const allowed: VerifyRequest[] = [
     { tool: 'builder', method: 'GET', url: `${BASE}/api/scenarios` },

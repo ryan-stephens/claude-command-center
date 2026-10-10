@@ -29,7 +29,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-  DEFAULT_ENV_VALUES, DEFAULT_ID_PARAM, LIST_NAME_MAX, MAX_IDS, MAX_LISTS, cleanLists, cleanUrl, cleanVerify, isLoopback, setUrl, splitFieldLines,
+  BUILDER_DOC_PATHS, CREATE_MAX_BYTES, DEFAULT_CREATE_PATH, DEFAULT_ENV_VALUES, DEFAULT_ID_PARAM, LIST_NAME_MAX, MAX_IDS, MAX_LISTS, cleanLists, cleanUrl, cleanVerify, isLoopback, setUrl, splitFieldLines,
   updatesOn, type FieldChange, type FieldList, type FieldListsFile, type VerifyFile, type FieldCheck, type LookupField, type LookupResult, type SetInfo, type UpdateSent, type VerifyConfig, type VerifyEnv,
 } from '../shared/verify.ts';
 import { composeUpdate, parseUpdateForm, readUpdateAnswer, updateNameAllowed, UpdateSessions } from './verify-update.ts';
@@ -146,7 +146,7 @@ export interface VerifyRequest {
   /** A POST's JSON body (the scenario runner only). */
   json?: unknown;
   /** §134: an update through the record lookup. Only LookupTool.update sets it; the guard lets no write through without it. */
-  kind?: 'write';
+  kind?: 'write' | 'create';
 }
 
 export interface VerifyResponse {
@@ -215,7 +215,18 @@ function guardBuilder(req: VerifyRequest, cfg: VerifyConfig, refuse: (why: strin
   if (req.method === 'GET') {
     if (req.json !== undefined) refuse('a GET with a body');
     if (new RegExp(`^${esc}/api/scenarios$`).test(req.url) || new RegExp(`^${esc}/api/runs/[\\w-]{1,64}$`).test(req.url)) return;
-    refuse('the test-data tool is only read for its scenarios and a run');
+    // v2 §143: a scenario or one of its versions (a template for a new one), and the tool's own API description.
+    if (new RegExp(`^${esc}/api/scenarios/[\\w-]{1,64}(/versions/\\d{1,6})?$`).test(req.url)) return;
+    if (BUILDER_DOC_PATHS.some((p) => req.url === `${base}/${p}`)) return;
+    refuse('the test-data tool is only read for its scenarios, a scenario, a run and its API description');
+  }
+  // v2 §143: a new scenario, marked as one, to exactly the create address, as one JSON object.
+  if (req.method === 'POST' && req.kind === 'create') {
+    if (req.url !== `${base}/${cfg.builder?.createPath ?? DEFAULT_CREATE_PATH}`) refuse('a new scenario goes only to the create address');
+    const body = req.json;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) refuse('a new scenario is one JSON object');
+    if (JSON.stringify(body).length > CREATE_MAX_BYTES) refuse('that scenario is too big');
+    return;
   }
   if (req.method === 'POST') {
     if (!new RegExp(`^${esc}/api/scenarios/[\\w-]{1,64}/versions/\\d{1,6}/runs$`).test(req.url)) refuse('a POST to the test-data tool only starts a run');

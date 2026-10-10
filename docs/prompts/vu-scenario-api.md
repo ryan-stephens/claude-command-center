@@ -4,7 +4,9 @@ Paste this into a Claude Code session on the VU work laptop, opened in the folde
 
 ---
 
-Context: cc-control v2 (PLAN §140 to §142) drives the team's test-data tool through its local API. Today it only lists scenarios (`GET api/scenarios`), starts a run (`POST api/scenarios/{id}/versions/{n}/runs` with `{ environment }`) and reads a run (`GET api/runs/{id}`). The owner wants Claude to **make a new scenario for the ticket being worked on**, from the ticket and the code changes, filed under a folder they choose, and then run it. Nothing in cc-control has seen how the tool makes a scenario, so it refuses those requests. I need their shape.
+Since §143 the app doesn't need this to work: Claude reads the tool's own API description (or a template, or the source) at the time it makes a scenario. Run it anyway if a made scenario is refused or comes out wrong: the handoff says what the app should know (the create address, `builder.createPath`; where folders go; whether a new scenario must be locked before it runs).
+
+Context: cc-control v2 (PLAN §140 to §143) drives the team's test-data tool through its local API. Today it only lists scenarios (`GET api/scenarios`), starts a run (`POST api/scenarios/{id}/versions/{n}/runs` with `{ environment }`) and reads a run (`GET api/runs/{id}`). The owner wants Claude to **make a new scenario for the ticket being worked on**, from the ticket and the code changes, filed under a folder they choose, and then run it. Nothing in cc-control has seen how the tool makes a scenario, so it refuses those requests. I need their shape.
 
 Read the tool's source in this folder (its API controllers or endpoints, its request and response models, and its scenario and step models). Don't run anything that writes, and don't call its API with real data. Then write the handoff below.
 

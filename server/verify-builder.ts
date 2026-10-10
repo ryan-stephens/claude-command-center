@@ -4,12 +4,14 @@
 //   GET  <base>/api/scenarios                                   the scenarios (latest versions)
 //   POST <base>/api/scenarios/<id>/versions/<n>/runs  { environment: 'dev' | 'uat' }   a run, in the background
 //   GET  <base>/api/runs/<runId>                                how it is going
-// Its other endpoints (create, versions, copy, lock, delete, resume, tokens) are never called.
+// v2 (§143) also reads a scenario, a version and the tool's API description, and makes a new scenario
+// (POST to the create address, marked as one); its other endpoints (versions, copy, lock, delete,
+// resume, tokens) are never called.
 // Loopback only, plain fetch (no Windows sign-in), ten seconds, nothing kept or logged: loan ids and
 // step messages go to the page that asked.
 
 import {
-  BUILDER_ENVS, cleanUrl, type BuilderEnv, type BuilderRun, type BuilderScenario, type BuilderStepStatus, type VerifyConfig,
+  BUILDER_DOC_PATHS, BUILDER_ENVS, DEFAULT_CREATE_PATH, cleanUrl, type BuilderEnv, type BuilderRun, type BuilderScenario, type BuilderStepStatus, type VerifyConfig,
 } from '../shared/verify.ts';
 import { guard, type VerifyRequest } from './verify.ts';
 
@@ -56,7 +58,10 @@ export function readScenarios(json: unknown): BuilderScenario[] {
     const id = text(at(s, 'scenarioId'));
     const version = Number(at(s, 'versionNumber'));
     if (!id || !Number.isInteger(version)) return [];
-    return [{ id, version, name: text(at(s, 'name')) || id, tags: list(at(s, 'tags')).map(text).filter(Boolean), locked: at(s, 'isLocked') === true }];
+    // A folder (or group) when the tool files scenarios: a name, or an object with one.
+    const f = ['folder', 'folderName', 'folderPath', 'group', 'category'].map((k) => at(s, k)).find((v) => v !== undefined && v !== null);
+    const folder = text(f) || text(at(f, 'name')) || text(at(f, 'path'));
+    return [{ id, version, name: text(at(s, 'name')) || id, tags: list(at(s, 'tags')).map(text).filter(Boolean), locked: at(s, 'isLocked') === true, ...(folder ? { folder } : {}) }];
   });
 }
 
@@ -146,6 +151,28 @@ export class BuilderTool {
     const runId = text(at(json, 'runId'));
     if (!/^[\w-]{1,64}$/.test(runId)) throw new Error(`${this.name()} didn’t say which run it started.`);
     return runId;
+  }
+
+  /** v2 §143: the tool's own description of its API (OpenAPI), when it serves one; undefined when it doesn't. */
+  async apiDoc(): Promise<unknown> {
+    for (const p of BUILDER_DOC_PATHS) {
+      try { const doc = await this.send({ tool: 'builder', method: 'GET', url: `${this.base()}/${p}` }); if (doc && typeof doc === 'object') return doc; } catch (e) { if (e instanceof NotAnswering) throw e; }
+    }
+    return undefined;
+  }
+
+  /** v2 §143: a scenario as the tool keeps it, or one version of it: a template for a new one. */
+  async scenarioDetail(scenarioId: string, version?: number): Promise<unknown> {
+    if (!/^[\w-]{1,64}$/.test(scenarioId) || (version !== undefined && (!Number.isInteger(version) || version < 0))) throw new Error('That isn’t a scenario.');
+    return this.send({ tool: 'builder', method: 'GET', url: `${this.base()}/api/scenarios/${scenarioId}${version !== undefined ? `/versions/${version}` : ''}` });
+  }
+
+  /** v2 §143: make a new scenario from a body shaped as the tool wants it; its id and version as the answer says. */
+  async create(body: Record<string, unknown>): Promise<{ id?: string; version?: number; answer: unknown }> {
+    const answer = await this.send({ tool: 'builder', kind: 'create', method: 'POST', url: `${this.base()}/${this.cfg().builder?.createPath ?? DEFAULT_CREATE_PATH}`, json: body });
+    const id = text(at(answer, 'scenarioId')) || text(at(answer, 'id'));
+    const v = Number(at(answer, 'versionNumber') ?? at(answer, 'version'));
+    return { ...(id ? { id } : {}), ...(Number.isInteger(v) ? { version: v } : {}), answer };
   }
 
   async run(runId: string): Promise<BuilderRun> {

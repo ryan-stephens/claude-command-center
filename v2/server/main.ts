@@ -339,6 +339,14 @@ app.get('/api/sessions/:id/fields', async (c) => {
 app.post('/api/sessions/:id/fields', async (c) => {
   try { return c.json({ picked: pickFields(needSession(c.req.param('id')), await body(c), 'you') }); } catch (e) { return fail(c, e); }
 });
+app.post('/api/sessions/:id/scenario-folder', async (c) => {
+  try {
+    const s = needSession(c.req.param('id'));
+    const folder = String((await body(c)).folder ?? '').trim().slice(0, 120);
+    sessions.update(s.id, (x) => { const { scenarioFolder: _old, ...rest } = x; return folder ? { ...rest, scenarioFolder: folder } : rest; });
+    return c.json({ folder: folder || s.key });
+  } catch (e) { return fail(c, e); }
+});
 app.post('/api/sessions/:id/data/lookup', async (c) => {
   try { return c.json({ event: await desk.lookup(needSession(c.req.param('id')), await body(c), 'you') }); } catch (e) { return fail(c, e); }
 });
@@ -441,6 +449,13 @@ const TOOLS: Record<string, Tool> = {
   },
   lookup_fields: async (s, a) => forClaude(orFail(await desk.lookup(s, a, 'claude'))),
   update_fields: async (s, a) => forClaude(orFail(await desk.update(s, a, 'claude'))),
+  scenario_guide: async (s, a) => desk.scenarioGuide(s, a, await picks.list(s)),
+  make_scenario: async (s, a) => {
+    const r = await desk.makeScenario(s, a, 'claude');
+    orFail(r.scenario);
+    const loan = r.loan ? await desk.wait(s.id, r.loan.id, waitOf(a.wait_seconds, 240_000)) : undefined;
+    return { scenario: forClaude(r.scenario), ...(loan ? { loan: forClaude(loan) } : {}) };
+  },
   fields_to_check: async (s) => ({ ...(await forLookup(s)), note: 'picked: by you or the user; ticket: named in the ticket; changes: in the lines this session added. Pick the ones that prove the change with set_fields_to_check (with why and the value each should have); they show in the Data panel’s lookup.' }),
   set_fields_to_check: async (s, a) => ({ picked: pickFields(s, a, 'claude') }),
   data_status: async (s, a) => {

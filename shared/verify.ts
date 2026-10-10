@@ -59,6 +59,8 @@ export interface VerifyConfig {
     launch?: string[];
     /** The folder they run in (absolute). Unset: your home folder. */
     cwd?: string;
+    /** v2 §143: where a new scenario is posted, relative to `url`. Unset: api/scenarios. */
+    createPath?: string;
   };
 }
 
@@ -211,7 +213,15 @@ export interface BuilderScenario {
   name: string;
   tags: string[];
   locked: boolean;
+  /** The folder (or group) it is filed under, when the tool says. */
+  folder?: string;
 }
+
+/** v2 §143: where a new scenario is posted when the file doesn't say, and where the tool may describe its API. */
+export const DEFAULT_CREATE_PATH = 'api/scenarios';
+export const BUILDER_DOC_PATHS = ['swagger/v1/swagger.json', 'openapi/v1.json'];
+/** The largest scenario body sent. */
+export const CREATE_MAX_BYTES = 256_000;
 
 export type BuilderStepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
 
@@ -329,6 +339,7 @@ export function cleanVerify(raw: unknown): VerifyConfig | undefined {
   const bl = (Array.isArray(r.builder?.launch) ? r.builder.launch : [r.builder?.launch]).map((x) => s(x, 500)).filter((x): x is string => Boolean(x)).slice(0, LAUNCH_MAX);
   if (bl.length) builder.launch = bl;
   const bc = s(r.builder?.cwd, 500); if (bc && isAbsolutePath(bc)) builder.cwd = bc;
+  const bp = s(r.builder?.createPath, 120)?.replace(/^\/+/, ''); if (bp && /^[\w\-./]+$/.test(bp) && !bp.includes('..')) builder.createPath = bp;
   const out: VerifyConfig = {};
   if (Object.keys(set).length) out.set = set;
   if (Object.keys(lookup).length) out.lookup = lookup;

@@ -39,3 +39,13 @@ export function loanId(v: unknown): string {
   if (!/^[\w.{}-]{1,80}$/.test(l)) throw new Error(l ? 'That loan id doesn’t look like one.' : 'Name the loan.');
   return l;
 }
+
+/** The ask for Claude that the Data panel copies: the session's key, the folder, the template, the env, any notes. */
+export function scenarioAsk(o: { key: string; folder: string; like?: string; env: 'dev' | 'uat'; notes?: string }): string {
+  return [
+    `Make a new test-data scenario for ${o.key} that sets up a loan to test this work as it is implemented now.`,
+    `Use the command-center tools: call scenario_guide${o.like ? ` with like: "${o.like}"` : ''} and follow its steps. File it under the folder "${o.folder}".`,
+    `Then make it with make_scenario and run it in ${o.env === 'dev' ? 'Dev' : 'UAT'} (run_env: "${o.env}"), pick the fields that prove the change, and look them up on the new loan.`,
+    ...(o.notes?.trim() ? [`Also: ${o.notes.trim()}`] : []),
+  ].join('\n');
+}

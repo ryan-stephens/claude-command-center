@@ -97,7 +97,7 @@ export interface DataEvent {
   id: string;
   at: number;
   by: 'claude' | 'you';
-  kind: 'lookup' | 'update' | 'loan';
+  kind: 'lookup' | 'update' | 'loan' | 'scenario';
   env: 'dev' | 'uat';
   state: 'running' | 'done' | 'failed';
   /** One line: what it was and what came of it. */
@@ -115,6 +115,11 @@ export interface DataEvent {
   runId?: string;
   steps?: { order: number; type: string; status: string; error?: string }[];
   loans?: string[];
+  /** A new scenario (§143): its id and version as the tool answered, its folder, and what was sent (cut to fit). */
+  scenarioId?: string;
+  version?: number;
+  folder?: string;
+  sent?: string;
   endedAt?: number;
 }
 export interface Evidence {
@@ -154,6 +159,8 @@ export interface Session {
   data?: DataEvent[];
   /** The fields Claude or you picked to check for this work (§142); the ticket's and the changes' are found when asked. */
   fieldPicks?: FieldPick[];
+  /** Where new scenarios for this work are filed in the test-data tool (§143). Unset: the session's key. */
+  scenarioFolder?: string;
   evidence: Evidence[];
   prs: ShippedPr[];
   /** When the review request was posted, and where. */

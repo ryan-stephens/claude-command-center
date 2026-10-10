@@ -116,6 +116,29 @@ const SCENARIOS = [
   { scenarioId: 'sc-refi', versionNumber: 1, name: 'Sample refinance', createdAtUtc: '2026-01-03T03:04:05Z', isLocked: false, tags: ['va'] },
   { scenarioId: 'sc-failing', versionNumber: 2, name: 'Sample failing', createdAtUtc: '2026-01-04T03:04:05Z', isLocked: true, tags: ['broken'] },
 ];
+// A made-up API description (OpenAPI 3) for v2's scenario guide (§143).
+const SAMPLE_OPENAPI = {
+  openapi: '3.0.1',
+  info: { title: 'Sample scenario runner', version: '1' },
+  paths: {
+    '/api/scenarios': {
+      get: { summary: 'List the scenarios' },
+      post: {
+        summary: 'Create a scenario',
+        requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateScenario' } } } },
+        responses: { 201: { content: { 'application/json': { schema: { $ref: '#/components/schemas/Created' } } } } },
+      },
+    },
+    '/api/scenarios/{scenarioId}/versions/{versionNumber}/runs': { post: { summary: 'Run a version' } },
+  },
+  components: {
+    schemas: {
+      CreateScenario: { type: 'object', required: ['name', 'steps'], properties: { name: { type: 'string' }, folder: { type: 'string', description: 'The folder it is filed under' }, tags: { type: 'array', items: { type: 'string' } }, steps: { type: 'array', items: { $ref: '#/components/schemas/Step' } } } },
+      Step: { type: 'object', properties: { order: { type: 'integer' }, typeId: { type: 'string', enum: ['SampleCreateLoan', 'SampleSetField', 'SampleSubmit', 'SampleOrderCredit'] }, settings: { type: 'object', additionalProperties: true } } },
+      Created: { type: 'object', properties: { scenarioId: { type: 'string' }, versionNumber: { type: 'integer' } } },
+    },
+  },
+};
 const RUNS = new Map();
 const guid = () => require('node:crypto').randomUUID();
 function builder(req, res) {
@@ -153,7 +176,22 @@ function builder(req, res) {
         ...(done && failing ? { runError: { message: 'Sample run failed at step 2', stackTrace: 'at Sample.Secret.Stack()' } } : {}),
       });
     }
-    // Anything else (create, versions, copy, lock, delete, resume, tokens) is never meant to be reached: logged above, flagged here.
+    // v2 §143: its API description, a scenario as a template, and a new scenario (logged by name, folder and step count).
+    if (req.method === 'GET' && p === '/swagger/v1/swagger.json') return json_(res, 200, SAMPLE_OPENAPI);
+    const one = /^\/api\/scenarios\/([\w-]+)(?:\/versions\/(\d+))?$/.exec(p);
+    if (req.method === 'GET' && one) {
+      const sc = SCENARIOS.find((s) => s.scenarioId === one[1]);
+      if (!sc) return json_(res, 404, { title: 'No such scenario' });
+      return json_(res, 200, { ...sc, steps: sc.steps ?? [{ order: 1, typeId: 'SampleCreateLoan', settings: { loanType: 'Sample' } }, { order: 2, typeId: 'SampleSubmit', settings: {} }, { order: 3, typeId: 'SampleOrderCredit', settings: { bureau: 'Sample' } }] });
+    }
+    if (req.method === 'POST' && p === '/api/scenarios') {
+      if (!json || typeof json !== 'object' || typeof json.name !== 'string' || !Array.isArray(json.steps) || !json.steps.length) return json_(res, 400, { title: 'A scenario needs a name and at least one step' });
+      const sc = { scenarioId: `sc-${guid().slice(0, 8)}`, versionNumber: 1, name: json.name, createdAtUtc: '2026-01-06T00:00:00Z', isLocked: false, tags: Array.isArray(json.tags) ? json.tags : [], ...(json.folder ? { folder: json.folder } : {}), steps: json.steps };
+      SCENARIOS.push(sc);
+      log({ tool: 'builder-create', name: json.name, folder: json.folder ?? null, steps: json.steps.length });
+      return json_(res, 201, { scenarioId: sc.scenarioId, versionNumber: 1 });
+    }
+    // Anything else (versions, copy, lock, delete, resume, tokens) is never meant to be reached: logged above, flagged here.
     log({ tool: 'builder', flagged: true, method: req.method, path: p, agent: req.headers['user-agent'] ?? '' });
     return json_(res, 404, { title: 'Not a stand-in endpoint' });
   });
