@@ -213,7 +213,7 @@ export interface Snapshot {
     /** Fields can be changed through the record lookup on this machine (Dev and UAT). */
     updates: boolean;
     /** The test-data tool: whether it can be started from here, and how it is (as started from here). */
-    testData: { name: string; launch: boolean; state: 'off' | 'starting' | 'up' | 'exited' | 'slow'; tail?: string[]; exitCode?: number | null };
+    testData: { name: string; configured: boolean; launch: boolean; cwd?: string; commands?: string[]; state: 'off' | 'starting' | 'up' | 'exited' | 'slow'; tail?: string[]; exitCode?: number | null };
     fieldLists: string[];
     port: number;
   };

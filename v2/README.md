@@ -31,7 +31,7 @@ Any Claude Code client opened on the folder gets them.
 ## Machine settings (never in the repo)
 
 - `~/.cc-control/config.env`: Jira (as in v1), `CC_CONTROL_SLACK_WEBHOOK`, `CC_CONTROL_SLACK_CHANNEL`, `CC_CONTROL_SLACK_MENTION`.
-- `~/.cc-control/verify.json`: where the test-data tool and the record lookup are (as in v1). Filling fields needs the lookup's `updateUrl`, `updateFields` and `"allowUpdate": true` (§134); without them the lookup only reads. `builder.launch` and `builder.cwd` (§135) let the app start the test-data tool from its installed folder.
+- `~/.cc-control/verify.json`: where the test-data tool and the record lookup are (as in v1). Filling fields needs the lookup's `updateUrl`, `updateFields` and `"allowUpdate": true` (§134); without them the lookup only reads. `builder.launch` and `builder.cwd` (§135) let the app start the test-data tool from its installed folder; set them from a session's Data panel (**Set up**: point at the folder, or pick the one found by the tool's name) instead of by hand (§141).
 - `CCV2_PORT` (7878), `CCV2_DIR` (`~/.cc-control/v2`).
 
 ## Tests

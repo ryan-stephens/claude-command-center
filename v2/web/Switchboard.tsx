@@ -86,9 +86,7 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
   const [menu, setMenu] = useState<'' | 'add' | 'more'>('');
   const [dataOpen, setDataOpen] = useState(false);
   const busy = s.data?.some((e) => e.state === 'running');
-  const dataButton = snap.config.loans || snap.config.fields || s.data?.length
-    ? <button type="button" className={`btn${dataOpen ? ' dark' : ''}`} aria-expanded={dataOpen} onClick={() => setDataOpen(!dataOpen)}>Data{s.data?.length ? ` · ${s.data.length}` : ''}{busy ? ' …' : ''}</button>
-    : null;
+  const dataButton = <button type="button" className={`btn${dataOpen ? ' dark' : ''}`} aria-expanded={dataOpen} onClick={() => setDataOpen(!dataOpen)}>Data{s.data?.length ? ` · ${s.data.length}` : ''}{busy ? ' …' : ''}</button>;
   const dataPart = dataOpen ? <DataPanel s={s} snap={snap} /> : <DataStrip s={s} open={() => setDataOpen(true)} />;
   const ws = snap.workspaces.find((w) => w.id === s.workspaceId);
   const ui = v?.services.find((x) => x.kind === 'ui');

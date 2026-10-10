@@ -27,6 +27,7 @@ export function DataPanel({ s, snap }: { s: Session; snap: Snapshot }) {
   const [form, setForm] = useState<'' | 'lookup' | 'loan'>('');
   const [error, setError] = useState('');
   const [loanFor, setLoanFor] = useState('');
+  const [setup, setSetup] = useState(false);
   const events = [...(s.data ?? [])].reverse();
   const tool = snap.config.testData;
   const toolWord = tool.state === 'up' ? 'running (started here)' : tool.state === 'starting' ? 'starting…' : tool.state === 'slow' ? 'started, not answering yet' : tool.state === 'exited' ? `stopped${tool.exitCode !== undefined && tool.exitCode !== null ? ` (exit ${tool.exitCode})` : ''}` : 'not started from here';
@@ -35,25 +36,85 @@ export function DataPanel({ s, snap }: { s: Session; snap: Snapshot }) {
   return (
     <div className="dpanel" role="region" aria-label="Data">
       <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-        {snap.config.loans && (
-          <span className="row" style={{ gap: 8, alignItems: 'center' }}>
-            <span className="k" style={{ display: 'inline' }}>{tool.name}</span>
-            <span className={tool.state === 'up' ? 'ok' : tool.state === 'exited' ? 'need' : 'mu'} style={{ fontSize: 14 }}>{toolWord}</span>
-            {tool.launch && tool.state !== 'up' && tool.state !== 'starting' && <button type="button" className="btn small" onClick={() => run(post('/api/test-data/start'))}>Start it</button>}
-            {(tool.state === 'up' || tool.state === 'starting' || tool.state === 'slow') && <button type="button" className="btn small" onClick={() => run(post('/api/test-data/stop'))}>Stop it</button>}
-          </span>
-        )}
+        <span className="row" style={{ gap: 8, alignItems: 'center' }}>
+          <span className="k" style={{ display: 'inline' }}>{tool.name}</span>
+          <span className={tool.state === 'up' ? 'ok' : tool.state === 'exited' ? 'need' : 'mu'} style={{ fontSize: 14 }}>{tool.launch ? toolWord : 'not set up to start from here'}</span>
+          {tool.launch && tool.state !== 'up' && tool.state !== 'starting' && <button type="button" className="btn small" onClick={() => run(post('/api/test-data/start'))}>Start it</button>}
+          {(tool.state === 'up' || tool.state === 'starting' || tool.state === 'slow') && <button type="button" className="btn small" onClick={() => run(post('/api/test-data/stop'))}>Stop it</button>}
+          <button type="button" className={`btn small${setup ? ' dark' : ''}`} onClick={() => setSetup(!setup)}>{tool.launch ? 'Change how it starts' : 'Set up'}</button>
+        </span>
         <span className="row" style={{ gap: 6, marginLeft: 'auto' }}>
           {snap.config.fields && <button type="button" className={`seg small${form === 'lookup' ? ' on' : ''}`} onClick={() => setForm(form === 'lookup' ? '' : 'lookup')}>Look up fields</button>}
           {snap.config.loans && <button type="button" className={`seg small${form === 'loan' ? ' on' : ''}`} onClick={() => setForm(form === 'loan' ? '' : 'loan')}>New loan</button>}
         </span>
       </div>
+      {setup && <ToolSetup snap={snap} done={() => setSetup(false)} />}
       {tool.tail && tool.tail.length > 0 && <pre className="preview" style={{ maxHeight: 140 }}>{tool.tail.join('\n')}</pre>}
       {form === 'lookup' && <LookupForm s={s} snap={snap} loan={loanFor || s.loans.at(-1)?.loan || ''} done={() => setForm('')} />}
       {form === 'loan' && <LoanForm s={s} done={() => setForm('')} />}
       {error && <div className="err" role="alert">{error}</div>}
       {!events.length && <div className="mu" style={{ fontSize: 14 }}>Nothing yet. What Claude looks up, changes or makes with these tools shows here as it happens; so does what you do.</div>}
       {events.map((ev, i) => <EventCard key={ev.id} s={s} ev={ev} first={i === 0} lookUp={(loan) => { setLoanFor(loan); setForm('lookup'); }} />)}
+    </div>
+  );
+}
+
+interface StartOption { id: string; kind: 'api' | 'ui' | 'script'; label: string; command: string; url?: string; on: boolean }
+
+/** Where the test-data tool is installed, and what of it to start: found by its name, or a folder you give. */
+function ToolSetup({ snap, done }: { snap: Snapshot; done: () => void }) {
+  const tool = snap.config.testData;
+  const [folder, setFolder] = useState(tool.cwd ?? '');
+  const [found, setFound] = useState<string[] | null>(null);
+  const [look, setLook] = useState<{ folder: string; options: StartOption[]; url?: string; problem?: string } | null>(null);
+  const [pick, setPick] = useState<Record<string, boolean>>({});
+  const [url, setUrl] = useState('');
+  const [name, setName] = useState(tool.name === 'The test-data tool' ? '' : tool.name);
+  const [error, setError] = useState('');
+  useEffect(() => { get<{ found: string[] }>('/api/test-data/find').then((r) => setFound(r.found)).catch(() => setFound([])); }, []);
+  const lookIn = (f: string) => {
+    setFolder(f);
+    setError('');
+    post<{ folder: string; options: StartOption[]; url?: string; problem?: string }>('/api/test-data/look', { folder: f }).then((r) => {
+      setLook(r);
+      setPick(Object.fromEntries(r.options.map((o) => [o.id, o.on])));
+      setUrl(r.url ?? '');
+    }).catch((e: Error) => setError(e.message));
+  };
+  const save = () => {
+    setError('');
+    post('/api/test-data/save', { folder: look!.folder, pick: Object.keys(pick).filter((k) => pick[k]), url, ...(name.trim() ? { name } : {}) }).then(done).catch((e: Error) => setError(e.message));
+  };
+  return (
+    <div className="dform" role="group" aria-label="Set up the test-data tool">
+      <div className="mu" style={{ fontSize: 14 }}>Where is it installed? The app reads that folder and works out how to start it; nothing is run until you press Start it.</div>
+      {found && found.length > 0 && (
+        <div className="row" style={{ gap: 6 }}><span className="cap">Found</span>{found.map((f) => <button key={f} type="button" className="btn small mono" onClick={() => lookIn(f)}>{f}</button>)}</div>
+      )}
+      <div className="row" style={{ gap: 8 }}>
+        <input type="text" className="mono" aria-label="Installed folder" value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="C:\path	o	he	ool" style={{ flex: '1 1 360px' }} onKeyDown={(e) => { if (e.key === 'Enter' && folder.trim()) lookIn(folder.trim()); }} />
+        <button type="button" className="btn" disabled={!folder.trim()} onClick={() => lookIn(folder.trim())}>Look in this folder</button>
+      </div>
+      {look && (
+        <>
+          {look.problem && <div className="note">{look.problem}</div>}
+          {look.options.map((o) => (
+            <label key={o.id} className="pick" style={{ alignItems: 'flex-start' }}>
+              <input type="checkbox" checked={Boolean(pick[o.id])} onChange={(e) => setPick({ ...pick, [o.id]: e.target.checked })} />
+              <span><b>{o.label}</b>{o.url ? <span className="mu"> · {o.url}</span> : null}<br /><span className="mono mu">$ {o.command}</span></span>
+            </label>
+          ))}
+          {look.options.length > 0 && (
+            <div className="row" style={{ gap: 8 }}>
+              <input type="text" className="mono" aria-label="Its API address" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://localhost:5000" style={{ flex: '1 1 240px' }} />
+              <input type="text" aria-label="What to call it" value={name} onChange={(e) => setName(e.target.value)} placeholder="What to call it" style={{ flex: '0 1 200px' }} />
+              <button type="button" className="btn dark" disabled={!Object.values(pick).some(Boolean)} onClick={save}>Save</button>
+            </div>
+          )}
+        </>
+      )}
+      {error && <div className="err" role="alert">{error}</div>}
+      <span className="note">Saved in this machine’s verify.json, never the repo.</span>
     </div>
   );
 }

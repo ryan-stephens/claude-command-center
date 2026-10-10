@@ -187,19 +187,38 @@ function toolbelt(sessionId, token) {
     // ---- The data tools (§140): the test-data tool started from its folder, loans, lookups, changes ----
     const updates = () => fs.readFileSync(`${ROOT}/tools.log`, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.tool === 'lookup-update');
     const verifyNow = JSON.parse(fs.readFileSync(VERIFY, 'utf8'));
-    // A second tool that isn't running yet, with the command that starts it in its folder.
-    fs.writeFileSync(VERIFY, JSON.stringify({ ...verifyNow, builder: { name: 'Sample data', url: 'http://127.0.0.1:18909', launch: ['node builder-start.cjs 18909 1500'], cwd: `${REPO}/docs/walkthroughs/simple-new-card/standins` } }, null, 2));
+    // A second tool that isn't running yet and isn't set up to start: installed beside the repos, with a start script.
+    const toolDir = `${DIR}/Sample-Data-tool`;
+    fs.mkdirSync(toolDir, { recursive: true });
+    fs.writeFileSync(`${toolDir}/start-sample.cmd`, `@node "${REPO}/docs/walkthroughs/simple-new-card/standins/builder-start.cjs" 18909 1500\r\n`);
+    fs.writeFileSync(VERIFY, JSON.stringify({ ...verifyNow, builder: { name: 'Sample data', url: 'http://127.0.0.1:18909' } }, null, 2));
     await sleep(600);
     const tsNot = await tb.call('test_data_tool', { action: 'status' });
-    check('test_data_tool says it isn’t running', !tsNot.error && /"answering": false/.test(tsNot.text) && /"launch": true/.test(tsNot.text), tsNot.text.slice(0, 160));
-    const tsStart = await tb.call('test_data_tool', { action: 'start', wait_seconds: 30 });
-    check('test_data_tool starts it from its folder and waits until it answers', !tsStart.error && /"answering": true/.test(tsStart.text) && /"state": "up"/.test(tsStart.text), tsStart.text.slice(0, 200));
+    check('test_data_tool says it isn’t running or set up to start', !tsNot.error && /"answering": false/.test(tsNot.text) && /"launch": false/.test(tsNot.text), tsNot.text.slice(0, 160));
+    const tsNoSetup = await tb.call('test_data_tool', { action: 'start' });
+    check('starting it before it is set up says to set it up from the Data panel', tsNoSetup.error && /Data panel \(Set up\)/.test(tsNoSetup.text), tsNoSetup.text.slice(0, 200));
+    await page.locator('.sess').getByRole('button', { name: /^Data/ }).click();
+    await page.locator('.dpanel').getByRole('button', { name: 'Set up' }).click();
+    const foundBtn = page.locator('.dform').getByRole('button', { name: /Sample-Data-tool/ });
+    check('Set up finds the install by the tool’s name beside the repos', await until(() => foundBtn.isVisible(), 8000));
+    await foundBtn.click();
+    check('and reads it: the start script, ticked, with its command', await until(() => page.locator('.dform').getByText('$ .\\start-sample.cmd').isVisible(), 8000) && await page.locator('.dform').getByRole('checkbox').first().isChecked());
+    await page.locator('.dform').getByLabel('Its API address').fill('http://127.0.0.1:18909');
+    await shot(page, 'tool-setup');
+    await page.locator('.dform').getByRole('button', { name: 'Save' }).click();
+    const savedB = await until(async () => (JSON.parse(fs.readFileSync(VERIFY, 'utf8')).builder || {}).launch?.length === 1, 5000) && JSON.parse(fs.readFileSync(VERIFY, 'utf8'));
+    check('Save writes the folder, the command and the address to verify.json, the rest kept', savedB && savedB.builder.cwd.replace(/\\/g, '/') === toolDir && savedB.builder.launch[0] === '.\\start-sample.cmd' && savedB.builder.url === 'http://127.0.0.1:18909' && savedB.lookup?.url === verifyNow.lookup.url, JSON.stringify(savedB && savedB.builder));
+    await page.locator('.dpanel').getByRole('button', { name: 'Start it' }).click();
+    check('Start it runs it from its folder and it answers', await until(() => page.locator('.dpanel').getByText('running (started here)').isVisible(), 20000));
+    const tsUp = await tb.call('test_data_tool', { action: 'status' });
+    check('test_data_tool sees it running', !tsUp.error && /"answering": true/.test(tsUp.text) && /"state": "up"/.test(tsUp.text), tsUp.text.slice(0, 200));
     const scenStarted = await tb.call('list_loan_scenarios');
     check('and its scenarios can be listed', !scenStarted.error && /Sample started here/.test(scenStarted.text));
-    await page.locator('.sess').getByRole('button', { name: /^Data/ }).click();
-    check('the Data panel shows it running, started here', await until(() => page.locator('.dpanel').getByText('running (started here)').isVisible(), 5000));
     const tsStop = await tb.call('test_data_tool', { action: 'stop' });
     check('test_data_tool stops what it started', !tsStop.error && /"state": "off"/.test(tsStop.text) && await until(async () => !(await fetch('http://127.0.0.1:18909/api/scenarios').then(() => true, () => false)), 5000));
+    const tsStart = await tb.call('test_data_tool', { action: 'start', wait_seconds: 30 });
+    check('Claude can start it too, and it waits until it answers', !tsStart.error && /"answering": true/.test(tsStart.text), tsStart.text.slice(0, 200));
+    await tb.call('test_data_tool', { action: 'stop' });
     fs.writeFileSync(VERIFY, JSON.stringify(verifyNow, null, 2));
     await sleep(600);
 

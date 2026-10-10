@@ -15,7 +15,8 @@ import { parsePortList, parseRange, PortPool } from '../../server/ports.ts';
 import { stackOf } from '../../server/stack.ts';
 import { DB_PATH, Store } from '../../server/store.ts';
 import { demoTickets, jiraConfig, TicketService } from '../../server/tickets.ts';
-import { LookupTool, readFieldLists, Requester, VerifyFileWatch } from '../../server/verify.ts';
+import { LookupTool, readFieldLists, Requester, VERIFY_FILE, VerifyFileWatch } from '../../server/verify.ts';
+import { findInstalls, lookInFolder, saveStart } from './tool-setup.ts';
 import { updatesOn } from '../../shared/verify.ts';
 import { BuilderTool } from '../../server/verify-builder.ts';
 import { branchOf, contextPack, firstMessageFor, keyFor, suggestApis, suggestRepos, titleFor, workText } from '../shared/context.ts';
@@ -292,6 +293,19 @@ app.post('/api/sessions/:id/tried', (c) => {
 });
 app.get('/api/scenarios', async (c) => {
   try { return c.json({ scenarios: await desk.scenarios() }); } catch (e) { return fail(c, e); }
+});
+app.get('/api/test-data/find', (c) => {
+  const name = verifyConfig().builder?.name ?? '';
+  return c.json({ name, found: name ? findInstalls(name, store.loadWorkspaces().flatMap((w) => w.repos)) : [] });
+});
+app.post('/api/test-data/look', async (c) => c.json(lookInFolder(String((await body(c)).folder ?? ''))));
+app.post('/api/test-data/save', async (c) => {
+  try {
+    const b = await body(c);
+    const r = saveStart(VERIFY_FILE, String(b.folder ?? ''), Array.isArray(b.pick) ? b.pick.map(String) : [], typeof b.url === 'string' ? b.url : undefined, typeof b.name === 'string' && b.name.trim() ? b.name.trim().slice(0, 60) : undefined);
+    soon();
+    return c.json(r);
+  } catch (e) { return fail(c, e); }
 });
 app.post('/api/test-data/start', async (c) => {
   try { return c.json(await desk.startTool(0)); } catch (e) { return fail(c, e); }

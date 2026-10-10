@@ -52,12 +52,13 @@ export class DataDesk {
   /** What the page shows of the test-data tool. */
   toolView(): Snapshot['config']['testData'] {
     const p = this.launcher.state();
-    return { name: this.name(), launch: Boolean(this.d.cfg().builder?.launch?.length), state: p.state, ...(p.tail ? { tail: p.tail } : {}), ...(p.exitCode !== undefined ? { exitCode: p.exitCode } : {}) };
+    const b = this.d.cfg().builder;
+    return { name: this.name(), configured: Boolean(b?.url), launch: Boolean(b?.launch?.length), ...(b?.cwd ? { cwd: b.cwd } : {}), ...(b?.launch?.length ? { commands: b.launch } : {}), state: p.state, ...(p.tail ? { tail: p.tail } : {}), ...(p.exitCode !== undefined ? { exitCode: p.exitCode } : {}) };
   }
 
   /** v1's "not running" says to press Shift+S; here it is a button or a tool. */
   private plain(e: unknown): Error {
-    const m = (e as Error).message.replace(' Start it with Shift+S.', ' Start it from the Data panel, or with test_data_tool (start).');
+    const m = (e as Error).message.replace(' Start it with Shift+S.', ' Start it from the Data panel, or with test_data_tool (start).').replace(/has no "launch" in this machine’s Verify file: add the command that starts it\./, 'isn’t set up to be started from here yet: the user sets it up from a session’s Data panel (Set up), by pointing at the folder it is installed in.');
     return new Error(m);
   }
 
@@ -69,7 +70,7 @@ export class DataDesk {
   /** Start the tool from its folder and wait (up to `waitMs`) until it answers. Already answering: says so. */
   async startTool(waitMs = 120_000) {
     if (await this.d.builder.answers()) return { answering: true, ...this.toolView(), note: `${this.name()} is running.` };
-    await this.launcher.start();
+    try { await this.launcher.start(); } catch (e) { throw this.plain(e); }
     const until = Date.now() + waitMs;
     while (Date.now() < until && this.launcher.state().state === 'starting') await new Promise((r) => setTimeout(r, 1000));
     const v = this.toolView();
