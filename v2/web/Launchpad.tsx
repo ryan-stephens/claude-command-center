@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Opener, Preflight, Snapshot } from '../shared/types.ts';
 import { go, post } from './api.ts';
+import { TicketPicker } from './TicketPicker.tsx';
 
 const OPEN_IN: { id: Opener; label: string }[] = [
   { id: 'terminal', label: 'Terminal' },
@@ -87,7 +88,7 @@ export function Launchpad({ snap }: { snap: Snapshot }) {
               {snap.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
             <label htmlFor="lp-ticket" className="cap">Ticket, or just say what to do</label>
-            <input id="lp-ticket" type="text" className="ticket-input" value={input} onChange={(e) => setInput(e.target.value)} placeholder="SHOP-160" autoFocus />
+            <TicketPicker value={input} onChange={setInput} jira={snap.config.jira} />
             {pf?.ticket ? (
               <>
                 <div style={{ fontSize: 20, lineHeight: '28px', fontWeight: 600 }}>{pf.ticket.title}</div>

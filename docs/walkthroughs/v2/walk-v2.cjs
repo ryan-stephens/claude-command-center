@@ -96,7 +96,17 @@ function toolbelt(sessionId, token) {
     // ---- Launchpad ----
     await page.getByRole('button', { name: 'New work' }).first().click();
     check('New work opens the Launchpad', await page.getByRole('heading', { name: 'New work' }).isVisible());
-    await page.locator('#lp-ticket').fill('SHOP-160');
+    // The ticket picker: your open tickets under the box, filtered as you type, then a search of the rest.
+    const picks = page.locator('#lp-picks');
+    check('the picker lists your open tickets', await until(() => picks.getByText('SHOP-160').isVisible(), 8000) && await picks.getByText('PAY-91').isVisible());
+    check('done and Ready for PO tickets aren\'t in your list', !(await picks.getByText('PAY-71').isVisible()) && !(await picks.getByText('SHOP-98').isVisible()));
+    await shot(page, 'ticket-picker');
+    await page.locator('#lp-ticket').fill('gift card');
+    check('a search finds tickets elsewhere in Jira', await until(() => picks.getByText('Elsewhere in Jira').isVisible(), 8000) && await picks.getByText('SHOP-149').isVisible());
+    await page.locator('#lp-ticket').fill('badge');
+    check('typing narrows your list', await until(async () => (await picks.locator('.pick-row').count()) === 1, 5000) && await picks.getByText('SHOP-160').isVisible());
+    await page.locator('#lp-ticket').press('Enter');
+    check('Enter picks the ticket and closes the list', await page.locator('#lp-ticket').inputValue() === 'SHOP-160' && !(await picks.isVisible()));
     check('a ticket key brings the (demo) ticket', await until(() => page.getByText('Cart badge shows the wrong count after sign-in').isVisible(), 8000));
     check('the preflight names the branch', await page.getByText('shop-160-cart-badge-shows-wrong').isVisible().catch(() => false) || await page.locator('.ln .mono').first().isVisible());
     const ticked = await page.locator('.ln').first().locator('input[type=checkbox]:checked').count();

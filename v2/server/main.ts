@@ -21,6 +21,7 @@ import { branchOf, contextPack, firstMessageFor, keyFor, suggestApis, suggestRep
 import { OPENERS, type ClaudeStatus, type Opener, type Preflight, type Session, type Snapshot, type TicketInfo } from '../shared/types.ts';
 import { applyHook, V2_EVENTS } from './hook-state.ts';
 import { focusOrOpen, linkDeps, makeSessionWorktrees, openTerminal, openVsCode, trust, writeLocalFiles } from './launch.ts';
+import { MyTickets } from './my-tickets.ts';
 import { SessionStore, V2_DIR } from './sessions.ts';
 import { refreshPr, ship, shipPlan, slackConfig } from './ship.ts';
 import { StackManager } from './stacks.ts';
@@ -35,6 +36,7 @@ const NO_OPEN = process.env.CCV2_NO_OPEN === '1';
 
 const store = new Store(DB_PATH);
 const tickets = new TicketService(store, () => {});
+const myTickets = new MyTickets(process.env);
 const sessions = new SessionStore(V2_DIR, () => soon());
 const pool = new PortPool(parseRange(process.env.CC_CONTROL_PORTS), parsePortList(process.env.CC_CONTROL_UI_PORTS));
 const doors = process.env.CC_CONTROL_FRONT_DOOR === '0' ? undefined : new FrontDoors(() => soon());
@@ -212,6 +214,7 @@ app.get('/api/events', (c) => streamSSE(c, async (s) => {
   while (!s.aborted) { await s.sleep(20_000); await s.writeSSE({ event: 'ping', data: '' }).catch(() => {}); }
 }));
 
+app.get('/api/tickets', async (c) => c.json(await myTickets.picks(c.req.query('q') ?? '', c.req.query('fresh') === '1')));
 app.post('/api/preflight', async (c) => {
   const b = await body(c);
   try { return c.json(await preflight(String(b.workspaceId ?? ''), String(b.input ?? ''))); } catch (e) { return fail(c, e); }

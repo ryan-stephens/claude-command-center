@@ -122,3 +122,12 @@ input:focus, textarea:focus, select:focus, button:focus-visible, a:focus-visible
 .stage { flex: 1 1 150px; display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--soft); }
 .stage.now { border-color: var(--ink); background: var(--card); }
 .slack { border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; white-space: pre-wrap; }
+
+/* The Launchpad's ticket picker: your tickets under the box, then what a search finds. */
+.picks { border: 1px solid var(--line); border-radius: 10px; background: var(--card); max-height: 340px; overflow: auto; padding: 4px; }
+.picks-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 6px 10px; }
+.picks-sep { padding: 10px 10px 4px; border-top: 1px dashed var(--line); margin-top: 4px; }
+.pick-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.pick-row.on { background: var(--soft); outline: 1px solid var(--line); }
+.pick-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+@media (max-width: 560px) { .pick-row { grid-template-columns: auto minmax(0, 1fr); } .pick-row > .chip, .pick-row > .mu { display: none; } }

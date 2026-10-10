@@ -166,6 +166,26 @@ export interface Snapshot {
   };
 }
 
+/** One line in the Launchpad's ticket picker. */
+export interface TicketPick {
+  key: string;
+  title: string;
+  status: string;
+  url?: string;
+  updatedAt: number;
+  /** Assigned to you and still workable; else found by a search. */
+  mine: boolean;
+}
+
+/** The picker's answer: your tickets, and (for a search) what Jira found. */
+export interface TicketPicks {
+  mine: TicketPick[];
+  found: TicketPick[];
+  /** Where they came from: Jira, or the demo set on a machine without Jira. */
+  source: 'jira' | 'demo';
+  problem?: string;
+}
+
 /** What the Launchpad builds before anything happens. */
 export interface Preflight {
   key: string;
