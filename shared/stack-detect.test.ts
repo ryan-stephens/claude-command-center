@@ -32,7 +32,7 @@ test('pieces: the manifest’s name, a health route, the UI’s serve command, t
     'libs/shared/project.json': JSON.stringify({ name: 'shared', targets: { build: {} } }),
   });
   assert.deepEqual(uiServe(NX), { command: 'npx nx serve deny-withdraw --proxyConfig={{proxy}} --port={{uiPort}}', proxyFile: 'apps/config/proxy.conf.json', port: 4216, path: '/ap-summary/', from: 'apps/deny-withdraw/project.json', others: ['payoff'] });
-  assert.deepEqual(uiApp(NX, 'payoff'), { name: 'payoff', port: 4220, path: '/payoff/', from: 'apps/payoff/project.json' });
+  assert.deepEqual(uiApp(NX, 'payoff'), { name: 'payoff', port: 4220, path: '/payoff/', from: 'apps/payoff/project.json', src: 'apps/payoff/src' });
   assert.deepEqual(uiApp(NX, 'PAYOFF')?.name, 'payoff', 'any case');
   assert.equal(uiApp(NX, 'nope'), undefined);
   assert.equal(uiApp(NX)?.name, 'deny-withdraw', 'no name: the first');
@@ -61,7 +61,7 @@ test('a workspace’s repos become a stack: APIs from okteto.yml and .csproj, th
   ]);
   assert.deepEqual(s.api.proxy, { '/gateway/team/{{route}}/**': { target: 'http://localhost:{{port}}', secure: false, pathRewrite: { '.*/gateway/team/{{route}}': '' } } }, 'the template from the first matched rule');
   assert.deepEqual(s.ui, { repo: 'shop-ui', proxyFile: 'apps/shop/proxy.conf.json', proxyMode: 'override', steps: ['if not exist node_modules npm install', 'npx ng serve shop --proxy-config {{proxy}} --port {{uiPort}}'], url: 'http://localhost:{{uiPort}}' });
-  assert.deepEqual(stackWarnings(s).filter((w) => !/proxyEnv/.test(w)), [], 'runs twice at once as found (its UAT pairs are the team’s to write)');
+  assert.deepEqual(stackWarnings(s).filter((w) => !/proxyEnv|configEnv/.test(w)), [], 'runs twice at once as found (its UAT pairs are the team’s to write)');
   const say = (repoName: string) => d.findings.filter((f) => f.repo === repoName).map((f) => `${f.asked ? '? ' : ''}${f.text}${f.from ? ` [${f.from}]` : ''}`);
   assert.deepEqual(say('loans-api'), [
     'okteto: dev name loans-api, forwards 8080→80; the container port is 80 [okteto.yml]',

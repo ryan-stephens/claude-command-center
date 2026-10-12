@@ -4,6 +4,7 @@
 // The proxy file is a copy outside the repo by default; in edit mode the repo's file is changed and
 // put back on stop, with a backup kept until then so a crash can't lose it (restoreLeftovers).
 
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, pickedServices, readLooseJson, runLabel, serviceSteps, stackRules, stackSteps, uiHomePort, uiPortFor, uiProject, uiUrlFor, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo, type StackRunContext } from '../shared/stack.ts';
@@ -90,13 +91,24 @@ export function restoreLeftovers(dir: string): string[] {
   for (const f of readdirSync(dir)) {
     if (!f.endsWith('.backup.json')) continue;
     try {
-      const b = JSON.parse(readFileSync(join(dir, f), 'utf8')) as { path: string; text: string };
+      const b = JSON.parse(readFileSync(join(dir, f), 'utf8')) as { path: string; text: string; hidden?: { root: string; rel: string } };
       writeFileSync(b.path, b.text);
+      if (b.hidden) lookPast(b.hidden.root, b.hidden.rel, false);
       rmSync(join(dir, f));
       restored.push(b.path);
     } catch { /* leave it for a person to look at */ }
   }
   return restored;
+}
+
+/**
+ * Tell git to look past a tracked file a run changes in place (skip-worktree), or to see it again:
+ * meanwhile status, diff and `git add -A` leave it out, so it can't reach a commit. False when git
+ * couldn't (the file isn't tracked: then nothing in the repo can commit it by accident either way).
+ */
+export function lookPast(root: string, rel: string, on: boolean): boolean {
+  const r = spawnSync('git', ['update-index', on ? '--skip-worktree' : '--no-skip-worktree', '--', rel.replace(/\\/g, '/')], { cwd: root, windowsHide: true, timeout: 15_000 });
+  return r.status === 0;
 }
 
 export { readLooseJson } from '../shared/stack.ts';

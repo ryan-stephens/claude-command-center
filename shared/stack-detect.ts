@@ -33,6 +33,8 @@ export interface Detected {
 }
 
 const dirOf = (p: string) => p.split('/').slice(0, -1).join('/');
+/** An app's source folder: its sourceRoot, else src under its root. */
+const srcOf = (sourceRoot: unknown, root: unknown): string => (typeof sourceRoot === 'string' && sourceRoot.trim() ? sourceRoot.trim() : [typeof root === 'string' ? root.trim() : '', 'src'].filter(Boolean).join('/')).replace(/\\/g, '/').replace(/\/+$/, '');
 
 /** `name:` at the top of an okteto manifest, or the first dev entry of a v2 one. */
 export function manifestName(text: string): string | undefined {
@@ -75,14 +77,15 @@ export function uiApps(repo: RepoFiles): (UiApp & { proxyFile?: string; kind: 'n
   const out: (UiApp & { proxyFile?: string; kind: 'ng' | 'nx' })[] = [];
   const ng = json('angular.json');
   if (ng) {
-    const projects = (ng.projects ?? {}) as Record<string, { architect?: Targets; targets?: Targets }>;
+    const projects = (ng.projects ?? {}) as Record<string, { architect?: Targets; targets?: Targets; root?: string; sourceRoot?: string }>;
     const names = Object.keys(projects).filter((p) => (projects[p].architect ?? projects[p].targets)?.serve);
     const first = typeof ng.defaultProject === 'string' && names.includes(ng.defaultProject) ? ng.defaultProject : undefined;
     for (const name of first ? [first, ...names.filter((n) => n !== first)] : names) {
       const t = projects[name].architect ?? projects[name].targets;
       const o = serveOpts(t?.serve);
       const path = basePath(t);
-      out.push({ name, kind: 'ng', from: 'angular.json', ...(o.proxyConfig ? { proxyFile: o.proxyConfig } : {}), ...(o.port ? { port: o.port } : {}), ...(path ? { path } : {}) });
+      const src = srcOf(projects[name].sourceRoot, projects[name].root);
+      out.push({ name, kind: 'ng', from: 'angular.json', src, ...(o.proxyConfig ? { proxyFile: o.proxyConfig } : {}), ...(o.port ? { port: o.port } : {}), ...(path ? { path } : {}) });
     }
   }
   for (const file of repo.files.filter((f) => /(^|\/)project\.json$/.test(f)).sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b))) {
@@ -92,7 +95,7 @@ export function uiApps(repo: RepoFiles): (UiApp & { proxyFile?: string; kind: 'n
     const name = String(pj!.name ?? (file.includes('/') ? file.split('/').at(-2) : repo.name));
     const o = serveOpts(targets.serve);
     const path = basePath(targets);
-    out.push({ name, kind: 'nx', from: file, ...(o.proxyConfig ? { proxyFile: o.proxyConfig } : {}), ...(o.port ? { port: o.port } : {}), ...(path ? { path } : {}) });
+    out.push({ name, kind: 'nx', from: file, src: srcOf(pj!.sourceRoot, dirOf(file)), ...(o.proxyConfig ? { proxyFile: o.proxyConfig } : {}), ...(o.port ? { port: o.port } : {}), ...(path ? { path } : {}) });
   }
   return out;
 }

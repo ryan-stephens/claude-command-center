@@ -39,6 +39,15 @@ export interface Stack {
      * The running APIs' localhost rules are added after, so never rewritten.
      */
     proxyEnv?: Record<string, ProxySwap[]>;
+    /**
+     * For an env other than the default: find/replace pairs on the text of the UI app's runtime config
+     * (its sign-in issuer and client id, flags keys, the hosts it calls), in order. The file is
+     * changed in place for the run and put back on stop; git is told to look past it meanwhile, so
+     * it never reaches a commit. The values are the owner's (a client id can be one): never logged.
+     */
+    configEnv?: Record<string, ProxySwap[]>;
+    /** That config file, relative to the UI repo. Unset: the served app's assets/environmentConfig.js. */
+    configFile?: string;
     /** override (default): write a copy with the rules outside the repo and pass it as {{proxy}}. edit: change the file in place and put it back on stop. */
     proxyMode?: 'override' | 'edit';
     steps: string[];
@@ -74,6 +83,8 @@ export interface UiApp {
   path?: string;
   /** The file it was read from. */
   from: string;
+  /** Its source folder (`apps/shop/src`), where its assets are. */
+  src?: string;
 }
 
 /** The project the UI's steps serve: `nx serve X`, `nx run X:serve`, `ng serve X` (none: the project file's default). */
@@ -143,24 +154,27 @@ function rules(v: unknown, what: string): Record<string, unknown> | undefined {
   return v as Record<string, unknown>;
 }
 
-/** "ui.proxyEnv": per env value (one of "choose"'s), up to 20 short find/replace pairs. */
-function swaps(v: unknown, choose: Record<string, string[]>): Record<string, ProxySwap[]> | undefined {
+/** "ui.proxyEnv" or "ui.configEnv": per env value (one of "choose"'s), up to 20 short find/replace pairs. */
+function swaps(v: unknown, choose: Record<string, string[]>, what = 'proxyEnv'): Record<string, ProxySwap[]> | undefined {
   if (v === undefined || v === null) return undefined;
-  if (typeof v !== 'object' || Array.isArray(v)) throw new Error('"ui.proxyEnv" should look like { "uat": [{ "from": "dev.", "to": "uat." }] }.');
+  if (typeof v !== 'object' || Array.isArray(v)) throw new Error(`"ui.${what}" should look like { "uat": [{ "from": "dev.", "to": "uat." }] }.`);
   const offered = Object.values(choose).flat();
   const out: Record<string, ProxySwap[]> = {};
   for (const [env, list] of Object.entries(v as Record<string, unknown>)) {
-    if (!offered.includes(env)) throw new Error(`"ui.proxyEnv.${env}": ${env} isn’t a value in "choose"${offered.length ? ` (${offered.join(', ')})` : ''}.`);
-    if (!Array.isArray(list)) throw new Error(`"ui.proxyEnv.${env}" should be a list of { "from": …, "to": … }.`);
-    if (list.length > MAX_SWAPS) throw new Error(`"ui.proxyEnv.${env}" has ${list.length} pairs: ${MAX_SWAPS} at most.`);
+    if (!offered.includes(env)) throw new Error(`"ui.${what}.${env}": ${env} isn’t a value in "choose"${offered.length ? ` (${offered.join(', ')})` : ''}.`);
+    if (!Array.isArray(list)) throw new Error(`"ui.${what}.${env}" should be a list of { "from": …, "to": … }.`);
+    if (list.length > MAX_SWAPS) throw new Error(`"ui.${what}.${env}" has ${list.length} pairs: ${MAX_SWAPS} at most.`);
     out[env] = list.map((x, i) => {
       const o = (x ?? {}) as Record<string, unknown>;
-      if (typeof o.from !== 'string' || typeof o.to !== 'string' || !o.from || o.from.length > 200 || o.to.length > 200) throw new Error(`"ui.proxyEnv.${env}" pair ${i + 1} needs "from" (not empty) and "to", each 200 characters at most.`);
+      if (typeof o.from !== 'string' || typeof o.to !== 'string' || !o.from || o.from.length > 200 || o.to.length > 200) throw new Error(`"ui.${what}.${env}" pair ${i + 1} needs "from" (not empty) and "to", each 200 characters at most.`);
       return { from: o.from, to: o.to };
     });
   }
   return Object.keys(out).length ? out : undefined;
 }
+
+/** A path inside the UI repo: not absolute, no `..`. */
+const insideRepo = (p: string) => !/^[a-z]:|^[\\/]/i.test(p) && !p.split(/[\\/]/).includes('..');
 
 /** Check a stack someone wrote or imported, and keep only what it should have. Throws what's wrong. */
 export function validateStack(raw: unknown): Stack {
@@ -198,9 +212,12 @@ export function validateStack(raw: unknown): Stack {
     const repo = str(u.repo, 120);
     if (!repo) throw new Error('"ui" has no "repo" (its folder name).');
     const proxyFile = str(u.proxyFile, 300);
-    if (proxyFile && (/^[a-z]:|^[\\/]/i.test(proxyFile) || proxyFile.split(/[\\/]/).includes('..'))) throw new Error('"ui.proxyFile" should be a path inside the UI repo, like "apps/web/proxy.conf.json".');
+    if (proxyFile && !insideRepo(proxyFile)) throw new Error('"ui.proxyFile" should be a path inside the UI repo, like "apps/web/proxy.conf.json".');
     const mode = u.proxyMode === 'edit' ? 'edit' : 'override';
     const proxyEnv = swaps(u.proxyEnv, choose);
+    const configEnv = swaps(u.configEnv, choose, 'configEnv');
+    const configFile = str(u.configFile, 300);
+    if (configFile && !insideRepo(configFile)) throw new Error('"ui.configFile" should be a path inside the UI repo, like "apps/web/src/assets/environmentConfig.js".');
     const url = str(u.url, 300);
     if (url && !/^https?:\/\/\S+$/.test(url)) throw new Error('"ui.url" should look like http://localhost:{{uiPort}}.');
     let path = str(u.path, 200);
@@ -208,7 +225,7 @@ export function validateStack(raw: unknown): Stack {
     if (path && !path.startsWith('/')) path = `/${path}`;
     const uiSteps = steps(u.steps, '"ui.steps"');
     if (!uiSteps.length) throw new Error('"ui.steps" is empty: say how the UI starts.');
-    ui = { repo, ...(proxyFile ? { proxyFile, proxyMode: mode } : {}), ...(proxyEnv ? { proxyEnv } : {}), steps: uiSteps, ...(url ? { url } : {}), ...(path && path !== '/' ? { path } : {}) };
+    ui = { repo, ...(proxyFile ? { proxyFile, proxyMode: mode } : {}), ...(proxyEnv ? { proxyEnv } : {}), ...(configEnv ? { configEnv } : {}), ...(configFile ? { configFile } : {}), steps: uiSteps, ...(url ? { url } : {}), ...(path && path !== '/' ? { path } : {}) };
   }
   if (!apis.length && !ui) throw new Error('The stack has no APIs and no UI.');
   return { choose, api, apis, ...(ui ? { ui } : {}) };
@@ -239,6 +256,7 @@ export const STACK_EXAMPLE: Stack = {
     repo: 'web-ui',
     proxyFile: 'apps/shop/proxy.conf.json',
     proxyEnv: { uat: [{ from: '.dev.example.test', to: '.uat.example.test' }] },
+    configEnv: { uat: [{ from: '.dev.example.test', to: '.uat.example.test' }, { from: 'id-dev', to: 'id-uat' }] },
     steps: ['node_modules\\.bin\\nx.cmd run shop:serve:development --proxyConfig={{proxy}} --port {{uiPort}}'],
     url: 'http://localhost:{{uiPort}}',
   },
@@ -315,6 +333,11 @@ export function stackWarnings(stack: Stack): string[] {
   if (stack.ui?.proxyFile && !USES('[A-Za-z_]\\w*').test(stack.ui.proxyFile)) {
     const bare = Object.values(stack.choose).flatMap((vals) => vals.slice(1)).filter((v) => !stack.ui!.proxyEnv?.[v]?.length);
     if (bare.length) out.push(`${bare.join(', ')} can be picked, but ui.proxyEnv says nothing for ${bare.length === 1 ? 'it' : 'them'}: the APIs not running here would still go where ${stack.ui.proxyFile} points. Add find/replace pairs in "ui.proxyEnv", or use {{env}} in ui.proxyFile for a file per env.`);
+  }
+  // The UI's own runtime config (sign-in, flags) is per env too: an empty list says it needs nothing.
+  if (stack.ui) {
+    const bare = Object.values(stack.choose).flatMap((vals) => vals.slice(1)).filter((v) => !stack.ui!.configEnv?.[v]);
+    if (bare.length) out.push(`${bare.join(', ')} can be picked, but ui.configEnv says nothing for ${bare.length === 1 ? 'it' : 'them'}: the UI keeps the default env's runtime config (${stack.ui.configFile ?? 'its assets/environmentConfig.js'}), so it signs in against the default env and the other env's gateway answers 401. Add find/replace pairs in "ui.configEnv" (an empty list when its config doesn't change).`);
   }
   if (stack.ui && !needsUiPort(stack)) {
     out.push('The UI starts on a fixed port, so two cards can’t run it at once: add --port {{uiPort}} to its start step and put {{uiPort}} in ui.url.');
@@ -552,22 +575,65 @@ export function proxyFileFor(stack: Pick<Stack, 'choose' | 'ui'>, values: Record
   return f ? fill(f, chosenVars(choiceValues(stack, values)), '"ui.proxyFile"') : undefined;
 }
 
-/** The find/replace pairs for the picked values: none for a default (first) value. */
-export function proxySwaps(stack: Pick<Stack, 'choose' | 'ui'>, values: Record<string, string>): ProxySwap[] {
+/** The find/replace pairs for the picked values (ui.proxyEnv, or ui.configEnv): none for a default (first) value. */
+export function proxySwaps(stack: Pick<Stack, 'choose' | 'ui'>, values: Record<string, string>, which: 'proxyEnv' | 'configEnv' = 'proxyEnv'): ProxySwap[] {
   const picked = choiceValues(stack, values);
-  return Object.entries(stack.choose).flatMap(([k, vals]) => (picked[k] !== vals[0] ? stack.ui?.proxyEnv?.[picked[k]] ?? [] : []));
+  return Object.entries(stack.choose).flatMap(([k, vals]) => (picked[k] !== vals[0] ? stack.ui?.[which]?.[picked[k]] ?? [] : []));
+}
+
+/** Each pair replaced throughout a text, in order (a later pair sees what an earlier one wrote); `count` is how many replacements. */
+export function swapText(text: string, pairs: ProxySwap[]): { text: string; count: number } {
+  let count = 0;
+  for (const p of pairs) {
+    const parts = text.split(p.from);
+    count += parts.length - 1;
+    text = parts.join(p.to);
+  }
+  return { text, count };
 }
 
 /** Every string value of the rules (targets, headers) with each pair replaced throughout; keys (the routes) left alone. */
 export function swapTargets<T>(rules: T, pairs: ProxySwap[]): T {
-  if (!pairs.length) return rules;
+  return swapRules(rules, pairs).rules;
+}
+
+/** swapTargets, and how many string values it changed. */
+export function swapRules<T>(rules: T, pairs: ProxySwap[]): { rules: T; count: number } {
+  if (!pairs.length) return { rules, count: 0 };
+  let count = 0;
   const walk = (v: unknown): unknown => {
-    if (typeof v === 'string') return pairs.reduce((s, p) => s.split(p.from).join(p.to), v);
+    if (typeof v === 'string') { const s = swapText(v, pairs).text; if (s !== v) count++; return s; }
     if (Array.isArray(v)) return v.map(walk);
     if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, walk(x)]));
     return v;
   };
-  return walk(rules) as T;
+  return { rules: walk(rules) as T, count };
+}
+
+/** Nothing to replace, but some pair's "to" is already there: the file looks like that env's already. */
+export function looksSwapped(text: string, pairs: ProxySwap[]): boolean {
+  return pairs.length > 0 && !pairs.some((p) => text.includes(p.from)) && pairs.some((p) => p.to && p.to !== p.from && text.includes(p.to));
+}
+
+/** Where the UI app's runtime config may be, most likely first: ui.configFile, else the served app's assets/environmentConfig.js. */
+export function configCandidates(stack: Pick<Stack, 'ui'>, app?: UiApp): string[] {
+  if (stack.ui?.configFile) return [stack.ui.configFile];
+  const src = app?.src?.replace(/\/+$/, '');
+  const dirs = src ? [src, src.split('/').slice(0, -1).join('/')] : ['src'];
+  return [...new Set(dirs.map((d) => `${d ? `${d}/` : ''}assets/environmentConfig.js`))];
+}
+
+/**
+ * What moving to the picked env did, for the Logs: "3 proxy targets and 5 config values moved to UAT"
+ * (counts only: a pair's values can be secrets), and a note when nothing moved but a file already
+ * looks like that env's.
+ */
+export function movedText(env: string, moved: { proxy: number; config: number; configFile?: string; proxyAlready?: boolean; configAlready?: boolean }): string {
+  const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+  const parts = [`${n(moved.proxy, 'proxy target', 'proxy targets')} and ${n(moved.config, 'config value', 'config values')} moved to ${env}${moved.configFile ? ` (${moved.configFile} changed for this run and put back on stop; git looks past it meanwhile, so Ship and changed files leave it out)` : ''}.`];
+  if (moved.proxyAlready) parts.push('The proxy file’s own targets already look like that env’s.');
+  if (moved.configAlready) parts.push(`${moved.configFile ?? 'The config file'} already looks like that env’s: nothing to replace.`);
+  return parts.join(' ');
 }
 
 /**
@@ -598,6 +664,7 @@ export function stackText(stack: Stack): string {
   const ask = Object.entries(stack.choose).map(([k, v]) => `${k} (${v.join(' / ')})`).join(', ');
   const L = [`The workspace’s stack starts the app. When you press Try it, you pick ${ask ? `${ask} and ` : ''}which APIs to run: ${stack.apis.map((a) => a.repo).join(', ') || 'none set up'}. Each gets a local port of its own for that run.`];
   if (stack.ui) L.push(`Then ${stack.ui.repo} starts${stack.ui.proxyFile ? `, with ${stack.ui.proxyFile} pointed at the APIs that run (${stack.ui.proxyMode === 'edit' ? 'changed in place and put back on stop: never commit that change' : 'a copy; the repo’s file isn’t changed'})` : ''}${stack.ui.url ? `, at ${withPath(stack.ui.url.replace(/\{\{\s*uiPort\s*\}\}/, '<a port picked for the run>'), stack.ui.path)}` : stack.ui.path ? `, at ${stack.ui.path} on its port` : ''}.`);
+  if (stack.ui?.configEnv && Object.values(stack.ui.configEnv).some((l) => l.length)) L.push(`On another env than the default, the UI app’s runtime config (${stack.ui.configFile ?? 'its assets/environmentConfig.js'}) is changed to that env’s values for the run and put back on stop; git is told to look past it meanwhile. Never commit that file’s env values, and don’t edit it while the stack runs (the stop puts the original back).`);
   L.push('cc-control does this; don’t start the APIs or the UI yourself, and don’t edit the proxy file to point at them.');
   return L.join(' ');
 }

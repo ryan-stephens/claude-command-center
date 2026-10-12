@@ -24,6 +24,8 @@ const SLACK_PORT = 18980;
 const OUT = path.join(__dirname, 'shots-v2');
 fs.mkdirSync(OUT, { recursive: true });
 const BASE = `http://127.0.0.1:${PORT}`;
+/** The stand-in UI's runtime config, on made-up Dev values (UAT's are entered in Env pairs). */
+const UI_CONFIG = 'window.env = { issuer: "https://login.dev.example.invalid", clientId: "id-dev" };\n';
 
 let n = 0; const results = [];
 const check = (name, ok, extra = '') => { results.push([ok ? 'PASS' : 'FAIL', name, extra]); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${extra}`); };
@@ -35,7 +37,7 @@ const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8',
 function makeRepo(name, files) {
   const dir = `${DIR}/${name}`;
   fs.mkdirSync(dir, { recursive: true });
-  for (const [f, text] of Object.entries(files)) fs.writeFileSync(`${dir}/${f}`, text);
+  for (const [f, text] of Object.entries(files)) { fs.mkdirSync(path.dirname(`${dir}/${f}`), { recursive: true }); fs.writeFileSync(`${dir}/${f}`, text); }
   git(dir, 'init', '-q', '-b', 'main');
   git(dir, '-c', 'user.email=walk@example.invalid', '-c', 'user.name=walk', 'add', '.');
   git(dir, '-c', 'user.email=walk@example.invalid', '-c', 'user.name=walk', 'commit', '-q', '-m', 'init');
@@ -69,7 +71,7 @@ function toolbelt(sessionId, token) {
     fs.rmSync(ROOT, { recursive: true, force: true });
   }
   fs.mkdirSync(DIR, { recursive: true });
-  makeRepo('shop-ui', { 'README.md': 'stand-in ui\n', 'proxy.conf.json': '{\n  "/api/**": { "target": "https://dev.example.invalid", "changeOrigin": true }\n}\n' });
+  makeRepo('shop-ui', { 'README.md': 'stand-in ui\n', 'proxy.conf.json': '{\n  "/api/**": { "target": "https://dev.example.invalid", "changeOrigin": true }\n}\n', 'src/assets/environmentConfig.js': UI_CONFIG });
   for (const r of ['fees-api', 'payments-api', 'loans-api', 'audit-api']) makeRepo(r, { 'README.md': `${r}\n` });
   execFileSync(process.execPath, [`${REPO}/docs/walkthroughs/v2/seed-v2.ts`, DB, DIR, `${REPO}/docs/walkthroughs/v2`], { stdio: 'inherit' });
   fs.writeFileSync(VERIFY, JSON.stringify({ lookup: { name: 'Sample lookup', url: 'http://127.0.0.1:18902/Lookup', recordField: 'RecordId', updateUrl: 'http://127.0.0.1:18902/LookupUpdate', allowUpdate: true, updateFields: ['RecordNumber', 'RecordFolder'] }, builder: { name: 'Sample data', url: 'http://127.0.0.1:18903' } }, null, 2));
@@ -364,20 +366,47 @@ function toolbelt(sessionId, token) {
     check('Stop all stops the stack; the card keeps its layout, the Stack tab saying stopped with Start stack', await until(async () => !(await state()).stacks[s.id], 15000) && await until(() => page.getByRole('tab', { name: 'Stack · stopped' }).isVisible(), 5000) && await page.locator('.sess-top').isVisible() && await page.locator('.sess').getByRole('button', { name: 'Start stack' }).isVisible());
     await shot(page, 'stopped');
     check('the front door closes with the last UI', !(await state()).doors.length);
-    // ---- Start on UAT: picked next to Start stack, a second click to be sure, the rest of the proxy on UAT ----
+    // ---- Start on UAT: the pairs first (Env pairs), then picked next to Start stack, a second click to be sure ----
     const card = page.locator('.sess');
+    const uiDir = (s.repos.find((r) => r.name === 'shop-ui') || {}).dir || `${DIR}/shop-ui`;
+    const uiConfig = () => fs.readFileSync(`${uiDir}/src/assets/environmentConfig.js`, 'utf8').replace(/\r\n/g, '\n'); // a checkout may have CRLF
     await card.getByRole('group', { name: 'Environment' }).getByRole('button', { name: 'UAT' }).click();
+    check('picking UAT with no UI config pairs says so before Start', await card.getByText(/UAT has no pairs for its UI config: the UI would sign in against the default env/).isVisible());
+    await card.getByRole('button', { name: 'Env pairs' }).click();
+    const pairs = card.getByLabel('Env pairs');
+    check('Env pairs shows the saved proxy pairs', await until(async () => (await pairs.getByLabel('UAT proxy pairs').inputValue()) === 'dev.example.invalid => uat.example.invalid', 5000));
+    await pairs.getByLabel('UAT config pairs').fill('login.dev.example.invalid => login.uat.example.invalid\nid-dev => id-uat');
+    await pairs.getByRole('button', { name: 'Save pairs' }).click();
+    check('saving the config pairs clears the warning', await until(() => pairs.getByText('Saved: used from the next start.').isVisible(), 5000) && await until(async () => !(await card.getByText(/has no pairs for its UI config/).isVisible()), 5000));
+    await shot(page, 'env-pairs');
+    check('the snapshot carries pair counts, never the values', !JSON.stringify(await state()).includes('id-uat'));
+    await pairs.getByRole('button', { name: 'Close' }).click();
     await card.getByRole('button', { name: 'Start stack', exact: true }).click();
     check('starting on UAT asks to be sure first, starting nothing yet', await card.getByRole('button', { name: 'Start on UAT: sure?' }).isVisible() && !(await state()).stacks[s.id]);
     await card.getByRole('button', { name: 'Start on UAT: sure?' }).click();
     check('the stack starts on UAT and its tab says so', await until(async () => (await state()).stacks[s.id]?.values.env === 'uat', 15000) && await until(() => page.getByRole('tab', { name: /^Stack · UAT · \d+ APIs?$/ }).isVisible(), 5000));
     const uatProxy = JSON.parse(fs.readFileSync(`${V2DIR}/runs/stacks/${s.id}.proxy.conf.json`, 'utf8'));
     check('its proxy copy sends the APIs not running here to UAT; the running ones stay local', uatProxy['/api/**'].target === 'https://uat.example.invalid' && /^http:\/\/localhost:\d+$/.test(uatProxy['/api/fees/**']?.target ?? ''), JSON.stringify(uatProxy).slice(0, 200));
+    check('the UI’s config file has UAT’s values during the run', uiConfig() === 'window.env = { issuer: "https://login.uat.example.invalid", clientId: "id-uat" };\n', uiConfig());
+    check('git looks past it: the UI repo shows nothing changed', git(uiDir, 'status', '--porcelain') === '');
+    check('the tab says what moved, in counts', await card.getByText(/^1 proxy target and 2 config values moved to UAT \(src\/assets\/environmentConfig\.js changed for this run and put back on stop; git looks past it/).isVisible());
+    check('so does the UI’s log', await until(async () => (await api(`/api/sessions/${s.id}/logs?service=ui`)).lines.some((l) => l.text.startsWith('1 proxy target and 2 config values moved to UAT')), 8000));
+    const status = await tb.call('stack_status');
+    check('Claude’s stack_status says what moved, never the values', /config values moved to UAT/.test(status.text) && !/id-uat|login\.uat/.test(status.text), status.text.slice(0, 200));
     const onDev = await tb.call('stack_up', { env: 'dev' });
     check('starting it on Dev while it runs on UAT is refused, and the saved env stays UAT', Boolean(onDev.error) && /running on UAT: stop it, then start it on DEV/.test(onDev.text) && (await state()).sessions.find((x) => x.id === s.id).stackValues?.env === 'uat', onDev.text);
     await shot(page, 'stack-uat');
     await card.getByRole('button', { name: 'Stop all' }).click();
     check('Stop all stops the UAT stack', await until(async () => !(await state()).stacks[s.id], 15000));
+    check('the UI’s config file is back to the repo’s version, git status clean', uiConfig() === UI_CONFIG && git(uiDir, 'status', '--porcelain') === '' && !/^S /m.test(git(uiDir, 'ls-files', '-v')));
+    // ---- Then DEV: the originals ----
+    await card.getByRole('group', { name: 'Environment' }).getByRole('button', { name: 'DEV' }).click();
+    await card.getByRole('button', { name: 'Start stack', exact: true }).click();
+    check('the stack starts on DEV with one click', await until(async () => (await state()).stacks[s.id]?.values.env === 'dev', 15000));
+    const devProxy = JSON.parse(fs.readFileSync(`${V2DIR}/runs/stacks/${s.id}.proxy.conf.json`, 'utf8'));
+    check('on DEV the proxy copy and the config file keep their original values', devProxy['/api/**'].target === 'https://dev.example.invalid' && uiConfig() === UI_CONFIG && !(await state()).stacks[s.id].moved);
+    await card.getByRole('button', { name: 'Stop all' }).click();
+    check('Stop all stops the DEV stack', await until(async () => !(await state()).stacks[s.id], 15000));
     check('no page errors', errors.length === 0, errors.join(' | '));
     tb.end();
     await page.locator('.sess').getByRole('button', { name: `More for ${s.key}` }).click();

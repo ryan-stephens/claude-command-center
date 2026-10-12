@@ -192,6 +192,8 @@ export interface StackView {
   /** The UI's address (through the front door when it is behind one). */
   uiUrl?: string;
   door?: { home: number; shown: boolean };
+  /** Off the default env: "3 proxy targets and 5 config values moved to UAT" (counts only, never the values). */
+  moved?: string;
 }
 
 export interface DoorView {
@@ -217,6 +219,10 @@ export interface WorkspaceView {
   apis: string[];
   ui?: string;
   choose: Record<string, string[]>;
+  /** What the stack says would mislead (stackWarnings): no proxyEnv or configEnv for an env that can be picked, … */
+  warnings: string[];
+  /** Per non-default env, how many pairs each list has (never the values): the editor fetches those itself. */
+  pairs: Record<string, { proxy: number; config: number | null }>;
 }
 
 export interface Snapshot {

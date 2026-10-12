@@ -3,7 +3,8 @@
 // main checkout). The UI is pointed at the running APIs through its proxy file (proxy.conf.json):
 // the APIs not running here keep the file's own rules, which go to the default env (Dev); on another
 // env (UAT) its ui.proxyEnv pairs move them there first, or {{env}} in ui.proxyFile picks that env's
-// own file. A running stack keeps its env: starting it on another is refused until it stops. Adding or removing an API
+// own file. The UI app's runtime config (sign-in, flags; ui.configEnv) moves too: changed in place for
+// the run, git told to look past it, put back on stop (or on the next start after a crash). A running stack keeps its env: starting it on another is refused until it stops. Adding or removing an API
 // rebuilds that file and restarts the UI, since a dev server reads it only when it starts.
 // The UI goes behind the front door on its own port (the one its sign-in is registered for).
 // A small manifest per running stack lets the next start clean up after a server that went away.
@@ -11,7 +12,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { OKTETO_UP, runKey, type CardRun, type LogLine } from '../../shared/recipes.ts';
-import { choiceValues, k8sName, mergeProxy, needsUiPort, pickedApis, proxyFileFor, proxySwaps, readLooseJson, serviceSteps, stackRules, swapTargets, uiHomePort, uiPortFor, uiProject, uiUrlFor, type StackInfo, type StackRunContext } from '../../shared/stack.ts';
+import { choiceValues, configCandidates, k8sName, looksSwapped, mergeProxy, movedText, needsUiPort, pickedApis, proxyFileFor, proxySwaps, readLooseJson, serviceSteps, stackRules, swapRules, swapText, uiHomePort, uiPortFor, uiProject, uiUrlFor, type StackInfo, type StackRunContext } from '../../shared/stack.ts';
 import { uiApp } from '../../shared/stack-detect.ts';
 import type { FrontDoors } from '../../server/front-door.ts';
 import { run as sh } from '../../server/hosts.ts';
@@ -19,7 +20,7 @@ import { listening, type PortPool } from '../../server/ports.ts';
 import { RunService, type RunPlaces } from '../../server/recipes.ts';
 import { repoFiles } from '../../server/repo-files.ts';
 import { cardLogsDir } from '../../server/run-logs.ts';
-import { restoreLeftovers } from '../../server/stack.ts';
+import { lookPast, restoreLeftovers } from '../../server/stack.ts';
 import type { Leftover, ServiceView, StackView } from '../shared/types.ts';
 import { nextHealth, type Track } from './health.ts';
 
@@ -45,6 +46,10 @@ interface Live {
   /** The UI's door, when it is behind one. */
   door?: number;
   proxy?: { file: string; out: string; original: string; edit: boolean; backup: string };
+  /** The UI app's runtime config, changed in place for a non-default env (ui.configEnv). */
+  config?: { file: string; root: string; rel: string; original: string; backup: string };
+  /** What moving to the env did (counts only), said in the UI's log and the view. */
+  moved?: { proxy: number; config: number; configFile?: string; proxyAlready?: boolean; configAlready?: boolean };
   health: Map<string, Track>;
 }
 
@@ -122,13 +127,19 @@ export class StackManager {
     const uiDir = stack.ui ? where(stack.ui.repo, 'The UI') : undefined;
     if (stack.ui && uiDir) branches[stack.ui.repo.toLowerCase()] = await branchOf(uiDir);
     const app = stack.ui && uiDir ? uiApp(repoFiles(uiDir), uiProject(stack.ui.steps)) : undefined;
+    // Another session's stack serving this same UI folder with its config changed in place: this one would serve that env's config, and the two stops would fight over the original.
+    const holder = uiDir ? [...this.live.values()].find((l) => l.config && l.config.root.toLowerCase() === uiDir.toLowerCase()) : undefined;
+    if (holder) throw new Error(`${stack.ui!.repo}’s runtime config is set to ${envName(holder.values)} for ${holder.owner.key}’s stack, which runs the UI from the same folder: stop that stack first, or give this session its own worktree of ${stack.ui!.repo}.`);
     const taken = await this.opts.pool.take(picked.length);
     const ports: Record<string, number> = {};
     picked.forEach((a, i) => { ports[a.toLowerCase()] = taken[i]; });
-    const live: Live = { owner, stack, values: vals, apis: picked, ctx: { branches, ports, ...(app ? { uiApp: app } : {}) }, taken, health: new Map() };
+    // Off the default env, what moved is counted (and said even when it is nothing).
+    const offDefault = Object.entries(stack.choose).some(([k, v]) => vals[k] !== v[0]);
+    const live: Live = { owner, stack, values: vals, apis: picked, ctx: { branches, ports, ...(app ? { uiApp: app } : {}) }, taken, health: new Map(), ...(offDefault && stack.ui ? { moved: { proxy: 0, config: 0 } } : {}) };
     try {
       if (needsUiPort(stack)) await this.uiPort(live, uiHomePort(stack, app));
       this.writeProxy(live, uiDir);
+      this.writeConfig(live, uiDir);
       // Every service's steps built before anything starts, so a mistake in the stack starts nothing.
       for (const sv of this.services(live)) serviceSteps(stack, this.pick(live), live.ctx, sv);
     } catch (e) {
@@ -209,7 +220,7 @@ export class StackManager {
   /** The server is going away: kill what runs (no time for stop: steps; the manifests keep them for the next start). */
   stopAll(): void {
     this.runs.stopAll();
-    for (const live of this.live.values()) this.undoProxy(live);
+    for (const live of this.live.values()) { this.undoProxy(live); this.undoConfig(live); }
     this.opts.doors?.closeAll();
     this.unwatch();
   }
@@ -241,7 +252,7 @@ export class StackManager {
     const door = this.opts.doors?.stateOf(id);
     const url = live.stack.ui ? uiUrlFor(live.stack, this.pick(live), live.ctx) : undefined;
     const uiUrl = door ? (url ? url.replace(/^(https?:\/\/[^/:]+):\d+/, `$1:${door.port}`) : `http://localhost:${door.port}`) : url;
-    return { sessionId: id, values: live.values, services, ...(uiUrl ? { uiUrl } : {}), ...(door ? { door: { home: door.port, shown: door.shown } } : {}) };
+    return { sessionId: id, values: live.values, services, ...(live.moved ? { moved: movedText(envName(live.values), live.moved) } : {}), ...(uiUrl ? { uiUrl } : {}), ...(door ? { door: { home: door.port, shown: door.shown } } : {}) };
   }
 
   views(): Record<string, StackView> {
@@ -255,7 +266,7 @@ export class StackManager {
   /** What a server that went away left: stacks whose stop: steps never ran, and proxy files changed in place (put back now). */
   leftovers(): Leftover[] {
     const restored = restoreLeftovers(join(this.dir, 'stacks'));
-    if (restored.length) console.log(`v2: put back ${restored.length} proxy file(s) a stopped server had changed.`);
+    if (restored.length) console.log(`v2: put back ${restored.length} file(s) a stopped server had changed (proxy or UI config).`);
     const out: Leftover[] = [];
     for (const f of readdirSync(join(this.dir, 'stacks'))) {
       if (!f.endsWith('.stack.json')) continue;
@@ -309,8 +320,10 @@ export class StackManager {
     const { steps, stop } = serviceSteps(live.stack, this.pick(live), live.ctx, service);
     const url = service === 'ui' ? uiUrlFor(live.stack, this.pick(live), live.ctx) : undefined;
     live.health.delete(service);
+    // The UI's log starts with what moving to the env did, so a run that moved nothing shows it.
+    const note = service === 'ui' && live.moved ? movedText(envName(live.values), live.moved) : undefined;
     void this.runs.start(runKey(live.owner.id, service), { repo: '', workspaceId: live.stack.workspaceId, steps: [...steps, ...stop], ...(url ? { url } : {}), source: live.stack.source },
-      live.owner.places, { cardId: live.owner.id, service, choice: Object.values(live.values).join(' · ') })
+      live.owner.places, { cardId: live.owner.id, service, choice: Object.values(live.values).join(' · '), ...(note ? { note } : {}) })
       .catch((e: Error) => console.error(`v2: ${service} for ${live.owner.key} didn't start: ${e.message}`));
   }
 
@@ -355,9 +368,52 @@ export class StackManager {
   /** The proxy file again, for the APIs running now: the file's own rules moved to the env (ui.proxyEnv), then the local ones on top. */
   private rewriteProxy(live: Live): void {
     if (!live.proxy) return;
-    const base = swapTargets(readLooseJson(live.proxy.original), proxySwaps(live.stack, live.values));
-    const merged = mergeProxy(base, stackRules(live.stack, this.pick(live), live.ctx));
+    const pairs = proxySwaps(live.stack, live.values);
+    const local = stackRules(live.stack, this.pick(live), live.ctx);
+    // Only the file's rules the running APIs don't replace are moved (and counted).
+    const own = Object.fromEntries(Object.entries(readLooseJson(live.proxy.original)).filter(([k]) => !(k in local)));
+    const { rules: base, count } = swapRules(own, pairs);
+    if (live.moved) { live.moved.proxy = count; live.moved.proxyAlready = !count && looksSwapped(JSON.stringify(own), pairs); }
+    const merged = mergeProxy(base, local);
     writeFileSync(live.proxy.out, `${JSON.stringify(merged, null, 2)}\n`);
+  }
+
+  /**
+   * On a non-default env with ui.configEnv pairs: the UI app's runtime config changed in place to
+   * that env's values (pairs in order, on the file's text), backed up first and hidden from git, so
+   * the dev server serves it and no commit can take it. Nothing is written when nothing matched.
+   */
+  private writeConfig(live: Live, uiDir: string | undefined): void {
+    const ui = live.stack.ui;
+    if (!ui || !uiDir || !live.moved) return;
+    const pairs = proxySwaps(live.stack, live.values, 'configEnv');
+    if (!pairs.length) return;
+    const tries = configCandidates(live.stack, live.ctx.uiApp);
+    const rel = tries.find((f) => existsSync(join(uiDir, f)));
+    if (!rel) throw new Error(`The UI app’s runtime config isn’t at ${tries.join(' or ')} in ${ui.repo}: set "ui.configFile" in the workspace's stack.`);
+    const file = join(uiDir, rel);
+    const original = readFileSync(file, 'utf8');
+    const { text, count } = swapText(original, pairs);
+    live.moved.config = count;
+    live.moved.configFile = rel;
+    live.moved.configAlready = !count && looksSwapped(original, pairs);
+    if (!count) return;
+    const backup = join(this.dir, 'stacks', `${live.owner.id}.config.backup.json`);
+    writeFileSync(backup, JSON.stringify({ path: file, text: original, hidden: { root: uiDir, rel } }));
+    live.config = { file, root: uiDir, rel, original, backup };
+    lookPast(uiDir, rel, true);
+    writeFileSync(file, text);
+  }
+
+  private undoConfig(live: Live): void {
+    const c = live.config;
+    if (!c) return;
+    try {
+      writeFileSync(c.file, c.original);
+      lookPast(c.root, c.rel, false);
+      rmSync(c.backup, { force: true });
+    } catch (e) { console.error(`v2: couldn't put the UI's config file back: ${(e as Error).message}`); }
+    live.config = undefined;
   }
 
   private undoProxy(live: Live): void {
@@ -373,6 +429,7 @@ export class StackManager {
     this.opts.pool.free(live.taken.splice(0));
     if (live.door) this.opts.doors?.leave(live.owner.id);
     this.undoProxy(live);
+    this.undoConfig(live);
   }
 
   private manifestFile(id: string): string {

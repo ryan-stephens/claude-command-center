@@ -3,6 +3,7 @@ import type { LogLine } from '../../shared/recipes.ts';
 import type { Health, ServiceView, Session, Snapshot, StackView } from '../shared/types.ts';
 import { ago, get, go, post } from './api.ts';
 import { type DataTab, FieldFinder, LoanForge, tabEvents } from './DataPanel.tsx';
+import { EnvPairs } from './EnvPairs.tsx';
 
 const healthWord: Record<Health, string> = { up: 'up', starting: 'starting', unhealthy: 'unhealthy', failed: 'failed', stopped: 'stopped' };
 const dotOf = (h: Health) => (h === 'up' ? 'up' : h === 'starting' ? 'st' : h === 'stopped' ? 'off' : 'bad');
@@ -111,9 +112,18 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
   // The env to start on: what the session last started with, else each question's default (its first value).
   const [pick, setPick] = useState<Record<string, string>>({});
   const [armed, setArmed] = useState(false);
+  const [pairsOpen, setPairsOpen] = useState(false);
   const values = Object.fromEntries(Object.entries(choose).map(([k, vals]) => [k, [pick[k], s.stackValues?.[k]].find((x) => x && vals.includes(x)) ?? vals[0]]));
   const offDefault = Object.entries(choose).some(([k, vals]) => values[k] !== vals[0]);
   const runsOn = envLabel(v?.values);
+  // The picked env has nothing to move the proxy's targets or the UI's config with: said before Start.
+  const unmoved = ws?.ui ? Object.entries(choose).flatMap(([k, vals]) => (values[k] !== vals[0] ? [values[k]] : [])).flatMap((e) => {
+    const p = ws.pairs?.[e];
+    const what = [...(!p?.proxy ? ['proxy targets'] : []), ...(p?.config === null || p?.config === undefined ? ['UI config'] : [])];
+    return what.length ? [`${e.toUpperCase()} has no pairs for its ${what.join(' or ')}: ${what.includes('UI config') ? 'the UI would sign in against the default env (401s)' : 'the APIs not running here stay on the default env'}.`] : [];
+  }) : [];
+  const pairsButton = ws?.ui && Object.values(choose).some((vals) => vals.length > 1) && <button type="button" className="btn" aria-expanded={pairsOpen} onClick={() => setPairsOpen(!pairsOpen)}>Env pairs</button>;
+  const pairsEditor = pairsOpen && ws && <EnvPairs workspaceId={ws.id} close={() => setPairsOpen(false)} />;
   const ui = v?.services.find((x) => x.kind === 'ui');
   const apis = v?.services.filter((x) => x.kind === 'api') ?? [];
   const loan = s.loans.at(-1);
@@ -182,10 +192,19 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
                     {vals.map((x) => <button key={x} type="button" aria-pressed={values[k] === x} className={`seg small${values[k] === x ? ' on' : ''}`} onClick={() => { setArmed(false); setPick((p) => ({ ...p, [k]: x })); }}>{x.toUpperCase()}</button>)}
                   </span>
                 ))}
+                {pairsButton}
                 <button type="button" className="btn dark" onClick={start}>{armed ? `Start on ${envLabel(values)}: sure?` : 'Start stack'}</button>
               </span>
             )}
           </div>
+          {canStart && unmoved.map((w) => <div key={w} className="need" role="status" style={{ fontSize: 14 }}>{w} Add them in Env pairs.</div>)}
+          {canStart && (ws?.warnings.length ?? 0) > 0 && (
+            <details className="mu" style={{ fontSize: 14 }}>
+              <summary>The stack says {ws!.warnings.length} thing{ws!.warnings.length === 1 ? '' : 's'} to check</summary>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>{ws!.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+            </details>
+          )}
+          {pairsEditor}
         </div>
       )}
       {shown === 'stack' && v && (
@@ -214,9 +233,12 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
               )}
               {problem && <button type="button" className="btn" onClick={() => act(post(`/api/sessions/${s.id}/stack/restart`, { unhealthy: true }))}>Restart unhealthy</button>}
               {ui && <button type="button" className="btn" onClick={() => act(post(`/api/sessions/${s.id}/stack/restart`, { service: 'ui' }))}>Restart UI</button>}
+              {pairsButton}
               <button type="button" className="btn" onClick={() => act(post(`/api/sessions/${s.id}/stack/down`))}>Stop all</button>
             </span>
           </div>
+          {v.moved && <div className="mu" role="status" style={{ fontSize: 14 }}>{v.moved}</div>}
+          {pairsEditor}
         </div>
       )}
       {shown === 'logs' && !v && <div className="tabpanel mu" role="tabpanel" aria-label="Logs" style={{ fontSize: 14 }}>Nothing is running: start the stack to see its output.</div>}

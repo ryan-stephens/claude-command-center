@@ -12,7 +12,8 @@ import type { HookInput } from '../../server/card-events.ts';
 import { removeWorktrees } from '../../server/cards.ts';
 import { FrontDoors } from '../../server/front-door.ts';
 import { parsePortList, parseRange, PortPool } from '../../server/ports.ts';
-import { stackOf } from '../../server/stack.ts';
+import { plainStack, saveStack, stackOf } from '../../server/stack.ts';
+import { stackWarnings, type ProxySwap } from '../../shared/stack.ts';
 import { DB_PATH, Store } from '../../server/store.ts';
 import { demoTickets, jiraConfig, TicketService } from '../../server/tickets.ts';
 import { LookupTool, readFieldLists, Requester, VERIFY_FILE, VerifyFileWatch } from '../../server/verify.ts';
@@ -57,9 +58,14 @@ const builder = new BuilderTool(verifyConfig);
 function workspaces(): Snapshot['workspaces'] {
   return store.loadWorkspaces().map((w) => {
     const st = stackOf(store, w.id);
-    return { id: w.id, name: w.name, repos: w.repos.map((path) => ({ path, name: repoName(path) })), apis: st?.apis.map((a) => a.repo) ?? [], ...(st?.ui ? { ui: st.ui.repo } : {}), choose: st?.choose ?? {} };
+    // Pair counts only: the values (a client id can be one) reach the page through /stack-env, when the editor opens.
+    const pairs = Object.fromEntries(envsOf(st?.choose ?? {}).map((e) => [e, { proxy: st?.ui?.proxyEnv?.[e]?.length ?? 0, config: st?.ui?.configEnv?.[e]?.length ?? null }]));
+    return { id: w.id, name: w.name, repos: w.repos.map((path) => ({ path, name: repoName(path) })), apis: st?.apis.map((a) => a.repo) ?? [], ...(st?.ui ? { ui: st.ui.repo } : {}), choose: st?.choose ?? {}, warnings: st ? stackWarnings(st) : [], pairs };
   });
 }
+
+/** The env values other than each question's default: the ones that take find/replace pairs. */
+const envsOf = (choose: Record<string, string[]>) => [...new Set(Object.values(choose).flatMap((v) => v.slice(1)))];
 
 function snapshot(): Snapshot {
   const cfg = verifyConfig();
@@ -308,6 +314,30 @@ app.post('/api/sessions/:id/stack/restart', async (c) => {
 });
 app.post('/api/sessions/:id/stack/down', async (c) => {
   try { await stacks.down(c.req.param('id')); return c.json({ ok: true }); } catch (e) { return fail(c, e); }
+});
+// The stack's per-env find/replace pairs (ui.proxyEnv, ui.configEnv): v2's one stack edit, so the
+// owner sets them once here. The values stay between this page and the local stack store.
+app.get('/api/workspaces/:id/stack-env', (c) => {
+  const st = stackOf(store, c.req.param('id'));
+  if (!st?.ui) return fail(c, new Error('This workspace’s stack has no UI: write one in v1 (e, then Alt+W).'));
+  return c.json({ envs: envsOf(st.choose), proxyFile: st.ui.proxyFile ?? null, configFile: st.ui.configFile ?? null, proxyEnv: st.ui.proxyEnv ?? {}, configEnv: st.ui.configEnv ?? {} });
+});
+app.post('/api/workspaces/:id/stack-env', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const st = stackOf(store, id);
+    if (!st?.ui) throw new Error('This workspace’s stack has no UI.');
+    const b = await body(c);
+    const lists = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, ProxySwap[]> : undefined);
+    const configFile = typeof b.configFile === 'string' ? b.configFile.trim() : st.ui.configFile;
+    const { proxyEnv: _p, configEnv: _c, configFile: _f, ...ui } = st.ui;
+    const proxyEnv = lists(b.proxyEnv);
+    const configEnv = lists(b.configEnv);
+    // validateStack (in saveStack) checks the pairs: env values from "choose", 20 at most, 200 characters each.
+    saveStack(store, id, { ...plainStack(st), ui: { ...ui, ...(proxyEnv && Object.keys(proxyEnv).length ? { proxyEnv } : {}), ...(configEnv && Object.keys(configEnv).length ? { configEnv } : {}), ...(configFile ? { configFile } : {}) } }, st.source.startsWith('from the workspace file'));
+    soon();
+    return c.json({ ok: true });
+  } catch (e) { return fail(c, e); }
 });
 app.get('/api/sessions/:id/logs', (c) => c.json({ lines: stacks.log(c.req.param('id'), c.req.query('service') ?? 'ui').slice(-400) }));
 app.post('/api/door', async (c) => {

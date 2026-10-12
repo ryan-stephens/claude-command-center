@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseStep, recipeLabel, recipeText } from './recipes.ts';
-import { apiVars, choiceLabel, choiceValues, fill, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, proxyFileFor, proxySwaps, swapTargets, runLabel, serviceSteps, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiPortFor, uiProject, uiUrlFor, unknownStackRepos, retarget, staleUrl, validateStack, withPath, type Stack, type StackRunContext } from './stack.ts';
+import { apiVars, choiceLabel, choiceValues, configCandidates, fill, looksSwapped, movedText, stackText, swapRules, swapText, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, proxyFileFor, proxySwaps, swapTargets, runLabel, serviceSteps, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiPortFor, uiProject, uiUrlFor, unknownStackRepos, retarget, staleUrl, validateStack, withPath, type Stack, type StackRunContext } from './stack.ts';
 
 const stack: Stack = validateStack({
   choose: { env: ['dev', 'uat'] },
@@ -110,10 +110,14 @@ test('ports are picked per run: {{port}} is the picked one, {{appPort}} the cont
 
 test('what keeps a stack from running twice at once is said, not enforced', () => {
   const w = stackWarnings(stack);
-  assert.equal(w.length, 3, w.join('\n'));
+  assert.equal(w.length, 4, w.join('\n'));
   assert.match(w[0], /orders-api, fees-api: "port" in values now means the port inside the container/);
   assert.match(w[1], /Use \{\{deployment\}\}/);
   assert.match(w[2], /uat can be picked, but ui\.proxyEnv says nothing for it/);
+  assert.match(w[3], /uat can be picked, but ui\.configEnv says nothing for it: the UI keeps the default env's runtime config \(its assets\/environmentConfig\.js\)/);
+  const set = (configEnv: Record<string, { from: string; to: string }[]>) => stackWarnings({ ...stack, ui: { ...stack.ui!, configEnv } });
+  assert.equal(set({ uat: [] }).some((x) => /configEnv/.test(x)), false, 'an empty list says UAT’s config is the default’s');
+  assert.equal(set({ uat: [{ from: 'id-dev', to: 'id-uat' }] }).some((x) => /configEnv/.test(x)), false);
   assert.match(stackWarnings({ ...stack, ui: { ...stack.ui!, steps: ['npm start'] } }).at(-1)!, /add --port \{\{uiPort\}\} to its start step/, 'a start line the app can’t give --port to still gets the word (nx serve gets it added, §114)');
   assert.match(stackWarnings({ ...stack, api: { ...stack.api, steps: ['forward:no okteto up'] } })[0], /forward:no keeps the okteto up step on the manifest’s own port/, 'only an opt-out is worth a word');
   assert.deepEqual(stackWarnings(validateStack({ api: { steps: ['PORT={{port}} dotnet run'] }, apis: [{ repo: 'a-api', values: { appPort: '80' } }] })), [], 'no okteto, no proxy: nothing to say');
@@ -211,7 +215,7 @@ test('the editor’s draft is built from the workspace’s own repos, and a stac
   assert.deepEqual(d.apis.map((a) => a.repo), ['Workspaces-API', 'Loans-Service']);
   assert.deepEqual(d.apis.map((a) => [a.values.port, a.values.appPort]), [[undefined, '8080'], [undefined, '8080']], 'no local port: it is picked per run; the container port is 8080');
   assert.match(d.api.steps[0], /^wait:port:\{\{port\}\} forward:\{\{port\}\}:\{\{appPort\}\} okteto up/);
-  assert.deepEqual(stackWarnings(d).filter((w) => !/proxyEnv/.test(w)), [], 'the draft runs twice at once as it is (its UAT pairs are the team’s to write)');
+  assert.deepEqual(stackWarnings(d).filter((w) => !/proxyEnv|configEnv/.test(w)), [], 'the draft runs twice at once as it is (its UAT pairs are the team’s to write)');
   assert.deepEqual(stackWarnings(STACK_EXAMPLE), [], 'so does the example');
   assert.deepEqual(d.choose, { env: ['dev', 'uat'] });
   assert.deepEqual(unknownStackRepos(d, ['workspaces-ui', 'workspaces-api', 'loans-service']), [], 'folder names, any case');
@@ -263,4 +267,57 @@ test('{{env}} in ui.proxyFile picks a file per env, still inside the repo; a non
   const one = validateStack({ choose: { env: ['dev', 'uat'] }, ui: { repo: 'u', steps: ['npm start -- --port {{uiPort}}'], proxyFile: 'proxy.conf.json' } });
   assert.ok(stackWarnings(one).some((w) => /^uat can be picked, but ui\.proxyEnv says nothing/.test(w)));
   assert.ok(!stackWarnings({ ...one, ui: { ...one.ui!, proxyEnv: { uat: [{ from: 'a', to: 'b' }] } } }).some((w) => /proxyEnv/.test(w)));
+});
+
+test('pairs apply in order: a specific pair before a broad one wins; after it, it never matches', () => {
+  const text = 'issuer: "https://login.dev.example.test", api: "https://gw.dev.example.test", clientId: "id-dev"';
+  const specificFirst = swapText(text, [{ from: 'login.dev.example.test', to: 'signin.uat.example.test' }, { from: '.dev.example.test', to: '.uat.example.test' }, { from: 'id-dev', to: 'id-uat' }]);
+  assert.equal(specificFirst.text, 'issuer: "https://signin.uat.example.test", api: "https://gw.uat.example.test", clientId: "id-uat"');
+  assert.equal(specificFirst.count, 3);
+  const broadFirst = swapText(text, [{ from: '.dev.example.test', to: '.uat.example.test' }, { from: 'login.dev.example.test', to: 'signin.uat.example.test' }]);
+  assert.match(broadFirst.text, /login\.uat\.example\.test/, 'the broad pair already rewrote it: the specific one finds nothing');
+  assert.equal(broadFirst.count, 2);
+  const rules = { '/gw/**': { target: 'https://gw.dev.example.test', headers: { Origin: 'https://app.dev.example.test' } }, '/local/**': { target: 'http://localhost:18000' } };
+  const r = swapRules(rules, [{ from: '.dev.example.test', to: '.uat.example.test' }]);
+  assert.equal(r.count, 2, 'two string values changed: the target and the Origin header');
+  assert.equal(r.rules['/gw/**'].headers.Origin, 'https://app.uat.example.test');
+  assert.equal(r.rules['/local/**'].target, 'http://localhost:18000', 'a localhost rule is untouched');
+});
+
+test('ui.configEnv is checked like ui.proxyEnv; the config file is the served app’s assets/environmentConfig.js unless set', () => {
+  const ui = (configEnv: unknown, configFile?: string) => ({ choose: { env: ['dev', 'uat'] }, ui: { repo: 'u', steps: ['x'], configEnv, ...(configFile ? { configFile } : {}) } });
+  const s = validateStack(ui({ uat: [{ from: 'id-dev', to: 'id-uat' }] }));
+  assert.deepEqual(s.ui?.configEnv, { uat: [{ from: 'id-dev', to: 'id-uat' }] });
+  assert.deepEqual(validateStack(ui({ uat: [] })).ui?.configEnv, { uat: [] }, 'an empty list is kept: UAT’s config is the default’s');
+  assert.throws(() => validateStack(ui({ prod: [] })), /"ui.configEnv.prod": prod isn’t a value in "choose"/);
+  assert.throws(() => validateStack(ui([])), /"ui.configEnv" should look like/);
+  assert.throws(() => validateStack(ui({ uat: [{ from: 'x'.repeat(201), to: 'b' }] })), /"ui.configEnv.uat" pair 1 .*200 characters/);
+  assert.throws(() => validateStack(ui({ uat: Array.from({ length: 21 }, () => ({ from: 'a', to: 'b' })) })), /20 at most/);
+  assert.throws(() => validateStack(ui(undefined, '../other/env.js')), /"ui.configFile" should be a path inside the UI repo/);
+  assert.deepEqual(proxySwaps(s, {}, 'configEnv'), [], 'the default env swaps nothing');
+  assert.deepEqual(proxySwaps(s, { env: 'uat' }, 'configEnv'), [{ from: 'id-dev', to: 'id-uat' }]);
+  assert.deepEqual(proxySwaps(s, { env: 'uat' }), [], 'proxy pairs and config pairs are separate lists');
+  assert.deepEqual(configCandidates(s, { name: 'shop', from: 'apps/shop/project.json', src: 'apps/shop/src' }), ['apps/shop/src/assets/environmentConfig.js', 'apps/shop/assets/environmentConfig.js']);
+  assert.deepEqual(configCandidates(s), ['src/assets/environmentConfig.js']);
+  assert.deepEqual(configCandidates(validateStack(ui(undefined, 'apps/shop/env.js'))), ['apps/shop/env.js']);
+});
+
+test('what moved is said in counts, never values; a file already on that env is noted', () => {
+  const pairs = [{ from: '.dev.example.test', to: '.uat.example.test' }, { from: 'id-dev', to: 'id-uat' }];
+  assert.equal(looksSwapped('clientId: "id-uat"', pairs), true);
+  assert.equal(looksSwapped('clientId: "id-dev"', pairs), false);
+  assert.equal(looksSwapped('nothing here', pairs), false);
+  const t = movedText('UAT', { proxy: 3, config: 0, configFile: 'src/assets/environmentConfig.js', configAlready: true });
+  assert.match(t, /^3 proxy targets and 0 config values moved to UAT \(src\/assets\/environmentConfig\.js changed for this run/);
+  assert.match(t, /already looks like that env’s/);
+  assert.equal(movedText('UAT', { proxy: 1, config: 1 }), '1 proxy target and 1 config value moved to UAT.');
+  assert.doesNotMatch(t, /id-uat|example\.test/);
+});
+
+test('the context says the UI’s config is changed for the run and never committed, without its values', () => {
+  const s = validateStack({ choose: { env: ['dev', 'uat'] }, ui: { repo: 'web-ui', steps: ['x'], configEnv: { uat: [{ from: 'id-dev', to: 'id-uat' }] } } });
+  const t = stackText(s);
+  assert.match(t, /runtime config \(its assets\/environmentConfig\.js\) is changed to that env’s values for the run and put back on stop/);
+  assert.match(t, /Never commit/);
+  assert.doesNotMatch(t, /id-uat|id-dev/);
 });
