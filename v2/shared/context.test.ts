@@ -27,6 +27,7 @@ test('repos named in the ticket, the stack\'s UI and the home are ticked; the AP
   assert.equal(repos[2].why, 'named in the ticket');
   const apis = suggestApis(stack, repos.filter((r) => r.on).map((r) => r.name));
   assert.deepEqual(apis.map((a) => [a.name, a.on]), [['payments-api', true], ['fees-api', true], ['loans-api', false]]);
+  assert.equal(apis[2].why, 'from the stack’s env unless you add it', 'not "from Dev": the stack may run on UAT');
 });
 
 test('the context pack has the ticket, the worktrees, the stack, the logs and only the tools this machine has', () => {
@@ -34,7 +35,10 @@ test('the context pack has the ticket, the worktrees, the stack, the logs and on
   assert.match(pack, /# SHOP-160 · Waive the late fee/);
   assert.match(pack, /- Waive with a reason/);
   assert.match(pack, /web-app: `C:\/src\/web-app-shop-160`/);
-  assert.match(pack, /fees-api\. Every other API comes from Dev/);
+  assert.match(pack, /fees-api\. Every other API comes from the env the stack was started on \(dev or uat; stack_status says which\)/);
+  assert.doesNotMatch(pack, /from Dev/);
+  assert.match(pack, /tracked `\.env`.*Never commit it/);
+  assert.match(contextPack({ key: 'K', title: 't', repos: [], branch: 'b', logsDir: 'l', apis: [], tools: { loans: false, fields: false, fieldLists: [] } }), /the UI talks to the env the stack was started on/);
   assert.match(pack, /make_test_loan/);
   assert.doesNotMatch(pack, /lookup_fields/);
 });

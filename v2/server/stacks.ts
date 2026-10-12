@@ -1,7 +1,9 @@
 // Each session's stack on the Switchboard: one UI and as many APIs as the work needs, run with v1's
 // RunService from the session's worktrees (an API the session hasn't got a worktree of runs from its
 // main checkout). The UI is pointed at the running APIs through its proxy file (proxy.conf.json):
-// the APIs not running here keep the file's own rules, which go to Dev. Adding or removing an API
+// the APIs not running here keep the file's own rules, which go to the default env (Dev); on another
+// env (UAT) its ui.proxyEnv pairs move them there first, or {{env}} in ui.proxyFile picks that env's
+// own file. A running stack keeps its env: starting it on another is refused until it stops. Adding or removing an API
 // rebuilds that file and restarts the UI, since a dev server reads it only when it starts.
 // The UI goes behind the front door on its own port (the one its sign-in is registered for).
 // A small manifest per running stack lets the next start clean up after a server that went away.
@@ -9,7 +11,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { OKTETO_UP, runKey, type CardRun, type LogLine } from '../../shared/recipes.ts';
-import { choiceValues, k8sName, mergeProxy, needsUiPort, pickedApis, readLooseJson, serviceSteps, stackRules, uiHomePort, uiPortFor, uiProject, uiUrlFor, type StackInfo, type StackRunContext } from '../../shared/stack.ts';
+import { choiceValues, k8sName, mergeProxy, needsUiPort, pickedApis, proxyFileFor, proxySwaps, readLooseJson, serviceSteps, stackRules, swapTargets, uiHomePort, uiPortFor, uiProject, uiUrlFor, type StackInfo, type StackRunContext } from '../../shared/stack.ts';
 import { uiApp } from '../../shared/stack-detect.ts';
 import type { FrontDoors } from '../../server/front-door.ts';
 import { run as sh } from '../../server/hosts.ts';
@@ -96,11 +98,14 @@ export class StackManager {
 
   /**
    * Bring a session's stack up with these APIs (by repo name). Already up: the APIs not running yet
-   * are added (one proxy rebuild, one UI restart). Throws what's wrong, having started nothing.
+   * are added (one proxy rebuild, one UI restart); asked for another env, it throws (stop it first).
+   * Throws what's wrong, having started nothing.
    */
   async up(owner: StackOwner, stack: StackInfo, apis: string[], values: Record<string, string> = {}): Promise<void> {
     const have = this.live.get(owner.id);
     if (have) {
+      const want = choiceValues(stack, values);
+      if (Object.entries(want).some(([k, v]) => have.values[k] !== v)) throw new Error(`The stack is running on ${envName(have.values)}: stop it, then start it on ${envName(want)}.`);
       const more = pickedApis(stack, apis).map((a) => a.repo).filter((a) => !have.apis.some((x) => x.toLowerCase() === a.toLowerCase()));
       if (more.length) await this.add(owner.id, more);
       return;
@@ -332,11 +337,13 @@ export class StackManager {
   /** Write the UI's proxy file with the running APIs' rules: a copy outside the repo, or the file itself in edit mode (backed up first). */
   private writeProxy(live: Live, uiDir: string | undefined): void {
     const ui = live.stack.ui;
-    if (!ui || !uiDir || !ui.proxyFile) return;
-    const file = join(uiDir, ui.proxyFile);
-    if (!existsSync(file)) throw new Error(`${ui.proxyFile} isn’t in ${ui.repo}. Fix "ui.proxyFile" in the workspace's stack.`);
+    const name = proxyFileFor(live.stack, live.values);
+    if (!ui || !uiDir || !name) return;
+    const file = join(uiDir, name);
+    const forEnv = name !== ui.proxyFile ? ` (the ${envName(live.values)} file)` : '';
+    if (!existsSync(file)) throw new Error(`${name}${forEnv} isn’t in ${ui.repo}. Fix "ui.proxyFile" in the workspace's stack.`);
     const original = readFileSync(file, 'utf8');
-    try { readLooseJson(original); } catch (e) { throw new Error(`${ui.proxyFile} couldn’t be read as JSON (${(e as Error).message}).`); }
+    try { readLooseJson(original); } catch (e) { throw new Error(`${name}${forEnv} couldn’t be read as JSON (${(e as Error).message}).`); }
     const edit = ui.proxyMode === 'edit';
     const id = live.owner.id;
     live.proxy = { file, original, edit, out: edit ? file : join(this.dir, 'stacks', `${id}.proxy.conf.json`), backup: join(this.dir, 'stacks', `${id}.backup.json`) };
@@ -345,10 +352,11 @@ export class StackManager {
     this.rewriteProxy(live);
   }
 
-  /** The proxy file again, for the APIs running now. */
+  /** The proxy file again, for the APIs running now: the file's own rules moved to the env (ui.proxyEnv), then the local ones on top. */
   private rewriteProxy(live: Live): void {
     if (!live.proxy) return;
-    const merged = mergeProxy(readLooseJson(live.proxy.original), stackRules(live.stack, this.pick(live), live.ctx));
+    const base = swapTargets(readLooseJson(live.proxy.original), proxySwaps(live.stack, live.values));
+    const merged = mergeProxy(base, stackRules(live.stack, this.pick(live), live.ctx));
     writeFileSync(live.proxy.out, `${JSON.stringify(merged, null, 2)}\n`);
   }
 
@@ -403,6 +411,11 @@ export class StackManager {
     }
     if (moved) this.opts.changed();
   }
+}
+
+/** "UAT", "DEV" (several values: "UAT · BLUE"). */
+export function envName(values: Record<string, string>): string {
+  return Object.values(values).map((v) => v.toUpperCase()).join(' · ') || 'its default';
 }
 
 async function branchOf(dir: string): Promise<string> {

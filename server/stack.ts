@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { choiceValues, k8sName, mergeProxy, namesApi, needsUiPort, pickedApis, pickedServices, readLooseJson, runLabel, serviceSteps, stackRules, stackSteps, uiHomePort, uiPortFor, uiProject, uiUrlFor, validateStack, type Stack, type StackApiRow, type StackChoice, type StackInfo, type StackRunContext } from '../shared/stack.ts';
 import { uiApp } from '../shared/stack-detect.ts';
 import type { RunRecipe } from '../shared/recipes.ts';
+import { workLines } from '../shared/changes.ts';
 import { run } from './hosts.ts';
 import type { FrontDoors } from './front-door.ts';
 import { listening, PortPool, type UiPortPick } from './ports.ts';
@@ -56,7 +57,8 @@ async function branchOf(dir: string): Promise<string> {
 /** Has the repo changed on its branch: files not committed, or commits the base branch doesn't have? */
 async function changedIn(dir: string): Promise<boolean> {
   const st = await run('git', ['status', '--porcelain'], dir, undefined, 15_000);
-  if (st.code === 0 && st.raw.trim()) return true;
+  // A `.env` the stack's env helper rewrote (starting on UAT) isn't a change of the branch's (isStackEnvFile).
+  if (st.code === 0 && workLines(st.raw).length) return true;
   for (const base of ['origin/HEAD', 'origin/main', 'origin/master', 'origin/develop']) {
     const n = await run('git', ['rev-list', '--count', `${base}..HEAD`], dir, undefined, 15_000);
     if (n.code === 0) return Number(n.out) > 0;

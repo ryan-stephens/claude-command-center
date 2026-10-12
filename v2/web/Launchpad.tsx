@@ -144,7 +144,7 @@ export function Launchpad({ snap }: { snap: Snapshot }) {
                   <b>Environment</b>
                   {workspace?.apis.length ? (
                     <>
-                      <div className="mu" style={{ fontSize: 14 }}>{workspace.ui ? `${workspace.ui} behind the front door, ` : ''}these APIs from the worktrees; the rest from Dev</div>
+                      <div className="mu" style={{ fontSize: 14 }}>{workspace.ui ? `${workspace.ui} behind the front door, ` : ''}these APIs from the worktrees; the rest from the env the stack starts on</div>
                       <div className="row" style={{ marginTop: 6, gap: '6px 16px' }}>
                         {pf.apis.map((a) => (
                           <label key={a.name} className="pick" title={a.why}>

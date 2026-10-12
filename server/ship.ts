@@ -6,7 +6,7 @@
 
 import { normalize } from 'node:path';
 import { branchFor, cardRepos, folderFor, ownFolders, type BootStep, type Card } from '../shared/cards.ts';
-import { parsePatch, type Changes, type RepoChanges } from '../shared/changes.ts';
+import { isStackEnvFile, parsePatch, type Changes, type RepoChanges } from '../shared/changes.ts';
 import { allMerged, commitMessage, openPrs, partOf, prBody, prsOf, prTitle, type PullRequest, type RepoShipPlan, type ShipFile, type ShipPlan, type ShipRequest } from '../shared/ship.ts';
 import { repoName, samePath } from '../shared/workspaces.ts';
 
@@ -117,7 +117,9 @@ export class ShipService {
 
     const mine = new Set(relativeTo(root, card.files ?? []).map((p) => p.toLowerCase()));
     // raw, not trimmed: " M file" starts with a space, and trimming it would shift the path.
+    // The `.env` a stack's env helper rewrote is never offered, so never staged (isStackEnvFile).
     const files: ShipFile[] = parseStatus((await run('git', ['status', '--porcelain=v1', '-z', '-uall'], root)).raw)
+      .filter((f) => !isStackEnvFile(f.path))
       .map((f) => ({ ...f, mine: mine.has(f.path.toLowerCase()) }));
     const others = files.filter((f) => !f.mine).length;
     if (others) notes.push(`${others} changed file${others === 1 ? '' : 's'} not written by this card ${others === 1 ? 'is' : 'are'} left out. Tick ${others === 1 ? 'it' : 'them'} to include.`);

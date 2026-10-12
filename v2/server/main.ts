@@ -28,7 +28,7 @@ import { askClaude, focusOrOpen, linkDeps, makeSessionWorktrees, openTerminal, o
 import { MyTickets } from './my-tickets.ts';
 import { SessionStore, V2_DIR } from './sessions.ts';
 import { refreshPr, ship, shipPlan, slackConfig } from './ship.ts';
-import { StackManager } from './stacks.ts';
+import { envName, StackManager } from './stacks.ts';
 import { join } from 'node:path';
 
 const PORT = Number(process.env.CCV2_PORT || 7878);
@@ -278,8 +278,9 @@ app.post('/api/sessions/:id/stack/up', async (c) => {
     const b = await body(c);
     const apis = Array.isArray(b.apis) ? b.apis.map(String) : st.apis.filter((a) => s.repos.some((r) => r.name.toLowerCase() === a.repo.toLowerCase())).map((a) => a.repo);
     const values = (b.values && typeof b.values === 'object' ? b.values : s.stackValues ?? {}) as Record<string, string>;
+    // up() refuses another env while the stack runs, so what's saved is the env it runs on.
     await stacks.up(placesOf(s), st, apis, values);
-    sessions.update(s.id, (x) => ({ ...x, stackValues: values }));
+    sessions.update(s.id, (x) => ({ ...x, stackValues: stacks.view(s.id)?.values ?? values }));
     return c.json({ ok: true });
   } catch (e) { return fail(c, e); }
 });
@@ -426,7 +427,9 @@ const TOOLS: Record<string, Tool> = {
   session_info: async (s) => ({ key: s.key, title: s.title, branch: s.branch, repos: s.repos.map((r) => ({ name: r.name, dir: r.dir })), logs: stacks.logsDir(s.key), ticket: s.ticket ?? null, stack: stacks.view(s.id) ?? 'not running' }),
   stack_status: async (s) => {
     const st = stackOf(store, s.workspaceId);
-    return { running: stacks.view(s.id) ?? null, available: st?.apis.map((a) => a.repo) ?? [], ui: st?.ui?.repo ?? null, choose: st?.choose ?? {}, note: 'APIs not running here come from Dev through the UI’s proxy file.' };
+    const v = stacks.view(s.id);
+    const env = v ? `${envName(v.values)}, the env the stack was started on` : 'the env the stack is started on';
+    return { running: v ?? null, available: st?.apis.map((a) => a.repo) ?? [], ui: st?.ui?.repo ?? null, choose: st?.choose ?? {}, note: `APIs not running here come from ${env}, through the UI’s proxy file.` };
   },
   stack_up: async (s, a) => {
     const st = stackOf(store, s.workspaceId);
@@ -434,7 +437,7 @@ const TOOLS: Record<string, Tool> = {
     const apis = Array.isArray(a.apis) ? a.apis.map(String) : st.apis.filter((x) => s.repos.some((r) => r.name.toLowerCase() === x.repo.toLowerCase())).map((x) => x.repo);
     const values = a.env ? { ...(s.stackValues ?? {}), env: String(a.env) } : (s.stackValues ?? {});
     await stacks.up(placesOf(s), st, apis, values);
-    sessions.update(s.id, (x) => ({ ...x, stackValues: values }));
+    sessions.update(s.id, (x) => ({ ...x, stackValues: stacks.view(s.id)?.values ?? values }));
     return { started: apis, view: stacks.view(s.id), note: 'Services take a while to come up: call stack_status to see their health.' };
   },
   stack_add_api: async (s, a) => {

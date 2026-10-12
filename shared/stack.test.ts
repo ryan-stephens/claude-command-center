@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseStep, recipeLabel, recipeText } from './recipes.ts';
-import { apiVars, choiceLabel, choiceValues, fill, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, runLabel, serviceSteps, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiPortFor, uiProject, uiUrlFor, unknownStackRepos, retarget, staleUrl, validateStack, withPath, type Stack, type StackRunContext } from './stack.ts';
+import { apiVars, choiceLabel, choiceValues, fill, k8sDeployment, k8sName, mergeProxy, namesApi, needsUiPort, proxyFileFor, proxySwaps, swapTargets, runLabel, serviceSteps, STACK_EXAMPLE, stackDraft, stackRules, stackSteps, stackWarnings, suggested, uiPortFor, uiProject, uiUrlFor, unknownStackRepos, retarget, staleUrl, validateStack, withPath, type Stack, type StackRunContext } from './stack.ts';
 
 const stack: Stack = validateStack({
   choose: { env: ['dev', 'uat'] },
@@ -110,9 +110,10 @@ test('ports are picked per run: {{port}} is the picked one, {{appPort}} the cont
 
 test('what keeps a stack from running twice at once is said, not enforced', () => {
   const w = stackWarnings(stack);
-  assert.equal(w.length, 2, w.join('\n'));
+  assert.equal(w.length, 3, w.join('\n'));
   assert.match(w[0], /orders-api, fees-api: "port" in values now means the port inside the container/);
   assert.match(w[1], /Use \{\{deployment\}\}/);
+  assert.match(w[2], /uat can be picked, but ui\.proxyEnv says nothing for it/);
   assert.match(stackWarnings({ ...stack, ui: { ...stack.ui!, steps: ['npm start'] } }).at(-1)!, /add --port \{\{uiPort\}\} to its start step/, 'a start line the app can’t give --port to still gets the word (nx serve gets it added, §114)');
   assert.match(stackWarnings({ ...stack, api: { ...stack.api, steps: ['forward:no okteto up'] } })[0], /forward:no keeps the okteto up step on the manifest’s own port/, 'only an opt-out is worth a word');
   assert.deepEqual(stackWarnings(validateStack({ api: { steps: ['PORT={{port}} dotnet run'] }, apis: [{ repo: 'a-api', values: { appPort: '80' } }] })), [], 'no okteto, no proxy: nothing to say');
@@ -210,7 +211,7 @@ test('the editor’s draft is built from the workspace’s own repos, and a stac
   assert.deepEqual(d.apis.map((a) => a.repo), ['Workspaces-API', 'Loans-Service']);
   assert.deepEqual(d.apis.map((a) => [a.values.port, a.values.appPort]), [[undefined, '8080'], [undefined, '8080']], 'no local port: it is picked per run; the container port is 8080');
   assert.match(d.api.steps[0], /^wait:port:\{\{port\}\} forward:\{\{port\}\}:\{\{appPort\}\} okteto up/);
-  assert.deepEqual(stackWarnings(d), [], 'the draft runs twice at once as it is');
+  assert.deepEqual(stackWarnings(d).filter((w) => !/proxyEnv/.test(w)), [], 'the draft runs twice at once as it is (its UAT pairs are the team’s to write)');
   assert.deepEqual(stackWarnings(STACK_EXAMPLE), [], 'so does the example');
   assert.deepEqual(d.choose, { env: ['dev', 'uat'] });
   assert.deepEqual(unknownStackRepos(d, ['workspaces-ui', 'workspaces-api', 'loans-service']), [], 'folder names, any case');
@@ -219,4 +220,47 @@ test('the editor’s draft is built from the workspace’s own repos, and a stac
   assert.equal(plain.ui, undefined);
   assert.deepEqual(plain.apis.map((a) => a.repo), ['alpha', 'beta']);
   assert.deepEqual(unknownStackRepos(STACK_EXAMPLE, ['Workspaces-UI', 'Workspaces-API']), ['orders-api', 'web-ui'], 'the example’s made-up names');
+});
+
+test('ui.proxyEnv moves the proxy file’s own rules to another env; the default env and the local rules are left alone', () => {
+  const s = validateStack({
+    choose: { env: ['dev', 'uat'] },
+    api: { steps: ['okteto up'], proxy: { '/gw/{{route}}/**': { target: 'http://localhost:{{port}}' } } },
+    apis: [{ repo: 'orders-api', values: { route: 'orders' } }],
+    ui: { repo: 'web-ui', proxyFile: 'proxy.conf.json', proxyEnv: { uat: [{ from: '.dev.example.test', to: '.uat.example.test' }, { from: '-dev.', to: '-uat.' }] }, steps: ['npm start -- --port {{uiPort}}'] },
+  });
+  const base = { '/gw/fees/**': { target: 'https://fees.dev.example.test', headers: { Origin: 'https://gw-dev.example.test' } }, '/gw/orders/**': { target: 'https://orders.dev.example.test' } };
+  assert.deepEqual(proxySwaps(s, {}), [], 'the default (first) env applies nothing');
+  assert.deepEqual(proxySwaps(s, { env: 'dev' }), []);
+  assert.equal(proxySwaps(s, { env: 'uat' }).length, 2);
+  const moved = swapTargets(base, proxySwaps(s, { env: 'uat' }));
+  assert.equal(moved['/gw/fees/**'].target, 'https://fees.uat.example.test');
+  assert.equal(moved['/gw/fees/**'].headers.Origin, 'https://gw-uat.example.test', 'every string value, headers too');
+  assert.ok('/gw/fees/**' in moved, 'routes (keys) are never rewritten');
+  const merged = mergeProxy(moved, stackRules(s, { values: { env: 'uat' }, apis: ['orders-api'] }, { branches: {}, ports: { 'orders-api': 18000 } })) as Record<string, { target: string }>;
+  assert.equal(merged['/gw/orders/**'].target, 'http://localhost:18000', 'the running API’s rule is added after, never rewritten');
+  assert.equal(merged['/gw/fees/**'].target, 'https://fees.uat.example.test');
+  assert.deepEqual(swapTargets(base, []), base);
+});
+
+test('ui.proxyEnv is checked: keys are values of "choose", pairs are short and few', () => {
+  const ui = (proxyEnv: unknown) => ({ choose: { env: ['dev', 'uat'] }, ui: { repo: 'u', steps: ['x'], proxyFile: 'p.json', proxyEnv } });
+  assert.deepEqual(validateStack(ui({ uat: [{ from: 'a', to: 'b' }] })).ui?.proxyEnv, { uat: [{ from: 'a', to: 'b' }] });
+  assert.equal(validateStack(ui({})).ui?.proxyEnv, undefined);
+  assert.throws(() => validateStack(ui({ prod: [] })), /prod isn’t a value in "choose"/);
+  assert.throws(() => validateStack(ui([])), /"ui.proxyEnv" should look like/);
+  assert.throws(() => validateStack(ui({ uat: [{ from: '', to: 'b' }] })), /pair 1 needs "from"/);
+  assert.throws(() => validateStack(ui({ uat: [{ from: 'x'.repeat(201), to: 'b' }] })), /200 characters/);
+  assert.throws(() => validateStack(ui({ uat: Array.from({ length: 21 }, () => ({ from: 'a', to: 'b' })) })), /20 at most/);
+});
+
+test('{{env}} in ui.proxyFile picks a file per env, still inside the repo; a non-default env with nothing to move its rules is warned about', () => {
+  const s = validateStack({ choose: { env: ['dev', 'uat'] }, ui: { repo: 'u', steps: ['npm start -- --port {{uiPort}}'], proxyFile: 'proxy.{{env}}.json' } });
+  assert.equal(proxyFileFor(s, {}), 'proxy.dev.json');
+  assert.equal(proxyFileFor(s, { env: 'uat' }), 'proxy.uat.json');
+  assert.throws(() => validateStack({ ui: { repo: 'u', steps: ['x'], proxyFile: '../{{env}}/p.json' } }), /inside the UI repo/);
+  assert.ok(!stackWarnings(s).some((w) => /proxyEnv/.test(w)), 'a file per env needs no pairs');
+  const one = validateStack({ choose: { env: ['dev', 'uat'] }, ui: { repo: 'u', steps: ['npm start -- --port {{uiPort}}'], proxyFile: 'proxy.conf.json' } });
+  assert.ok(stackWarnings(one).some((w) => /^uat can be picked, but ui\.proxyEnv says nothing/.test(w)));
+  assert.ok(!stackWarnings({ ...one, ui: { ...one.ui!, proxyEnv: { uat: [{ from: 'a', to: 'b' }] } } }).some((w) => /proxyEnv/.test(w)));
 });

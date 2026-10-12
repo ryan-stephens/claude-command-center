@@ -36,6 +36,21 @@ export interface Changes {
   repos: RepoChanges[];
 }
 
+/**
+ * The repo-root `.env` a stack's env helper rewrites when a stack starts on another env (its
+ * namespace and context: dev ↔ uat). Some API repos track it, so starting on UAT leaves it changed:
+ * that is the stack's doing, not the work's, so what a session changed leaves it out (suggesting APIs,
+ * Ship, "changed on this branch") and Ship never stages it.
+ */
+export function isStackEnvFile(path: string): boolean {
+  return path.trim().replace(/^"|"$/g, '').replace(/\\/g, '/').replace(/^\.\//, '') === '.env';
+}
+
+/** `git status --porcelain` lines that are the work's: the helper-written `.env` left out (isStackEnvFile). */
+export function workLines(porcelain: string): string[] {
+  return porcelain.split(/\r?\n/).filter((l) => l.trim() && !isStackEnvFile(l.slice(3)));
+}
+
 /** The sheet's list: a header per repo when there are several, then its files; `index` counts files across repos. */
 export type ChangeRow = { kind: 'repo'; repo: RepoChanges } | { kind: 'file'; repo: RepoChanges; file: ChangedFile; index: number };
 export function changeRows(c: Changes): ChangeRow[] {

@@ -6,6 +6,8 @@ import { ago, get, post } from './api.ts';
 const KIND: Record<DataEvent['kind'], string> = { lookup: 'Lookup', update: 'Change', loan: 'Loan', scenario: 'Scenario' };
 const MARK: Record<DataEvent['state'], string> = { running: '…', done: '✓', failed: '✗' };
 const envWord = (e: string) => (e === 'dev' ? 'Dev' : 'UAT');
+/** The env the session's stack runs on, when it runs on Dev or UAT. */
+const stackEnv = (snap: Snapshot, s: Session): 'dev' | 'uat' | undefined => { const e = snap.stacks[s.id]?.values.env; return e === 'dev' || e === 'uat' ? e : undefined; };
 
 export type DataTab = 'fields' | 'loans';
 const KINDS: Record<DataTab, DataEvent['kind'][]> = { fields: ['lookup', 'update'], loans: ['loan', 'scenario'] };
@@ -104,7 +106,7 @@ export function LoanForge({ s, snap, lookUp }: { s: Session; snap: Snapshot; loo
       {setup && <ToolSetup snap={snap} done={() => setSetup(false)} />}
       {tool.tail && tool.tail.length > 0 && (started || tool.state === 'exited') && <pre className="preview" style={{ maxHeight: 140 }}>{tool.tail.join('\n')}</pre>}
       {error && <div className="err" role="alert">{error}</div>}
-      {snap.config.loans && <LoanForm s={s} scenarios={down ? null : scenarios} />}
+      {snap.config.loans && <LoanForm s={s} env0={stackEnv(snap, s)} scenarios={down ? null : scenarios} />}
       {!events.length && <div className="mu" style={{ fontSize: 14 }}>No loans yet. What Claude or you make with the test-data tool shows here as it happens.</div>}
       {events.map((ev, i) => <EventCard key={ev.id} s={s} ev={ev} first={i === 0} lookUp={lookUp} />)}
     </div>
@@ -183,7 +185,7 @@ export function picksText(picks: FieldPick[]): string {
 }
 
 function LookupForm({ s, snap, loan: given }: { s: Session; snap: Snapshot; loan: string }) {
-  const [env, setEnv] = useState<'dev' | 'uat'>(s.loans.at(-1)?.env ?? 'dev');
+  const [env, setEnv] = useState<'dev' | 'uat'>(s.loans.at(-1)?.env ?? stackEnv(snap, s) ?? 'dev');
   const [loan, setLoan] = useState(given);
   const [list, setList] = useState('');
   const [ids, setIds] = useState('');
@@ -263,9 +265,9 @@ function LookupForm({ s, snap, loan: given }: { s: Session; snap: Snapshot; loan
 interface Scenario { id: string; name: string; version: number; tags: string[]; folder?: string }
 
 /** Make a loan: a new scenario made for this session (by Claude), or a saved one run as it is. Always open. */
-function LoanForm({ s, scenarios }: { s: Session; scenarios: Scenario[] | null }) {
+function LoanForm({ s, env0, scenarios }: { s: Session; env0?: 'dev' | 'uat'; scenarios: Scenario[] | null }) {
   const [mode, setMode] = useState<'new' | 'saved'>('new');
-  const [env, setEnv] = useState<'dev' | 'uat'>('dev');
+  const [env, setEnv] = useState<'dev' | 'uat'>(env0 ?? 'dev');
   const [error, setError] = useState('');
   return (
     <div className="fcard" role="group" aria-label="Make a loan">

@@ -5,6 +5,7 @@
 // commits for it, and refuses while a worktree has uncommitted changes.
 
 import { hostFor, run, why } from '../../server/hosts.ts';
+import { workLines } from '../../shared/changes.ts';
 import { prBody, slackText } from '../shared/ship-text.ts';
 import { evidenceOf, defaultTitle } from '../shared/ship-text.ts';
 import type { Session, ShipPlan, ShippedPr } from '../shared/types.ts';
@@ -34,7 +35,9 @@ interface RepoState { name: string; dir: string; branch: string; ahead: number; 
 
 async function stateOf(r: Session['repos'][number]): Promise<RepoState> {
   const branch = await git(r.dir, ['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => '');
-  const dirty = (await git(r.dir, ['status', '--porcelain']).catch(() => '')).split(/\r?\n/).filter(Boolean).length;
+  // A `.env` the stack's env helper rewrote isn't the work's: it neither blocks Ship nor counts (isStackEnvFile).
+  const status = await run('git', ['status', '--porcelain'], r.dir, undefined, 30_000).catch(() => undefined);
+  const dirty = status?.code === 0 ? workLines(status.raw).length : 0;
   const remotes = (await git(r.dir, ['remote']).catch(() => '')).split(/\r?\n/).filter(Boolean);
   const remote = remotes.includes('origin') ? 'origin' : remotes[0];
   const base = remote ? await baseOf(r.dir, remote) : 'main';

@@ -61,7 +61,7 @@ test('a workspace’s repos become a stack: APIs from okteto.yml and .csproj, th
   ]);
   assert.deepEqual(s.api.proxy, { '/gateway/team/{{route}}/**': { target: 'http://localhost:{{port}}', secure: false, pathRewrite: { '.*/gateway/team/{{route}}': '' } } }, 'the template from the first matched rule');
   assert.deepEqual(s.ui, { repo: 'shop-ui', proxyFile: 'apps/shop/proxy.conf.json', proxyMode: 'override', steps: ['if not exist node_modules npm install', 'npx ng serve shop --proxy-config {{proxy}} --port {{uiPort}}'], url: 'http://localhost:{{uiPort}}' });
-  assert.deepEqual(stackWarnings(s), [], 'runs twice at once as found');
+  assert.deepEqual(stackWarnings(s).filter((w) => !/proxyEnv/.test(w)), [], 'runs twice at once as found (its UAT pairs are the team’s to write)');
   const say = (repoName: string) => d.findings.filter((f) => f.repo === repoName).map((f) => `${f.asked ? '? ' : ''}${f.text}${f.from ? ` [${f.from}]` : ''}`);
   assert.deepEqual(say('loans-api'), [
     'okteto: dev name loans-api, forwards 8080→80; the container port is 80 [okteto.yml]',

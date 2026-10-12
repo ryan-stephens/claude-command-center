@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { againstText, changeRows, changeTotals, parsePatch, patchLines, type RepoChanges } from './changes.ts';
+import { againstText, changeRows, changeTotals, isStackEnvFile, parsePatch, patchLines, workLines, type RepoChanges } from './changes.ts';
 
 const sample = `diff --git a/src/a.ts b/src/a.ts
 index 1111111..2222222 100644
@@ -63,4 +63,13 @@ test('the rows across repos: a header per repo only when there are several, file
 test('patch lines are classed for colouring', () => {
   const kinds = patchLines(parsePatch(sample)[0].patch).map((l) => l.kind);
   assert.deepEqual(kinds, ['meta', 'meta', 'meta', 'meta', 'hunk', 'ctx', 'del', 'add', 'add', 'ctx']);
+});
+
+test('the repo-root .env a stack’s env helper rewrites isn’t the work’s; other .env files are', () => {
+  assert.ok(isStackEnvFile('.env'));
+  assert.ok(isStackEnvFile('./.env'));
+  assert.ok(!isStackEnvFile('src/.env'));
+  assert.ok(!isStackEnvFile('.env.local'));
+  assert.deepEqual(workLines(' M .env\n M src/a.ts\n?? notes.md\n'), [' M src/a.ts', '?? notes.md']);
+  assert.deepEqual(workLines(' M .env\r\n'), [], 'only the helper’s .env changed: nothing of the work’s');
 });

@@ -31,8 +31,14 @@ export interface Stack {
   /** The UI: its repo, its proxy file, and how it starts ({{proxy}} is the proxy file to use, {{uiPort}} the port picked for this run). */
   ui?: {
     repo: string;
-    /** The proxy config in the UI repo (JSON), relative to it. */
+    /** The proxy config in the UI repo (JSON), relative to it. May use {{env}} (one file per env). */
     proxyFile?: string;
+    /**
+     * For an env other than the default: find/replace pairs applied to the proxy file's own rules
+     * (the APIs not running here), so they go to that env: { "uat": [{ "from": "dev.", "to": "uat." }] }.
+     * The running APIs' localhost rules are added after, so never rewritten.
+     */
+    proxyEnv?: Record<string, ProxySwap[]>;
     /** override (default): write a copy with the rules outside the repo and pass it as {{proxy}}. edit: change the file in place and put it back on stop. */
     proxyMode?: 'override' | 'edit';
     steps: string[];
@@ -42,6 +48,9 @@ export interface Stack {
     path?: string;
   };
 }
+
+/** One find/replace in the proxy file's targets for another env. */
+export interface ProxySwap { from: string; to: string }
 
 /** What one run of the stack knows besides the pick: each repo's branch, the proxy copy, and the ports picked for it. */
 export interface StackRunContext {
@@ -117,6 +126,7 @@ export interface StackApiRow {
 }
 
 const MAX_APIS = 30;
+const MAX_SWAPS = 20;
 
 const str = (v: unknown, max = 500) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
@@ -131,6 +141,25 @@ function rules(v: unknown, what: string): Record<string, unknown> | undefined {
   if (typeof v !== 'object' || Array.isArray(v)) throw new Error(`${what} should be an object of proxy rules ({ "/api/**": { "target": … } }).`);
   if (JSON.stringify(v).length > 20_000) throw new Error(`${what} is too long.`);
   return v as Record<string, unknown>;
+}
+
+/** "ui.proxyEnv": per env value (one of "choose"'s), up to 20 short find/replace pairs. */
+function swaps(v: unknown, choose: Record<string, string[]>): Record<string, ProxySwap[]> | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'object' || Array.isArray(v)) throw new Error('"ui.proxyEnv" should look like { "uat": [{ "from": "dev.", "to": "uat." }] }.');
+  const offered = Object.values(choose).flat();
+  const out: Record<string, ProxySwap[]> = {};
+  for (const [env, list] of Object.entries(v as Record<string, unknown>)) {
+    if (!offered.includes(env)) throw new Error(`"ui.proxyEnv.${env}": ${env} isn’t a value in "choose"${offered.length ? ` (${offered.join(', ')})` : ''}.`);
+    if (!Array.isArray(list)) throw new Error(`"ui.proxyEnv.${env}" should be a list of { "from": …, "to": … }.`);
+    if (list.length > MAX_SWAPS) throw new Error(`"ui.proxyEnv.${env}" has ${list.length} pairs: ${MAX_SWAPS} at most.`);
+    out[env] = list.map((x, i) => {
+      const o = (x ?? {}) as Record<string, unknown>;
+      if (typeof o.from !== 'string' || typeof o.to !== 'string' || !o.from || o.from.length > 200 || o.to.length > 200) throw new Error(`"ui.proxyEnv.${env}" pair ${i + 1} needs "from" (not empty) and "to", each 200 characters at most.`);
+      return { from: o.from, to: o.to };
+    });
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** Check a stack someone wrote or imported, and keep only what it should have. Throws what's wrong. */
@@ -171,6 +200,7 @@ export function validateStack(raw: unknown): Stack {
     const proxyFile = str(u.proxyFile, 300);
     if (proxyFile && (/^[a-z]:|^[\\/]/i.test(proxyFile) || proxyFile.split(/[\\/]/).includes('..'))) throw new Error('"ui.proxyFile" should be a path inside the UI repo, like "apps/web/proxy.conf.json".');
     const mode = u.proxyMode === 'edit' ? 'edit' : 'override';
+    const proxyEnv = swaps(u.proxyEnv, choose);
     const url = str(u.url, 300);
     if (url && !/^https?:\/\/\S+$/.test(url)) throw new Error('"ui.url" should look like http://localhost:{{uiPort}}.');
     let path = str(u.path, 200);
@@ -178,7 +208,7 @@ export function validateStack(raw: unknown): Stack {
     if (path && !path.startsWith('/')) path = `/${path}`;
     const uiSteps = steps(u.steps, '"ui.steps"');
     if (!uiSteps.length) throw new Error('"ui.steps" is empty: say how the UI starts.');
-    ui = { repo, ...(proxyFile ? { proxyFile, proxyMode: mode } : {}), steps: uiSteps, ...(url ? { url } : {}), ...(path && path !== '/' ? { path } : {}) };
+    ui = { repo, ...(proxyFile ? { proxyFile, proxyMode: mode } : {}), ...(proxyEnv ? { proxyEnv } : {}), steps: uiSteps, ...(url ? { url } : {}), ...(path && path !== '/' ? { path } : {}) };
   }
   if (!apis.length && !ui) throw new Error('The stack has no APIs and no UI.');
   return { choose, api, apis, ...(ui ? { ui } : {}) };
@@ -208,6 +238,7 @@ export const STACK_EXAMPLE: Stack = {
   ui: {
     repo: 'web-ui',
     proxyFile: 'apps/shop/proxy.conf.json',
+    proxyEnv: { uat: [{ from: '.dev.example.test', to: '.uat.example.test' }] },
     steps: ['node_modules\\.bin\\nx.cmd run shop:serve:development --proxyConfig={{proxy}} --port {{uiPort}}'],
     url: 'http://localhost:{{uiPort}}',
   },
@@ -280,6 +311,11 @@ export function stackWarnings(stack: Stack): string[] {
   const legacy = stack.apis.filter((a) => a.values.port && !a.values.appPort).map((a) => a.repo);
   if (legacy.length) out.push(`${legacy.join(', ')}: "port" in values now means the port inside the container ({{appPort}}); the local port is picked per run. Call it "appPort" to say so.`);
   if (/\{\{\s*name\s*\}\}-\{\{\s*branch\s*\}\}/.test(apiLines)) out.push('Use {{deployment}} for the deployment’s name: it is {{name}}-{{branch}} cut to 50 characters, as Kubernetes needs.');
+  // A non-default env with one proxy file and nothing to move its rules: the APIs not running here stay on the default env.
+  if (stack.ui?.proxyFile && !USES('[A-Za-z_]\\w*').test(stack.ui.proxyFile)) {
+    const bare = Object.values(stack.choose).flatMap((vals) => vals.slice(1)).filter((v) => !stack.ui!.proxyEnv?.[v]?.length);
+    if (bare.length) out.push(`${bare.join(', ')} can be picked, but ui.proxyEnv says nothing for ${bare.length === 1 ? 'it' : 'them'}: the APIs not running here would still go where ${stack.ui.proxyFile} points. Add find/replace pairs in "ui.proxyEnv", or use {{env}} in ui.proxyFile for a file per env.`);
+  }
   if (stack.ui && !needsUiPort(stack)) {
     out.push('The UI starts on a fixed port, so two cards can’t run it at once: add --port {{uiPort}} to its start step and put {{uiPort}} in ui.url.');
   }
@@ -503,6 +539,30 @@ export function retarget<T>(rules: T, appPort: number, port: number): T {
   const at = new RegExp(`^(https?://(?:localhost|127\\.0\\.0\\.1)):${appPort}(?=/|$)`, 'i');
   const walk = (v: unknown): unknown => {
     if (typeof v === 'string') return v.replace(at, `$1:${port}`);
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, walk(x)]));
+    return v;
+  };
+  return walk(rules) as T;
+}
+
+/** The UI's proxy file for these values: ui.proxyFile with {{env}} (or any picked value) filled in. */
+export function proxyFileFor(stack: Pick<Stack, 'choose' | 'ui'>, values: Record<string, string>): string | undefined {
+  const f = stack.ui?.proxyFile;
+  return f ? fill(f, chosenVars(choiceValues(stack, values)), '"ui.proxyFile"') : undefined;
+}
+
+/** The find/replace pairs for the picked values: none for a default (first) value. */
+export function proxySwaps(stack: Pick<Stack, 'choose' | 'ui'>, values: Record<string, string>): ProxySwap[] {
+  const picked = choiceValues(stack, values);
+  return Object.entries(stack.choose).flatMap(([k, vals]) => (picked[k] !== vals[0] ? stack.ui?.proxyEnv?.[picked[k]] ?? [] : []));
+}
+
+/** Every string value of the rules (targets, headers) with each pair replaced throughout; keys (the routes) left alone. */
+export function swapTargets<T>(rules: T, pairs: ProxySwap[]): T {
+  if (!pairs.length) return rules;
+  const walk = (v: unknown): unknown => {
+    if (typeof v === 'string') return pairs.reduce((s, p) => s.split(p.from).join(p.to), v);
     if (Array.isArray(v)) return v.map(walk);
     if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, walk(x)]));
     return v;

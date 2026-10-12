@@ -19,7 +19,7 @@ saveStack(store, 'ws-v2', {
     { repo: 'loans-api', values: { name: 'loans-api', route: 'loans' } },
     { repo: 'audit-api', values: { name: 'audit-api', route: 'audit' } },
   ],
-  ui: { repo: 'shop-ui', proxyFile: 'proxy.conf.json', steps: [`wait:"Local:" node ${standins}/../simple-new-card/standins/ui.cjs {{uiPort}}`], url: 'http://localhost:4316' },
+  ui: { repo: 'shop-ui', proxyFile: 'proxy.conf.json', proxyEnv: { uat: [{ from: 'dev.example.invalid', to: 'uat.example.invalid' }] }, steps: [`wait:"Local:" node ${standins}/../simple-new-card/standins/ui.cjs {{uiPort}}`], url: 'http://localhost:4316' },
 });
 store.close();
 console.log('seeded');

@@ -60,7 +60,7 @@ export function suggestApis(stack: Stack | undefined, ticked: string[]): { name:
   const names = ticked.map((n) => n.toLowerCase());
   return (stack?.apis ?? []).map((a) => names.includes(a.repo.toLowerCase())
     ? { name: a.repo, on: true, why: 'in this session: runs from its worktree' }
-    : { name: a.repo, on: false, why: 'from Dev unless you add it' });
+    : { name: a.repo, on: false, why: 'from the stack’s env unless you add it' });
 }
 
 export interface PackInput {
@@ -88,8 +88,9 @@ export function contextPack(p: PackInput): string {
   if (p.notes?.trim()) lines.push('## Team notes', '', p.notes.trim(), '');
   lines.push('## The stack', '');
   lines.push(p.apis.length
-    ? `The UI runs against these APIs from this session: ${p.apis.join(', ')}. Every other API comes from Dev through the UI's proxy file.`
-    : 'No APIs run locally yet: the UI talks to Dev. Add one with stack_add_api when you change it.');
+    ? `The UI runs against these APIs from this session: ${p.apis.join(', ')}. Every other API comes from the env the stack was started on (dev or uat; stack_status says which) through the UI's proxy file.`
+    : 'No APIs run locally yet: the UI talks to the env the stack was started on (dev or uat). Add one with stack_add_api when you change it.');
+  lines.push('Starting the stack on another env (UAT) can rewrite an API repo’s tracked `.env` (its namespace): that is the stack’s, not the work’s. Never commit it.');
   lines.push(`Each service writes its output to \`${p.logsDir}\` (one file per service): read it when something fails.`, '');
   lines.push('## Tools (the command-center MCP server)', '');
   lines.push('- `session_info`: this session, its repos and branch.');

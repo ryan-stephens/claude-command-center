@@ -364,6 +364,20 @@ function toolbelt(sessionId, token) {
     check('Stop all stops the stack; the card keeps its layout, the Stack tab saying stopped with Start stack', await until(async () => !(await state()).stacks[s.id], 15000) && await until(() => page.getByRole('tab', { name: 'Stack · stopped' }).isVisible(), 5000) && await page.locator('.sess-top').isVisible() && await page.locator('.sess').getByRole('button', { name: 'Start stack' }).isVisible());
     await shot(page, 'stopped');
     check('the front door closes with the last UI', !(await state()).doors.length);
+    // ---- Start on UAT: picked next to Start stack, a second click to be sure, the rest of the proxy on UAT ----
+    const card = page.locator('.sess');
+    await card.getByRole('group', { name: 'Environment' }).getByRole('button', { name: 'UAT' }).click();
+    await card.getByRole('button', { name: 'Start stack on UAT' }).click();
+    check('starting on UAT asks to be sure first, starting nothing yet', await card.getByRole('button', { name: 'Start on UAT: sure?' }).isVisible() && !(await state()).stacks[s.id]);
+    await card.getByRole('button', { name: 'Start on UAT: sure?' }).click();
+    check('the stack starts on UAT and its tab says so', await until(async () => (await state()).stacks[s.id]?.values.env === 'uat', 15000) && await until(() => page.getByRole('tab', { name: /^Stack · UAT · \d+ APIs?$/ }).isVisible(), 5000));
+    const uatProxy = JSON.parse(fs.readFileSync(`${V2DIR}/runs/stacks/${s.id}.proxy.conf.json`, 'utf8'));
+    check('its proxy copy sends the APIs not running here to UAT; the running ones stay local', uatProxy['/api/**'].target === 'https://uat.example.invalid' && /^http:\/\/localhost:\d+$/.test(uatProxy['/api/fees/**']?.target ?? ''), JSON.stringify(uatProxy).slice(0, 200));
+    const onDev = await tb.call('stack_up', { env: 'dev' });
+    check('starting it on Dev while it runs on UAT is refused, and the saved env stays UAT', Boolean(onDev.error) && /running on UAT: stop it, then start it on DEV/.test(onDev.text) && (await state()).sessions.find((x) => x.id === s.id).stackValues?.env === 'uat', onDev.text);
+    await shot(page, 'stack-uat');
+    await card.getByRole('button', { name: 'Stop all' }).click();
+    check('Stop all stops the UAT stack', await until(async () => !(await state()).stacks[s.id], 15000));
     check('no page errors', errors.length === 0, errors.join(' | '));
     tb.end();
     await page.locator('.sess').getByRole('button', { name: `More for ${s.key}` }).click();

@@ -6,6 +6,7 @@
 // Claude writes to exactly the create address, and shows it in Loan Forge.
 
 import { run as sh } from '../../server/hosts.ts';
+import { isStackEnvFile } from '../../shared/changes.ts';
 import { DEFAULT_CREATE_PATH } from '../../shared/verify.ts';
 import type { FieldPick, LoanMade, Session } from '../shared/types.ts';
 
@@ -83,7 +84,9 @@ export async function changedFiles(s: Session): Promise<Record<string, string[]>
     }
     const d = await sh('git', ['diff', '--name-only', base || 'HEAD'], r.dir, undefined, 15_000);
     const n = await sh('git', ['ls-files', '--others', '--exclude-standard'], r.dir, undefined, 10_000);
-    const files = [...new Set([...(d.code === 0 ? d.out.split('\n') : []), ...(n.code === 0 ? n.out.split('\n') : [])].map((x) => x.trim()).filter(Boolean))].slice(0, 80);
+    const files = [...new Set([...(d.code === 0 ? d.out.split('\n') : []), ...(n.code === 0 ? n.out.split('\n') : [])].map((x) => x.trim()).filter(Boolean))]
+      // The `.env` the stack's env helper rewrites is the stack's, not the work's (isStackEnvFile).
+      .filter((f) => !isStackEnvFile(f)).slice(0, 80);
     if (files.length) out[r.name] = files;
   }
   return out;

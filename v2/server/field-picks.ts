@@ -8,6 +8,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { run as sh } from '../../server/hosts.ts';
+import { isStackEnvFile } from '../../shared/changes.ts';
 import { idsInText } from '../../shared/verify.ts';
 import type { FieldPick, Session } from '../shared/types.ts';
 
@@ -55,12 +56,13 @@ async function idsInWorktree(dir: string): Promise<string[]> {
     const r = await sh('git', ['merge-base', 'HEAD', ref], dir, undefined, 10_000);
     if (r.code === 0 && r.out.trim()) { base = r.out.trim(); break; }
   }
-  const d = await sh('git', ['diff', '--no-color', '--unified=0', base || 'HEAD'], dir, undefined, 20_000);
+  // The `.env` the stack's env helper rewrites is the stack's, not the work's (isStackEnvFile).
+  const d = await sh('git', ['diff', '--no-color', '--unified=0', base || 'HEAD', '--', '.', ':(exclude).env'], dir, undefined, 20_000);
   if (d.code !== 0) return [];
   let text = addedLines(d.out.slice(0, DIFF_MAX));
   // New files git doesn't track yet are changes too (a diff leaves them out).
   const fresh = await sh('git', ['ls-files', '--others', '--exclude-standard'], dir, undefined, 10_000);
-  for (const f of fresh.code === 0 ? fresh.out.split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 200) : []) {
+  for (const f of fresh.code === 0 ? fresh.out.split('\n').map((x) => x.trim()).filter((x) => x && !isStackEnvFile(x)).slice(0, 200) : []) {
     try { const st = statSync(join(dir, f)); if (st.isFile() && st.size < 200_000) text += `\n${readFileSync(join(dir, f), 'utf8')}`; } catch { /* gone */ }
     if (text.length > DIFF_MAX) break;
   }

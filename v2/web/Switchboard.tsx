@@ -7,6 +7,8 @@ import { type DataTab, FieldFinder, LoanForge, tabEvents } from './DataPanel.tsx
 const healthWord: Record<Health, string> = { up: 'up', starting: 'starting', unhealthy: 'unhealthy', failed: 'failed', stopped: 'stopped' };
 const dotOf = (h: Health) => (h === 'up' ? 'up' : h === 'starting' ? 'st' : h === 'stopped' ? 'off' : 'bad');
 const isProblem = (h: Health) => h === 'unhealthy' || h === 'failed';
+/** "UAT", "DEV": the env a stack runs on, as its values say. */
+const envLabel = (values: Record<string, string> | undefined) => Object.values(values ?? {}).map((x) => x.toUpperCase()).join(' · ');
 
 function claudeClass(s: Session): string {
   return s.claude.state === 'needs-you' ? 'need' : s.claude.state === 'working' ? 'mu' : s.claude.state === 'done' ? 'ok' : 'off';
@@ -56,7 +58,7 @@ export function Switchboard({ snap }: { snap: Snapshot }) {
         <span className="cap">Show</span>
         <button type="button" className={`btn${onlyProblems ? '' : ' dark'}`} onClick={() => setOnlyProblems(false)}>All sessions</button>
         <button type="button" className={`btn${onlyProblems ? ' dark' : ''}`} onClick={() => setOnlyProblems(true)}>Only problems</button>
-        <span className="mu" style={{ marginLeft: 'auto', fontSize: 14 }}>APIs not running locally go to Dev, so a session only runs what it changes</span>
+        <span className="mu" style={{ marginLeft: 'auto', fontSize: 14 }}>APIs not running locally go to the env the stack was started on, so a session only runs what it changes</span>
       </div>
       {error && <div className="err" role="alert">{error}</div>}
 
@@ -105,12 +107,25 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
   const [loanFor, setLoanFor] = useState('');
   const [menu, setMenu] = useState<'' | 'add' | 'more'>('');
   const ws = snap.workspaces.find((w) => w.id === s.workspaceId);
+  const choose = ws?.choose ?? {};
+  // The env to start on: what the session last started with, else each question's default (its first value).
+  const [pick, setPick] = useState<Record<string, string>>({});
+  const [armed, setArmed] = useState(false);
+  const values = Object.fromEntries(Object.entries(choose).map(([k, vals]) => [k, [pick[k], s.stackValues?.[k]].find((x) => x && vals.includes(x)) ?? vals[0]]));
+  const offDefault = Object.entries(choose).some(([k, vals]) => values[k] !== vals[0]);
+  const runsOn = envLabel(v?.values);
   const ui = v?.services.find((x) => x.kind === 'ui');
   const apis = v?.services.filter((x) => x.kind === 'api') ?? [];
   const loan = s.loans.at(-1);
   const check = s.fields.at(-1);
   const notRunning = (ws?.apis ?? []).filter((a) => !apis.some((x) => x.name.toLowerCase() === a.toLowerCase()));
   const open = () => act(post(`/api/sessions/${s.id}/open`));
+  // Another env than the default makes a deployment in a shared namespace: a second click to be sure.
+  const start = () => {
+    if (offDefault && !armed) { setArmed(true); return; }
+    setArmed(false);
+    act(post(`/api/sessions/${s.id}/stack/up`, { values }));
+  };
   const pr = s.prs.length ? s.prs.map((p) => `PR #${p.number}${p.review === 'APPROVED' ? ' approved' : p.state === 'MERGED' ? ' merged' : ''}`).join(', ') : '';
   const lookUp = (l: string) => { setLoanFor(l); setTab('fields'); };
   const shown = tab;
@@ -126,7 +141,7 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
   );
   const tabs = (
     <div className="tabs" role="tablist" aria-label={`${s.key} tools`}>
-      <TabButton id="stack" tab={shown} set={setTab} bad={problem}>Stack · {v ? `${apis.length} API${apis.length === 1 ? '' : 's'}` : 'stopped'}</TabButton>
+      <TabButton id="stack" tab={shown} set={setTab} bad={problem}>Stack · {v ? `${runsOn ? `${runsOn} · ` : ''}${apis.length} API${apis.length === 1 ? '' : 's'}` : 'stopped'}</TabButton>
       <TabButton id="logs" tab={shown} set={setTab}>Logs</TabButton>
       <TabButton id="fields" tab={shown} set={setTab} bad={dataBad(s, 'fields')}>Field Finder{dataCount(s, 'fields')}</TabButton>
       <TabButton id="loans" tab={shown} set={setTab} bad={dataBad(s, 'loans')}>Loan Forge{dataCount(s, 'loans')}</TabButton>
@@ -157,10 +172,19 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
         <div className="tabpanel" role="tabpanel" aria-label="Stack">
           <div className="bar" style={{ borderTop: 0, paddingTop: 0 }}>
             <span>
-              <b>Stack stopped</b> <span className="mu">· {canStart ? `${ws?.ui ? 'its UI and ' : ''}the APIs it changes run here, the rest from Dev` : 'this workspace has no UI or APIs to run'}</span>
+              <b>Stack stopped</b> <span className="mu">· {canStart ? `${ws?.ui ? 'its UI and ' : ''}the APIs it changes run here, the rest from ${envLabel(values) || 'the default env'}` : 'this workspace has no UI or APIs to run'}</span>
               {pr && <span className="mu"> · {pr}</span>}
             </span>
-            {canStart && <span className="row" style={{ marginLeft: 'auto', gap: 6 }}><button type="button" className="btn dark" onClick={() => act(post(`/api/sessions/${s.id}/stack/up`))}>Start stack</button></span>}
+            {canStart && (
+              <span className="row" style={{ marginLeft: 'auto', gap: 6 }}>
+                {Object.entries(choose).filter(([, vals]) => vals.length > 1).map(([k, vals]) => (
+                  <span key={k} className="segs" role="group" aria-label={k === 'env' ? 'Environment' : k}>
+                    {vals.map((x) => <button key={x} type="button" aria-pressed={values[k] === x} className={`seg small${values[k] === x ? ' on' : ''}`} onClick={() => { setArmed(false); setPick((p) => ({ ...p, [k]: x })); }}>{x.toUpperCase()}</button>)}
+                  </span>
+                ))}
+                <button type="button" className="btn dark" onClick={start}>{armed ? `Start on ${envLabel(values)}: sure?` : offDefault ? `Start stack on ${envLabel(values)}` : 'Start stack'}</button>
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -168,12 +192,12 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
         <div className="tabpanel" role="tabpanel" aria-label="Stack">
           {apis.length > 0 && (
             <div className="apis">
-              {apis.map((a) => <ApiTile key={a.name} a={a} remove={() => act(post(`/api/sessions/${s.id}/stack/remove`, { api: a.name }))} restart={() => act(post(`/api/sessions/${s.id}/stack/restart`, { service: a.name }))} />)}
+              {apis.map((a) => <ApiTile key={a.name} a={a} env={runsOn} remove={() => act(post(`/api/sessions/${s.id}/stack/remove`, { api: a.name }))} restart={() => act(post(`/api/sessions/${s.id}/stack/restart`, { service: a.name }))} />)}
             </div>
           )}
           <div className="bar">
             <span>
-              <b>{apis.length} API{apis.length === 1 ? '' : 's'}</b> <span className="mu">· {counts.map(([h, n]) => `${n} ${healthWord[h]}`).join(' · ') || 'none running'} · the rest from Dev</span>
+              <b>{apis.length} API{apis.length === 1 ? '' : 's'}</b> <span className="mu">· {counts.map(([h, n]) => `${n} ${healthWord[h]}`).join(' · ') || 'none running'} · the rest from {runsOn || 'the default env'}</span>
               {pr && <span className="mu"> · {pr}</span>}
             </span>
             <span className="row" style={{ marginLeft: 'auto', gap: 6 }}>
@@ -202,14 +226,14 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
   );
 }
 
-function ApiTile({ a, remove, restart }: { a: ServiceView; remove: () => void; restart: () => void }) {
+function ApiTile({ a, env, remove, restart }: { a: ServiceView; env: string; remove: () => void; restart: () => void }) {
   return (
     <div className={`api${isProblem(a.health) ? ' bad' : ''}`}>
       <span className={`dot ${dotOf(a.health)}`} aria-label={healthWord[a.health]} />
       <b title={a.name}>{a.name}</b>
       <span className="row" style={{ gap: 0 }}>
         {isProblem(a.health) && <button type="button" className="x" aria-label={`Restart ${a.name}`} title="Restart" onClick={restart}>↻</button>}
-        <button type="button" className="x" aria-label={`Take ${a.name} out`} title="Take it out (back to Dev)" onClick={remove}>×</button>
+        <button type="button" className="x" aria-label={`Take ${a.name} out`} title={`Take it out (back to ${env || 'the default env'})`} onClick={remove}>×</button>
       </span>
       <span className="w">{a.where}{a.health !== 'up' ? ` · ${a.note ?? healthWord[a.health]}` : ` · ${ago(a.since)}`}</span>
     </div>
