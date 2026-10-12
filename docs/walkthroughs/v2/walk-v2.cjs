@@ -355,11 +355,12 @@ function toolbelt(sessionId, token) {
     await hook('Stop', { session_id: 'claude-1', last_assistant_message: 'Shipped.' });
     await page.goto(`${BASE}/`);
     await page.getByRole('button', { name: 'Stop all' }).click();
-    check('Stop all stops the stack and folds the session', await until(async () => !(await state()).stacks[s.id], 15000) && await until(() => page.locator('.sess.folded').isVisible(), 5000));
+    check('Stop all stops the stack; the card keeps its layout, the Stack tab saying stopped with Start stack', await until(async () => !(await state()).stacks[s.id], 15000) && await until(() => page.getByRole('tab', { name: 'Stack · stopped' }).isVisible(), 5000) && await page.locator('.sess-top').isVisible() && await page.locator('.sess').getByRole('button', { name: 'Start stack' }).isVisible());
+    await shot(page, 'stopped');
     check('the front door closes with the last UI', !(await state()).doors.length);
     check('no page errors', errors.length === 0, errors.join(' | '));
     tb.end();
-    await page.locator('.sess.folded').getByRole('button', { name: `More for ${s.key}` }).click();
+    await page.locator('.sess').getByRole('button', { name: `More for ${s.key}` }).click();
     page.once('dialog', (d) => d.accept());
     await page.getByRole('menuitem', { name: 'Remove with its worktrees' }).click();
     check('removing with worktrees takes them away', await until(async () => !(await state()).sessions.length && !fs.existsSync(s.repos[0].dir), 15000));

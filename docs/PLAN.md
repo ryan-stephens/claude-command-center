@@ -3533,6 +3533,8 @@ From the owner's list after using the Switchboard at VU.
 - **UI shown unhealthy while it was up.** The port probe (`server/ports.ts` `listening`, shared with v1's port pool) asked 127.0.0.1 only; `ng serve` bound to `localhost` on Node 17+ listens on ::1 only, so it never answered and the card said *unhealthy: no answer*. It asks ::1 when 127.0.0.1 doesn't answer. v1's pool now also counts a port held on ::1 only as busy, which it is for `localhost`.
 - **Opening a session resumed with a broken command.** wt.exe re-quotes each argument without escaping quotes inside it, so a `"` in the ticket title split `-n "<key> <title>"` and Claude got `… --add-dir <dir> --resume <id>` as its prompt (reproduced with a stand-in that records its argv). `tabName` turns `"` into `'` and `;` into `,` (a `;` starts a second wt command) and drops backslashes; reproduced again, the args arrive whole.
 
+- **One card layout, running or not.** A session whose stack is stopped no longer folds into a dashed one-line row: it has the same card (summary, actions, tabs), the UI shown *stopped*, the Stack tab reading **Stack · stopped** with **Start stack**, and Logs saying nothing is running.
+
 **Checked:** `pnpm typecheck`; `pnpm test` (new: a ::1-only listener counts as listening; the tab name). The walk, 94/94: tabs with Stack open and no data panel until asked; setup and start from Loan Forge; Claude's refused change in Field Finder; *New lookup*; Loan Forge without the lookups; *Make a loan*; *Look up* on a loan opening Field Finder on it; the open tab closing. Screenshots looked at.
 
 **To check at VU:** start the UI and see the card say *up*. Open a session whose ticket title has a `"` from the Switchboard and see Claude resume it without a stray prompt.

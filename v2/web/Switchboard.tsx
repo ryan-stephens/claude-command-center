@@ -100,7 +100,7 @@ function dataBad(s: Session, t: DataTab): boolean {
 }
 
 function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Snapshot; act: (p: Promise<unknown>) => void }) {
-  const [tab, setTab] = useState<Tab>(v ? 'stack' : '');
+  const [tab, setTab] = useState<Tab>('stack');
   const [logsOf, setLogsOf] = useState('');
   const [loanFor, setLoanFor] = useState('');
   const [menu, setMenu] = useState<'' | 'add' | 'more'>('');
@@ -113,8 +113,8 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
   const open = () => act(post(`/api/sessions/${s.id}/open`));
   const pr = s.prs.length ? s.prs.map((p) => `PR #${p.number}${p.review === 'APPROVED' ? ' approved' : p.state === 'MERGED' ? ' merged' : ''}`).join(', ') : '';
   const lookUp = (l: string) => { setLoanFor(l); setTab('fields'); };
-  // A stack that stops takes its tabs with it.
-  const shown: Tab = !v && (tab === 'stack' || tab === 'logs') ? '' : tab;
+  const shown = tab;
+  const canStart = Boolean(ws?.apis.length || ws?.ui);
   const problem = apis.some((a) => isProblem(a.health)) || Boolean(ui && isProblem(ui.health));
 
   const actions = (
@@ -126,29 +126,14 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
   );
   const tabs = (
     <div className="tabs" role="tablist" aria-label={`${s.key} tools`}>
-      {v && <TabButton id="stack" tab={shown} set={setTab} bad={problem}>Stack · {apis.length} API{apis.length === 1 ? '' : 's'}</TabButton>}
-      {v && <TabButton id="logs" tab={shown} set={setTab}>Logs</TabButton>}
+      <TabButton id="stack" tab={shown} set={setTab} bad={problem}>Stack · {v ? `${apis.length} API${apis.length === 1 ? '' : 's'}` : 'stopped'}</TabButton>
+      <TabButton id="logs" tab={shown} set={setTab}>Logs</TabButton>
       <TabButton id="fields" tab={shown} set={setTab} bad={dataBad(s, 'fields')}>Field Finder{dataCount(s, 'fields')}</TabButton>
       <TabButton id="loans" tab={shown} set={setTab} bad={dataBad(s, 'loans')}>Loan Forge{dataCount(s, 'loans')}</TabButton>
-      {!v && (ws?.apis.length || ws?.ui) ? <button type="button" className="btn small" style={{ marginLeft: 'auto' }} onClick={() => act(post(`/api/sessions/${s.id}/stack/up`))}>Start stack</button> : null}
     </div>
   );
   const dataPanel = shown === 'fields' ? <FieldFinder s={s} snap={snap} loan={loanFor} lookUp={lookUp} />
     : shown === 'loans' ? <LoanForge s={s} snap={snap} lookUp={lookUp} /> : null;
-
-  if (!v && s.claude.state !== 'needs-you') {
-    return (
-      <section className="sess folded" aria-label={s.key}>
-        <div className="sess-fold">
-          <b>{s.key}</b>
-          <span className="mu">{s.title} · Claude {claudeWord[s.claude.state]}{s.claude.text ? `: ${s.claude.text}` : ''}{pr ? ` · ${pr}` : ''} · stack stopped</span>
-          {actions}
-        </div>
-        {tabs}
-        {dataPanel}
-      </section>
-    );
-  }
 
   const counts = (['up', 'starting', 'unhealthy', 'failed'] as Health[]).map((h) => [h, apis.filter((a) => a.health === h).length] as const).filter(([, n]) => n);
   const services = [...(ui ? ['ui'] : []), ...apis.map((a) => a.name)];
@@ -158,7 +143,8 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
         <div><span className="k">Session</span><b style={{ fontSize: 18 }}>{s.key}</b><small>{s.title}</small></div>
         <div><span className="k">Claude</span><span className={claudeClass(s)}>{claudeWord[s.claude.state]}</span><small>{s.claude.text}{s.claude.state !== 'starting' ? ` · ${ago(s.claude.at)}` : ''}</small></div>
         <div><span className="k">UI</span>
-          {ui ? <><span className={ui.health === 'up' ? 'ok' : isProblem(ui.health) ? 'need' : 'mu'}><span className={`dot ${dotOf(ui.health)}`} /> {ui.name}{ui.port ? ` :${ui.port}` : ''}</span><small>{ui.health !== 'up' ? healthWord[ui.health] + (ui.note ? `: ${ui.note}` : '') : v?.door ? (v.door.shown ? 'in the front door' : 'plug in to try') : 'up'}</small></> : <span className="off">–</span>}
+          {ui ? <><span className={ui.health === 'up' ? 'ok' : isProblem(ui.health) ? 'need' : 'mu'}><span className={`dot ${dotOf(ui.health)}`} /> {ui.name}{ui.port ? ` :${ui.port}` : ''}</span><small>{ui.health !== 'up' ? healthWord[ui.health] + (ui.note ? `: ${ui.note}` : '') : v?.door ? (v.door.shown ? 'in the front door' : 'plug in to try') : 'up'}</small></>
+            : !v && ws?.ui ? <><span className="mu"><span className="dot off" /> {ws.ui}</span><small>stopped</small></> : <span className="off">–</span>}
         </div>
         <div><span className="k">Test loan</span>{loan ? <><span className="mono">{loan.loan}</span><small>{loan.env === 'dev' ? 'Dev' : 'UAT'} · {loan.scenario}</small></> : <span className="off">–</span>}</div>
         <div><span className="k">Fields</span>{check ? <><span className={check.differs.length ? 'need' : 'ok'}>{check.matched} / {check.total}</span><small>{check.differs.length ? `${check.differs[0].id} differs` : check.list ?? check.loan}</small></> : <span className="off">–</span>}</div>
@@ -167,7 +153,18 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
 
       {tabs}
 
-      {shown === 'stack' && (
+      {shown === 'stack' && !v && (
+        <div className="tabpanel" role="tabpanel" aria-label="Stack">
+          <div className="bar" style={{ borderTop: 0, paddingTop: 0 }}>
+            <span>
+              <b>Stack stopped</b> <span className="mu">· {canStart ? `${ws?.ui ? 'its UI and ' : ''}the APIs it changes run here, the rest from Dev` : 'this workspace has no UI or APIs to run'}</span>
+              {pr && <span className="mu"> · {pr}</span>}
+            </span>
+            {canStart && <span className="row" style={{ marginLeft: 'auto', gap: 6 }}><button type="button" className="btn dark" onClick={() => act(post(`/api/sessions/${s.id}/stack/up`))}>Start stack</button></span>}
+          </div>
+        </div>
+      )}
+      {shown === 'stack' && v && (
         <div className="tabpanel" role="tabpanel" aria-label="Stack">
           {apis.length > 0 && (
             <div className="apis">
@@ -198,7 +195,8 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
           </div>
         </div>
       )}
-      {shown === 'logs' && <Logs id={s.id} service={logsOf && services.includes(logsOf) ? logsOf : services[0] ?? 'ui'} services={services} pick={setLogsOf} />}
+      {shown === 'logs' && !v && <div className="tabpanel mu" role="tabpanel" aria-label="Logs" style={{ fontSize: 14 }}>Nothing is running: start the stack to see its output.</div>}
+      {shown === 'logs' && v && <Logs id={s.id} service={logsOf && services.includes(logsOf) ? logsOf : services[0] ?? 'ui'} services={services} pick={setLogsOf} />}
       {dataPanel}
     </section>
   );

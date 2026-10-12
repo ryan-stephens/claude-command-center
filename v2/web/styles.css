@@ -84,9 +84,6 @@ input:focus, textarea:focus, select:focus, button:focus-visible, a:focus-visible
 
 .sess { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
 .sess.needs { border: 2px solid var(--signal); }
-.sess.folded { background: transparent; border-style: dashed; gap: 10px; }
-.sess-fold { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.sess-fold .sess-actions { margin-left: auto; }
 .sess-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: flex-start; }
 .sess-actions .menu-list { bottom: auto; top: 44px; }
 .tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px; border-bottom: 1px solid var(--line); }
