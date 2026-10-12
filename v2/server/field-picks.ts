@@ -1,4 +1,4 @@
-// The fields worth checking in a session (§142), for Claude and for the Data panel's lookup alike:
+// The fields worth checking in a session (§142), for Claude and for Field Finder's lookup alike:
 //   picked     by Claude (set_fields_to_check) or you, each with why and the value it should have
 //   ticket     field ids the ticket's text names (v1's idsInText: dotted ids, "field 1000")
 //   changes    field ids in the lines the session's worktrees added since they branched (and not yet
@@ -70,11 +70,14 @@ async function idsInWorktree(dir: string): Promise<string[]> {
 export class FieldPicks {
   private changes = new Map<string, { at: number; ids: string[] }>();
 
-  /** Everything worth checking in the session now: picked, the ticket's, the changes'. */
-  async list(s: Session): Promise<FieldPick[]> {
+  /**
+   * Everything worth checking in the session now: picked, the ticket's, the changes'. The changes are
+   * read again when `fresh` (Claude asking, or the form opening), else kept a little while for the page.
+   */
+  async list(s: Session, fresh = false): Promise<FieldPick[]> {
     const ticket = s.ticket ? idsInText(`${s.ticket.title}\n${s.ticket.description}\n${s.ticket.acceptance.join('\n')}`) : [];
     let ch = this.changes.get(s.id);
-    if (!ch || Date.now() - ch.at > KEEP_MS) {
+    if (fresh || !ch || Date.now() - ch.at > KEEP_MS) {
       const ids = (await Promise.all(s.repos.map((r) => idsInWorktree(r.dir).catch(() => [] as string[])))).flat();
       ch = { at: Date.now(), ids };
       this.changes.set(s.id, ch);

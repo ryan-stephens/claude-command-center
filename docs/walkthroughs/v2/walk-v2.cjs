@@ -196,10 +196,12 @@ function toolbelt(sessionId, token) {
     const tsNot = await tb.call('test_data_tool', { action: 'status' });
     check('test_data_tool says it isn’t running or set up to start', !tsNot.error && /"answering": false/.test(tsNot.text) && /"launch": false/.test(tsNot.text), tsNot.text.slice(0, 160));
     const tsNoSetup = await tb.call('test_data_tool', { action: 'start' });
-    check('starting it before it is set up says to set it up from the Data panel', tsNoSetup.error && /Data panel \(Set up\)/.test(tsNoSetup.text), tsNoSetup.text.slice(0, 200));
+    check('starting it before it is set up says to set it up from Loan Forge', tsNoSetup.error && /Loan Forge tab \(Set up\)/.test(tsNoSetup.text), tsNoSetup.text.slice(0, 200));
     check('the card’s tools are tabs, Stack open to begin with, and the data stays out of sight until asked', await page.getByRole('tab', { name: /^Stack/ }).getAttribute('aria-selected') === 'true' && !(await page.locator('.dpanel').count()));
     await page.getByRole('tab', { name: /^Loan Forge/ }).click();
-    await page.locator('.dpanel').getByRole('button', { name: 'Set up' }).click();
+    check('Loan Forge says on top that the tool isn’t running, and offers to point to its folder', await until(() => page.locator('.dpanel .tool-down').getByText(/isn’t running$/).isVisible(), 5000) && await page.locator('.dpanel .tool-down').getByText(/doesn’t know where it is installed/).isVisible(), (await page.locator('.dpanel').innerText()).slice(0, 300));
+    check('its make-a-loan form is open from the start', await page.locator('.dpanel').getByRole('button', { name: 'Ask Claude to make it' }).isVisible());
+    await page.locator('.dpanel .tool-down').getByRole('button', { name: 'Point to its folder' }).click();
     const foundBtn = page.locator('.dform').getByRole('button', { name: /Sample-Data-tool/ });
     check('Set up finds the install by the tool’s name beside the repos', await until(() => foundBtn.isVisible(), 8000));
     await foundBtn.click();
@@ -265,11 +267,16 @@ function toolbelt(sessionId, token) {
     check('fields_to_check: Claude’s picks, then the ids the changes added, and the loans made', (ftcJ.fields || []).map((f) => `${f.id}:${f.from}`).join(',') === 'CX.SAMPLE.ONE:claude,CX.AMOUNT:claude,CX.CHANGED.FIELD:changes' && ftcJ.loans?.[0]?.loan === loan, ftc.text.slice(0, 300));
 
     // From the page: look a loan up with details, change a field in place, make a loan.
-    await page.locator('.dpanel').getByRole('button', { name: 'New lookup' }).click();
+    check('Field Finder’s form is open with no button to press', await page.locator('.dpanel').getByLabel('Loan id').isVisible());
+    await page.locator('.dpanel').getByRole('button', { name: 'Check with Claude' }).click();
+    check('Check with Claude hands the ask to the session’s Claude', await until(() => page.locator('.picks-box').getByText(/paste it into the session’s Claude/).isVisible(), 5000));
     check('the lookup form starts with the last loan', await until(async () => (await page.locator('.dpanel').getByLabel('Loan id').inputValue()) === loan, 5000));
     check('and the session’s fields to check, with where each came from', await until(() => page.locator('.picks-box').getByText('CX.CHANGED.FIELD').isVisible(), 5000) && await page.locator('.pick-chip.claude', { hasText: 'CX.SAMPLE.ONE' }).isVisible() && await page.locator('.pick-chip.changes').isVisible());
     check('the ids box is filled from them, with the expected value', /^CX\.SAMPLE\.ONE = No\nCX\.AMOUNT\nCX\.CHANGED\.FIELD$/.test(await page.locator('.dpanel').getByLabel('Field ids').inputValue()), JSON.stringify(await page.locator('.dpanel').getByLabel('Field ids').inputValue()));
     await shot(page, 'fields-to-check');
+    await page.locator('.dpanel').getByLabel('Field ids').fill('');
+    await page.locator('.picks-box').getByRole('button', { name: 'Fill', exact: true }).click();
+    check('Fill puts the picks back in the ids box', /^CX\.SAMPLE\.ONE = No/.test(await page.locator('.dpanel').getByLabel('Field ids').inputValue()));
     await page.locator('.dpanel').getByLabel('Saved field list').selectOption('Sample fields');
     await page.locator('.dform').getByRole('button', { name: 'Look up', exact: true }).click();
     const sel = page.locator('.devent').first().getByLabel('New value for CX.SAMPLE.ONE');
@@ -283,8 +290,7 @@ function toolbelt(sessionId, token) {
     // A new scenario for this session (§143): you set the folder and the template, Claude writes and makes it.
     await page.getByRole('tab', { name: /^Loan Forge/ }).click();
     check('Loan Forge has no lookups in it', !(await page.locator('.devent', { hasText: /field\(s\) changed/ }).count()));
-    await page.locator('.dpanel').getByRole('button', { name: 'Make a loan' }).click();
-    check('Make a loan opens on a new scenario for this session', await page.locator('.dpanel').getByRole('button', { name: 'Ask Claude to make it' }).isVisible() && await page.locator('.dpanel').getByLabel('Folder').inputValue() === 'SHOP-160');
+    check('Loan Forge’s form is open on a new scenario for this session', await page.locator('.dpanel').getByRole('button', { name: 'Ask Claude to make it' }).isVisible() && await page.locator('.dpanel').getByLabel('Folder').inputValue() === 'SHOP-160');
     await page.locator('.dpanel').getByLabel('Folder').fill('Walk/SHOP-160');
     await page.locator('.dpanel').getByLabel('Start from').selectOption('Sample purchase');
     await page.locator('.dpanel').getByLabel('Notes for Claude').fill('the fee waived at closing');

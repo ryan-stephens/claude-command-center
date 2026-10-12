@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { FieldChange, LookupField, LookupResult } from '../../shared/verify.ts';
-import { dataEnv, loanId, parseFieldLines, sameValue } from '../shared/data-tools.ts';
+import { dataEnv, fieldsAsk, loanId, parseFieldLines, sameValue } from '../shared/data-tools.ts';
 import type { FieldRow } from '../shared/types.ts';
 import { lookupFields, updateFields, type Lookup } from './tools.ts';
 
@@ -77,4 +77,14 @@ test('refused before anything is sent: updates off, read-only, not on the loan, 
     await assert.rejects(updateFields(f.lookup, 'dev', 'LN-1', { ...set }, { updates, ...f.opts }), why);
     assert.equal(f.sent.length, 0);
   }
+});
+
+test('Check with Claude asks for real field ids from the ticket and the changes, picked back with set_fields_to_check', () => {
+  const a = fieldsAsk({ key: 'WSS-1078', loan: 'abc-1' });
+  assert.match(a, /WSS-1078/);
+  assert.match(a, /fields_to_check/);
+  assert.match(a, /set_fields_to_check/);
+  assert.match(a, /never invent/);
+  assert.match(a, /loan abc-1/);
+  assert.doesNotMatch(fieldsAsk({ key: 'K-1' }), /lookup_fields/);
 });

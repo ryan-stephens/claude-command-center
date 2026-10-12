@@ -1,5 +1,5 @@
 // The data desk (§140): the team's data tools for a session, for Claude (the toolbelt) and for you (the
-// Data panel) alike, each use kept on the session as a DataEvent so the page shows what was done and
+// Field Finder and Loan Forge tabs) alike, each use kept on the session as a DataEvent so the page shows what was done and
 // what came of it as it happens:
 //   the test-data tool  started from its installed folder (v1's BuilderLauncher, verify.json's
 //                       builder.launch and builder.cwd), its scenarios listed, loans made from them
@@ -59,7 +59,7 @@ export class DataDesk {
 
   /** v1's "not running" says to press Shift+S; here it is a button or a tool. */
   private plain(e: unknown): Error {
-    const m = (e as Error).message.replace(' Start it with Shift+S.', ' Start it from the Data panel, or with test_data_tool (start).').replace(/has no "launch" in this machine’s Verify file: add the command that starts it\./, 'isn’t set up to be started from here yet: the user sets it up from a session’s Data panel (Set up), by pointing at the folder it is installed in.');
+    const m = (e as Error).message.replace(' Start it with Shift+S.', ' Start it from a session’s Loan Forge tab (Start it), or with test_data_tool (start).').replace(/has no "launch" in this machine’s Verify file: add the command that starts it\./, 'isn’t set up to be started from here yet: the user sets it up from a session’s Loan Forge tab (Set up), by pointing at the folder it is installed in.');
     return new Error(m);
   }
 

@@ -3538,3 +3538,16 @@ From the owner's list after using the Switchboard at VU.
 **Checked:** `pnpm typecheck`; `pnpm test` (new: a ::1-only listener counts as listening; the tab name). The walk, 94/94: tabs with Stack open and no data panel until asked; setup and start from Loan Forge; Claude's refused change in Field Finder; *New lookup*; Loan Forge without the lookups; *Make a loan*; *Look up* on a loan opening Field Finder on it; the open tab closing. Screenshots looked at.
 
 **To check at VU:** start the UI and see the card say *up*. Open a session whose ticket title has a `"` from the Switchboard and see Claude resume it without a stray prompt.
+
+## 145. v2: Field Finder and Loan Forge forms always open; Check with Claude; the tool's state on top
+
+- **Field Finder:** no *New lookup* button. The form is always there under a collapsible head (*Look up a loan's fields* ▾), results under it. In *Fields to check for this session*: **Check with Claude** and **Fill** (was *Fill the box with these*).
+- **Check with Claude** hands the session's Claude an ask (`fieldsAsk`): re-read the ticket's criteria and the session's changes, call `fields_to_check`, find the field ids the changed code reads, sets or branches on and the ones the criteria describe (real ids only, never invented), and pick them with `set_fields_to_check` with why and the value expected; they show as Claude's picks.
+- **Handing Claude an ask** (`POST /api/sessions/:id/ask`, `askClaude`), used by Check with Claude and *Ask Claude to make it*: the ask is copied; a terminal tab already open is brought forward to paste into (a tab can't be typed into); with none, one opens that resumes the session with the ask as its prompt (`claude --resume <id> -- "<ask>"`, checked through wt.exe with a stand-in that records its argv). VS Code: opened, paste.
+- **Loan Forge:** the form is always open (no *Make a loan* button), as a card: *New scenario for this session / Run a saved scenario*, then labelled rows: Environment, Folder, Start from, Notes (or Scenario, for a saved one).
+- **The tool not running shows on top**, as a banner: *<tool> isn't running*, with **Start it** when the app knows its folder, **Point to its folder** (the setup form) when it doesn't, *Try again*. It comes from reading the scenarios failing, so a tool started elsewhere counts as running. The text Claude and the page get no longer mentions the Data panel: it names the Loan Forge tab.
+- **Fields to check were up to 30 s stale.** The ids in the session's changes were kept 30 s for the page; Claude's `fields_to_check` and `scenario_guide`, and the lookup form opening, now read them again.
+
+**Checked:** `pnpm typecheck`; `pnpm test` (new: the ask's content; an ask riding on a resume, or after the first message). The walk, 99/99: the banner with Point to its folder and the form open from the start; Field Finder's form open without a button; Check with Claude; Fill; Loan Forge's form open on a new scenario. Screenshots looked at.
+
+**To check at VU:** in Field Finder press **Check with Claude** with the session's terminal closed: a tab opens, resumes the session and Claude starts picking fields, which appear as chips. With the test-data tool stopped, Loan Forge shows the banner with *Start it*.

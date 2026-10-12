@@ -140,7 +140,7 @@ input:focus, textarea:focus, select:focus, button:focus-visible, a:focus-visible
 .pick-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
 @media (max-width: 560px) { .pick-row { grid-template-columns: auto minmax(0, 1fr); } .pick-row > .chip, .pick-row > .mu { display: none; } }
 
-/* Shared by the Data panel: forms, run steps, field tables. */
+/* Shared by Field Finder and Loan Forge: forms, run steps, field tables. */
 .seg.small { min-height: 36px; padding: 0 12px; font-size: 14px; }
 .seg:disabled { opacity: .5; cursor: default; }
 .dform { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
@@ -154,7 +154,7 @@ input:focus, textarea:focus, select:focus, button:focus-visible, a:focus-visible
 .ddiff th { text-align: left; font-weight: 600; color: var(--muted); padding: 4px 10px 4px 0; }
 .ddiff td { padding: 4px 10px 4px 0; border-top: 1px dashed var(--line); overflow-wrap: anywhere; }
 
-/* The Data panel (§140): the team's data tools for a session, and everything done with them. */
+/* Field Finder and Loan Forge (§140, §144): the team's data tools for a session, and everything done with them. */
 .dpanel { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
 .devent-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .devent { border: 1px solid var(--line-2); border-radius: 10px; background: var(--card); }
@@ -175,3 +175,17 @@ input:focus, textarea:focus, select:focus, button:focus-visible, a:focus-visible
 .scen:hover { background: var(--soft); }
 .scen.on { background: var(--ink); color: #fff; }
 .scen.on .mu { color: #d5d9df; }
+
+/* Field Finder and Loan Forge forms (§144): a card with a head, labelled rows, the tool's state on top. */
+.fcard { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--card); }
+.fcard-head { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 0; border: 0; background: none; color: var(--ink); cursor: pointer; text-align: left; font-size: 15px; }
+.fcard-head .chev { width: 14px; color: var(--muted); }
+.fcard-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.fcard-top .segs { margin-left: auto; }
+.segs { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.fgrid { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px 14px; align-items: center; }
+.fgrid > .cap { align-self: center; }
+.fgrid textarea, .fgrid select, .fgrid input[type='text'] { width: 100%; }
+@media (max-width: 640px) { .fgrid { grid-template-columns: minmax(0, 1fr); } .fgrid > span:empty { display: none; } }
+.tool-down { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--signal); background: var(--signal-soft); color: var(--ink); }
+.fcard > .dform { padding: 0; border: 0; background: none; }

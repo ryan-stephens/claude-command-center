@@ -91,7 +91,7 @@ export interface FieldRow {
 /**
  * One use of the team's data tools in a session (§140): a record lookup, an update through it, or a
  * test loan made by the test-data tool. By Claude through the toolbelt or by you from the page, kept
- * on the session and shown on its Data panel as it happens.
+ * on the session and shown in its Field Finder or Loan Forge tab as it happens.
  */
 export interface DataEvent {
   id: string;

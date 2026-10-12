@@ -127,17 +127,17 @@ export function tabName(s: Pick<Session, 'key' | 'title'>): string {
 }
 
 /** The claude arguments for a session's tab: its other worktrees, our MCP config when the repo has its own, then a resume or the first message. */
-export function claudeArgs(s: Pick<Session, 'key' | 'title' | 'repos' | 'home' | 'firstMessage' | 'claude'>, mcpConfig?: string, fresh = false): { args: string[]; message: string } {
+export function claudeArgs(s: Pick<Session, 'key' | 'title' | 'repos' | 'home' | 'firstMessage' | 'claude'>, mcpConfig?: string, fresh = false, ask = ''): { args: string[]; message: string } {
   const args = ['-n', tabName(s)];
   for (const r of s.repos) if (!samePath(r.dir, s.home)) args.push('--add-dir', r.dir);
   if (mcpConfig) args.push('--mcp-config', mcpConfig);
-  if (!fresh && s.claude.claudeId) return { args: [...args, '--resume', s.claude.claudeId], message: '' };
-  return { args, message: s.firstMessage };
+  if (!fresh && s.claude.claudeId) return { args: [...args, '--resume', s.claude.claudeId], message: ask };
+  return { args, message: ask ? `${s.firstMessage}\n\n${ask}` : s.firstMessage };
 }
 
 /** Open the session in a Windows Terminal tab titled with its key (the HUD finds it by that title). */
-export function openTerminal(s: Pick<Session, 'key' | 'title' | 'repos' | 'home' | 'firstMessage' | 'claude'>, mcpConfig?: string): Promise<void> {
-  const { args, message } = claudeArgs(s, mcpConfig);
+export function openTerminal(s: Pick<Session, 'key' | 'title' | 'repos' | 'home' | 'firstMessage' | 'claude'>, mcpConfig?: string, ask = ''): Promise<void> {
+  const { args, message } = claudeArgs(s, mcpConfig, false, ask);
   // --add-dir takes every argument after it: `--` before the message.
   const cmd = ['-w', '0', 'nt', '--title', s.key, '--suppressApplicationTitle', '-d', s.home, findClaude(), ...args, ...(message ? ['--', wtArg(message)] : [])];
   return new Promise((resolve, reject) => {
@@ -163,4 +163,17 @@ export async function focusOrOpen(s: Session, opener: Opener, mcpConfig?: string
   try { await focusTab(s.key); return 'focused'; } catch { /* no tab: open one */ }
   await openTerminal(s, mcpConfig);
   return 'opened';
+}
+
+/**
+ * Hand Claude an ask from the page (Check with Claude, a new scenario). An open tab can't be typed
+ * into, so it is brought forward for the copied ask to be pasted; with no tab, one opens that resumes
+ * the session with the ask as its prompt, so nothing needs pasting.
+ */
+export async function askClaude(s: Session, ask: string, opener: Opener, mcpConfig?: string): Promise<'focused' | 'sent' | 'vscode' | 'desktop'> {
+  if (opener === 'vscode') { await openVsCode(s.home); return 'vscode'; }
+  if (opener === 'desktop') return 'desktop';
+  try { await focusTab(s.key); return 'focused'; } catch { /* no tab: open one with the ask */ }
+  await openTerminal(s, mcpConfig, ask);
+  return 'sent';
 }

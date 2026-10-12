@@ -3,7 +3,7 @@
 // (the create operation and the schemas it uses), an existing scenario as a template, and, when that
 // isn't enough, the tool's source in its installed folder. The app hands Claude that and the session's
 // context (the ticket, what changed, the fields to check, the folder you chose), posts the scenario
-// Claude writes to exactly the create address, and shows it on the Data panel.
+// Claude writes to exactly the create address, and shows it in Loan Forge.
 
 import { run as sh } from '../../server/hosts.ts';
 import { DEFAULT_CREATE_PATH } from '../../shared/verify.ts';

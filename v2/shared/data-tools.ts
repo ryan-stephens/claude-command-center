@@ -40,12 +40,28 @@ export function loanId(v: unknown): string {
   return l;
 }
 
-/** The ask for Claude that the Data panel copies: the session's key, the folder, the template, the env, any notes. */
+/** The ask for Claude that Loan Forge sends: the session's key, the folder, the template, the env, any notes. */
 export function scenarioAsk(o: { key: string; folder: string; like?: string; env: 'dev' | 'uat'; notes?: string }): string {
   return [
     `Make a new test-data scenario for ${o.key} that sets up a loan to test this work as it is implemented now.`,
     `Use the command-center tools: call scenario_guide${o.like ? ` with like: "${o.like}"` : ''} and follow its steps. File it under the folder "${o.folder}".`,
     `Then make it with make_scenario and run it in ${o.env === 'dev' ? 'Dev' : 'UAT'} (run_env: "${o.env}"), pick the fields that prove the change, and look them up on the new loan.`,
     ...(o.notes?.trim() ? [`Also: ${o.notes.trim()}`] : []),
+  ].join('\n');
+}
+
+/**
+ * The ask for Claude behind Field Finder's *Check with Claude*: which loan fields prove this work.
+ * Claude has the ticket (CLAUDE.local.md), the worktrees and the toolbelt; the picks come back
+ * through set_fields_to_check, so they show in the Fields-to-check box with why and the value expected.
+ */
+export function fieldsAsk(o: { key: string; loan?: string }): string {
+  return [
+    `Which loan fields prove ${o.key} works? Pick them for Field Finder, from what this session knows:`,
+    '1. Re-read the ticket and its acceptance criteria (CLAUDE.local.md) and this session’s changes in every worktree (git diff against the base branch, committed or not).',
+    '2. Call fields_to_check: what is picked already, the field ids the ticket names, and the ones in the lines this session added.',
+    '3. Find the field ids involved: ones the changed code reads, sets or branches on; ones the criteria describe by name (find their ids in the code, mappings, constants or saved field lists); and ones whose value this work should change. Use only ids you found there; never invent one, and say so when a criterion has no id you can find.',
+    '4. Call set_fields_to_check with each one: the id, why it proves the change (one line), and the value it should have once this works, when you can tell. Drop picks that no longer apply (remove).',
+    `Keep it to the fields that prove the change, usually 3 to 10.${o.loan ? ` If it helps, look them up on loan ${o.loan} with lookup_fields.` : ''} Then reply with a short table: id, why, expected value.`,
   ].join('\n');
 }

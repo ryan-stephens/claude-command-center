@@ -24,7 +24,7 @@ import { branchOf, contextPack, firstMessageFor, keyFor, suggestApis, suggestRep
 import { OPENERS, type ClaudeStatus, type Opener, type Preflight, type Session, type Snapshot, type TicketInfo } from '../shared/types.ts';
 import { DataDesk, forClaude, waitOf } from './data.ts';
 import { applyHook, V2_EVENTS } from './hook-state.ts';
-import { focusOrOpen, linkDeps, makeSessionWorktrees, openTerminal, openVsCode, trust, writeLocalFiles } from './launch.ts';
+import { askClaude, focusOrOpen, linkDeps, makeSessionWorktrees, openTerminal, openVsCode, trust, writeLocalFiles } from './launch.ts';
 import { MyTickets } from './my-tickets.ts';
 import { SessionStore, V2_DIR } from './sessions.ts';
 import { refreshPr, ship, shipPlan, slackConfig } from './ship.ts';
@@ -195,8 +195,8 @@ const desk = new DataDesk({ sessions, builder, lookup, cfg: verifyConfig, change
 const picks = new FieldPicks();
 
 /** What a lookup for this session starts with: the fields worth checking, and the loans made, newest first. */
-async function forLookup(s: Session) {
-  return { fields: await picks.list(s), loans: [...s.loans].reverse() };
+async function forLookup(s: Session, fresh = false) {
+  return { fields: await picks.list(s, fresh), loans: [...s.loans].reverse() };
 }
 
 /** Claude or you pick fields to check: added to the picks (or replacing them), each id once. */
@@ -258,6 +258,16 @@ app.post('/api/sessions/:id/open', async (c) => {
     if (NO_OPEN) return c.json({ did: 'none (test server)' });
     const ours = join(V2_DIR, 'runs', `${s.id}.mcp.json`);
     return c.json({ did: await focusOrOpen(s, opener, mcpConfigs.get(s.id) ?? (existsSync(ours) ? ours : undefined)) });
+  } catch (e) { return fail(c, e); }
+});
+app.post('/api/sessions/:id/ask', async (c) => {
+  try {
+    const s = needSession(c.req.param('id'));
+    const ask = String((await body(c)).text ?? '').trim().slice(0, 8000);
+    if (!ask) throw new Error('Nothing to ask.');
+    if (NO_OPEN) return c.json({ did: 'none' });
+    const ours = join(V2_DIR, 'runs', `${s.id}.mcp.json`);
+    return c.json({ did: await askClaude(s, ask, s.opener, mcpConfigs.get(s.id) ?? (existsSync(ours) ? ours : undefined)) });
   } catch (e) { return fail(c, e); }
 });
 app.post('/api/sessions/:id/stack/up', async (c) => {
@@ -334,7 +344,7 @@ app.post('/api/test-data/stop', (c) => {
   try { return c.json(desk.stopTool()); } catch (e) { return fail(c, e); }
 });
 app.get('/api/sessions/:id/fields', async (c) => {
-  try { return c.json(await forLookup(needSession(c.req.param('id')))); } catch (e) { return fail(c, e); }
+  try { return c.json(await forLookup(needSession(c.req.param('id')), c.req.query('fresh') === '1')); } catch (e) { return fail(c, e); }
 });
 app.post('/api/sessions/:id/fields', async (c) => {
   try { return c.json({ picked: pickFields(needSession(c.req.param('id')), await body(c), 'you') }); } catch (e) { return fail(c, e); }
@@ -410,7 +420,7 @@ app.post('/hooks/:event', async (c) => {
 });
 
 type Tool = (s: Session, args: Record<string, unknown>) => Promise<unknown>;
-/** A data event that failed reaches Claude as a tool error (it is on the Data panel either way). */
+/** A data event that failed reaches Claude as a tool error (it is on Field Finder or Loan Forge either way). */
 const orFail = <T extends { state: string; error?: string } | undefined>(ev: T): T => { if (ev?.state === 'failed') throw new Error(ev.error ?? 'It failed.'); return ev; };
 const TOOLS: Record<string, Tool> = {
   session_info: async (s) => ({ key: s.key, title: s.title, branch: s.branch, repos: s.repos.map((r) => ({ name: r.name, dir: r.dir })), logs: stacks.logsDir(s.key), ticket: s.ticket ?? null, stack: stacks.view(s.id) ?? 'not running' }),
@@ -449,14 +459,14 @@ const TOOLS: Record<string, Tool> = {
   },
   lookup_fields: async (s, a) => forClaude(orFail(await desk.lookup(s, a, 'claude'))),
   update_fields: async (s, a) => forClaude(orFail(await desk.update(s, a, 'claude'))),
-  scenario_guide: async (s, a) => desk.scenarioGuide(s, a, await picks.list(s)),
+  scenario_guide: async (s, a) => desk.scenarioGuide(s, a, await picks.list(s, true)),
   make_scenario: async (s, a) => {
     const r = await desk.makeScenario(s, a, 'claude');
     orFail(r.scenario);
     const loan = r.loan ? await desk.wait(s.id, r.loan.id, waitOf(a.wait_seconds, 240_000)) : undefined;
     return { scenario: forClaude(r.scenario), ...(loan ? { loan: forClaude(loan) } : {}) };
   },
-  fields_to_check: async (s) => ({ ...(await forLookup(s)), note: 'picked: by you or the user; ticket: named in the ticket; changes: in the lines this session added. Pick the ones that prove the change with set_fields_to_check (with why and the value each should have); they show in the Data panel’s lookup.' }),
+  fields_to_check: async (s) => ({ ...(await forLookup(s, true)), note: 'picked: by you or the user; ticket: named in the ticket; changes: in the lines this session added. Pick the ones that prove the change with set_fields_to_check (with why and the value each should have); they show in the session’s Field Finder.' }),
   set_fields_to_check: async (s, a) => ({ picked: pickFields(s, a, 'claude') }),
   data_status: async (s, a) => {
     const id = typeof a.id === 'string' && a.id ? a.id : s.data?.at(-1)?.id;

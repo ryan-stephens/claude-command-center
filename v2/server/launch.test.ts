@@ -45,3 +45,11 @@ test('the tab name has no quote or semicolon for wt.exe to split on, so a resume
   assert.equal(tabName({ key: 'WSS-1078', title: 'Show the 12" field; then  “withdraw” it' }), "WSS-1078 Show the 12' field, then 'withdraw' it");
   assert.equal(tabName({ key: 'K-1', title: 'x'.repeat(100) }).length, 80);
 });
+
+test('an ask from the page rides on the resume, or after the first message when Claude never started', () => {
+  const claude: ClaudeStatus = { state: 'done', text: '', at: 0 };
+  const s = { key: 'K-1', title: 'T', repos: [{ repo: 'C:/a', name: 'a', dir: 'C:/a-k-1' }], home: 'C:/a-k-1', firstMessage: 'Plan it', claude };
+  assert.deepEqual(claudeArgs({ ...s, claude: { ...claude, claudeId: 'abc' } }, undefined, false, 'Pick fields'), { args: ['-n', 'K-1 T', '--resume', 'abc'], message: 'Pick fields' });
+  assert.equal(claudeArgs(s, undefined, false, 'Pick fields').message, 'Plan it\n\nPick fields');
+  assert.equal(claudeArgs({ ...s, claude: { ...claude, claudeId: 'abc' } }).message, '');
+});
