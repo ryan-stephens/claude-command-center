@@ -1,4 +1,4 @@
-import { go, openHud, useRoute, useSnapshot } from './api.ts';
+import { go, useRoute, useSnapshot } from './api.ts';
 import { Hud } from './Hud.tsx';
 import { Launchpad } from './Launchpad.tsx';
 import { ShipDock } from './ShipDock.tsx';
@@ -16,9 +16,8 @@ export function App() {
         <h1>{route === '/new' ? 'New work' : ship ? 'Ship' : 'Switchboard'}</h1>
         <nav className="nav" aria-label="Pages">
           {!connected && snap && <span className="need" style={{ fontSize: 14 }}>reconnecting…</span>}
-          <button type="button" className={`btn${route === '/' ? ' dark' : ''}`} onClick={() => go('/')}>Switchboard</button>
           <button type="button" className={`btn${route === '/new' ? ' dark' : ''}`} onClick={() => go('/new')}>New work</button>
-          <button type="button" className="btn" onClick={openHud}>Open the HUD</button>
+          <button type="button" className={`btn${route === '/' ? ' dark' : ''}`} onClick={() => go('/')}>Switchboard</button>
         </nav>
       </header>
       {!snap ? <p className="mu">Connecting to the v2 server…</p>

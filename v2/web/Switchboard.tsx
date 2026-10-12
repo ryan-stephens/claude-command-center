@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import type { LogLine } from '../../shared/recipes.ts';
 import type { Health, ServiceView, Session, Snapshot, StackView } from '../shared/types.ts';
 import { ago, get, go, post } from './api.ts';
-import { DataPanel, DataStrip } from './DataPanel.tsx';
+import { type DataTab, FieldFinder, LoanForge, tabEvents } from './DataPanel.tsx';
 
 const healthWord: Record<Health, string> = { up: 'up', starting: 'starting', unhealthy: 'unhealthy', failed: 'failed', stopped: 'stopped' };
 const dotOf = (h: Health) => (h === 'up' ? 'up' : h === 'starting' ? 'st' : h === 'stopped' ? 'off' : 'bad');
@@ -81,13 +81,29 @@ export function Switchboard({ snap }: { snap: Snapshot }) {
   );
 }
 
+type Tab = '' | 'stack' | 'logs' | DataTab;
+
+/** One tab of a session's block: pressed again, it closes. */
+function TabButton({ id, tab, set, children, bad }: { id: Tab; tab: Tab; set: (t: Tab) => void; children: ReactNode; bad?: boolean }) {
+  return <button type="button" role="tab" aria-selected={tab === id} className={`tab${tab === id ? ' on' : ''}${bad ? ' bad' : ''}`} onClick={() => set(tab === id ? '' : id)}>{children}</button>;
+}
+
+/** A data tab's count of events, with … while one runs. */
+function dataCount(s: Session, t: DataTab): string {
+  const ev = tabEvents(s, t);
+  return ev.length ? ` · ${ev.length}${ev.some((e) => e.state === 'running') ? ' …' : ''}` : '';
+}
+/** The tab's newest event failed, or found a field that differs. */
+function dataBad(s: Session, t: DataTab): boolean {
+  const e = tabEvents(s, t).at(-1);
+  return e?.state === 'failed' || Boolean(e?.rows?.some((r) => r.ok === false || r.applied === 'differs'));
+}
+
 function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Snapshot; act: (p: Promise<unknown>) => void }) {
-  const [logs, setLogs] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>(v ? 'stack' : '');
+  const [logsOf, setLogsOf] = useState('');
+  const [loanFor, setLoanFor] = useState('');
   const [menu, setMenu] = useState<'' | 'add' | 'more'>('');
-  const [dataOpen, setDataOpen] = useState(false);
-  const busy = s.data?.some((e) => e.state === 'running');
-  const dataButton = <button type="button" className={`btn${dataOpen ? ' dark' : ''}`} aria-expanded={dataOpen} onClick={() => setDataOpen(!dataOpen)}>Data{s.data?.length ? ` · ${s.data.length}` : ''}{busy ? ' …' : ''}</button>;
-  const dataPart = dataOpen ? <DataPanel s={s} snap={snap} /> : <DataStrip s={s} open={() => setDataOpen(true)} />;
   const ws = snap.workspaces.find((w) => w.id === s.workspaceId);
   const ui = v?.services.find((x) => x.kind === 'ui');
   const apis = v?.services.filter((x) => x.kind === 'api') ?? [];
@@ -96,27 +112,48 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
   const notRunning = (ws?.apis ?? []).filter((a) => !apis.some((x) => x.name.toLowerCase() === a.toLowerCase()));
   const open = () => act(post(`/api/sessions/${s.id}/open`));
   const pr = s.prs.length ? s.prs.map((p) => `PR #${p.number}${p.review === 'APPROVED' ? ' approved' : p.state === 'MERGED' ? ' merged' : ''}`).join(', ') : '';
+  const lookUp = (l: string) => { setLoanFor(l); setTab('fields'); };
+  // A stack that stops takes its tabs with it.
+  const shown: Tab = !v && (tab === 'stack' || tab === 'logs') ? '' : tab;
+  const problem = apis.some((a) => isProblem(a.health)) || Boolean(ui && isProblem(ui.health));
+
+  const actions = (
+    <div className="sess-actions">
+      <button type="button" className="btn dark" onClick={open} title="Brings the session’s terminal forward, or opens one that resumes it">{s.opener === 'vscode' ? 'Open in VS Code' : 'Open terminal'} ↗</button>
+      <button type="button" className="btn" onClick={() => go(`/ship/${s.id}`)}>Ship</button>
+      <More s={s} open={menu === 'more'} toggle={() => setMenu(menu === 'more' ? '' : 'more')} act={act} />
+    </div>
+  );
+  const tabs = (
+    <div className="tabs" role="tablist" aria-label={`${s.key} tools`}>
+      {v && <TabButton id="stack" tab={shown} set={setTab} bad={problem}>Stack · {apis.length} API{apis.length === 1 ? '' : 's'}</TabButton>}
+      {v && <TabButton id="logs" tab={shown} set={setTab}>Logs</TabButton>}
+      <TabButton id="fields" tab={shown} set={setTab} bad={dataBad(s, 'fields')}>Field Finder{dataCount(s, 'fields')}</TabButton>
+      <TabButton id="loans" tab={shown} set={setTab} bad={dataBad(s, 'loans')}>Loan Forge{dataCount(s, 'loans')}</TabButton>
+      {!v && (ws?.apis.length || ws?.ui) ? <button type="button" className="btn small" style={{ marginLeft: 'auto' }} onClick={() => act(post(`/api/sessions/${s.id}/stack/up`))}>Start stack</button> : null}
+    </div>
+  );
+  const dataPanel = shown === 'fields' ? <FieldFinder s={s} snap={snap} loan={loanFor} lookUp={lookUp} />
+    : shown === 'loans' ? <LoanForge s={s} snap={snap} lookUp={lookUp} /> : null;
 
   if (!v && s.claude.state !== 'needs-you') {
     return (
       <section className="sess folded" aria-label={s.key}>
-        <b>{s.key}</b>
-        <span className="mu">{s.title} · Claude {claudeWord[s.claude.state]}{s.claude.text ? `: ${s.claude.text}` : ''}{pr ? ` · ${pr}` : ''} · stack stopped</span>
-        <span className="row" style={{ marginLeft: 'auto' }}>
-          {ws?.apis.length || ws?.ui ? <button type="button" className="btn" onClick={() => act(post(`/api/sessions/${s.id}/stack/up`))}>Start stack</button> : null}
-          <button type="button" className="btn" onClick={open}>{s.opener === 'vscode' ? 'VS Code' : 'Terminal'}</button>
-          {dataButton}
-          <button type="button" className="btn" onClick={() => go(`/ship/${s.id}`)}>Ship</button>
-          <More s={s} open={menu === 'more'} toggle={() => setMenu(menu === 'more' ? '' : 'more')} act={act} />
-        </span>
-        {(dataOpen || s.data?.length) ? <div style={{ flexBasis: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>{dataPart}</div> : null}
+        <div className="sess-fold">
+          <b>{s.key}</b>
+          <span className="mu">{s.title} · Claude {claudeWord[s.claude.state]}{s.claude.text ? `: ${s.claude.text}` : ''}{pr ? ` · ${pr}` : ''} · stack stopped</span>
+          {actions}
+        </div>
+        {tabs}
+        {dataPanel}
       </section>
     );
   }
 
   const counts = (['up', 'starting', 'unhealthy', 'failed'] as Health[]).map((h) => [h, apis.filter((a) => a.health === h).length] as const).filter(([, n]) => n);
+  const services = [...(ui ? ['ui'] : []), ...apis.map((a) => a.name)];
   return (
-    <section className={`sess${s.claude.state === 'needs-you' || apis.some((a) => isProblem(a.health)) || (ui && isProblem(ui.health)) ? ' needs' : ''}`} aria-label={s.key}>
+    <section className={`sess${s.claude.state === 'needs-you' || problem ? ' needs' : ''}`} aria-label={s.key}>
       <div className="sess-top">
         <div><span className="k">Session</span><b style={{ fontSize: 18 }}>{s.key}</b><small>{s.title}</small></div>
         <div><span className="k">Claude</span><span className={claudeClass(s)}>{claudeWord[s.claude.state]}</span><small>{s.claude.text}{s.claude.state !== 'starting' ? ` · ${ago(s.claude.at)}` : ''}</small></div>
@@ -125,52 +162,44 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
         </div>
         <div><span className="k">Test loan</span>{loan ? <><span className="mono">{loan.loan}</span><small>{loan.env === 'dev' ? 'Dev' : 'UAT'} · {loan.scenario}</small></> : <span className="off">–</span>}</div>
         <div><span className="k">Fields</span>{check ? <><span className={check.differs.length ? 'need' : 'ok'}>{check.matched} / {check.total}</span><small>{check.differs.length ? `${check.differs[0].id} differs` : check.list ?? check.loan}</small></> : <span className="off">–</span>}</div>
-        <div className="row" style={{ gap: 6 }}>
-          <button type="button" className="btn" onClick={open}>{s.opener === 'vscode' ? 'VS Code' : 'Terminal'}</button>
-          <button type="button" className="btn" onClick={() => setLogs(logs === null ? (ui ? 'ui' : apis[0]?.name ?? 'ui') : null)}>{logs === null ? 'Logs' : 'Hide logs'}</button>
-          {dataButton}
-          <button type="button" className="btn" onClick={() => go(`/ship/${s.id}`)}>Ship</button>
-        </div>
+        {actions}
       </div>
 
-      {apis.length > 0 && (
-        <div className="apis">
-          {apis.map((a) => <ApiTile key={a.name} a={a} remove={() => act(post(`/api/sessions/${s.id}/stack/remove`, { api: a.name }))} restart={() => act(post(`/api/sessions/${s.id}/stack/restart`, { service: a.name }))} />)}
-        </div>
-      )}
+      {tabs}
 
-      {dataPart}
-
-      {logs !== null && <Logs id={s.id} service={logs} services={[...(ui ? ['ui'] : []), ...apis.map((a) => a.name)]} pick={setLogs} />}
-
-      <div className="bar">
-        <span>
-          {v ? <><b>{apis.length} API{apis.length === 1 ? '' : 's'}</b> <span className="mu">· {counts.map(([h, n]) => `${n} ${healthWord[h]}`).join(' · ') || 'none running'} · the rest from Dev</span></>
-            : <span className="mu">Stack stopped.</span>}
-          {pr && <span className="mu"> · {pr}</span>}
-        </span>
-        <span className="row" style={{ marginLeft: 'auto', gap: 6 }}>
-          {!s.evidence.some((e) => e.kind === 'tried') && ui?.health === 'up' && <button type="button" className="btn" onClick={() => act(post(`/api/sessions/${s.id}/tried`))}>I tried it: looks good</button>}
-          {(ws?.apis.length ?? 0) > 0 && (
-            <span className="menu">
-              <button type="button" className="btn" disabled={!notRunning.length} onClick={() => setMenu(menu === 'add' ? '' : 'add')}>Add an API</button>
-              {menu === 'add' && (
-                <span className="menu-list" role="menu">
-                  {notRunning.map((a) => <button key={a} type="button" role="menuitem" onClick={() => { setMenu(''); act(post(`/api/sessions/${s.id}/stack/add`, { api: a })); }}>{a}</button>)}
+      {shown === 'stack' && (
+        <div className="tabpanel" role="tabpanel" aria-label="Stack">
+          {apis.length > 0 && (
+            <div className="apis">
+              {apis.map((a) => <ApiTile key={a.name} a={a} remove={() => act(post(`/api/sessions/${s.id}/stack/remove`, { api: a.name }))} restart={() => act(post(`/api/sessions/${s.id}/stack/restart`, { service: a.name }))} />)}
+            </div>
+          )}
+          <div className="bar">
+            <span>
+              <b>{apis.length} API{apis.length === 1 ? '' : 's'}</b> <span className="mu">· {counts.map(([h, n]) => `${n} ${healthWord[h]}`).join(' · ') || 'none running'} · the rest from Dev</span>
+              {pr && <span className="mu"> · {pr}</span>}
+            </span>
+            <span className="row" style={{ marginLeft: 'auto', gap: 6 }}>
+              {!s.evidence.some((e) => e.kind === 'tried') && ui?.health === 'up' && <button type="button" className="btn" onClick={() => act(post(`/api/sessions/${s.id}/tried`))}>I tried it: looks good</button>}
+              {(ws?.apis.length ?? 0) > 0 && (
+                <span className="menu">
+                  <button type="button" className="btn" disabled={!notRunning.length} onClick={() => setMenu(menu === 'add' ? '' : 'add')}>Add an API</button>
+                  {menu === 'add' && (
+                    <span className="menu-list" role="menu">
+                      {notRunning.map((a) => <button key={a} type="button" role="menuitem" onClick={() => { setMenu(''); act(post(`/api/sessions/${s.id}/stack/add`, { api: a })); }}>{a}</button>)}
+                    </span>
+                  )}
                 </span>
               )}
-            </span>
-          )}
-          {v ? (
-            <>
-              {(apis.some((a) => isProblem(a.health)) || (ui && isProblem(ui.health))) && <button type="button" className="btn" onClick={() => act(post(`/api/sessions/${s.id}/stack/restart`, { unhealthy: true }))}>Restart unhealthy</button>}
+              {problem && <button type="button" className="btn" onClick={() => act(post(`/api/sessions/${s.id}/stack/restart`, { unhealthy: true }))}>Restart unhealthy</button>}
               {ui && <button type="button" className="btn" onClick={() => act(post(`/api/sessions/${s.id}/stack/restart`, { service: 'ui' }))}>Restart UI</button>}
               <button type="button" className="btn" onClick={() => act(post(`/api/sessions/${s.id}/stack/down`))}>Stop all</button>
-            </>
-          ) : (ws?.apis.length || ws?.ui) ? <button type="button" className="btn dark" onClick={() => act(post(`/api/sessions/${s.id}/stack/up`))}>Start stack</button> : null}
-          <More s={s} open={menu === 'more'} toggle={() => setMenu(menu === 'more' ? '' : 'more')} act={act} />
-        </span>
-      </div>
+            </span>
+          </div>
+        </div>
+      )}
+      {shown === 'logs' && <Logs id={s.id} service={logsOf && services.includes(logsOf) ? logsOf : services[0] ?? 'ui'} services={services} pick={setLogsOf} />}
+      {dataPanel}
     </section>
   );
 }
@@ -216,7 +245,7 @@ function Logs({ id, service, services, pick }: { id: string; service: string; se
     return () => { live = false; clearInterval(t); };
   }, [id, service]);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div className="tabpanel" role="tabpanel" aria-label="Logs">
       <div className="row" style={{ gap: 6 }}>
         {services.map((sv) => <button key={sv} type="button" className={`btn small${sv === service ? ' dark' : ''}`} onClick={() => pick(sv)}>{sv}</button>)}
       </div>

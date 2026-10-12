@@ -7,34 +7,45 @@ const KIND: Record<DataEvent['kind'], string> = { lookup: 'Lookup', update: 'Cha
 const MARK: Record<DataEvent['state'], string> = { running: '…', done: '✓', failed: '✗' };
 const envWord = (e: string) => (e === 'dev' ? 'Dev' : 'UAT');
 
-/** The latest data event, one line, under the session's block (click opens the panel). */
-export function DataStrip({ s, open }: { s: Session; open: () => void }) {
-  const ev = s.data?.at(-1);
-  if (!ev) return null;
-  const bad = ev.state === 'failed' || ev.rows?.some((r) => r.ok === false || r.applied === 'differs');
+export type DataTab = 'fields' | 'loans';
+const KINDS: Record<DataTab, DataEvent['kind'][]> = { fields: ['lookup', 'update'], loans: ['loan', 'scenario'] };
+
+/** A tab's events, newest last: Field Finder has the lookups and changes, Loan Forge the loans and scenarios. */
+export function tabEvents(s: Session, tab: DataTab): DataEvent[] {
+  return (s.data ?? []).filter((e) => KINDS[tab].includes(e.kind));
+}
+
+/** Field Finder: look up a loan's fields (and change them), and every lookup and change so far. */
+export function FieldFinder({ s, snap, loan, lookUp }: { s: Session; snap: Snapshot; loan: string; lookUp: (loan: string) => void }) {
+  const events = tabEvents(s, 'fields').reverse();
+  const [form, setForm] = useState(!events.length || Boolean(loan));
+  useEffect(() => { if (loan) setForm(true); }, [loan]);
   return (
-    <button type="button" className={`dstrip${bad ? ' bad' : ''}`} onClick={open} aria-label="Open the Data panel">
-      <span className="dmark">{MARK[ev.state]}</span>
-      <span className="k" style={{ display: 'inline' }}>{KIND[ev.kind]}</span>
-      <span className="dstrip-title">{ev.error ?? ev.title}</span>
-      <span className="mu" style={{ fontSize: 12 }}>{ev.by === 'claude' ? 'Claude' : 'you'} · {ago(ev.at)}</span>
-    </button>
+    <div className="dpanel" role="tabpanel" aria-label="Field Finder">
+      <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+        <span className="mu" style={{ fontSize: 14 }}>Read a loan’s fields against what this work should set; change them in place.</span>
+        {snap.config.fields && <button type="button" className={`seg small${form ? ' on' : ''}`} style={{ marginLeft: 'auto' }} onClick={() => setForm(!form)}>New lookup</button>}
+      </div>
+      {!snap.config.fields && <div className="note">No lookup tool is set up on this machine (verify.json).</div>}
+      {form && snap.config.fields && <LookupForm s={s} snap={snap} loan={loan} done={() => setForm(false)} />}
+      {!events.length && <div className="mu" style={{ fontSize: 14 }}>No lookups yet. What Claude or you look up or change shows here as it happens.</div>}
+      {events.map((ev, i) => <EventCard key={ev.id} s={s} ev={ev} first={i === 0} lookUp={lookUp} />)}
+    </div>
   );
 }
 
-/** The session's data tools: the test-data tool, a lookup, a new loan, and everything done so far. */
-export function DataPanel({ s, snap }: { s: Session; snap: Snapshot }) {
-  const [form, setForm] = useState<'' | 'lookup' | 'loan'>('');
+/** Loan Forge: the test-data tool, a new loan from a new or saved scenario, and every loan and scenario so far. */
+export function LoanForge({ s, snap, lookUp }: { s: Session; snap: Snapshot; lookUp: (loan: string) => void }) {
+  const events = tabEvents(s, 'loans').reverse();
+  const [form, setForm] = useState(!events.length);
   const [error, setError] = useState('');
-  const [loanFor, setLoanFor] = useState('');
   const [setup, setSetup] = useState(false);
-  const events = [...(s.data ?? [])].reverse();
   const tool = snap.config.testData;
   const toolWord = tool.state === 'up' ? 'running (started here)' : tool.state === 'starting' ? 'starting…' : tool.state === 'slow' ? 'started, not answering yet' : tool.state === 'exited' ? `stopped${tool.exitCode !== undefined && tool.exitCode !== null ? ` (exit ${tool.exitCode})` : ''}` : 'not started from here';
   const run = (p: Promise<unknown>) => { setError(''); p.catch((e: Error) => setError(e.message)); };
 
   return (
-    <div className="dpanel" role="region" aria-label="Data">
+    <div className="dpanel" role="tabpanel" aria-label="Loan Forge">
       <div className="row" style={{ gap: 8, alignItems: 'center' }}>
         <span className="row" style={{ gap: 8, alignItems: 'center' }}>
           <span className="k" style={{ display: 'inline' }}>{tool.name}</span>
@@ -43,18 +54,14 @@ export function DataPanel({ s, snap }: { s: Session; snap: Snapshot }) {
           {(tool.state === 'up' || tool.state === 'starting' || tool.state === 'slow') && <button type="button" className="btn small" onClick={() => run(post('/api/test-data/stop'))}>Stop it</button>}
           <button type="button" className={`btn small${setup ? ' dark' : ''}`} onClick={() => setSetup(!setup)}>{tool.launch ? 'Change how it starts' : 'Set up'}</button>
         </span>
-        <span className="row" style={{ gap: 6, marginLeft: 'auto' }}>
-          {snap.config.fields && <button type="button" className={`seg small${form === 'lookup' ? ' on' : ''}`} onClick={() => setForm(form === 'lookup' ? '' : 'lookup')}>Look up fields</button>}
-          {snap.config.loans && <button type="button" className={`seg small${form === 'loan' ? ' on' : ''}`} onClick={() => setForm(form === 'loan' ? '' : 'loan')}>New loan</button>}
-        </span>
+        {snap.config.loans && <button type="button" className={`seg small${form ? ' on' : ''}`} style={{ marginLeft: 'auto' }} onClick={() => setForm(!form)}>Make a loan</button>}
       </div>
       {setup && <ToolSetup snap={snap} done={() => setSetup(false)} />}
       {tool.tail && tool.tail.length > 0 && <pre className="preview" style={{ maxHeight: 140 }}>{tool.tail.join('\n')}</pre>}
-      {form === 'lookup' && <LookupForm s={s} snap={snap} loan={loanFor} done={() => setForm('')} />}
-      {form === 'loan' && <LoanForm s={s} done={() => setForm('')} />}
+      {form && snap.config.loans && <LoanForm s={s} done={() => setForm(false)} />}
       {error && <div className="err" role="alert">{error}</div>}
-      {!events.length && <div className="mu" style={{ fontSize: 14 }}>Nothing yet. What Claude looks up, changes or makes with these tools shows here as it happens; so does what you do.</div>}
-      {events.map((ev, i) => <EventCard key={ev.id} s={s} ev={ev} first={i === 0} lookUp={(loan) => { setLoanFor(loan); setForm('lookup'); }} />)}
+      {!events.length && <div className="mu" style={{ fontSize: 14 }}>No loans yet. What Claude or you make with the test-data tool shows here as it happens.</div>}
+      {events.map((ev, i) => <EventCard key={ev.id} s={s} ev={ev} first={i === 0} lookUp={lookUp} />)}
     </div>
   );
 }
@@ -158,7 +165,7 @@ function LookupForm({ s, snap, loan: given, done }: { s: Session; snap: Snapshot
   };
   const unpick = (id: string) => { post(`/api/sessions/${s.id}/fields`, { fields: [], remove: [id] }).then(() => load(false)).catch((e: Error) => setError(e.message)); };
   return (
-    <div className="dform" role="group" aria-label="Look up fields">
+    <div className="dform" role="group" aria-label="Look up">
       <div className="row" style={{ gap: 8 }}>
         <EnvPick env={env} set={setEnv} />
         <input type="text" className="mono" aria-label="Loan id" value={loan} onChange={(e) => setLoan(e.target.value)} placeholder="loan id (guid)" style={{ flex: '1 1 300px' }} />

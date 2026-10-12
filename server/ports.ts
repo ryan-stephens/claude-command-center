@@ -17,10 +17,17 @@ export function parseRange(s: string | undefined): [number, number] {
   return [lo, hi];
 }
 
-/** Is something listening on this port on this machine? */
-export function listening(port: number): Promise<boolean> {
+/**
+ * Is something listening on this port on this machine? IPv4 first, then IPv6: a dev server bound to
+ * `localhost` on Node 17+ (ng serve, Vite) often listens on ::1 only, and is up all the same.
+ */
+export async function listening(port: number): Promise<boolean> {
+  return (await answers('127.0.0.1', port)) || answers('::1', port);
+}
+
+function answers(host: string, port: number): Promise<boolean> {
   return new Promise((resolve) => {
-    const s = connect({ host: '127.0.0.1', port });
+    const s = connect({ host, port });
     const done = (ok: boolean) => { s.destroy(); resolve(ok); };
     s.once('connect', () => done(true));
     s.once('error', () => done(false));

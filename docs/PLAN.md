@@ -3522,3 +3522,17 @@ Screenshots looked at. The first run showed *applied* next to the **old** values
 **Not checked: the real tool.** Whether it serves an API description (ASP.NET serves Swagger in Development only, by default), whether `api/scenarios` is its create address, where folders go, and whether a new scenario runs before it is locked: Claude reads the first three at run time, and the last shows as a failed run with the tool's message.
 
 **To check at VU:** *Data* → *New loan* → set the folder, *Ask Claude to make it*, paste in the terminal; watch the scenario and then its loan appear on the panel, and the scenario in the tool under that folder. If the tool refuses it, run `docs/prompts/vu-scenario-api.md` there.
+
+## 144. v2: the session card as tabs, Field Finder and Loan Forge, and three fixes from VU
+
+From the owner's list after using the Switchboard at VU.
+
+- **Tabs on the session card.** The row of buttons (Logs, Data, the stack's controls) is now a tab strip under the card's summary: **Stack · n APIs** (the API tiles and the stack's controls; open to begin with while the stack runs), **Logs**, **Field Finder** and **Loan Forge**. Pressing the open tab closes it. The *Data* panel is split in two: **Field Finder** holds lookups and changes (*New lookup*); **Loan Forge** holds the test-data tool's line and setup, *Make a loan* and the loans and scenarios. A tab's label counts its events and gets an orange dot when its newest failed or differs. A loan's *Look up* opens Field Finder on that loan. Opening the session stays an action, with the summary: **Open terminal ↗** (or *Open in VS Code*), **Ship**, **⋯**.
+- **Results no longer stay on the card.** The line under every card with the newest data event is gone: lookups show only in Field Finder, when it is open.
+- **Header:** *New work* comes before *Switchboard*; the *Open the HUD* button is gone (the `/hud` page stays at its address).
+- **UI shown unhealthy while it was up.** The port probe (`server/ports.ts` `listening`, shared with v1's port pool) asked 127.0.0.1 only; `ng serve` bound to `localhost` on Node 17+ listens on ::1 only, so it never answered and the card said *unhealthy: no answer*. It asks ::1 when 127.0.0.1 doesn't answer. v1's pool now also counts a port held on ::1 only as busy, which it is for `localhost`.
+- **Opening a session resumed with a broken command.** wt.exe re-quotes each argument without escaping quotes inside it, so a `"` in the ticket title split `-n "<key> <title>"` and Claude got `… --add-dir <dir> --resume <id>` as its prompt (reproduced with a stand-in that records its argv). `tabName` turns `"` into `'` and `;` into `,` (a `;` starts a second wt command) and drops backslashes; reproduced again, the args arrive whole.
+
+**Checked:** `pnpm typecheck`; `pnpm test` (new: a ::1-only listener counts as listening; the tab name). The walk, 94/94: tabs with Stack open and no data panel until asked; setup and start from Loan Forge; Claude's refused change in Field Finder; *New lookup*; Loan Forge without the lookups; *Make a loan*; *Look up* on a loan opening Field Finder on it; the open tab closing. Screenshots looked at.
+
+**To check at VU:** start the UI and see the card say *up*. Open a session whose ticket title has a `"` from the Switchboard and see Claude resume it without a stray prompt.

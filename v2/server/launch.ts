@@ -117,9 +117,18 @@ export function cleanEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env;
 }
 
+/**
+ * The session's display name for `claude -n`. wt.exe re-quotes each argument without escaping the
+ * quotes inside it, so a `"` in a ticket title split the name and sent the rest of the command line
+ * (`… --add-dir … --resume …`) to Claude as its prompt; a `;` would start a second wt command.
+ */
+export function tabName(s: Pick<Session, 'key' | 'title'>): string {
+  return `${s.key} ${s.title}`.replace(/["“”]/g, "'").replace(/;/g, ',').replace(/[\\\s]+/g, ' ').trim().slice(0, 80).trim();
+}
+
 /** The claude arguments for a session's tab: its other worktrees, our MCP config when the repo has its own, then a resume or the first message. */
 export function claudeArgs(s: Pick<Session, 'key' | 'title' | 'repos' | 'home' | 'firstMessage' | 'claude'>, mcpConfig?: string, fresh = false): { args: string[]; message: string } {
-  const args = ['-n', `${s.key} ${s.title}`.slice(0, 80)];
+  const args = ['-n', tabName(s)];
   for (const r of s.repos) if (!samePath(r.dir, s.home)) args.push('--add-dir', r.dir);
   if (mcpConfig) args.push('--mcp-config', mcpConfig);
   if (!fresh && s.claude.claudeId) return { args: [...args, '--resume', s.claude.claudeId], message: '' };

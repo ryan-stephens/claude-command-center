@@ -197,7 +197,8 @@ function toolbelt(sessionId, token) {
     check('test_data_tool says it isn’t running or set up to start', !tsNot.error && /"answering": false/.test(tsNot.text) && /"launch": false/.test(tsNot.text), tsNot.text.slice(0, 160));
     const tsNoSetup = await tb.call('test_data_tool', { action: 'start' });
     check('starting it before it is set up says to set it up from the Data panel', tsNoSetup.error && /Data panel \(Set up\)/.test(tsNoSetup.text), tsNoSetup.text.slice(0, 200));
-    await page.locator('.sess').getByRole('button', { name: /^Data/ }).click();
+    check('the card’s tools are tabs, Stack open to begin with, and the data stays out of sight until asked', await page.getByRole('tab', { name: /^Stack/ }).getAttribute('aria-selected') === 'true' && !(await page.locator('.dpanel').count()));
+    await page.getByRole('tab', { name: /^Loan Forge/ }).click();
     await page.locator('.dpanel').getByRole('button', { name: 'Set up' }).click();
     const foundBtn = page.locator('.dform').getByRole('button', { name: /Sample-Data-tool/ });
     check('Set up finds the install by the tool’s name beside the repos', await until(() => foundBtn.isVisible(), 8000));
@@ -205,7 +206,7 @@ function toolbelt(sessionId, token) {
     check('and reads it: the start script, ticked, with its command', await until(() => page.locator('.dform').getByText('$ .\\start-sample.cmd').isVisible(), 8000) && await page.locator('.dform').getByRole('checkbox').first().isChecked());
     await page.locator('.dform').getByLabel('Its API address').fill('http://127.0.0.1:18909');
     await shot(page, 'tool-setup');
-    await page.locator('.dform').getByRole('button', { name: 'Save' }).click();
+    await page.locator('.dform').getByRole('button', { name: 'Save', exact: true }).click();
     const savedB = await until(async () => (JSON.parse(fs.readFileSync(VERIFY, 'utf8')).builder || {}).launch?.length === 1, 5000) && JSON.parse(fs.readFileSync(VERIFY, 'utf8'));
     check('Save writes the folder, the command and the address to verify.json, the rest kept', savedB && savedB.builder.cwd.replace(/\\/g, '/') === toolDir && savedB.builder.launch[0] === '.\\start-sample.cmd' && savedB.builder.url === 'http://127.0.0.1:18909' && savedB.lookup?.url === verifyNow.lookup.url, JSON.stringify(savedB && savedB.builder));
     await page.locator('.dpanel').getByRole('button', { name: 'Start it' }).click();
@@ -245,7 +246,8 @@ function toolbelt(sessionId, token) {
     check('one update went to the lookup, with exactly those two fields', writes.length === 1 && writes[0].count === 2 && writes[0].ids.sort().join(',') === 'CX.AMOUNT,CX.SAMPLE.ONE', JSON.stringify(writes.map((w) => w.ids)));
     const ro = await tb.call('update_fields', { env: 'dev', loan, set: { '1000': '13.00' } });
     check('changing a read-only field is refused with nothing sent', ro.error && /1000 is read-only/.test(ro.text) && updates().length === 1, ro.text.slice(0, 200));
-    check('the Data panel shows the refused change first, saying why', await until(() => page.locator('.devent.failed').first().getByText(/1000 is read-only/).isVisible(), 5000));
+    await page.getByRole('tab', { name: /^Field Finder/ }).click();
+    check('Field Finder shows the refused change first, saying why', await until(() => page.locator('.devent.failed').first().getByText(/1000 is read-only/).isVisible(), 5000));
     const changed = page.locator('.devent', { hasText: /2 field\(s\) changed/ });
     await changed.locator('.devent-head').click();
     check('and Claude’s change with what was sent', await until(() => changed.locator('td', { hasText: '2,500.00' }).isVisible(), 5000));
@@ -263,7 +265,7 @@ function toolbelt(sessionId, token) {
     check('fields_to_check: Claude’s picks, then the ids the changes added, and the loans made', (ftcJ.fields || []).map((f) => `${f.id}:${f.from}`).join(',') === 'CX.SAMPLE.ONE:claude,CX.AMOUNT:claude,CX.CHANGED.FIELD:changes' && ftcJ.loans?.[0]?.loan === loan, ftc.text.slice(0, 300));
 
     // From the page: look a loan up with details, change a field in place, make a loan.
-    await page.locator('.dpanel').getByRole('button', { name: 'Look up fields' }).click();
+    await page.locator('.dpanel').getByRole('button', { name: 'New lookup' }).click();
     check('the lookup form starts with the last loan', await until(async () => (await page.locator('.dpanel').getByLabel('Loan id').inputValue()) === loan, 5000));
     check('and the session’s fields to check, with where each came from', await until(() => page.locator('.picks-box').getByText('CX.CHANGED.FIELD').isVisible(), 5000) && await page.locator('.pick-chip.claude', { hasText: 'CX.SAMPLE.ONE' }).isVisible() && await page.locator('.pick-chip.changes').isVisible());
     check('the ids box is filled from them, with the expected value', /^CX\.SAMPLE\.ONE = No\nCX\.AMOUNT\nCX\.CHANGED\.FIELD$/.test(await page.locator('.dpanel').getByLabel('Field ids').inputValue()), JSON.stringify(await page.locator('.dpanel').getByLabel('Field ids').inputValue()));
@@ -279,8 +281,10 @@ function toolbelt(sessionId, token) {
     await page.getByRole('button', { name: /Send 1 change\(s\) to Dev/ }).click();
     check('the second sends it, and it shows as applied', await until(() => page.locator('.devent').first().getByText(/1 field\(s\) changed .*all applied/).isVisible(), 45000) && updates().length === 2 && updates()[1].ids.join(',') === 'CX.SAMPLE.ONE');
     // A new scenario for this session (§143): you set the folder and the template, Claude writes and makes it.
-    await page.locator('.dpanel').getByRole('button', { name: 'New loan' }).click();
-    check('New loan opens on a new scenario for this session', await page.locator('.dpanel').getByRole('button', { name: 'Ask Claude to make it' }).isVisible() && await page.locator('.dpanel').getByLabel('Folder').inputValue() === 'SHOP-160');
+    await page.getByRole('tab', { name: /^Loan Forge/ }).click();
+    check('Loan Forge has no lookups in it', !(await page.locator('.devent', { hasText: /field\(s\) changed/ }).count()));
+    await page.locator('.dpanel').getByRole('button', { name: 'Make a loan' }).click();
+    check('Make a loan opens on a new scenario for this session', await page.locator('.dpanel').getByRole('button', { name: 'Ask Claude to make it' }).isVisible() && await page.locator('.dpanel').getByLabel('Folder').inputValue() === 'SHOP-160');
     await page.locator('.dpanel').getByLabel('Folder').fill('Walk/SHOP-160');
     await page.locator('.dpanel').getByLabel('Start from').selectOption('Sample purchase');
     await page.locator('.dpanel').getByLabel('Notes for Claude').fill('the fee waived at closing');
@@ -300,7 +304,7 @@ function toolbelt(sessionId, token) {
     const creates = fs.readFileSync(`${ROOT}/tools.log`, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.tool === 'builder-create');
     check('make_scenario posts it to the tool, filed under the folder', !made.error && /^sc-/.test(mj.scenario?.scenarioId || '') && creates.length === 1 && creates[0].folder === 'Walk/SHOP-160' && creates[0].steps === 2, made.text.slice(0, 300));
     check('and runs it: the loan comes back', mj.loan?.state === 'done' && (mj.loan?.loans || []).length === 1, JSON.stringify(mj.loan || {}).slice(0, 200));
-    check('the Data panel shows the scenario made, with what was sent', await until(() => page.locator('.devent', { hasText: /Scenario “SHOP-160 fee waived at closing” made \(v1\), filed under Walk\/SHOP-160/ }).isVisible(), 5000));
+    check('Loan Forge shows the scenario made, with what was sent', await until(() => page.locator('.devent', { hasText: /Scenario “SHOP-160 fee waived at closing” made \(v1\), filed under Walk\/SHOP-160/ }).isVisible(), 5000));
     await page.locator('.dpanel').getByRole('button', { name: 'Run a saved scenario' }).click();
     check('the new scenario is among the saved ones, under its folder', await until(() => page.locator('.scen-group', { hasText: 'Walk/SHOP-160' }).isVisible(), 5000) && await page.locator('.scen', { hasText: 'SHOP-160 fee waived at closing' }).isVisible());
     await page.locator('.dpanel').getByLabel('Filter scenarios').fill('purchase');
@@ -308,6 +312,10 @@ function toolbelt(sessionId, token) {
     await shot(page, 'new-loan');
     await page.locator('.dpanel').getByRole('button', { name: 'Make a loan from Sample purchase in Dev' }).click();
     check('a loan made from the page shows its run, then the loan', await until(() => page.locator('.devent').first().getByText(/Sample purchase made /).isVisible(), 30000) && await page.locator('.devent').first().getByRole('button', { name: 'Look up' }).isVisible());
+    await page.locator('.devent').first().getByRole('button', { name: 'Look up' }).click();
+    check('Look up on a loan opens Field Finder on it', await page.getByRole('tab', { name: /^Field Finder/ }).getAttribute('aria-selected') === 'true' && /^[\w-]+$/.test(await page.locator('.dpanel').getByLabel('Loan id').inputValue()));
+    await page.getByRole('tab', { name: /^Field Finder/ }).click();
+    check('pressing the open tab again closes it', !(await page.locator('.dpanel').count()));
     st = await state();
     check('the session keeps every lookup, change and loan, and the changes as evidence', st.sessions[0].data.length >= 8 && st.sessions[0].evidence.some((e) => /Changed CX.SAMPLE.ONE, CX.AMOUNT/.test(e.text)), String(st.sessions[0].data.length));
     const last = await tb.call('data_status', {});
@@ -317,6 +325,7 @@ function toolbelt(sessionId, token) {
     // Claude needs you: the block turns orange, the HUD says Answer.
     await hook('PermissionRequest', { session_id: 'claude-1', tool_name: 'Bash', tool_input: { command: 'pnpm db:migrate' } });
     check('a permission request shows as needs you', await until(() => page.locator('.sess.needs').getByText('wants to run: pnpm db:migrate').isVisible(), 5000));
+    await page.getByRole('tab', { name: /^Stack/ }).click();
     await page.getByRole('button', { name: 'I tried it: looks good' }).click();
     await shot(page, 'needs-you');
     const hud = await page.context().newPage();

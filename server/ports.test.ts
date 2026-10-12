@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
 import { test } from 'node:test';
-import { parsePortList, parseRange, PortPool } from './ports.ts';
+import { listening, parsePortList, parseRange, PortPool } from './ports.ts';
 
 test('the range comes from CC_CONTROL_PORTS, with a sane default', () => {
   assert.deepEqual(parseRange(undefined), [18000, 18999]);
@@ -71,4 +71,17 @@ test('two takes at once never get the same port (§114)', async () => {
   const got = await Promise.all(Array.from({ length: 6 }, () => pool.take(2)));
   const all = got.flat();
   assert.equal(new Set(all).size, all.length, all.join(' '));
+});
+
+test('a server listening on IPv6 ::1 only counts as listening (ng serve on localhost)', async () => {
+  const v6 = createServer();
+  const bound = await new Promise<boolean>((r) => { v6.once('error', () => r(false)); v6.listen(0, '::1', () => r(true)); });
+  if (!bound) return; // no IPv6 loopback on this machine
+  const port = (v6.address() as { port: number }).port;
+  try {
+    assert.equal(await listening(port), true);
+  } finally {
+    await new Promise((r) => v6.close(r));
+  }
+  assert.equal(await listening(port), false);
 });

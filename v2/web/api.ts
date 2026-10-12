@@ -51,11 +51,6 @@ export function useRoute(): string {
   return useSyncExternalStore((f) => { routeSubs.add(f); return () => routeSubs.delete(f); }, () => path);
 }
 
-/** The HUD in a small window of its own, beside the terminals. */
-export function openHud(): void {
-  window.open('/hud', 'cc-hud', 'popup,width=440,height=680');
-}
-
 /** "4 min", "2 h": how long since. */
 export function ago(at: number, now = Date.now()): string {
   const s = Math.max(0, Math.round((now - at) / 1000));

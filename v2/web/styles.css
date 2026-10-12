@@ -84,7 +84,18 @@ input:focus, textarea:focus, select:focus, button:focus-visible, a:focus-visible
 
 .sess { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
 .sess.needs { border: 2px solid var(--signal); }
-.sess.folded { flex-direction: row; flex-wrap: wrap; align-items: center; background: transparent; border-style: dashed; }
+.sess.folded { background: transparent; border-style: dashed; gap: 10px; }
+.sess-fold { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.sess-fold .sess-actions { margin-left: auto; }
+.sess-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: flex-start; }
+.sess-actions .menu-list { bottom: auto; top: 44px; }
+.tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px; border-bottom: 1px solid var(--line); }
+.tab { min-height: 38px; padding: 0 14px; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; background: none; color: var(--muted); font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.tab:hover { color: var(--ink); }
+.tab.on { color: var(--ink); border-bottom-color: var(--ink); }
+.tab.bad::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 7px; border-radius: 50%; background: var(--signal); vertical-align: middle; }
+.tabs .btn.small { margin-bottom: 6px; }
+.tabpanel { display: flex; flex-direction: column; gap: 12px; }
 .sess-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 12px 18px; align-items: start; }
 .sess-top small { display: block; color: var(--muted); font-size: 13px; font-weight: 400; }
 .k { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: block; }
@@ -148,9 +159,7 @@ input:focus, textarea:focus, select:focus, button:focus-visible, a:focus-visible
 
 /* The Data panel (§140): the team's data tools for a session, and everything done with them. */
 .dpanel { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
-.dstrip { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--card); color: var(--ink); cursor: pointer; font-size: 14px; }
-.dstrip.bad { border-color: var(--signal); background: var(--signal-soft); }
-.dstrip-title, .devent-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.devent-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .devent { border: 1px solid var(--line-2); border-radius: 10px; background: var(--card); }
 .devent.bad { border-color: var(--signal); }
 .devent-head { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 10px 12px; border: 0; background: transparent; color: var(--ink); cursor: pointer; text-align: left; font-size: 14px; }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { claudeArgs, withHooks, writeLocalFiles } from './launch.ts';
+import { claudeArgs, tabName, withHooks, writeLocalFiles } from './launch.ts';
 import type { ClaudeStatus } from '../shared/types.ts';
 
 const f = { sessionId: 'sid', token: 'tok', url: 'http://127.0.0.1:7878' };
@@ -39,4 +39,9 @@ test('a tab resumes the session Claude reported, else starts it with the first m
   const s = { key: 'SHOP-160', title: 'Waive', repos: [{ repo: 'C:/a', name: 'a', dir: 'C:/a-shop-160' }, { repo: 'C:/b', name: 'b', dir: 'C:/b-shop-160' }], home: 'C:/a-shop-160', firstMessage: 'Plan it', claude };
   assert.deepEqual(claudeArgs(s), { args: ['-n', 'SHOP-160 Waive', '--add-dir', 'C:/b-shop-160'], message: 'Plan it' });
   assert.deepEqual(claudeArgs({ ...s, claude: { ...claude, claudeId: 'abc' } }).args.slice(-2), ['--resume', 'abc']);
+});
+
+test('the tab name has no quote or semicolon for wt.exe to split on, so a resume reaches Claude whole', () => {
+  assert.equal(tabName({ key: 'WSS-1078', title: 'Show the 12" field; then  “withdraw” it' }), "WSS-1078 Show the 12' field, then 'withdraw' it");
+  assert.equal(tabName({ key: 'K-1', title: 'x'.repeat(100) }).length, 80);
 });
