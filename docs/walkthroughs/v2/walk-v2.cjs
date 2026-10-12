@@ -367,7 +367,7 @@ function toolbelt(sessionId, token) {
     // ---- Start on UAT: picked next to Start stack, a second click to be sure, the rest of the proxy on UAT ----
     const card = page.locator('.sess');
     await card.getByRole('group', { name: 'Environment' }).getByRole('button', { name: 'UAT' }).click();
-    await card.getByRole('button', { name: 'Start stack on UAT' }).click();
+    await card.getByRole('button', { name: 'Start stack', exact: true }).click();
     check('starting on UAT asks to be sure first, starting nothing yet', await card.getByRole('button', { name: 'Start on UAT: sure?' }).isVisible() && !(await state()).stacks[s.id]);
     await card.getByRole('button', { name: 'Start on UAT: sure?' }).click();
     check('the stack starts on UAT and its tab says so', await until(async () => (await state()).stacks[s.id]?.values.env === 'uat', 15000) && await until(() => page.getByRole('tab', { name: /^Stack · UAT · \d+ APIs?$/ }).isVisible(), 5000));

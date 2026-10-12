@@ -182,7 +182,7 @@ function SessionBlock({ s, v, snap, act }: { s: Session; v?: StackView; snap: Sn
                     {vals.map((x) => <button key={x} type="button" aria-pressed={values[k] === x} className={`seg small${values[k] === x ? ' on' : ''}`} onClick={() => { setArmed(false); setPick((p) => ({ ...p, [k]: x })); }}>{x.toUpperCase()}</button>)}
                   </span>
                 ))}
-                <button type="button" className="btn dark" onClick={start}>{armed ? `Start on ${envLabel(values)}: sure?` : offDefault ? `Start stack on ${envLabel(values)}` : 'Start stack'}</button>
+                <button type="button" className="btn dark" onClick={start}>{armed ? `Start on ${envLabel(values)}: sure?` : 'Start stack'}</button>
               </span>
             )}
           </div>
